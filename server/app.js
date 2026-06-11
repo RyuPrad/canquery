@@ -4,6 +4,12 @@ const express = require('express');
 const helmet = require('helmet');
 const AppError = require('./utils/AppError');
 const errorHandler = require('./middleware/errorHandler');
+const { generalLimiter } = require('./middleware/rateLimits');
+const catalogController = require('./controllers/catalogController');
+const datasetsRouter = require('./routes/datasets');
+const resourcesRouter = require('./routes/resources');
+const organizationsRouter = require('./routes/organizations');
+const statsRouter = require('./routes/stats');
 
 const app = express();
 
@@ -47,9 +53,13 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-app.get('/healthz', (req, res) => {
-    res.json({ ok: true });
-});
+app.get('/healthz', catalogController.healthz);
+
+app.use('/api', generalLimiter);
+app.use('/api/v1/datasets', datasetsRouter);
+app.use('/api/v1/resources', resourcesRouter);
+app.use('/api/v1/organizations', organizationsRouter);
+app.use('/api/v1/stats', statsRouter);
 
 app.use((req, res, next) => {
     next(new AppError('Not found', 404));
