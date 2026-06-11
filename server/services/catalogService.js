@@ -146,4 +146,4 @@ const healthz = async () => {
     return { ok: db && upstream, db, upstream };
 };
 
-module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz };
+module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode };
