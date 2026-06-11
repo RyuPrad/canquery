@@ -15,7 +15,7 @@ function parseFilters(raw) {
     let parsed;
     try {
         parsed = JSON.parse(raw);
-    } catch (e) {
+    } catch {
         throw new AppError('filters must be valid JSON', 400);
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -34,7 +34,7 @@ function parseFilters(raw) {
         if (spec === null || typeof spec === 'string' || typeof spec === 'number' || typeof spec === 'boolean') {
             result.push({ column, op: 'eq', value: spec });
         } else if (typeof spec === 'object' && !Array.isArray(spec)) {
-            if (!spec.hasOwnProperty('op') || !Object.prototype.hasOwnProperty.call(ALLOWED_OPS, spec.op)) {
+            if (!Object.prototype.hasOwnProperty.call(spec, 'op') || !Object.prototype.hasOwnProperty.call(ALLOWED_OPS, spec.op)) {
                 throw new AppError('invalid filter operator', 400);
             }
             const value = spec.value;

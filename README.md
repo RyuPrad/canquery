@@ -1,0 +1,118 @@
+# opencanada
+
+One consistent query API + web UI over the whole of Canada's open data portal.
+
+[open.canada.ca](https://open.canada.ca/data/) catalogues ~50,000 datasets, but only
+~1,000 resources are loaded into CKAN's DataStore and therefore queryable through the
+official `datastore_search` API. The other ~98% are bare file downloads. **opencanada**
+makes the whole catalogue feel queryable through one endpoint:
+
+| Tier | When | What happens |
+|---|---|---|
+| 1 - proxy | resource has `datastore_active: true` | upstream `datastore_search` is proxied and cached (5 min TTL) |
+| 2 - ingest | it's a CSV under the caps | `POST /ingest` streams it into our Postgres `store` schema; the same `/query` endpoint then serves it locally - **identical response shape** |
+| 3 - honest fallback | anything else | metadata + the download link, labeled `file-only` (422 on `/query`) |
+
+The catalogue itself (bilingual titles, notes, keywords, organizations) is mirrored
+into Postgres by sync scripts and searched with a generated tsvector (English + French).
+
+## Layout
+
+```
+server/   Express 5 API + pipelines (routes → controllers → services → db, no ORM)
+client/   React 19 + Vite + Tailwind 4 + daisyUI SPA
+deploy/   systemd units, cron drop-in, Caddy snippet, DEPLOY.md runbook
+```
+
+## Local setup
+
+Prereqs: Node 20+, PostgreSQL 16.
+
+```bash
+# 1. Database
+sudo -u postgres psql -c "CREATE ROLE opencanada LOGIN PASSWORD 'opencanada_dev'" \
+                      -c "CREATE DATABASE opencanada OWNER opencanada"
+
+# 2. Server
+cd server
+cp .env.example .env          # fill in OPENCANADA_DATABASE_URL etc.
+npm install
+npm run migrate               # idempotent, applies sql/migrations/*.sql
+node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
+npm run dev                   # API on :3100
+
+# 3. Client (separate terminal)
+cd client
+npm install
+npm run dev                   # Vite on :5173, proxies /api → :3100
+```
+
+## API (`/api/v1`, anonymous)
+
+Every response: `{ data, pagination: { nextCursor }, meta }` - `meta` always carries
+the Open Government Licence – Canada attribution and `upstream: 'open.canada.ca'`.
+
+```bash
+# search the mirrored catalogue (tsvector, EN+FR)
+curl 'http://localhost:3100/api/v1/datasets?q=housing&format=CSV&limit=5'
+
+# dataset detail - resources tagged datastore | ingested | ingestable | file-only
+curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
+
+# the unified query endpoint (same shape for proxied and ingested data)
+curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
+curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
+
+# unlock a CSV (idempotent enqueue; 5/hour/IP), then poll
+curl -X POST 'http://localhost:3100/api/v1/resources/<id>/ingest'
+curl 'http://localhost:3100/api/v1/jobs/<jobId>'
+
+curl 'http://localhost:3100/api/v1/organizations?limit=10'
+curl 'http://localhost:3100/api/v1/stats'
+curl 'http://localhost:3100/healthz'
+```
+
+Filter grammar: `{ "column": value }` or
+`{ "column": { "op": "eq|lt|gt|lte|gte|contains", "value": ... } }`.
+Column names are validated against the stored column list; values only ever travel
+as SQL placeholders. Operator filters work on ingested resources; the upstream
+datastore proxy supports equality only (400 otherwise).
+
+## Pipelines
+
+| Script | Purpose |
+|---|---|
+| `scripts/catalog-sync.js` | full harvest: `package_list` → batched `package_show` (chunks of 50, concurrency 2), resumable via `sync_progress`; `--limit N`, `--dry-run` |
+| `scripts/incremental-sync.js` | upserts anything newer than our `metadata_modified` high-water mark |
+| `scripts/ingest-worker.js` | drains `ingest_jobs` (`FOR UPDATE SKIP LOCKED`), streams CSVs into `store.r_*` via `COPY`, ≤2 retries; `--once` for a single drain |
+| `scripts/evict-store.js` | drops least-recently-accessed store tables until under `STORE_BUDGET_GB` |
+
+Every script writes a run-log row (`sync_runs` / `ingest_runs`) in a `finally` block
+and exits non-zero on failure.
+
+Safety rails (env-tunable): `MAX_FILE_MB=50`, `MAX_ROWS=1000000`, `MAX_COLS=120`,
+`STORE_BUDGET_GB=15`. Downloads stream to disk and abort mid-stream past the cap.
+Type inference (1,000-row sample → INTEGER/NUMERIC/DATE/TIMESTAMPTZ/TEXT) falls back
+to TEXT per column when a later cast fails.
+
+## Tests & lint
+
+```bash
+cd server && npm test && npm run lint   # Jest + Supertest (45 tests)
+cd client && npm test && npm run lint   # Vitest + Testing Library
+```
+
+Coverage includes the four `/query` modes, filter-grammar injection attempts,
+mid-stream cap aborts, eviction budget honoring, and the stable envelope shape.
+
+## Deployment
+
+See [`deploy/DEPLOY.md`](deploy/DEPLOY.md) - systemd units, cron schedule, Caddy
+routing and the house rules for the target server. Nothing in `deploy/` runs
+automatically; every live-server step requires explicit operator action.
+
+## License & attribution
+
+Code: MIT. Data: contains information licensed under the
+[Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).
+This project is independent and not affiliated with the Government of Canada.

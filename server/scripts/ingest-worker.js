@@ -87,7 +87,7 @@ async function processJob(job) {
 
 async function main() {
     console.log('ingest-worker started' + (onceMode ? ' (once mode)' : ''));
-    loop: while (true) {
+    while (true) {
         const job = await claimJob();
         if (job) {
             await processJob(job);

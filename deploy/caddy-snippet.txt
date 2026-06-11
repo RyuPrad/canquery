@@ -1,0 +1,28 @@
+# Caddy site block for the opencanada front door.
+# DATA_DOMAIN is a placeholder (e.g. data.<other-project>.com) - confirm with the
+# owner before going live. Add this to the LIVE Caddyfile at
+# opt/<platform>-project/volumes/proxy/caddy/Caddyfile, reload Caddy, then
+# re-sync the sanitized snapshot under deploy/caddy/ in the <host> repo
+# (house rule).
+
+DATA_DOMAIN {
+	encode zstd gzip
+	header -Server
+
+	# API + health → Express on the Docker bridge gateway
+	handle /api/* {
+		reverse_proxy 172.18.0.1:3100
+	}
+	handle /healthz {
+		reverse_proxy 172.18.0.1:3100
+	}
+
+	# Built SPA with client-side routing fallback
+	handle {
+		root * /srv/opencanada
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} {path}/ /index.html
+		file_server
+	}
+}

@@ -108,7 +108,7 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
             await client.query('SAVEPOINT cast_col');
             await client.query('ALTER TABLE ' + table + ' ALTER COLUMN ' + ident + ' TYPE ' + pgTypeFor(col.type) + ' USING nullif(' + ident + ', \'\')::' + pgTypeFor(col.type));
             await client.query('RELEASE SAVEPOINT cast_col');
-        } catch (err) {
+        } catch {
             await client.query('ROLLBACK TO SAVEPOINT cast_col');
             col.type = 'TEXT';
             col.cast_failed = true;

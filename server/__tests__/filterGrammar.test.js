@@ -1,5 +1,4 @@
 const { parseFilters, buildWhere, validateSort, quoteIdent } = require('../utils/filterGrammar');
-const AppError = require('../utils/AppError');
 
 function expect400(fn) {
     expect(fn).toThrow();
