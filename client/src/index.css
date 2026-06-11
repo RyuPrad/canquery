@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: dark --default;
+}
+
+/* Accent: maple red - deliberately distinct from <other-project> orange. */
+:root {
+  --maple: #d52b1e;
+}
