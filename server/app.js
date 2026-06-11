@@ -10,6 +10,7 @@ const datasetsRouter = require('./routes/datasets');
 const resourcesRouter = require('./routes/resources');
 const organizationsRouter = require('./routes/organizations');
 const statsRouter = require('./routes/stats');
+const jobsRouter = require('./routes/jobs');
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use('/api/v1/datasets', datasetsRouter);
 app.use('/api/v1/resources', resourcesRouter);
 app.use('/api/v1/organizations', organizationsRouter);
 app.use('/api/v1/stats', statsRouter);
+app.use('/api/v1/jobs', jobsRouter);
 
 app.use((req, res, next) => {
     next(new AppError('Not found', 404));

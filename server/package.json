@@ -10,11 +10,13 @@
         "migrate": "node scripts/migrate.js"
     },
     "dependencies": {
+        "csv-parse": "^6.2.1",
+        "dotenv": "^16.4.0",
         "express": "^5.1.0",
-        "pg": "^8.13.0",
-        "helmet": "^8.0.0",
         "express-rate-limit": "^7.4.0",
-        "dotenv": "^16.4.0"
+        "helmet": "^8.0.0",
+        "pg": "^8.13.0",
+        "pg-copy-streams": "^7.0.0"
     },
     "devDependencies": {
         "jest": "^29.7.0",

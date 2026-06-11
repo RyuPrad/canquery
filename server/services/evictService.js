@@ -1,0 +1,37 @@
+const { TABLE_NAME_RE } = require('../db/storeQueries');
+const { quoteIdent } = require('../utils/filterGrammar');
+
+async function evictUntilUnderBudget(db, { budgetBytes, dryRun = false } = {}) {
+    const { rows } = await db.query('SELECT resource_id, table_name, coalesce(byte_size, 0)::bigint AS byte_size, last_accessed_at FROM ingested_resources ORDER BY last_accessed_at ASC');
+    let totalBytes = rows.reduce((sum, r) => sum + Number(r.byte_size), 0);
+    let dropped = 0;
+    let freedBytes = 0;
+    for (const row of rows) {
+        if (totalBytes <= budgetBytes) break;
+        if (!TABLE_NAME_RE.test(row.table_name)) {
+            console.warn('skipping suspicious table name: ' + row.table_name);
+            continue;
+        }
+        console.log((dryRun ? '[dry-run] would drop ' : 'dropping ') + row.table_name + ' (' + row.byte_size + ' bytes)');
+        if (!dryRun) {
+            const client = await db.connect();
+            try {
+                await client.query('BEGIN');
+                await client.query('DROP TABLE IF EXISTS store.' + quoteIdent(row.table_name));
+                await client.query('DELETE FROM ingested_resources WHERE resource_id = $1', [row.resource_id]);
+                await client.query('COMMIT');
+            } catch (err) {
+                try { await client.query('ROLLBACK'); } catch {}
+                throw err;
+            } finally {
+                client.release();
+            }
+        }
+        totalBytes -= Number(row.byte_size);
+        freedBytes += Number(row.byte_size);
+        dropped += 1;
+    }
+    return { dropped, freedBytes, totalBytesAfter: totalBytes };
+}
+
+module.exports = { evictUntilUnderBudget };
