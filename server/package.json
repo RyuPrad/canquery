@@ -1,0 +1,23 @@
+{
+    "name": "opencanada-server",
+    "version": "1.0.0",
+    "private": true,
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js",
+        "test": "jest --runInBand",
+        "migrate": "node scripts/migrate.js"
+    },
+    "dependencies": {
+        "express": "^5.1.0",
+        "pg": "^8.13.0",
+        "helmet": "^8.0.0",
+        "express-rate-limit": "^7.4.0",
+        "dotenv": "^16.4.0"
+    },
+    "devDependencies": {
+        "jest": "^29.7.0",
+        "supertest": "^7.0.0"
+    }
+}
