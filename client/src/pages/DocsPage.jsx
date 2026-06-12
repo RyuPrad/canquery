@@ -62,6 +62,13 @@ export default function DocsPage() {
         />
         <Endpoint
           method="GET"
+          path="/api/v1/resources/popular"
+          desc="The most queried resources over a recent window. Params: days (1-30, default 7), limit (1-20, default 6)."
+          example={'curl "' + BASE + '/api/v1/resources/popular?days=7&limit=6"'}
+          runPath="/api/v1/resources/popular"
+        />
+        <Endpoint
+          method="GET"
           path="/api/v1/resources/:id/query.csv"
           desc="Download the current query (same q, filters and sort parameters) as a CSV file, capped at 10,000 rows."
           example={'curl -OJ "' + BASE + '/api/v1/resources/RESOURCE_ID/query.csv?filters={' + '"year":{"op":"gte","value":2020}' + '}"'}

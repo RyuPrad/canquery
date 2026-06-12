@@ -36,6 +36,14 @@ export async function fetchRecentlyUnlocked() {
   }
 }
 
+export async function fetchPopular() {
+  try {
+    return await getJSON('/api/v1/resources/popular');
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchStats() {
   try {
     return await getJSON('/api/v1/stats');

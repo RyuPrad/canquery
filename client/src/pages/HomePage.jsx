@@ -7,6 +7,7 @@ import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import RecentRail from '../components/RecentRail.jsx';
+import PopularRail from '../components/PopularRail.jsx';
 import { formatRelativeTime } from '../utils/time.js';
 
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
@@ -169,7 +170,12 @@ export default function HomePage() {
         </select>
       </div>
 
-      {!debouncedQuery && !org && !format && !keyword && <RecentRail />}
+      {!debouncedQuery && !org && !format && !keyword && (
+        <>
+          <PopularRail />
+          <RecentRail />
+        </>
+      )}
 
       <section className="mt-6 space-y-3">
         {loading && <LoadingSpinner label="Searching the catalogue" />}

@@ -1,8 +1,10 @@
 jest.mock('../db/catalogReadQueries', () => ({ searchDatasets: jest.fn(), getDatasetByIdOrName: jest.fn(), listResourcesForDataset: jest.fn(), getResourceById: jest.fn(), listOrganizations: jest.fn(), getStats: jest.fn(), pingDb: jest.fn(), getLastSyncTime: jest.fn(), listRecentlyIngested: jest.fn() }));
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
+jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
+const queryLog = require('../db/queryLogQueries');
 const store = require('../db/storeQueries');
 const app = require('../app');
 beforeEach(() => { jest.clearAllMocks(); store.touchLastAccessed.mockImplementation(() => Promise.resolve()); });
@@ -18,6 +20,15 @@ describe('query API local and unqueryable paths', () => {
         expect(res.body.data.fields[0]).toEqual({ id: '_id', type: 'int' });
         expect(store.queryStoreTable).toHaveBeenCalledWith({ tableName: 'r_abc123', knownColumns: ['col1'], q: undefined, filters: [{ column: 'col1', op: 'eq', value: 'v' }], sortSql: '"col1" DESC', limit: 10, offset: 0 });
         expect(store.touchLastAccessed).toHaveBeenCalledWith('ing-1');
+        expect(queryLog.logQueryHit).toHaveBeenCalledWith('ing-1', 'ingested');
+    });
+
+    test('a failing query log write never breaks the response', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'ing-1', ingest_status: 'ready', table_name: 'r_abc123', ingested_columns: [{ id: 'col1', type: 'text' }] }));
+        store.queryStoreTable.mockResolvedValue({ records: [{ _id: 1, col1: 'v' }], total: 1 });
+        queryLog.logQueryHit.mockRejectedValue(new Error('pg down'));
+        const res = await request(app).get('/api/v1/resources/ing-1/query');
+        expect(res.status).toBe(200);
     });
 
     test('unknown filter column on an ingested resource is a 400', async () => {

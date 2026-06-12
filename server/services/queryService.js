@@ -3,6 +3,7 @@ const { computeQueryMode } = require('./catalogService');
 const { datastoreSearch } = require('./ckanClient');
 const { parseFilters, validateSort, validateAggregation } = require('../utils/filterGrammar');
 const { queryStoreTable, aggregateStoreTable, touchLastAccessed } = require('../db/storeQueries');
+const { logQueryHit } = require('../db/queryLogQueries');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 
@@ -44,6 +45,7 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
         const cacheKey = JSON.stringify([id, q || null, ckanFilters || null, sort || null, lim, off]);
         const result = await proxyCache.get(cacheKey, () => datastoreSearch({ resourceId: id, q, filters: ckanFilters, sort, limit: lim, offset: off }));
         if (!result) throw new AppError('Upstream datastore unavailable', 502);
+        logQueryHit(id, 'datastore').catch(() => {});
         return { query_mode: 'datastore', fields: result.fields, records: result.records, total: result.total };
     }
 
@@ -59,11 +61,13 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
             const sortInfo = validateSort(sort, ['key', 'value']);
             const { records, total } = await aggregateStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
             touchLastAccessed(id).catch(() => {});
+            logQueryHit(id, 'ingested').catch(() => {});
             return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket } };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records, total } = await queryStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
         touchLastAccessed(id).catch(() => {});
+        logQueryHit(id, 'ingested').catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);
         return { query_mode: 'ingested', fields, records, total };
     }
@@ -96,6 +100,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
         const result = await datastoreSearch({ resourceId: id, q, filters: ckanFilters, sort, limit: cap, offset: 0 });
         if (!result) throw new AppError('Upstream datastore unavailable', 502);
+        logQueryHit(id, 'datastore').catch(() => {});
         return { fields: result.fields, records: result.records };
     }
 
@@ -111,11 +116,13 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
             const sortInfo = validateSort(sort, ['key', 'value']);
             const { records } = await aggregateStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: cap, offset: 0 });
             touchLastAccessed(id).catch(() => {});
+            logQueryHit(id, 'ingested').catch(() => {});
             return { fields: aggSpec.fields, records };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records } = await queryStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: cap, offset: 0 });
         touchLastAccessed(id).catch(() => {});
+        logQueryHit(id, 'ingested').catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);
         return { fields, records };
     }

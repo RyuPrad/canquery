@@ -59,6 +59,12 @@ const getRecentlyUnlocked = async (req, res) => {
     res.json(envelope(items));
 };
 
+const getPopular = async (req, res) => {
+    const items = await catalogService.popularResources({ days: req.query.days, limit: req.query.limit });
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(envelope(items));
+};
+
 const healthz = async (req, res) => {
     const health = await catalogService.healthz();
     res.set('Cache-Control', 'no-store');
@@ -72,5 +78,6 @@ module.exports = {
     listOrganizations: catchAsync(listOrganizations),
     getStats: catchAsync(getStats),
     getRecentlyUnlocked: catchAsync(getRecentlyUnlocked),
+    getPopular: catchAsync(getPopular),
     healthz: catchAsync(healthz)
 };

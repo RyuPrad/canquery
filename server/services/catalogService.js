@@ -1,4 +1,5 @@
 const catalogReadQueries = require('../db/catalogReadQueries');
+const queryLogQueries = require('../db/queryLogQueries');
 const { packageList } = require('./ckanClient');
 const AppError = require('../utils/AppError');
 const { createCache } = require('../utils/cache');
@@ -153,6 +154,31 @@ const recentlyUnlocked = async (limit) => {
     }));
 };
 
+const clampDays = (days, def, max) => {
+    if (days === undefined || days === null) return def;
+    const n = Number(days);
+    if (!Number.isInteger(n) || n < 1) throw new AppError('Invalid days', 400);
+    return Math.min(n, max);
+};
+
+const popularResources = async ({ days, limit }) => {
+    const d = clampDays(days, 7, 30);
+    const lim = clampLimit(limit, 6, 20);
+    const rows = await queryLogQueries.listPopularResources({ days: d, limit: lim });
+    return rows.map((r) => ({
+        resource_id: r.resource_id,
+        hits: Number(r.hits),
+        last_queried_at: r.last_queried_at,
+        name: { en: r.name_en, fr: r.name_fr },
+        format: r.format,
+        dataset: {
+            id: r.dataset_id,
+            name: r.dataset_name,
+            title: { en: r.dataset_title_en, fr: r.dataset_title_fr }
+        }
+    }));
+};
+
 const upstreamCache = createCache({ name: 'upstream-health', ttlMs: 60000, negativeTtlMs: 15000 });
 
 const healthz = async () => {
@@ -175,4 +201,4 @@ const healthz = async () => {
     return { ok: db && upstream, db, upstream };
 };
 
-module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, recentlyUnlocked };
+module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, recentlyUnlocked, popularResources };

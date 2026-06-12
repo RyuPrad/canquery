@@ -1,3 +1,4 @@
+jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 jest.mock('../db/catalogReadQueries', () => ({
     searchDatasets: jest.fn(),
     getDatasetByIdOrName: jest.fn(),

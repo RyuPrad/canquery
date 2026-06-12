@@ -1,8 +1,10 @@
 jest.mock('../db/catalogReadQueries', () => ({ searchDatasets: jest.fn(), getDatasetByIdOrName: jest.fn(), listResourcesForDataset: jest.fn(), getResourceById: jest.fn(), listOrganizations: jest.fn(), getStats: jest.fn(), pingDb: jest.fn(), getLastSyncTime: jest.fn(), listRecentlyIngested: jest.fn() }));
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
+jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
+const queryLog = require('../db/queryLogQueries');
 const ckan = require('../services/ckanClient');
 const app = require('../app');
 beforeEach(() => { jest.clearAllMocks(); });
@@ -18,6 +20,14 @@ describe('query API datastore path', () => {
         expect(res.body.meta.query_mode).toBe('datastore');
         expect(res.body.meta.source).toBe('opencanada');
         expect(ckan.datastoreSearch).toHaveBeenCalledWith({ resourceId: 'ds-1', q: undefined, filters: undefined, sort: undefined, limit: 2, offset: 0 });
+    });
+
+    test('datastore queries are logged as hits', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-log', datastore_active: true }));
+        ckan.datastoreSearch.mockResolvedValue({ fields: [], records: [], total: 0 });
+        const res = await request(app).get('/api/v1/resources/ds-log/query');
+        expect(res.status).toBe(200);
+        expect(queryLog.logQueryHit).toHaveBeenCalledWith('ds-log', 'datastore');
     });
 
     test('datastore proxy responses are cached', async () => {

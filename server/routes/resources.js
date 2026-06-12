@@ -5,6 +5,7 @@ const queryController = require('../controllers/queryController');
 const ingestController = require('../controllers/ingestController');
 const { ingestLimiter } = require('../middleware/rateLimits');
 router.get('/recently-unlocked', catalogController.getRecentlyUnlocked);
+router.get('/popular', catalogController.getPopular);
 router.get('/:id', catalogController.getResource);
 router.get('/:id/query', queryController.queryResource);
 router.get('/:id/query.csv', queryController.exportResourceCsv);

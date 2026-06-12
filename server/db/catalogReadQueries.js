@@ -98,7 +98,7 @@ async function pingDb() {
 
 async function getLastSyncTime() {
     const result = await pool.query(`
-        SELECT finished_at FROM sync_runs WHERE ok ORDER BY id DESC LIMIT 1
+        SELECT finished_at FROM sync_runs WHERE ok AND kind IN ('full','incremental') ORDER BY id DESC LIMIT 1
     `);
     return result.rows[0] ? result.rows[0].finished_at : null;
 }
