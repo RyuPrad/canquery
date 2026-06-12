@@ -40,7 +40,10 @@ app.use((req, res, next) => {
         return next();
     }
 
-    if (allowlist.has(origin)) {
+    // Same-origin requests carry an Origin header too (e.g. module scripts
+    // are always fetched in CORS mode) - the app's own origin is always allowed.
+    const selfOrigin = req.protocol + '://' + req.headers.host;
+    if (allowlist.has(origin) || origin === selfOrigin) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
