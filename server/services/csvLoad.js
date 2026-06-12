@@ -3,7 +3,7 @@ const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { inferColumns, pgTypeFor } = require('../utils/csvTypes');
+const { inferColumns, pgTypeFor, detectHeaderIndex } = require('../utils/csvTypes');
 const { quoteIdent } = require('../utils/filterGrammar');
 
 function escapeCsvValue(v) {
@@ -13,25 +13,27 @@ function escapeCsvValue(v) {
 
 async function readSample(filePath, { delimiter, encoding }) {
     return new Promise((resolve, reject) => {
-        let headers;
-        const rows = [];
+        const records = [];
         let settled = false;
         const readStream = fs.createReadStream(filePath, { encoding });
         const parser = parse({ bom: true, delimiter, relax_column_count: true, skip_empty_lines: true });
 
+        const finish = () => {
+            const headerIndex = detectHeaderIndex(records);
+            const headers = records[headerIndex];
+            const rows = records.slice(headerIndex + 1);
+            return { headers, rows, skipRecords: headerIndex + 1 };
+        };
+
         parser.on('readable', () => {
             let record;
             while ((record = parser.read()) !== null) {
-                if (headers === undefined) {
-                    headers = record;
-                } else {
-                    rows.push(record);
-                    if (rows.length === 1000) {
-                        settled = true;
-                        readStream.destroy();
-                        parser.destroy();
-                        resolve({ headers, rows });
-                    }
+                records.push(record);
+                if (records.length === 1011) {
+                    settled = true;
+                    readStream.destroy();
+                    parser.destroy();
+                    resolve(finish());
                 }
             }
         });
@@ -39,7 +41,7 @@ async function readSample(filePath, { delimiter, encoding }) {
         parser.on('end', () => {
             if (!settled) {
                 settled = true;
-                resolve({ headers, rows });
+                resolve(finish());
             }
         });
 
@@ -55,7 +57,7 @@ async function readSample(filePath, { delimiter, encoding }) {
 }
 
 async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols }) {
-    const { headers, rows } = await readSample(filePath, { delimiter, encoding });
+    const { headers, rows, skipRecords } = await readSample(filePath, { delimiter, encoding });
     if (!headers || headers.length === 0) throw new Error('empty CSV');
     if (headers.length > maxCols) {
         const err = new Error('column count ' + headers.length + ' exceeds cap ' + maxCols);
@@ -72,12 +74,12 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     const copySql = 'COPY ' + table + ' (' + colList + ') FROM STDIN WITH (FORMAT csv)';
 
     let rowCount = 0;
-    let first = true;
+    let skipped = 0;
     const toCsv = new Transform({
         objectMode: true,
         transform(record, enc, cb) {
-            if (first) {
-                first = false;
+            if (skipped < skipRecords) {
+                skipped += 1;
                 return cb();
             }
             rowCount += 1;

@@ -96,6 +96,28 @@ async function pingDb() {
     return true;
 }
 
+async function getLastSyncTime() {
+    const result = await pool.query(`
+        SELECT finished_at FROM sync_runs WHERE ok ORDER BY id DESC LIMIT 1
+    `);
+    return result.rows[0] ? result.rows[0].finished_at : null;
+}
+
+async function listRecentlyIngested(limit) {
+    const result = await pool.query(`
+        SELECT ir.resource_id, ir.ingested_at, ir.row_count,
+               r.name_en, r.name_fr, r.format, r.dataset_id,
+               d.name AS dataset_name, d.title_en AS dataset_title_en, d.title_fr AS dataset_title_fr
+        FROM ingested_resources ir
+        JOIN resources r ON r.id = ir.resource_id
+        JOIN datasets d ON d.id = r.dataset_id
+        WHERE ir.status = 'ready'
+        ORDER BY ir.ingested_at DESC
+        LIMIT $1
+    `, [limit]);
+    return result.rows;
+}
+
 module.exports = {
     searchDatasets,
     getDatasetByIdOrName,
@@ -103,5 +125,7 @@ module.exports = {
     getResourceById,
     listOrganizations,
     getStats,
-    pingDb
+    pingDb,
+    getLastSyncTime,
+    listRecentlyIngested
 };

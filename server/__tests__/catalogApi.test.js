@@ -5,7 +5,9 @@ jest.mock('../db/catalogReadQueries', () => ({
     getResourceById: jest.fn(),
     listOrganizations: jest.fn(),
     getStats: jest.fn(),
-    pingDb: jest.fn()
+    pingDb: jest.fn(),
+    getLastSyncTime: jest.fn(),
+    listRecentlyIngested: jest.fn()
 }));
 
 jest.mock('../services/ckanClient', () => ({

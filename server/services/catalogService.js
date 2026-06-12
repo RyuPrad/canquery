@@ -114,14 +114,33 @@ const listOrganizations = async ({ limit, cursor }) => {
 
 const getStats = async () => {
     const row = await catalogReadQueries.getStats();
+    const lastSyncedAt = await catalogReadQueries.getLastSyncTime();
     return {
         datasets: row.datasets,
         resources: row.resources,
         datastore_active_resources: row.datastore_active_resources,
         ingested_resources: row.ingested_resources,
         store_bytes: Number(row.store_bytes),
-        organizations: row.organizations
+        organizations: row.organizations,
+        last_synced_at: lastSyncedAt
     };
+};
+
+const recentlyUnlocked = async (limit) => {
+    const lim = clampLimit(limit, 6, 20);
+    const rows = await catalogReadQueries.listRecentlyIngested(lim);
+    return rows.map((r) => ({
+        resource_id: r.resource_id,
+        ingested_at: r.ingested_at,
+        row_count: r.row_count === null || r.row_count === undefined ? null : Number(r.row_count),
+        name: { en: r.name_en, fr: r.name_fr },
+        format: r.format,
+        dataset: {
+            id: r.dataset_id,
+            name: r.dataset_name,
+            title: { en: r.dataset_title_en, fr: r.dataset_title_fr }
+        }
+    }));
 };
 
 const upstreamCache = createCache({ name: 'upstream-health', ttlMs: 60000, negativeTtlMs: 15000 });
@@ -146,4 +165,4 @@ const healthz = async () => {
     return { ok: db && upstream, db, upstream };
 };
 
-module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode };
+module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, recentlyUnlocked };

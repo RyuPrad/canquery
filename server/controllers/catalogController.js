@@ -53,6 +53,12 @@ const getStats = async (req, res) => {
     res.json(envelope(stats));
 };
 
+const getRecentlyUnlocked = async (req, res) => {
+    const items = await catalogService.recentlyUnlocked(req.query.limit);
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(envelope(items));
+};
+
 const healthz = async (req, res) => {
     const health = await catalogService.healthz();
     res.set('Cache-Control', 'no-store');
@@ -65,5 +71,6 @@ module.exports = {
     getResource: catchAsync(getResource),
     listOrganizations: catchAsync(listOrganizations),
     getStats: catchAsync(getStats),
+    getRecentlyUnlocked: catchAsync(getRecentlyUnlocked),
     healthz: catchAsync(healthz)
 };

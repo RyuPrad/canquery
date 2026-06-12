@@ -61,6 +61,24 @@ function inferColumns(headers, sampleRows) {
     });
 }
 
+// Detect which of the first records is the real header row. Returns the
+// index of the first record that looks header-like: at least 2 non-empty
+// cells AND at least 60% of the widest row seen in the scan window. Files
+// that are legitimately single-column (max 1 non-empty cell) return 0.
+function detectHeaderIndex(records) {
+    const window = records.slice(0, 10);
+    if (window.length === 0) return 0;
+    const nonEmpty = (r) => (Array.isArray(r) ? r.filter(v => v !== null && v !== undefined && String(v).trim() !== '').length : 0);
+    const counts = window.map(nonEmpty);
+    const maxCount = Math.max(...counts);
+    if (maxCount <= 1) return 0;
+    const threshold = Math.max(2, Math.ceil(0.6 * maxCount));
+    for (let i = 0; i < window.length; i += 1) {
+        if (counts[i] >= threshold) return i;
+    }
+    return 0;
+}
+
 function pgTypeFor(type) {
     switch (type) {
         case 'INTEGER':
@@ -78,4 +96,4 @@ function pgTypeFor(type) {
     }
 }
 
-module.exports = { sanitizeColumnName, inferType, inferColumns, pgTypeFor };
+module.exports = { sanitizeColumnName, inferType, inferColumns, pgTypeFor, detectHeaderIndex };
