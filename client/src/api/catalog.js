@@ -12,8 +12,8 @@ export function fetchResource(id) {
   return getJSON('/api/v1/resources/' + encodeURIComponent(id));
 }
 
-export function queryResource(id, { q, filters, sort, limit, offset } = {}) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset });
+export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}) {
+  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket });
 }
 
 export function enqueueIngest(id) {

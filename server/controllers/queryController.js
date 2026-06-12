@@ -3,12 +3,12 @@ const queryService = require('../services/queryService');
 const { envelope } = require('../utils/envelope');
 
 async function queryResource(req, res) {
-    const { q, filters, sort, limit, offset } = req.query;
-    const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset });
+    const { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = req.query;
+    const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket });
     res.set('Cache-Control', 'public, max-age=60');
     res.json(envelope(
         { fields: result.fields, records: result.records, total: result.total },
-        { meta: { query_mode: result.query_mode } }
+        { meta: Object.assign({ query_mode: result.query_mode }, result.aggregation ? { aggregation: result.aggregation } : {}) }
     ));
 }
 
@@ -20,8 +20,8 @@ function csvEscape(v) {
 }
 
 async function exportResourceCsv(req, res) {
-    const { q, filters, sort } = req.query;
-    const { fields, records } = await queryService.queryResourceForExport(req.params.id, { q, filters, sort });
+    const { q, filters, sort, group_by, agg, agg_column, bucket } = req.query;
+    const { fields, records } = await queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket });
     const cols = fields.map(f => f.id);
     const lines = [cols.map(csvEscape).join(',')];
     for (const record of records) {

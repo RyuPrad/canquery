@@ -88,8 +88,14 @@ export default function DocsPage() {
         <Endpoint
           method="GET"
           path="/api/v1/resources/:id/query"
-          desc={'The unified query endpoint. Works identically for upstream-datastore and locally-ingested resources: params q, filters (JSON), sort, limit, offset. filters accepts {"col":"value"} or {"col":{"op":"lt|gt|lte|gte|eq|contains","value":...}}.'}
+          desc={'The unified query endpoint. Works identically for upstream-datastore and locally-ingested resources: params q, filters (JSON), sort, limit, offset. filters accepts {"col":"value"} or {"col":{"op":"lt|gt|lte|gte|eq|contains","value":...}}. Unlocked resources also support aggregation: group_by, agg (count|sum|avg|min|max), agg_column (required unless count), bucket (year|month|day, date columns only). Aggregated responses return key/value records; sort accepts "key" or "value". Same params work on /query.csv.'}
           example={'curl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?filters={"year":{"op":"gte","value":2020}}&limit=10"'}
+        />
+        <Endpoint
+          method="GET"
+          path="/api/v1/resources/:id/query (aggregated)"
+          desc="Example: count of rows per province, biggest first; or monthly sums over a date column."
+          example={'curl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?group_by=province&agg=count&sort=value desc"\ncurl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?group_by=date&agg=sum&agg_column=amount&bucket=month&sort=key asc"'}
         />
         <Endpoint
           method="POST"

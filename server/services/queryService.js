@@ -1,12 +1,14 @@
 const { getResourceById } = require('../db/catalogReadQueries');
 const { computeQueryMode } = require('./catalogService');
 const { datastoreSearch } = require('./ckanClient');
-const { parseFilters, validateSort } = require('../utils/filterGrammar');
-const { queryStoreTable, touchLastAccessed } = require('../db/storeQueries');
+const { parseFilters, validateSort, validateAggregation } = require('../utils/filterGrammar');
+const { queryStoreTable, aggregateStoreTable, touchLastAccessed } = require('../db/storeQueries');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000 });
+
+const hasAggParams = (group_by, agg, agg_column, bucket) => [group_by, agg, agg_column, bucket].some(v => v !== undefined && v !== null && v !== '');
 
 function clampLimit(limit) {
     if (limit === undefined || limit === null) return 20;
@@ -22,7 +24,7 @@ function clampOffset(offset) {
     return n;
 }
 
-async function queryResource(id, { q, filters, sort, limit, offset } = {}) {
+async function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}) {
     const lim = clampLimit(limit);
     const off = clampOffset(offset);
 
@@ -33,6 +35,9 @@ async function queryResource(id, { q, filters, sort, limit, offset } = {}) {
     const parsedFilters = parseFilters(filters);
 
     if (mode === 'datastore') {
+        if (hasAggParams(group_by, agg, agg_column, bucket)) {
+            throw new AppError('Aggregation is only supported for unlocked (ingested) resources', 400);
+        }
         if (parsedFilters.some(f => f.op !== 'eq')) throw new AppError('Only equality filters are supported for datastore resources', 400);
         if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
@@ -48,6 +53,13 @@ async function queryResource(id, { q, filters, sort, limit, offset } = {}) {
         const knownSet = new Set(knownColumns);
         for (const f of parsedFilters) {
             if (!knownSet.has(f.column)) throw new AppError('unknown column: ' + f.column, 400);
+        }
+        const aggSpec = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
+        if (aggSpec) {
+            const sortInfo = validateSort(sort, ['key', 'value']);
+            const { records, total } = await aggregateStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
+            touchLastAccessed(id).catch(() => {});
+            return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket } };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records, total } = await queryStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
@@ -67,7 +79,7 @@ async function queryResource(id, { q, filters, sort, limit, offset } = {}) {
     throw err;
 }
 
-async function queryResourceForExport(id, { q, filters, sort } = {}) {
+async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg_column, bucket } = {}) {
     const cap = Number(process.env.EXPORT_MAX_ROWS) || 10000;
     const row = await getResourceById(id);
     if (!row) throw new AppError('Resource not found', 404);
@@ -76,6 +88,9 @@ async function queryResourceForExport(id, { q, filters, sort } = {}) {
     const parsedFilters = parseFilters(filters);
 
     if (mode === 'datastore') {
+        if (hasAggParams(group_by, agg, agg_column, bucket)) {
+            throw new AppError('Aggregation is only supported for unlocked (ingested) resources', 400);
+        }
         if (parsedFilters.some(f => f.op !== 'eq')) throw new AppError('Only equality filters are supported for datastore resources', 400);
         if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
@@ -90,6 +105,13 @@ async function queryResourceForExport(id, { q, filters, sort } = {}) {
         const knownSet = new Set(knownColumns);
         for (const f of parsedFilters) {
             if (!knownSet.has(f.column)) throw new AppError('unknown column: ' + f.column, 400);
+        }
+        const aggSpec = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
+        if (aggSpec) {
+            const sortInfo = validateSort(sort, ['key', 'value']);
+            const { records } = await aggregateStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: cap, offset: 0 });
+            touchLastAccessed(id).catch(() => {});
+            return { fields: aggSpec.fields, records };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records } = await queryStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: cap, offset: 0 });

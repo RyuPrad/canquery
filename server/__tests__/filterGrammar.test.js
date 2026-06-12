@@ -1,4 +1,4 @@
-const { parseFilters, buildWhere, validateSort, quoteIdent } = require('../utils/filterGrammar');
+const { parseFilters, buildWhere, validateSort, quoteIdent, validateAggregation } = require('../utils/filterGrammar');
 
 function expect400(fn) {
     expect(fn).toThrow();
@@ -93,6 +93,139 @@ describe('filterGrammar', () => {
             expect400(() => validateSort('amount; DROP TABLE x', ['amount']));
             expect400(() => validateSort('unknown_col asc', ['amount']));
             expect(validateSort(undefined, ['amount'])).toBeNull();
+        });
+    });
+
+    describe('validateAggregation', () => {
+        const cols = [
+            { id: 'province', type: 'TEXT' },
+            { id: 'amount', type: 'NUMERIC' },
+            { id: 'n', type: 'INTEGER' },
+            { id: 'day', type: 'DATE' },
+            { id: 'ts', type: 'TIMESTAMPTZ' }
+        ];
+
+        it('returns null when all params are absent', () => {
+            expect(validateAggregation({}, cols)).toBeNull();
+            expect(validateAggregation({ group_by: '', agg: undefined }, cols)).toBeNull();
+        });
+
+        it('throws 400 when only group_by is given', () => {
+            expect400(() => validateAggregation({ group_by: 'province' }, cols));
+        });
+
+        it('throws 400 when only agg is given', () => {
+            expect400(() => validateAggregation({ agg: 'count' }, cols));
+        });
+
+        it('throws 400 when only bucket is given', () => {
+            expect400(() => validateAggregation({ bucket: 'month' }, cols));
+        });
+
+        it('throws 400 on unknown group_by column', () => {
+            expect400(() => validateAggregation({ group_by: 'unknown', agg: 'count' }, cols));
+        });
+
+        it('throws 400 on agg median', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: 'median' }, cols));
+        });
+
+        it('throws 400 on agg __proto__', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: '__proto__' }, cols));
+        });
+
+        it('throws 400 when agg_column passed with count', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: 'count', agg_column: 'amount' }, cols));
+        });
+
+        it('throws 400 when agg_column missing for sum', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: 'sum' }, cols));
+        });
+
+        it('throws 400 on unknown agg_column', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: 'sum', agg_column: 'unknown' }, cols));
+        });
+
+        it('throws 400 for sum over the TEXT column province', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: 'sum', agg_column: 'province' }, cols));
+        });
+
+        it('throws 400 for bucket week', () => {
+            expect400(() => validateAggregation({ group_by: 'ts', agg: 'count', bucket: 'week' }, cols));
+        });
+
+        it('throws 400 for bucket month when group_by is province (TEXT)', () => {
+            expect400(() => validateAggregation({ group_by: 'province', agg: 'count', bucket: 'month' }, cols));
+        });
+
+        it('count over province returns correct fields', () => {
+            const result = validateAggregation({ group_by: 'province', agg: 'count' }, cols);
+            expect(result).toEqual({
+                groupBy: 'province',
+                agg: 'count',
+                aggColumn: null,
+                bucket: null,
+                fields: [
+                    { id: 'key', type: 'TEXT' },
+                    { id: 'value', type: 'INTEGER' }
+                ]
+            });
+        });
+
+        it('avg of amount grouped by province returns value type NUMERIC', () => {
+            const result = validateAggregation({ group_by: 'province', agg: 'avg', agg_column: 'amount' }, cols);
+            expect(result).toEqual({
+                groupBy: 'province',
+                agg: 'avg',
+                aggColumn: 'amount',
+                bucket: null,
+                fields: [
+                    { id: 'key', type: 'TEXT' },
+                    { id: 'value', type: 'NUMERIC' }
+                ]
+            });
+        });
+
+        it('max of day grouped by province returns value type DATE', () => {
+            const result = validateAggregation({ group_by: 'province', agg: 'max', agg_column: 'day' }, cols);
+            expect(result).toEqual({
+                groupBy: 'province',
+                agg: 'max',
+                aggColumn: 'day',
+                bucket: null,
+                fields: [
+                    { id: 'key', type: 'TEXT' },
+                    { id: 'value', type: 'DATE' }
+                ]
+            });
+        });
+
+        it('count grouped by ts with bucket month returns key type TIMESTAMPTZ and bucket month', () => {
+            const result = validateAggregation({ group_by: 'ts', agg: 'count', bucket: 'month' }, cols);
+            expect(result).toEqual({
+                groupBy: 'ts',
+                agg: 'count',
+                aggColumn: null,
+                bucket: 'month',
+                fields: [
+                    { id: 'key', type: 'TIMESTAMPTZ' },
+                    { id: 'value', type: 'INTEGER' }
+                ]
+            });
+        });
+
+        it('min of n grouped by province returns value type INTEGER', () => {
+            const result = validateAggregation({ group_by: 'province', agg: 'min', agg_column: 'n' }, cols);
+            expect(result).toEqual({
+                groupBy: 'province',
+                agg: 'min',
+                aggColumn: 'n',
+                bucket: null,
+                fields: [
+                    { id: 'key', type: 'TEXT' },
+                    { id: 'value', type: 'INTEGER' }
+                ]
+            });
         });
     });
 });

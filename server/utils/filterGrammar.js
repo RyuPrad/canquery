@@ -122,4 +122,85 @@ function validateSort(sort, knownColumns) {
     };
 }
 
-module.exports = { parseFilters, buildWhere, validateSort, quoteIdent, ALLOWED_OPS };
+const AGG_FNS = { count: true, sum: true, avg: true, min: true, max: true };
+
+function validateAggregation(raw, columns) {
+    let group_by = raw === undefined || raw === null ? undefined : raw.group_by;
+    let agg = raw === undefined || raw === null ? undefined : raw.agg;
+    let agg_column = raw === undefined || raw === null ? undefined : raw.agg_column;
+    let bucket = raw === undefined || raw === null ? undefined : raw.bucket;
+
+    if (group_by === '') group_by = undefined;
+    if (agg === '') agg = undefined;
+    if (agg_column === '') agg_column = undefined;
+    if (bucket === '') bucket = undefined;
+
+    if (group_by === undefined && agg === undefined && agg_column === undefined && bucket === undefined) {
+        return null;
+    }
+
+    if (!(group_by !== undefined && agg !== undefined)) {
+        throw new AppError('group_by and agg are required together', 400);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(AGG_FNS, agg)) {
+        throw new AppError('invalid agg function', 400);
+    }
+
+    const groupCol = columns.find(c => c.id === group_by);
+    if (!groupCol) {
+        throw new AppError('unknown column: ' + group_by, 400);
+    }
+
+    let aggCol = null;
+    if (agg === 'count') {
+        if (agg_column !== undefined) {
+            throw new AppError('agg_column is not allowed with count', 400);
+        }
+    } else {
+        if (agg_column === undefined) {
+            throw new AppError('agg_column is required for ' + agg, 400);
+        }
+        aggCol = columns.find(c => c.id === agg_column);
+        if (!aggCol) {
+            throw new AppError('unknown column: ' + agg_column, 400);
+        }
+        if (agg === 'sum' || agg === 'avg') {
+            if (aggCol.type !== 'INTEGER' && aggCol.type !== 'NUMERIC') {
+                throw new AppError('sum/avg require a numeric column', 400);
+            }
+        }
+    }
+
+    if (bucket !== undefined) {
+        if (!['year', 'month', 'day'].includes(bucket)) {
+            throw new AppError('invalid bucket', 400);
+        }
+        if (groupCol.type !== 'DATE' && groupCol.type !== 'TIMESTAMPTZ') {
+            throw new AppError('bucket requires a date or timestamp group_by column', 400);
+        }
+    }
+
+    const keyType = bucket ? 'TIMESTAMPTZ' : groupCol.type;
+    let valueType;
+    if (agg === 'count') {
+        valueType = 'INTEGER';
+    } else if (agg === 'sum' || agg === 'avg') {
+        valueType = 'NUMERIC';
+    } else {
+        valueType = aggCol.type;
+    }
+
+    return {
+        groupBy: group_by,
+        agg: agg,
+        aggColumn: agg_column || null,
+        bucket: bucket || null,
+        fields: [
+            { id: 'key', type: keyType },
+            { id: 'value', type: valueType }
+        ]
+    };
+}
+
+module.exports = { parseFilters, buildWhere, validateSort, quoteIdent, ALLOWED_OPS, validateAggregation };

@@ -264,7 +264,7 @@ function ResourcePage() {
             <button className={'tab tab-sm' + (view === 'chart' ? ' tab-active' : '')} onClick={() => setView('chart')}>Chart</button>
           </div>
           {view === 'chart' ? (
-            <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} />
+            <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} />
           ) : (
           <DataTable
             fields={data.fields}
