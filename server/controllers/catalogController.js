@@ -71,6 +71,12 @@ const healthz = async (req, res) => {
     res.status(health.ok ? 200 : 503).json(health);
 };
 
+const getOps = async (req, res) => {
+    const status = await catalogService.opsStatus();
+    res.set('Cache-Control', 'no-store');
+    res.status(status.ok ? 200 : 503).json(envelope(status));
+};
+
 module.exports = {
     listDatasets: catchAsync(listDatasets),
     getDataset: catchAsync(getDataset),
@@ -79,5 +85,6 @@ module.exports = {
     getStats: catchAsync(getStats),
     getRecentlyUnlocked: catchAsync(getRecentlyUnlocked),
     getPopular: catchAsync(getPopular),
-    healthz: catchAsync(healthz)
+    healthz: catchAsync(healthz),
+    getOps: catchAsync(getOps)
 };

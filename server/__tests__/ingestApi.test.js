@@ -47,11 +47,12 @@ describe('ingest API', () => {
         expect(res.body.data.id).toBe(9);
     });
 
-    it('legacy XLS resources are refused with 422', async () => {
+    it('enqueues a legacy XLS and returns 202', async () => {
         queries.getResourceById.mockResolvedValue(makeRow({ id: 'xls-9', format: 'XLS', url: 'https://example.org/old.xls' }));
+        ingestQueries.enqueueJob.mockResolvedValue({ id: 11, resource_id: 'xls-9', status: 'pending', attempts: 0, error: null, created_at: '2026-01-01' });
         const res = await request(app).post('/api/v1/resources/xls-9/ingest');
-        expect(res.status).toBe(422);
-        expect(res.body.download_url).toBe('https://example.org/old.xls');
+        expect(res.status).toBe(202);
+        expect(res.body.data.id).toBe(11);
     });
 
     it('non-CSV resources are refused with 422 and a download url', async () => {

@@ -18,7 +18,8 @@
         "express-rate-limit": "^7.4.0",
         "helmet": "^8.0.0",
         "pg": "^8.13.0",
-        "pg-copy-streams": "^7.0.0"
+        "pg-copy-streams": "^7.0.0",
+        "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

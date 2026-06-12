@@ -117,7 +117,7 @@ describe('Catalog API', () => {
         const res = await request(app).get('/api/v1/datasets/d1');
         expect(res.status).toBe(200);
         const modes = res.body.data.resources.map(r => r.query_mode);
-        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'file-only']);
+        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'ingestable']);
     });
 
     it('GET /api/v1/stats wraps totals in the envelope', async () => {

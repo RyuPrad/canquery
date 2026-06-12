@@ -9,11 +9,11 @@ const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
 
 const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
 
-// XLSX gets a smaller cap than CSV: the zip decompresses in memory
-// (sharedStrings are parsed fully into RAM before any row is emitted).
+// Excel formats get a smaller cap than CSV: they decompress/parse in memory
+// (XLSX sharedStrings load fully into RAM; XLS is read whole).
 const ingestCapBytesFor = (format) => {
     if (format === 'CSV') return maxFileBytes();
-    if (format === 'XLSX') return MAX_XLSX_MB * 1024 * 1024;
+    if (format === 'XLSX' || format === 'XLS') return MAX_XLSX_MB * 1024 * 1024;
     return null;
 };
 
@@ -201,4 +201,32 @@ const healthz = async () => {
     return { ok: db && upstream, db, upstream };
 };
 
-module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, recentlyUnlocked, popularResources };
+const opsStatus = async () => {
+    const JOB_MAX_AGE_HOURS = { full: 48, incremental: 2, 'query-log-prune': 48, evict: 48 };
+    const health = await catalogReadQueries.getJobHealth();
+    const lastOkByJob = {};
+    for (const row of health.syncRows) {
+        lastOkByJob[row.kind] = row.last_ok_at;
+    }
+    lastOkByJob.evict = health.evictLastOkAt;
+    const jobs = {};
+    const now = Date.now();
+    for (const [name, maxAgeHours] of Object.entries(JOB_MAX_AGE_HOURS)) {
+        const lastOkAt = lastOkByJob[name];
+        if (lastOkAt === null || lastOkAt === undefined) {
+            jobs[name] = { last_ok_at: null, status: 'pending' };
+        } else {
+            const lastOkTime = new Date(lastOkAt).getTime();
+            const maxAgeMs = maxAgeHours * 3600 * 1000;
+            if (now - lastOkTime > maxAgeMs) {
+                jobs[name] = { last_ok_at: lastOkAt, status: 'stale' };
+            } else {
+                jobs[name] = { last_ok_at: lastOkAt, status: 'ok' };
+            }
+        }
+    }
+    const anyStale = Object.values(jobs).some(j => j.status === 'stale');
+    return { ok: !anyStale, jobs };
+};
+
+module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, recentlyUnlocked, popularResources, opsStatus };

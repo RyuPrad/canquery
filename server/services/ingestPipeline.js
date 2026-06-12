@@ -2,7 +2,7 @@ const fs = require('fs');
 const pool = require('../db/pool');
 const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
 const { loadCsvIntoStore } = require('./csvLoad');
-const { convertXlsxToCsv } = require('./xlsxConvert');
+const { convertXlsxToCsv, convertXlsToCsv } = require('./xlsxConvert');
 const { TABLE_NAME_RE } = require('../db/storeQueries');
 
 function tableNameFor(resourceId) {
@@ -22,16 +22,18 @@ async function ingestResource(resource, caps) {
         throw err;
     }
 
-    const isXlsx = String(resource.format || '').toUpperCase() === 'XLSX';
-    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: isXlsx ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent });
+    const format = String(resource.format || '').toUpperCase();
+    const isExcel = format === 'XLSX' || format === 'XLS';
+    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: isExcel ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent });
 
     const tempPaths = [filePath];
     try {
         let dataPath = filePath;
         let delimiter;
         let encoding;
-        if (isXlsx) {
-            const { csvPath } = await convertXlsxToCsv(filePath, { maxRows: caps.maxRows, maxCols: caps.maxCols, maxCsvBytes: caps.maxFileBytes });
+        if (isExcel) {
+            const convert = format === 'XLSX' ? convertXlsxToCsv : convertXlsToCsv;
+            const { csvPath } = await convert(filePath, { maxRows: caps.maxRows, maxCols: caps.maxCols, maxCsvBytes: caps.maxFileBytes });
             tempPaths.push(csvPath);
             dataPath = csvPath;
             delimiter = ',';

@@ -5,7 +5,7 @@ jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.r
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
 const store = require('../db/storeQueries');
-const { detectHeaderIndex } = require('../utils/csvTypes');
+const { detectHeaderIndex, mergeTwoRowHeader } = require('../utils/csvTypes');
 const app = require('../app');
 beforeEach(() => { jest.clearAllMocks(); store.touchLastAccessed.mockImplementation(() => Promise.resolve()); });
 
@@ -56,5 +56,18 @@ describe('UX batch endpoints', () => {
     it('detectHeaderIndex leaves single-column files alone', () => {
         expect(detectHeaderIndex([['only'], ['1'], ['2']])).toBe(0);
         expect(detectHeaderIndex([])).toBe(0);
+    });
+
+    it('mergeTwoRowHeader merges spanned headers with subheaders', () => {
+        expect(mergeTwoRowHeader(['Geography', '', '', 'Notes'], ['', '2020', '2021', ''])).toEqual(['Geography', 'Geography 2020', 'Geography 2021', 'Notes']);
+    });
+
+    it('mergeTwoRowHeader leaves plain text data tables alone', () => {
+        expect(mergeTwoRowHeader(['name', 'city'], ['alice', 'toronto'])).toBeNull();
+        expect(mergeTwoRowHeader(['name', 'city'], ['', 'x'])).toBeNull();
+    });
+
+    it('mergeTwoRowHeader needs real arrays', () => {
+        expect(mergeTwoRowHeader(['a'], ['b'])).toBeNull();
     });
 });

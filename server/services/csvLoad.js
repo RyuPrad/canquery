@@ -3,7 +3,7 @@ const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { inferColumns, pgTypeFor, detectHeaderIndex } = require('../utils/csvTypes');
+const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader } = require('../utils/csvTypes');
 const { quoteIdent } = require('../utils/filterGrammar');
 
 function escapeCsvValue(v) {
@@ -21,8 +21,10 @@ async function readSample(filePath, { delimiter, encoding }) {
         const finish = () => {
             const headerIndex = detectHeaderIndex(records);
             const headers = records[headerIndex];
-            const rows = records.slice(headerIndex + 1);
-            return { headers, rows, skipRecords: headerIndex + 1 };
+            const next = records[headerIndex + 1];
+            const merged = next ? mergeTwoRowHeader(headers, next) : null;
+            if (merged) return { headers: merged, rows: records.slice(headerIndex + 2), skipRecords: headerIndex + 2 };
+            return { headers, rows: records.slice(headerIndex + 1), skipRecords: headerIndex + 1 };
         };
 
         parser.on('readable', () => {

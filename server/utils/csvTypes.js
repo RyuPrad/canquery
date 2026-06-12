@@ -96,4 +96,69 @@ function pgTypeFor(type) {
     }
 }
 
-module.exports = { sanitizeColumnName, inferType, inferColumns, pgTypeFor, detectHeaderIndex };
+// Conservative two-row merged-header detection and merging.
+// False positives would corrupt good ingests, so guards are strict.
+function mergeTwoRowHeader(headerRow, nextRow) {
+    const isEmpty = (v) => v === null || v === undefined || String(v).trim() === '';
+
+    // Guard 1: Both arguments must be arrays with at least 2 cells each
+    if (!Array.isArray(headerRow) || !Array.isArray(nextRow) || headerRow.length < 2 || nextRow.length < 2) {
+        return null;
+    }
+
+    // Guard 2: width
+    const width = Math.max(headerRow.length, nextRow.length);
+
+    // Guard 3: count positions where headerRow is empty and nextRow is not
+    let gapsFilled = 0;
+    for (let p = 0; p < width; p += 1) {
+        if (isEmpty(headerRow[p]) && !isEmpty(nextRow[p])) {
+            gapsFilled += 1;
+        }
+    }
+    if (gapsFilled < 2) {
+        return null;
+    }
+
+    // Guard 4: require at least one position where headerRow is non-empty and nextRow is empty
+    let headerNonEmptyNextEmpty = false;
+    for (let p = 0; p < width; p += 1) {
+        if (!isEmpty(headerRow[p]) && isEmpty(nextRow[p])) {
+            headerNonEmptyNextEmpty = true;
+            break;
+        }
+    }
+    if (!headerNonEmptyNextEmpty) {
+        return null;
+    }
+
+    // Merge: forward-fill headerRow values across empty cells
+    const filled = [];
+    let lastSeen = undefined;
+    for (let p = 0; p < width; p += 1) {
+        if (!isEmpty(headerRow[p])) {
+            lastSeen = headerRow[p];
+        }
+        filled[p] = lastSeen;
+    }
+
+    // Build merged array
+    const merged = [];
+    for (let p = 0; p < width; p += 1) {
+        const filledVal = filled[p];
+        const nextVal = nextRow[p];
+        if (!isEmpty(filledVal) && !isEmpty(nextVal)) {
+            merged[p] = String(filledVal).trim() + ' ' + String(nextVal).trim();
+        } else if (!isEmpty(nextVal)) {
+            merged[p] = String(nextVal).trim();
+        } else if (filledVal === undefined) {
+            merged[p] = '';
+        } else {
+            merged[p] = String(filledVal).trim();
+        }
+    }
+
+    return merged;
+}
+
+module.exports = { sanitizeColumnName, inferType, inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader };

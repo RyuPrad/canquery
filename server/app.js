@@ -13,6 +13,7 @@ const resourcesRouter = require('./routes/resources');
 const organizationsRouter = require('./routes/organizations');
 const statsRouter = require('./routes/stats');
 const jobsRouter = require('./routes/jobs');
+const opsRouter = require('./routes/ops');
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/v1/resources', resourcesRouter);
 app.use('/api/v1/organizations', organizationsRouter);
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/jobs', jobsRouter);
+app.use('/api/v1/ops', opsRouter);
 
 // In production the API also serves the built SPA (client/dist) so the public
 // Caddy block stays a pure reverse_proxy - no extra container mounts on the

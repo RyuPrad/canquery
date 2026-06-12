@@ -118,6 +118,12 @@ async function listRecentlyIngested(limit) {
     return result.rows;
 }
 
+async function getJobHealth() {
+    const syncResult = await pool.query("SELECT kind, max(finished_at) AS last_ok_at FROM sync_runs WHERE ok GROUP BY kind");
+    const evictResult = await pool.query("SELECT max(finished_at) AS last_ok_at FROM ingest_runs WHERE ok AND error LIKE 'evict:%'");
+    return { syncRows: syncResult.rows, evictLastOkAt: evictResult.rows[0] ? evictResult.rows[0].last_ok_at : null };
+}
+
 module.exports = {
     searchDatasets,
     getDatasetByIdOrName,
@@ -127,5 +133,6 @@ module.exports = {
     getStats,
     pingDb,
     getLastSyncTime,
-    listRecentlyIngested
+    listRecentlyIngested,
+    getJobHealth
 };

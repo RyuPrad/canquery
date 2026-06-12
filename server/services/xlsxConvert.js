@@ -3,7 +3,24 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const ExcelJS = require('exceljs');
+const XLSX = require('xlsx');
 const { escapeCsvValue } = require('./csvLoad');
+
+// Normalize any Excel cell value to a string (shared by both converters)
+function normalizeCellValue(v) {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) return v.toISOString();
+    if (typeof v === 'object') {
+        if (v.error !== undefined) return '';
+        if (Array.isArray(v.richText)) return v.richText.map(s => s.text).join('');
+        if (v.formula !== undefined || v.sharedFormula !== undefined) {
+            return normalizeCellValue(v.result === undefined ? null : v.result);
+        }
+        if (v.text !== undefined) return String(v.text);
+        return '';
+    }
+    return String(v);
+}
 
 async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
     // styles must be 'cache' or date cells arrive as raw Excel serial
@@ -18,22 +35,6 @@ async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
 
     const csvPath = path.join(os.tmpdir(), 'opencanada-xlsx-' + crypto.randomUUID() + '.csv');
     const ws = fs.createWriteStream(csvPath);
-
-    // Local helper to normalize any Excel cell value to a string
-    function normalizeCellValue(v) {
-        if (v === null || v === undefined) return '';
-        if (v instanceof Date) return v.toISOString();
-        if (typeof v === 'object') {
-            if (v.error !== undefined) return '';
-            if (Array.isArray(v.richText)) return v.richText.map(s => s.text).join('');
-            if (v.formula !== undefined || v.sharedFormula !== undefined) {
-                return normalizeCellValue(v.result === undefined ? null : v.result);
-            }
-            if (v.text !== undefined) return String(v.text);
-            return '';
-        }
-        return String(v);
-    }
 
     try {
         let rowCount = 0;
@@ -114,4 +115,59 @@ async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
     }
 }
 
-module.exports = { convertXlsxToCsv };
+async function convertXlsToCsv(xlsPath, { maxRows, maxCols, maxCsvBytes }) {
+    // Legacy .xls cannot be streamed; the whole workbook is read in memory.
+    // That is acceptable because the download is already capped.
+    const wb = XLSX.readFile(xlsPath, { cellDates: true });
+    const sheetName = wb.SheetNames[0];
+    if (!sheetName) throw new Error('empty XLS workbook');
+
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: null });
+
+    const lines = [];
+    let rowCount = 0;
+    let bytesWritten = 0;
+
+    for (const row of rows) {
+        const cells = row.map(v => normalizeCellValue(v));
+
+        while (cells.length > 0 && cells[cells.length - 1] === '') {
+            cells.pop();
+        }
+
+        if (cells.length === 0) continue;
+
+        if (cells.length > maxCols) {
+            const err = new Error('column count ' + cells.length + ' exceeds cap ' + maxCols);
+            err.code = 'CAP_COLS';
+            throw err;
+        }
+
+        const line = cells.map(escapeCsvValue).join(',') + '\n';
+        const lineBytes = Buffer.byteLength(line);
+
+        if (bytesWritten + lineBytes > maxCsvBytes) {
+            const err = new Error('converted CSV exceeds size cap (' + maxCsvBytes + ' bytes)');
+            err.code = 'CAP_FILE';
+            throw err;
+        }
+
+        lines.push(line);
+        bytesWritten += lineBytes;
+        rowCount += 1;
+
+        if (rowCount > maxRows + 10) {
+            const err = new Error('row count exceeds cap ' + maxRows);
+            err.code = 'CAP_ROWS';
+            throw err;
+        }
+    }
+
+    if (rowCount === 0) throw new Error('empty XLS worksheet');
+
+    const csvPath = path.join(os.tmpdir(), 'opencanada-xls-' + crypto.randomUUID() + '.csv');
+    await fs.promises.writeFile(csvPath, lines.join(''));
+    return { csvPath, rowCount };
+}
+
+module.exports = { convertXlsxToCsv, convertXlsToCsv };
