@@ -4,8 +4,17 @@ const AppError = require('../utils/AppError');
 const { createCache } = require('../utils/cache');
 
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
+const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
 
 const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
+
+// XLSX gets a smaller cap than CSV: the zip decompresses in memory
+// (sharedStrings are parsed fully into RAM before any row is emitted).
+const ingestCapBytesFor = (format) => {
+    if (format === 'CSV') return maxFileBytes();
+    if (format === 'XLSX') return MAX_XLSX_MB * 1024 * 1024;
+    return null;
+};
 
 const clampLimit = (limit, def, max) => {
     if (limit === undefined || limit === null) return def;
@@ -26,7 +35,8 @@ const toNumberOrNull = (v) => v === null || v === undefined ? null : Number(v);
 const computeQueryMode = (row) => {
     if (row.ingest_status === 'ready') return 'ingested';
     if (row.datastore_active) return 'datastore';
-    if (row.format === 'CSV' && (row.size_bytes == null || Number(row.size_bytes) <= maxFileBytes())) return 'ingestable';
+    const cap = ingestCapBytesFor(row.format);
+    if (cap !== null && (row.size_bytes == null || Number(row.size_bytes) <= cap)) return 'ingestable';
     return 'file-only';
 };
 

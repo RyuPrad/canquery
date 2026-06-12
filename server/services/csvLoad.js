@@ -120,4 +120,4 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     return { rowCount, columns };
 }
 
-module.exports = { loadCsvIntoStore };
+module.exports = { loadCsvIntoStore, escapeCsvValue };

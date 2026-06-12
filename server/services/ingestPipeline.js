@@ -2,6 +2,7 @@ const fs = require('fs');
 const pool = require('../db/pool');
 const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
 const { loadCsvIntoStore } = require('./csvLoad');
+const { convertXlsxToCsv } = require('./xlsxConvert');
 const { TABLE_NAME_RE } = require('../db/storeQueries');
 
 function tableNameFor(resourceId) {
@@ -21,15 +22,28 @@ async function ingestResource(resource, caps) {
         throw err;
     }
 
-    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent });
+    const isXlsx = String(resource.format || '').toUpperCase() === 'XLSX';
+    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: isXlsx ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent });
 
+    const tempPaths = [filePath];
     try {
-        const { delimiter, encoding } = await sniffCsvMeta(filePath);
+        let dataPath = filePath;
+        let delimiter;
+        let encoding;
+        if (isXlsx) {
+            const { csvPath } = await convertXlsxToCsv(filePath, { maxRows: caps.maxRows, maxCols: caps.maxCols, maxCsvBytes: caps.maxFileBytes });
+            tempPaths.push(csvPath);
+            dataPath = csvPath;
+            delimiter = ',';
+            encoding = 'utf8';
+        } else {
+            ({ delimiter, encoding } = await sniffCsvMeta(filePath));
+        }
 
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            const { rowCount, columns } = await loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows: caps.maxRows, maxCols: caps.maxCols });
+            const { rowCount, columns } = await loadCsvIntoStore(client, { filePath: dataPath, tableName, delimiter, encoding, maxRows: caps.maxRows, maxCols: caps.maxCols });
             const sizeResult = await client.query('SELECT pg_total_relation_size($1) AS size', ['store.' + tableName]);
             const byteSize = Number(sizeResult.rows[0].size);
             await client.query(`INSERT INTO ingested_resources (resource_id, table_name, row_count, byte_size, columns, ingested_at, last_accessed_at, status) VALUES ($1, $2, $3, $4, $5, now(), now(), 'ready') ON CONFLICT (resource_id) DO UPDATE SET table_name = EXCLUDED.table_name, row_count = EXCLUDED.row_count, byte_size = EXCLUDED.byte_size, columns = EXCLUDED.columns, ingested_at = now(), last_accessed_at = now(), status = 'ready'`, [resource.id, tableName, rowCount, byteSize, JSON.stringify(columns)]);
@@ -44,9 +58,11 @@ async function ingestResource(resource, caps) {
             client.release();
         }
     } finally {
-        try {
-            await fs.promises.unlink(filePath);
-        } catch {}
+        for (const p of tempPaths) {
+            try {
+                await fs.promises.unlink(p);
+            } catch {}
+        }
     }
 }
 

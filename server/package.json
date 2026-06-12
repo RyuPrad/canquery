@@ -13,6 +13,7 @@
     "dependencies": {
         "csv-parse": "^6.2.1",
         "dotenv": "^16.4.0",
+        "exceljs": "^4.4.0",
         "express": "^5.1.0",
         "express-rate-limit": "^7.4.0",
         "helmet": "^8.0.0",

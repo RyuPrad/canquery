@@ -227,7 +227,7 @@ function ResourcePage() {
         <LoadingSpinner label="Querying" />
       ) : dataError instanceof NotIngestedError ? (
         <div className="card bg-base-200 p-8 text-center space-y-3">
-          <p>This CSV is not unlocked yet. One click loads it into a live table.</p>
+          <p>{resource?.format === 'XLSX' ? 'This Excel file is not unlocked yet.' : 'This CSV is not unlocked yet.'} One click loads it into a live table.</p>
           <div className="flex justify-center">
             <button
               className="btn bg-[#d52b1e] text-white border-none btn-sm"

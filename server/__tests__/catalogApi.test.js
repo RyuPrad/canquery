@@ -108,12 +108,15 @@ describe('Catalog API', () => {
             { id: 'r1', dataset_id: 'd1', name_en: 'a', name_fr: null, format: 'CSV', url: 'u', size_bytes: null, datastore_active: true, language: null, last_modified: null, ingest_status: null },
             { id: 'r2', dataset_id: 'd1', name_en: 'b', name_fr: null, format: 'CSV', url: 'u', size_bytes: '1000', datastore_active: false, language: null, last_modified: null, ingest_status: 'ready', ingested_row_count: '5', ingested_at: '2026-01-01' },
             { id: 'r3', dataset_id: 'd1', name_en: 'c', name_fr: null, format: 'CSV', url: 'u', size_bytes: '999999999999', datastore_active: false, language: null, last_modified: null, ingest_status: null },
-            { id: 'r4', dataset_id: 'd1', name_en: 'd', name_fr: null, format: 'PDF', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null }
+            { id: 'r4', dataset_id: 'd1', name_en: 'd', name_fr: null, format: 'PDF', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null },
+            { id: 'r5', dataset_id: 'd1', name_en: 'e', name_fr: null, format: 'XLSX', url: 'u', size_bytes: '1048576', datastore_active: false, language: null, last_modified: null, ingest_status: null },
+            { id: 'r6', dataset_id: 'd1', name_en: 'f', name_fr: null, format: 'XLSX', url: 'u', size_bytes: String(25 * 1024 * 1024), datastore_active: false, language: null, last_modified: null, ingest_status: null },
+            { id: 'r7', dataset_id: 'd1', name_en: 'g', name_fr: null, format: 'XLS', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null }
         ]);
         const res = await request(app).get('/api/v1/datasets/d1');
         expect(res.status).toBe(200);
         const modes = res.body.data.resources.map(r => r.query_mode);
-        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only']);
+        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'file-only']);
     });
 
     it('GET /api/v1/stats wraps totals in the envelope', async () => {

@@ -94,7 +94,7 @@ export default function DocsPage() {
         <Endpoint
           method="POST"
           path="/api/v1/resources/:id/ingest"
-          desc="Idempotent enqueue of a CSV ingest (50 MB / 1M rows caps). Returns the job. Rate limited to 5/hour."
+          desc="Idempotent enqueue of a CSV or XLSX ingest (50 MB CSV / 20 MB XLSX / 1M rows caps). Returns the job. Rate limited to 5/hour."
           example={'curl -X POST "' + BASE + '/api/v1/resources/RESOURCE_ID/ingest"'}
         />
         <Endpoint

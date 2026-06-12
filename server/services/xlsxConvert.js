@@ -1,0 +1,117 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const ExcelJS = require('exceljs');
+const { escapeCsvValue } = require('./csvLoad');
+
+async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
+    // styles must be 'cache' or date cells arrive as raw Excel serial
+    // numbers and would land as integers.
+    const reader = new ExcelJS.stream.xlsx.WorkbookReader(xlsxPath, {
+        entries: 'ignore',
+        sharedStrings: 'cache',
+        hyperlinks: 'ignore',
+        styles: 'cache',
+        worksheets: 'emit'
+    });
+
+    const csvPath = path.join(os.tmpdir(), 'opencanada-xlsx-' + crypto.randomUUID() + '.csv');
+    const ws = fs.createWriteStream(csvPath);
+
+    // Local helper to normalize any Excel cell value to a string
+    function normalizeCellValue(v) {
+        if (v === null || v === undefined) return '';
+        if (v instanceof Date) return v.toISOString();
+        if (typeof v === 'object') {
+            if (v.error !== undefined) return '';
+            if (Array.isArray(v.richText)) return v.richText.map(s => s.text).join('');
+            if (v.formula !== undefined || v.sharedFormula !== undefined) {
+                return normalizeCellValue(v.result === undefined ? null : v.result);
+            }
+            if (v.text !== undefined) return String(v.text);
+            return '';
+        }
+        return String(v);
+    }
+
+    try {
+        let rowCount = 0;
+        let bytesWritten = 0;
+
+        // worksheets emit in zip-entry order which matches workbook order
+        // in practice (not formally guaranteed).
+        for await (const worksheet of reader) {
+            for await (const row of worksheet) {
+                // row.values is 1-based and sparse
+                const cells = [];
+                for (let i = 1; i < row.values.length; i += 1) {
+                    cells.push(normalizeCellValue(row.values[i]));
+                }
+
+                // trim trailing empty cells
+                while (cells.length > 0 && cells[cells.length - 1] === '') {
+                    cells.pop();
+                }
+
+                // skip completely empty rows
+                if (cells.length === 0) continue;
+
+                if (cells.length > maxCols) {
+                    const err = new Error('column count ' + cells.length + ' exceeds cap ' + maxCols);
+                    err.code = 'CAP_COLS';
+                    throw err;
+                }
+
+                const line = cells.map(escapeCsvValue).join(',') + '\n';
+                const lineBytes = Buffer.byteLength(line);
+
+                if (bytesWritten + lineBytes > maxCsvBytes) {
+                    const err = new Error('converted CSV exceeds size cap (' + maxCsvBytes + ' bytes)');
+                    err.code = 'CAP_FILE';
+                    throw err;
+                }
+
+                // backpressure
+                if (!ws.write(line)) {
+                    await new Promise((resolve) => ws.once('drain', resolve));
+                }
+
+                bytesWritten += lineBytes;
+                rowCount += 1;
+
+                // +10 covers the header-preamble detection window;
+                // csvLoad enforces the exact cap.
+                if (rowCount > maxRows + 10) {
+                    const err = new Error('row count exceeds cap ' + maxRows);
+                    err.code = 'CAP_ROWS';
+                    throw err;
+                }
+            }
+            break; // only process the first worksheet
+        }
+
+        if (rowCount === 0) throw new Error('empty XLSX worksheet');
+
+        await new Promise((resolve) => ws.end(resolve));
+        return { csvPath, rowCount };
+    } catch (err) {
+        // destroying with writes still in flight makes the fs stream emit
+        // ERR_STREAM_DESTROYED; without a listener that crashes the process.
+        ws.on('error', () => {});
+        // wait for close before unlink so the lazy open cannot recreate
+        // the file after unlink.  (mirrors csvDownload.js)
+        await new Promise((resolve) => {
+            ws.once('close', resolve);
+            ws.destroy();
+        });
+        try {
+            await fs.promises.unlink(csvPath);
+        } catch {
+            // ignore
+        }
+        throw err;
+    }
+}
+
+module.exports = { convertXlsxToCsv };

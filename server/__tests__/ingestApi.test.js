@@ -2,6 +2,8 @@ jest.mock('../db/catalogReadQueries', () => ({ searchDatasets: jest.fn(), getDat
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
 jest.mock('../db/ingestQueries', () => ({ enqueueJob: jest.fn(), getJobById: jest.fn() }));
+// The real ingest limiter (5/hour) would 429 the later requests in this suite.
+jest.mock('../middleware/rateLimits', () => ({ generalLimiter: (req, res, next) => next(), ingestLimiter: (req, res, next) => next() }));
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
 const ingestQueries = require('../db/ingestQueries');
@@ -34,6 +36,21 @@ describe('ingest API', () => {
         const res = await request(app).post('/api/v1/resources/ds-9/ingest');
         expect(res.status).toBe(409);
         expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
+    });
+
+    it('enqueues an ingestable XLSX and returns 202', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'xlsx-1', format: 'XLSX', url: 'https://example.org/file.xlsx' }));
+        ingestQueries.enqueueJob.mockResolvedValue({ id: 9, resource_id: 'xlsx-1', status: 'pending', attempts: 0, error: null, created_at: '2026-01-01' });
+        const res = await request(app).post('/api/v1/resources/xlsx-1/ingest');
+        expect(res.status).toBe(202);
+        expect(res.body.data.id).toBe(9);
+    });
+
+    it('legacy XLS resources are refused with 422', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'xls-9', format: 'XLS', url: 'https://example.org/old.xls' }));
+        const res = await request(app).post('/api/v1/resources/xls-9/ingest');
+        expect(res.status).toBe(422);
+        expect(res.body.download_url).toBe('https://example.org/old.xls');
     });
 
     it('non-CSV resources are refused with 422 and a download url', async () => {

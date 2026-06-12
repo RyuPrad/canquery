@@ -13,7 +13,7 @@ async function enqueueIngest(resourceId) {
         throw new AppError('Resource is already queryable via the upstream datastore', 409);
     }
     if (mode === 'file-only') {
-        const err = new AppError('Only CSV resources under the size cap can be ingested', 422);
+        const err = new AppError('Only CSV or XLSX resources under the size cap can be ingested', 422);
         err.download_url = row.url;
         throw err;
     }

@@ -14,6 +14,7 @@ const onceMode = process.argv.includes('--once');
 
 const caps = {
     maxFileBytes: (Number(process.env.MAX_FILE_MB) || 50) * 1024 * 1024,
+    maxXlsxBytes: (Number(process.env.MAX_XLSX_MB) || 20) * 1024 * 1024,
     maxRows: Number(process.env.MAX_ROWS) || 1000000,
     maxCols: Number(process.env.MAX_COLS) || 120,
     storeBudgetBytes: (Number(process.env.STORE_BUDGET_GB) || 15) * 1024 * 1024 * 1024,
@@ -87,6 +88,9 @@ async function processJob(job) {
 
 async function main() {
     console.log('ingest-worker started' + (onceMode ? ' (once mode)' : ''));
+    // A worker crash mid-job leaves status='running' forever, and the partial
+    // unique index on active jobs then blocks re-enqueueing that resource.
+    await pool.query(`UPDATE ingest_jobs SET status = 'pending', error = 'requeued stale running job' WHERE status = 'running' AND claimed_at < now() - interval '1 hour'`);
     while (true) {
         const job = await claimJob();
         if (job) {
