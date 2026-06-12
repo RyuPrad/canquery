@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchPopular } from '../api/catalog.js';
 import { formatRelativeTime } from '../utils/time.js';
+import { useLang } from '../i18n.jsx';
 
 export default function PopularRail() {
+  const { t } = useLang();
   const [items, setItems] = useState([]);
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export default function PopularRail() {
 
   return (
     <section className="mt-8">
-      <div className="text-sm font-semibold opacity-60 mb-2">Popular this week</div>
+      <div className="text-sm font-semibold opacity-60 mb-2">{t('rails.popular')}</div>
       <div className="flex gap-3 overflow-x-auto pb-2">
         {items.map(item => (
           <Link
@@ -27,7 +29,7 @@ export default function PopularRail() {
             className="card bg-base-200 hover:bg-base-300 transition-colors p-3 min-w-56 shrink-0"
           >
             <div className="flex items-center gap-2">
-              <span className="badge badge-sm badge-outline">{item.hits} {item.hits === 1 ? 'query' : 'queries'}</span>
+              <span className="badge badge-sm badge-outline">{item.hits} {item.hits === 1 ? t('rails.query_one') : t('rails.query_many')}</span>
               <span className="text-xs opacity-50">{formatRelativeTime(item.last_queried_at)}</span>
             </div>
             <div className="font-medium text-sm truncate">

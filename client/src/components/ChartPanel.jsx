@@ -279,9 +279,9 @@ function BarChart({ resourceId, q, filters, fields }) {
       ) : (
         <svg
           width="100%"
-          viewBox="0 0 800 280"
+          viewBox="0 0 800 320"
           preserveAspectRatio="none"
-          className="w-full h-72 bg-base-200 rounded-lg"
+          className="w-full h-80 bg-base-200 rounded-lg"
         >
           {(() => {
             const vals = bars.map(b => b.value);
@@ -292,6 +292,14 @@ function BarChart({ resourceId, q, filters, fields }) {
             const y0 = y(0);
             const slot = 740 / bars.length;
             const barW = Math.max(1, slot * 0.8);
+            const labelEvery = bars.length > 24 ? Math.ceil(bars.length / 12) : 1;
+            const fmtKey = (k) => {
+              if (k === null || k === undefined || k === '') return '(empty)';
+              const s = String(k);
+              const isoLike = /^\d{4}-\d{2}-\d{2}T/.test(s);
+              const trimmed = isoLike ? s.slice(0, 10) : s;
+              return trimmed.length > 14 ? trimmed.slice(0, 13) + '…' : trimmed;
+            };
             return (
               <>
                 {bars.map((bar, i) => {
@@ -310,6 +318,24 @@ function BarChart({ resourceId, q, filters, fields }) {
                       />
                       <title>{keyLabel}: {bar.value}</title>
                     </g>
+                  );
+                })}
+                {bars.map((bar, i) => {
+                  if (i % labelEvery !== 0) return null;
+                  const cx = 40 + i * slot + slot * 0.5;
+                  return (
+                    <text
+                      key={'lbl-' + i}
+                      x={cx}
+                      y={268}
+                      fontSize={10}
+                      fill="currentColor"
+                      opacity={0.6}
+                      textAnchor="end"
+                      transform={'rotate(-35 ' + cx + ' 268)'}
+                    >
+                      {fmtKey(bar.key)}
+                    </text>
                   );
                 })}
                 <text x="6" y="34" fill="currentColor" fontSize="11" opacity="0.6">

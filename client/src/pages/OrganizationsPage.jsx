@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import usePaginatedCollection from '../hooks/usePaginatedCollection';
 import { fetchOrganizations } from '../api/catalog';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useLang } from '../i18n.jsx';
 
 export default function OrganizationsPage() {
+  const { t } = useLang();
   const [filter, setFilter] = useState('');
   const { items, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) => fetchOrganizations({ limit: 100, cursor }),
@@ -20,12 +22,12 @@ export default function OrganizationsPage() {
       <h1 className="text-3xl font-bold py-6">Organizations</h1>
       <input
         className="input input-bordered w-full max-w-md"
-        placeholder="Filter organizations..."
+        placeholder={t('orgs.filter_placeholder')}
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
       />
       {loading ? (
-        <LoadingSpinner label="Loading organizations" />
+        <LoadingSpinner label={t('orgs.loading')} />
       ) : error ? (
         <div className="alert alert-error">{error.message}</div>
       ) : (
@@ -37,7 +39,7 @@ export default function OrganizationsPage() {
                   <div className="font-medium">{o.title.en || o.name}</div>
                   <div className="text-xs opacity-50">{o.name}</div>
                 </div>
-                <span className="badge badge-ghost">{o.dataset_count} datasets</span>
+                <span className="badge badge-ghost">{o.dataset_count} {t('orgs.datasets')}</span>
               </Link>
             ))}
           </div>

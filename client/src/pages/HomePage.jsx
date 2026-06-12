@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { searchDatasets, fetchOrganizations, fetchStats } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
+import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
@@ -14,6 +15,7 @@ const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
 const EXAMPLES = ['housing', 'wildfire', 'electric vehicles', 'water quality', 'census'];
 
 export default function HomePage() {
+  const { t } = useLang();
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [org, setOrg] = useState(searchParams.get('org') || '');
@@ -74,19 +76,19 @@ export default function HomePage() {
   return (
     <div className="container mx-auto px-4">
       <section className="py-10 text-center space-y-4">
-        <h1 className="text-4xl font-bold">Query Canada&apos;s open data</h1>
+        <h1 className="text-4xl font-bold">{t('home.title')}</h1>
         <p className="text-lg opacity-70 max-w-2xl mx-auto">
-          Roughly 2 percent of the catalogue is officially queryable. opencanada mirrors the rest and lets you unlock CSVs on demand.
+          {t('home.subtitle')}
         </p>
         {stats && (
           <p className="text-sm opacity-80">
-            {stats.datasets.toLocaleString()} datasets mirrored{' / '}
-            {stats.datastore_active_resources.toLocaleString()} queryable upstream{' / '}
+            {stats.datasets.toLocaleString()} {t('home.datasets_mirrored')}{' / '}
+            {stats.datastore_active_resources.toLocaleString()} {t('home.queryable_upstream')}{' / '}
             <span className="text-[#d52b1e] font-semibold">
-              {stats.ingested_resources.toLocaleString()} unlocked here
+              {stats.ingested_resources.toLocaleString()} {t('home.unlocked_here')}
             </span>
             {stats.last_synced_at && formatRelativeTime(stats.last_synced_at) && (
-              <span className="opacity-60">{' / synced '}{formatRelativeTime(stats.last_synced_at)}</span>
+              <span className="opacity-60">{' / '}{t('home.synced')}{' '}{formatRelativeTime(stats.last_synced_at)}</span>
             )}
           </p>
         )}
@@ -96,30 +98,30 @@ export default function HomePage() {
         <div className="card bg-base-200 p-4">
           <div className="flex items-center gap-2 font-semibold mb-1">
             <span className="badge bg-[#d52b1e] text-white border-none">1</span>
-            Search everything
+            {t('home.step1_title')}
           </div>
-          <p className="opacity-70">Every dataset on open.canada.ca, mirrored and searchable in English and French.</p>
+          <p className="opacity-70">{t('home.step1_desc')}</p>
         </div>
         <div className="card bg-base-200 p-4">
           <div className="flex items-center gap-2 font-semibold mb-1">
             <span className="badge bg-[#d52b1e] text-white border-none">2</span>
-            Unlock any CSV
+            {t('home.step2_title')}
           </div>
-          <p className="opacity-70">One click pulls the file into our database in seconds. No signup needed.</p>
+          <p className="opacity-70">{t('home.step2_desc')}</p>
         </div>
         <div className="card bg-base-200 p-4">
           <div className="flex items-center gap-2 font-semibold mb-1">
             <span className="badge bg-[#d52b1e] text-white border-none">3</span>
-            Query it live
+            {t('home.step3_title')}
           </div>
-          <p className="opacity-70">Filter, sort and export to CSV without downloading anything by hand.</p>
+          <p className="opacity-70">{t('home.step3_desc')}</p>
         </div>
       </section>
 
       <SearchBar value={query} onChange={setQuery} />
 
       <div className="flex flex-wrap gap-2 items-center mt-3 justify-center">
-        <span className="text-xs opacity-50">Try:</span>
+        <span className="text-xs opacity-50">{t('home.try')}</span>
         {EXAMPLES.map((ex) => (
           <button
             key={ex}
@@ -135,7 +137,7 @@ export default function HomePage() {
             onClick={clearKeyword}
             title="Clear keyword filter"
           >
-            keyword: {keyword} (clear)
+            {t('home.keyword_label')} {keyword} {t('home.keyword_clear')}
           </button>
         )}
       </div>
@@ -145,7 +147,7 @@ export default function HomePage() {
           className={`btn btn-xs rounded-full ${format === '' ? 'bg-[#d52b1e] text-white border-none' : ''}`}
           onClick={() => setFormat('')}
         >
-          All formats
+          {t('home.all_formats')}
         </button>
         {FORMATS.map((f) => (
           <button
@@ -161,7 +163,7 @@ export default function HomePage() {
           value={org}
           onChange={(e) => setOrg(e.target.value)}
         >
-          <option value="">All organizations</option>
+          <option value="">{t('home.all_organizations')}</option>
           {orgs.map((o) => (
             <option key={o.name} value={o.name}>
               {o.title?.en || o.name} ({o.dataset_count})
@@ -178,7 +180,7 @@ export default function HomePage() {
       )}
 
       <section className="mt-6 space-y-3">
-        {loading && <LoadingSpinner label="Searching the catalogue" />}
+        {loading && <LoadingSpinner label={t('home.searching')} />}
         {error && <div className="alert alert-error">{error.message}</div>}
         {items.length === 0 && !loading && !error && (
           <div className="text-center opacity-60 py-10">No datasets matched.</div>
@@ -195,7 +197,7 @@ export default function HomePage() {
             onClick={loadMore}
             disabled={loadingMore}
           >
-            {loadingMore ? 'Loading...' : 'Load more'}
+            {loadingMore ? t('home.loading') : t('home.load_more')}
           </button>
         </div>
       )}

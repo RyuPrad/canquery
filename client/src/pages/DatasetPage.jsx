@@ -5,6 +5,7 @@ import { NotFoundError } from '../api/client.js';
 import useJobPolling from '../hooks/useJobPolling.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import { useLang } from '../i18n.jsx';
 
 function PollBadge({ jobId, onDone, onRetry }) {
   const { job } = useJobPolling(jobId, { onDone });
@@ -24,15 +25,16 @@ function PollBadge({ jobId, onDone, onRetry }) {
 
 export default function DatasetPage() {
   const { idOrName } = useParams();
+  const { lang: uiLang, t } = useLang();
   const [dataset, setDataset] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [notFound, setNotFound] = useState(false);
-  const [lang, setLang] = useState('en');
+  const [contentLang, setContentLang] = useState(uiLang);
   const [unlockJobs, setUnlockJobs] = useState({});
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const pick = (obj) => obj ? (lang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
+  const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -86,14 +88,14 @@ export default function DatasetPage() {
         <h1 className='text-3xl font-bold'>{pick(dataset.title)}</h1>
         <div className='join'>
           <button
-            className={'btn btn-xs join-item' + (lang === 'en' ? ' bg-[#d52b1e] text-white border-none' : '')}
-            onClick={() => setLang('en')}
+            className={'btn btn-xs join-item' + (contentLang === 'en' ? ' bg-[#d52b1e] text-white border-none' : '')}
+            onClick={() => setContentLang('en')}
           >
             EN
           </button>
           <button
-            className={'btn btn-xs join-item' + (lang === 'fr' ? ' bg-[#d52b1e] text-white border-none' : '')}
-            onClick={() => setLang('fr')}
+            className={'btn btn-xs join-item' + (contentLang === 'fr' ? ' bg-[#d52b1e] text-white border-none' : '')}
+            onClick={() => setContentLang('fr')}
           >
             FR
           </button>
@@ -113,7 +115,7 @@ export default function DatasetPage() {
       <p className='mt-4 max-w-3xl whitespace-pre-wrap opacity-90'>{pick(dataset.notes)}</p>
 
       <div className='flex flex-wrap gap-1 mt-3'>
-        {(lang === 'fr' ? dataset.keywords?.fr : dataset.keywords?.en)?.map(kw => (
+        {(contentLang === 'fr' ? dataset.keywords?.fr : dataset.keywords?.en)?.map(kw => (
           <Link
             key={kw}
             to={'/?keyword=' + encodeURIComponent(kw)}
@@ -126,7 +128,7 @@ export default function DatasetPage() {
       </div>
 
       <h2 className='text-xl font-semibold mt-8 mb-3'>
-        Resources ({dataset.resources.length})
+        {t('dataset.resources')} ({dataset.resources.length})
       </h2>
       <div className='space-y-2'>
         {dataset.resources.map(resource => (
@@ -173,7 +175,7 @@ export default function DatasetPage() {
                       }
                     }}
                   >
-                    Unlock
+                    {t('dataset.unlock')}
                   </button>
                 )
               )}
@@ -184,7 +186,7 @@ export default function DatasetPage() {
                   rel='noreferrer'
                   className='btn btn-xs btn-ghost'
                 >
-                  Download
+                  {t('dataset.download')}
                 </a>
               )}
               {resource.query_mode === 'datastore' && (
@@ -194,7 +196,7 @@ export default function DatasetPage() {
                   rel='noreferrer'
                   className='btn btn-xs btn-ghost'
                 >
-                  Download
+                  {t('dataset.download')}
                 </a>
               )}
               {resource.query_mode === 'ingested' && (
@@ -204,7 +206,7 @@ export default function DatasetPage() {
                   rel='noreferrer'
                   className='btn btn-xs btn-ghost'
                 >
-                  Download
+                  {t('dataset.download')}
                 </a>
               )}
             </div>

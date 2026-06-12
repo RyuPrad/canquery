@@ -107,7 +107,7 @@ export default function DocsPage() {
         <Endpoint
           method="POST"
           path="/api/v1/resources/:id/ingest"
-          desc="Idempotent enqueue of a CSV or XLSX ingest (50 MB CSV / 20 MB XLSX / 1M rows caps). Returns the job. Rate limited to 5/hour."
+          desc="Idempotent enqueue of a CSV, XLSX or XLS ingest (50 MB CSV / 20 MB Excel / 1M rows caps). Returns the job. Rate limited to 5/hour."
           example={'curl -X POST "' + BASE + '/api/v1/resources/RESOURCE_ID/ingest"'}
         />
         <Endpoint
@@ -122,6 +122,13 @@ export default function DocsPage() {
           desc="Catalogue totals: datasets, resources, datastore-active, ingested, store bytes."
           example={'curl "' + BASE + '/api/v1/stats"'}
           runPath="/api/v1/stats"
+        />
+        <Endpoint
+          method="GET"
+          path="/api/v1/ops"
+          desc="Background-job health for uptime monitors: last successful run per job (full/incremental sync, eviction, log prune). Returns 503 when any job is stale; jobs that have never run report pending without alarming."
+          example={'curl "' + BASE + '/api/v1/ops"'}
+          runPath="/api/v1/ops"
         />
       </div>
     </div>

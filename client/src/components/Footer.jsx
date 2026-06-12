@@ -1,20 +1,23 @@
+import { useLang } from '../i18n.jsx';
+
 export default function Footer() {
+  const { t } = useLang();
   return (
     <footer className="footer footer-center bg-base-200 text-base-content/70 p-6 mt-12 text-sm">
       <p>
-        Contains information licensed under the{' '}
+        {t('footer.licence_pre')}{' '}
         <a
           href="https://open.canada.ca/en/open-government-licence-canada"
           target="_blank"
           rel="noreferrer"
           className="link"
         >
-          Open Government Licence - Canada
+          {t('footer.licence_link')}
         </a>
         .
       </p>
-      <p>opencanada is an independent project and is not affiliated with the Government of Canada.</p>
-      <p className="opacity-60">Data is mirrored and cached from open.canada.ca.</p>
+      <p>{t('footer.independent')}</p>
+      <p className="opacity-60">{t('footer.mirrored')}</p>
     </footer>
   );
 }

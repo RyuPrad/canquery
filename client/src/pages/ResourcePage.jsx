@@ -17,10 +17,12 @@ import DataTable from '../components/DataTable.jsx';
 import ChartPanel from '../components/ChartPanel.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
+import { useLang } from '../i18n.jsx';
 
 const PAGE_SIZE = 50;
 
 function ResourcePage() {
+  const { t } = useLang();
   const { id } = useParams();
 
   const [resource, setResource] = useState(null);
@@ -207,7 +209,7 @@ function ResourcePage() {
       <div className="flex flex-wrap gap-2 items-center mt-2">
         <input
           className="input input-bordered input-sm w-72"
-          placeholder="Full-text search in this table..."
+          placeholder={t('resource.search_placeholder')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -218,16 +220,16 @@ function ResourcePage() {
         )}
         {data && (
           <a className="btn btn-xs btn-outline" href={exportHref} download title="Exports the current filters and sort, up to 10,000 rows">
-            Download CSV (filtered)
+            {t('resource.download_filtered')}
           </a>
         )}
       </div>
 
       {dataLoading && !data ? (
-        <LoadingSpinner label="Querying" />
+        <LoadingSpinner label={t('resource.querying')} />
       ) : dataError instanceof NotIngestedError ? (
         <div className="card bg-base-200 p-8 text-center space-y-3">
-          <p>{resource?.format === 'XLSX' ? 'This Excel file is not unlocked yet.' : 'This CSV is not unlocked yet.'} One click loads it into a live table.</p>
+          <p>{resource?.format === 'XLSX' || resource?.format === 'XLS' ? t('resource.not_unlocked_excel') : t('resource.not_unlocked_csv')} {t('resource.one_click')}</p>
           <div className="flex justify-center">
             <button
               className="btn bg-[#d52b1e] text-white border-none btn-sm"
@@ -235,14 +237,14 @@ function ResourcePage() {
               disabled={unlockState === 'queued' && !unlockJob}
             >
               {unlockState === null
-                ? 'Unlock this resource'
+                ? t('resource.unlock')
                 : unlockState === 'queued'
-                  ? (unlockJob && unlockJob.status === 'running' ? 'Loading the data...' : 'Queued...')
-                  : 'Could not load this file - try again'}
+                  ? (unlockJob && unlockJob.status === 'running' ? t('resource.loading_data') : t('resource.queued'))
+                  : t('resource.failed_retry')}
             </button>
           </div>
           {unlockState === 'queued' && (
-            <p className="text-xs opacity-50">The table will appear automatically when it is ready.</p>
+            <p className="text-xs opacity-50">{t('resource.will_appear')}</p>
           )}
           {unlockState === 'failed' && unlockJob && unlockJob.error && (
             <p className="text-xs opacity-50">{unlockJob.error}</p>
@@ -252,7 +254,7 @@ function ResourcePage() {
         <div className="alert alert-warning">
           <span>This resource is a plain file download.</span>
           <a href={dataError.download_url} className="link">
-            Download it here
+            {t('resource.download_here')}
           </a>
         </div>
       ) : dataError ? (
@@ -260,8 +262,8 @@ function ResourcePage() {
       ) : data ? (
         <>
           <div className="tabs tabs-boxed w-fit">
-            <button className={'tab tab-sm' + (view === 'table' ? ' tab-active' : '')} onClick={() => setView('table')}>Table</button>
-            <button className={'tab tab-sm' + (view === 'chart' ? ' tab-active' : '')} onClick={() => setView('chart')}>Chart</button>
+            <button className={'tab tab-sm' + (view === 'table' ? ' tab-active' : '')} onClick={() => setView('table')}>{t('resource.table')}</button>
+            <button className={'tab tab-sm' + (view === 'chart' ? ' tab-active' : '')} onClick={() => setView('chart')}>{t('resource.chart')}</button>
           </div>
           {view === 'chart' ? (
             <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} />

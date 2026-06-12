@@ -1,0 +1,164 @@
+/* eslint-disable react-refresh/only-export-components -- context module: provider + hook + strings belong together */
+import { createContext, useContext, useState, useCallback } from 'react';
+
+// Every user-facing chrome string lives here. Dataset/resource CONTENT is
+// already bilingual from the catalogue; this covers the interface around it.
+// API docs stay English (developer audience).
+export const STRINGS = {
+  en: {
+    'nav.datasets': 'Datasets',
+    'nav.organizations': 'Organizations',
+    'nav.docs': 'API docs',
+    'footer.licence_pre': 'Contains information licensed under the',
+    'footer.licence_link': 'Open Government Licence - Canada',
+    'footer.independent': 'opencanada is an independent project and is not affiliated with the Government of Canada.',
+    'footer.mirrored': 'Data is mirrored and cached from open.canada.ca.',
+    'home.title': "Query Canada's open data",
+    'home.subtitle': 'Roughly 2 percent of the catalogue is officially queryable. opencanada mirrors the rest and lets you unlock CSV and Excel files on demand.',
+    'home.datasets_mirrored': 'datasets mirrored',
+    'home.queryable_upstream': 'queryable upstream',
+    'home.unlocked_here': 'unlocked here',
+    'home.synced': 'synced',
+    'home.step1_title': 'Search everything',
+    'home.step1_desc': 'Every dataset on open.canada.ca, mirrored and searchable in English and French.',
+    'home.step2_title': 'Unlock CSV & Excel',
+    'home.step2_desc': 'One click pulls the file into our database in seconds. No signup needed.',
+    'home.step3_title': 'Query it live',
+    'home.step3_desc': 'Filter, sort and export to CSV without downloading anything by hand.',
+    'home.try': 'Try:',
+    'home.search_placeholder': 'Search datasets... housing, water, wildfire, census',
+    'home.all_formats': 'All formats',
+    'home.all_organizations': 'All organizations',
+    'home.load_more': 'Load more',
+    'home.loading': 'Loading...',
+    'home.searching': 'Searching the catalogue',
+    'home.keyword_label': 'keyword:',
+    'home.keyword_clear': '(clear)',
+    'rails.recent': 'Recently unlocked',
+    'rails.popular': 'Popular this week',
+    'rails.query_one': 'query',
+    'rails.query_many': 'queries',
+    'badge.datastore': 'Queryable',
+    'badge.datastore_tip': 'Already hosted in a live database by open.canada.ca - query it instantly',
+    'badge.ingested': 'Unlocked',
+    'badge.ingested_tip': 'Loaded into opencanada - filter, sort and export it live',
+    'badge.ingestable': 'Unlockable',
+    'badge.ingestable_tip': 'A CSV or Excel file we can load for you - click Unlock and it is queryable in seconds',
+    'badge.fileonly': 'Download only',
+    'badge.fileonly_tip': 'Not a file we can load - use the download link to get the file',
+    'resource.search_placeholder': 'Full-text search in this table...',
+    'resource.download_filtered': 'Download CSV (filtered)',
+    'resource.querying': 'Querying',
+    'resource.not_unlocked_csv': 'This CSV is not unlocked yet.',
+    'resource.not_unlocked_excel': 'This Excel file is not unlocked yet.',
+    'resource.one_click': 'One click loads it into a live table.',
+    'resource.unlock': 'Unlock this resource',
+    'resource.loading_data': 'Loading the data...',
+    'resource.queued': 'Queued...',
+    'resource.failed_retry': 'Could not load this file - try again',
+    'resource.will_appear': 'The table will appear automatically when it is ready.',
+    'resource.download_here': 'Download it here',
+    'resource.table': 'Table',
+    'resource.chart': 'Chart',
+    'dataset.resources': 'Resources',
+    'dataset.unlock': 'Unlock',
+    'dataset.download': 'Download',
+    'orgs.filter_placeholder': 'Filter organizations...',
+    'orgs.loading': 'Loading organizations',
+    'orgs.datasets': 'datasets',
+  },
+  fr: {
+    'nav.datasets': 'Jeux de données',
+    'nav.organizations': 'Organisations',
+    'nav.docs': 'API',
+    'footer.licence_pre': 'Contient de l’information visée par la',
+    'footer.licence_link': 'Licence du gouvernement ouvert – Canada',
+    'footer.independent': 'opencanada est un projet indépendant, sans affiliation avec le gouvernement du Canada.',
+    'footer.mirrored': 'Les données sont mises en miroir et en cache depuis open.canada.ca.',
+    'home.title': 'Interrogez les données ouvertes du Canada',
+    'home.subtitle': 'Environ 2 % du catalogue est officiellement interrogeable. opencanada met le reste en miroir et vous laisse déverrouiller les fichiers CSV et Excel à la demande.',
+    'home.datasets_mirrored': 'jeux de données en miroir',
+    'home.queryable_upstream': 'interrogeables à la source',
+    'home.unlocked_here': 'déverrouillés ici',
+    'home.synced': 'synchronisé',
+    'home.step1_title': 'Cherchez tout',
+    'home.step1_desc': 'Chaque jeu de données d’open.canada.ca, en miroir et consultable en français et en anglais.',
+    'home.step2_title': 'Déverrouillez CSV et Excel',
+    'home.step2_desc': 'Un clic charge le fichier dans notre base de données en quelques secondes. Aucune inscription requise.',
+    'home.step3_title': 'Interrogez en direct',
+    'home.step3_desc': 'Filtrez, triez et exportez en CSV sans rien télécharger à la main.',
+    'home.try': 'Essayez :',
+    'home.search_placeholder': 'Rechercher des jeux de données... logement, eau, feux, recensement',
+    'home.all_formats': 'Tous les formats',
+    'home.all_organizations': 'Toutes les organisations',
+    'home.load_more': 'Afficher plus',
+    'home.loading': 'Chargement...',
+    'home.searching': 'Recherche dans le catalogue',
+    'home.keyword_label': 'mot-clé :',
+    'home.keyword_clear': '(effacer)',
+    'rails.recent': 'Déverrouillés récemment',
+    'rails.popular': 'Populaires cette semaine',
+    'rails.query_one': 'requête',
+    'rails.query_many': 'requêtes',
+    'badge.datastore': 'Interrogeable',
+    'badge.datastore_tip': 'Déjà hébergé dans une base de données interrogeable par open.canada.ca – interrogez-le instantanément',
+    'badge.ingested': 'Déverrouillé',
+    'badge.ingested_tip': 'Chargé dans opencanada – filtrez, triez et exportez en direct',
+    'badge.ingestable': 'Déverrouillable',
+    'badge.ingestable_tip': 'Un fichier CSV ou Excel que nous pouvons charger pour vous – cliquez Déverrouiller et il devient interrogeable en quelques secondes',
+    'badge.fileonly': 'Téléchargement seulement',
+    'badge.fileonly_tip': 'Pas un fichier que nous pouvons charger – utilisez le lien de téléchargement',
+    'resource.search_placeholder': 'Recherche plein texte dans cette table...',
+    'resource.download_filtered': 'Télécharger le CSV (filtré)',
+    'resource.querying': 'Interrogation',
+    'resource.not_unlocked_csv': 'Ce CSV n’est pas encore déverrouillé.',
+    'resource.not_unlocked_excel': 'Ce fichier Excel n’est pas encore déverrouillé.',
+    'resource.one_click': 'Un clic le charge dans une table interactive.',
+    'resource.unlock': 'Déverrouiller cette ressource',
+    'resource.loading_data': 'Chargement des données...',
+    'resource.queued': 'En file d’attente...',
+    'resource.failed_retry': 'Impossible de charger ce fichier – réessayer',
+    'resource.will_appear': 'La table apparaîtra automatiquement dès qu’elle sera prête.',
+    'resource.download_here': 'Téléchargez-le ici',
+    'resource.table': 'Table',
+    'resource.chart': 'Graphique',
+    'dataset.resources': 'Ressources',
+    'dataset.unlock': 'Déverrouiller',
+    'dataset.download': 'Télécharger',
+    'orgs.filter_placeholder': 'Filtrer les organisations...',
+    'orgs.loading': 'Chargement des organisations',
+    'orgs.datasets': 'jeux de données',
+  },
+};
+
+const lookup = (lang, key) => {
+  const table = STRINGS[lang] || STRINGS.en;
+  return table[key] !== undefined ? table[key] : (STRINGS.en[key] !== undefined ? STRINGS.en[key] : key);
+};
+
+// Default value keeps unwrapped components (and existing tests) in English.
+const LangContext = createContext({ lang: 'en', setLang: () => {}, t: (key) => lookup('en', key) });
+
+export function LangProvider({ children }) {
+  const [lang, setLangState] = useState(() => {
+    try {
+      return localStorage.getItem('oc-lang') === 'fr' ? 'fr' : 'en';
+    } catch {
+      return 'en';
+    }
+  });
+  const setLang = useCallback((next) => {
+    setLangState(next);
+    try {
+      localStorage.setItem('oc-lang', next);
+    } catch {
+      // private mode - language just won't persist
+    }
+  }, []);
+  const t = useCallback((key) => lookup(lang, key), [lang]);
+  return <LangContext.Provider value={{ lang, setLang, t }}>{children}</LangContext.Provider>;
+}
+
+export function useLang() {
+  return useContext(LangContext);
+}

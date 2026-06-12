@@ -1,15 +1,18 @@
+import { useLang } from '../i18n.jsx';
+
 const MODES = {
-  datastore: { label: 'Queryable', classes: 'badge badge-success badge-outline', tip: 'Already hosted in a live database by open.canada.ca - query it instantly' },
-  ingested: { label: 'Unlocked', classes: 'badge bg-[#d52b1e] text-white border-none', tip: 'Loaded into opencanada - filter, sort and export it live' },
-  ingestable: { label: 'Unlockable', classes: 'badge badge-warning badge-outline', tip: 'A CSV or Excel file we can load for you - click Unlock and it is queryable in seconds' },
+  datastore: { labelKey: 'badge.datastore', tipKey: 'badge.datastore_tip', classes: 'badge badge-success badge-outline' },
+  ingested: { labelKey: 'badge.ingested', tipKey: 'badge.ingested_tip', classes: 'badge bg-[#d52b1e] text-white border-none' },
+  ingestable: { labelKey: 'badge.ingestable', tipKey: 'badge.ingestable_tip', classes: 'badge badge-warning badge-outline' },
 };
-const FALLBACK = { label: 'Download only', classes: 'badge badge-ghost', tip: 'Not a file we can load - use the download link to get the file' };
+const FALLBACK = { labelKey: 'badge.fileonly', tipKey: 'badge.fileonly_tip', classes: 'badge badge-ghost' };
 
 export default function ResourceBadge({ mode }) {
+  const { t } = useLang();
   const m = MODES[mode] || FALLBACK;
   return (
-    <span className="tooltip tooltip-bottom" data-tip={m.tip}>
-      <span className={m.classes}>{m.label}</span>
+    <span className="tooltip tooltip-bottom" data-tip={t(m.tipKey)}>
+      <span className={m.classes}>{t(m.labelKey)}</span>
     </span>
   );
 }
