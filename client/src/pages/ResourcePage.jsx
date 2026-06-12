@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   fetchResource,
   queryResource,
@@ -9,9 +9,12 @@ import {
   NotFoundError,
   NotIngestedError,
   FileOnlyError,
+  apiUrl,
 } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import useJobPolling from '../hooks/useJobPolling.js';
 import DataTable from '../components/DataTable.jsx';
+import ChartPanel from '../components/ChartPanel.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 
@@ -24,16 +27,45 @@ function ResourcePage() {
   const [resourceError, setResourceError] = useState(null);
   const [notFound, setNotFound] = useState(false);
 
-  const [q, setQ] = useState('');
-  const [columnFilters, setColumnFilters] = useState({});
-  const [sort, setSort] = useState(null);
-  const [page, setPage] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const parseCf = (raw) => {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+  const [q, setQ] = useState(searchParams.get('q') || '');
+  const [columnFilters, setColumnFilters] = useState(() => parseCf(searchParams.get('cf')));
+  const [sort, setSort] = useState(searchParams.get('sort') || null);
+  const [page, setPage] = useState(() => {
+    const n = Number(searchParams.get('page'));
+    return Number.isInteger(n) && n > 0 ? n : 0;
+  });
 
   const [data, setData] = useState(null);
   const [dataError, setDataError] = useState(null);
   const [dataLoading, setDataLoading] = useState(true);
 
   const [unlockState, setUnlockState] = useState(null);
+  const [unlockJobId, setUnlockJobId] = useState(null);
+  const [view, setView] = useState('table');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Stable callback: an inline arrow here would re-arm the polling effect on
+  // every render and turn it into a 0ms fetch loop.
+  const onUnlockDone = useCallback((job) => {
+    if (job.status === 'done') {
+      setUnlockJobId(null);
+      setUnlockState(null);
+      setReloadKey((k) => k + 1);
+    } else {
+      setUnlockState('failed');
+    }
+  }, []);
+  const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone });
 
   const debouncedQ = useDebouncedValue(q, 250);
   const debouncedFilters = useDebouncedValue(columnFilters, 250);
@@ -51,11 +83,25 @@ function ResourcePage() {
         }
       });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, reloadKey]);
 
   useEffect(() => {
     setPage(0);
   }, [debouncedQ, debouncedFilters, sort]);
+
+  // Keep the explorer state shareable via the URL.
+  useEffect(() => {
+    const next = {};
+    if (debouncedQ) next.q = debouncedQ;
+    const activeCf = {};
+    for (const [col, text] of Object.entries(debouncedFilters)) {
+      if (text) activeCf[col] = text;
+    }
+    if (Object.keys(activeCf).length) next.cf = JSON.stringify(activeCf);
+    if (sort) next.sort = sort;
+    if (page > 0) next.page = String(page);
+    setSearchParams(next, { replace: true });
+  }, [debouncedQ, debouncedFilters, sort, page, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,14 +141,25 @@ function ResourcePage() {
       });
 
     return () => { cancelled = true; };
-  }, [id, debouncedQ, debouncedFilters, sort, page]);
+  }, [id, debouncedQ, debouncedFilters, sort, page, reloadKey]);
+
+  const exportFilters = {};
+  for (const [col, text] of Object.entries(debouncedFilters)) {
+    if (text) exportFilters[col] = { op: 'contains', value: text };
+  }
+  const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
+    q: debouncedQ || undefined,
+    filters: Object.keys(exportFilters).length ? exportFilters : undefined,
+    sort: sort || undefined,
+  });
 
   const handleUnlock = async () => {
     try {
       setUnlockState('queued');
-      await enqueueIngest(id);
+      const env = await enqueueIngest(id);
+      setUnlockJobId(env.data.id);
     } catch {
-      setUnlockState('error');
+      setUnlockState('failed');
     }
   };
 
@@ -159,23 +216,37 @@ function ResourcePage() {
             {data.total.toLocaleString()} rows
           </span>
         )}
+        {data && (
+          <a className="btn btn-xs btn-outline" href={exportHref} download title="Exports the current filters and sort, up to 10,000 rows">
+            Download CSV (filtered)
+          </a>
+        )}
       </div>
 
       {dataLoading && !data ? (
         <LoadingSpinner label="Querying" />
       ) : dataError instanceof NotIngestedError ? (
         <div className="card bg-base-200 p-8 text-center space-y-3">
-          <p>This CSV is not unlocked yet.</p>
-          <button
-            className="btn bg-[#d52b1e] text-white border-none btn-sm"
-            onClick={handleUnlock}
-          >
-            {unlockState === null
-              ? 'Unlock this resource'
-              : unlockState === 'queued'
-                ? 'Queued - refresh in a moment'
-                : 'Failed - try again'}
-          </button>
+          <p>This CSV is not unlocked yet. One click loads it into a live table.</p>
+          <div className="flex justify-center">
+            <button
+              className="btn bg-[#d52b1e] text-white border-none btn-sm"
+              onClick={handleUnlock}
+              disabled={unlockState === 'queued' && !unlockJob}
+            >
+              {unlockState === null
+                ? 'Unlock this resource'
+                : unlockState === 'queued'
+                  ? (unlockJob && unlockJob.status === 'running' ? 'Loading the data...' : 'Queued...')
+                  : 'Could not load this file - try again'}
+            </button>
+          </div>
+          {unlockState === 'queued' && (
+            <p className="text-xs opacity-50">The table will appear automatically when it is ready.</p>
+          )}
+          {unlockState === 'failed' && unlockJob && unlockJob.error && (
+            <p className="text-xs opacity-50">{unlockJob.error}</p>
+          )}
         </div>
       ) : dataError instanceof FileOnlyError ? (
         <div className="alert alert-warning">
@@ -188,6 +259,13 @@ function ResourcePage() {
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
         <>
+          <div className="tabs tabs-boxed w-fit">
+            <button className={'tab tab-sm' + (view === 'table' ? ' tab-active' : '')} onClick={() => setView('table')}>Table</button>
+            <button className={'tab tab-sm' + (view === 'chart' ? ' tab-active' : '')} onClick={() => setView('chart')}>Chart</button>
+          </div>
+          {view === 'chart' ? (
+            <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} />
+          ) : (
           <DataTable
             fields={data.fields}
             records={data.records}
@@ -198,6 +276,7 @@ function ResourcePage() {
               setColumnFilters((prev) => ({ ...prev, [id]: text }))
             }
           />
+          )}
           {data.total > PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import usePaginatedCollection from '../hooks/usePaginatedCollection';
 import { fetchOrganizations } from '../api/catalog';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -31,13 +32,13 @@ export default function OrganizationsPage() {
         <>
           <div className="grid gap-2 mt-4 sm:grid-cols-2">
             {visible.map(o => (
-              <div key={o.id} className="card bg-base-200 p-4 flex flex-row justify-between items-center">
+              <Link key={o.id} to={'/?org=' + encodeURIComponent(o.name)} title={'See every dataset from ' + (o.title.en || o.name)} className="card bg-base-200 p-4 flex flex-row justify-between items-center hover:bg-base-300 transition-colors">
                 <div>
                   <div className="font-medium">{o.title.en || o.name}</div>
                   <div className="text-xs opacity-50">{o.name}</div>
                 </div>
                 <span className="badge badge-ghost">{o.dataset_count} datasets</span>
-              </div>
+              </Link>
             ))}
           </div>
           {hasMore && (

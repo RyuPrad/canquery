@@ -1,4 +1,20 @@
-function Endpoint({ method, path, desc, example }) {
+import { useState } from 'react';
+
+function Endpoint({ method, path, desc, example, runPath }) {
+  const [result, setResult] = useState(null);
+  const [running, setRunning] = useState(false);
+  const run = async () => {
+    setRunning(true);
+    try {
+      const res = await fetch(runPath);
+      const body = await res.json();
+      setResult(JSON.stringify(body, null, 2));
+    } catch (err) {
+      setResult('Request failed: ' + err.message);
+    } finally {
+      setRunning(false);
+    }
+  };
   return (
     <div className="card bg-base-200 p-4 space-y-2">
       <div className="flex gap-2 items-center">
@@ -6,11 +22,21 @@ function Endpoint({ method, path, desc, example }) {
           {method}
         </span>
         <code className="font-mono text-sm">{path}</code>
+        {runPath && (
+          <button className="btn btn-xs bg-[#d52b1e] text-white border-none ml-auto" onClick={run} disabled={running}>
+            {running ? 'Running...' : 'Run it'}
+          </button>
+        )}
       </div>
       <p className="text-sm opacity-70">{desc}</p>
       <pre className="bg-base-300 rounded p-3 text-xs overflow-x-auto">
         <code>{example}</code>
       </pre>
+      {result && (
+        <pre className="bg-base-300 rounded p-3 text-xs overflow-x-auto max-h-64">
+          <code>{result}</code>
+        </pre>
+      )}
     </div>
   );
 }
@@ -29,9 +55,23 @@ export default function DocsPage() {
       <div className="space-y-4 mt-6">
         <Endpoint
           method="GET"
+          path="/api/v1/resources/recently-unlocked"
+          desc="The most recently unlocked resources - what other visitors just made queryable."
+          example={'curl "' + BASE + '/api/v1/resources/recently-unlocked"'}
+          runPath="/api/v1/resources/recently-unlocked"
+        />
+        <Endpoint
+          method="GET"
+          path="/api/v1/resources/:id/query.csv"
+          desc="Download the current query (same q, filters and sort parameters) as a CSV file, capped at 10,000 rows."
+          example={'curl -OJ "' + BASE + '/api/v1/resources/RESOURCE_ID/query.csv?filters={' + '"year":{"op":"gte","value":2020}' + '}"'}
+        />
+        <Endpoint
+          method="GET"
           path="/api/v1/datasets"
           desc="Full-text search over the catalogue. Params: q, org, format, keyword, limit, cursor."
           example={'curl "' + BASE + '/api/v1/datasets?q=housing&format=CSV&limit=5"'}
+          runPath="/api/v1/datasets?q=housing&limit=3"
         />
         <Endpoint
           method="GET"
@@ -68,6 +108,7 @@ export default function DocsPage() {
           path="/api/v1/stats"
           desc="Catalogue totals: datasets, resources, datastore-active, ingested, store bytes."
           example={'curl "' + BASE + '/api/v1/stats"'}
+          runPath="/api/v1/stats"
         />
       </div>
     </div>

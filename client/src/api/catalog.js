@@ -28,6 +28,14 @@ export function fetchOrganizations({ limit, cursor } = {}) {
   return getJSON('/api/v1/organizations', { limit, cursor });
 }
 
+export async function fetchRecentlyUnlocked() {
+  try {
+    return await getJSON('/api/v1/resources/recently-unlocked');
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchStats() {
   try {
     return await getJSON('/api/v1/stats');

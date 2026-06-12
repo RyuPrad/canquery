@@ -49,7 +49,7 @@ async function queryResource(id, { q, filters, sort, limit, offset } = {}) {
         for (const f of parsedFilters) {
             if (!knownSet.has(f.column)) throw new AppError('unknown column: ' + f.column, 400);
         }
-        const sortInfo = validateSort(sort, knownColumns);
+        const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records, total } = await queryStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
         touchLastAccessed(id).catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);
@@ -91,7 +91,7 @@ async function queryResourceForExport(id, { q, filters, sort } = {}) {
         for (const f of parsedFilters) {
             if (!knownSet.has(f.column)) throw new AppError('unknown column: ' + f.column, 400);
         }
-        const sortInfo = validateSort(sort, knownColumns);
+        const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records } = await queryStoreTable({ tableName: row.table_name, knownColumns, q, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: cap, offset: 0 });
         touchLastAccessed(id).catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);

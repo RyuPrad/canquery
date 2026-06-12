@@ -12,10 +12,10 @@ describe('badges and rows', () => {
     expect(screen.getByText('Unlocked')).toBeInTheDocument();
 
     render(<ResourceBadge mode="ingestable" />);
-    expect(screen.getByText('Ingestable')).toBeInTheDocument();
+    expect(screen.getByText('Unlockable')).toBeInTheDocument();
 
     render(<ResourceBadge mode="file-only" />);
-    expect(screen.getByText('File only')).toBeInTheDocument();
+    expect(screen.getByText('Download only')).toBeInTheDocument();
   });
 
   test('DatasetRow shows the English title and the queryable badge', () => {

@@ -6,9 +6,20 @@ import useJobPolling from '../hooks/useJobPolling.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 
-function PollBadge({ jobId, onDone }) {
+function PollBadge({ jobId, onDone, onRetry }) {
   const { job } = useJobPolling(jobId, { onDone });
-  return <span className='badge badge-warning gap-1'>{job ? 'job ' + job.status : 'queued'}</span>;
+  if (job && job.status === 'failed') {
+    return (
+      <span className='flex items-center gap-1'>
+        <span className='badge badge-error badge-outline' title={job.error || 'The file could not be loaded'}>
+          could not load this file
+        </span>
+        <button className='btn btn-xs btn-outline' onClick={onRetry}>Retry</button>
+      </span>
+    );
+  }
+  const label = !job || job.status === 'pending' ? 'queued...' : 'loading data...';
+  return <span className='badge badge-warning gap-1'>{label}</span>;
 }
 
 export default function DatasetPage() {
@@ -103,7 +114,14 @@ export default function DatasetPage() {
 
       <div className='flex flex-wrap gap-1 mt-3'>
         {(lang === 'fr' ? dataset.keywords?.fr : dataset.keywords?.en)?.map(kw => (
-          <span key={kw} className='badge badge-outline badge-sm'>{kw}</span>
+          <Link
+            key={kw}
+            to={'/?keyword=' + encodeURIComponent(kw)}
+            className='badge badge-outline badge-sm hover:bg-base-300'
+            title={'Find every dataset tagged ' + kw}
+          >
+            {kw}
+          </Link>
         ))}
       </div>
 
@@ -134,7 +152,15 @@ export default function DatasetPage() {
               )}
               {resource.query_mode === 'ingestable' && (
                 unlockJobs[resource.id] ? (
-                  <PollBadge jobId={unlockJobs[resource.id]} onDone={handleUnlockDone} />
+                  <PollBadge
+                    jobId={unlockJobs[resource.id]}
+                    onDone={handleUnlockDone}
+                    onRetry={() => setUnlockJobs(prev => {
+                      const next = { ...prev };
+                      delete next[resource.id];
+                      return next;
+                    })}
+                  />
                 ) : (
                   <button
                     className='btn btn-xs bg-[#d52b1e] text-white border-none'

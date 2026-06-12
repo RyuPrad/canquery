@@ -1,21 +1,43 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { searchDatasets, fetchOrganizations, fetchStats } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import RecentRail from '../components/RecentRail.jsx';
+import { formatRelativeTime } from '../utils/time.js';
 
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
+const EXAMPLES = ['housing', 'wildfire', 'electric vehicles', 'water quality', 'census'];
 
 export default function HomePage() {
-  const [query, setQuery] = useState('');
-  const [org, setOrg] = useState('');
-  const [format, setFormat] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [query, setQuery] = useState(searchParams.get('q') || '');
+  const [org, setOrg] = useState(searchParams.get('org') || '');
+  const [format, setFormat] = useState(searchParams.get('format') || '');
+  const keyword = searchParams.get('keyword') || '';
   const [stats, setStats] = useState(null);
   const [orgs, setOrgs] = useState([]);
 
   const debouncedQuery = useDebouncedValue(query, 250);
+
+  // Keep the URL shareable: reflect the active search in the query string.
+  useEffect(() => {
+    const next = {};
+    if (debouncedQuery) next.q = debouncedQuery;
+    if (org) next.org = org;
+    if (format) next.format = format;
+    if (keyword) next.keyword = keyword;
+    setSearchParams(next, { replace: true });
+  }, [debouncedQuery, org, format, keyword, setSearchParams]);
+
+  const clearKeyword = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('keyword');
+    setSearchParams(next, { replace: true });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -41,10 +63,11 @@ export default function HomePage() {
         q: debouncedQuery || undefined,
         org: org || undefined,
         format: format || undefined,
+        keyword: keyword || undefined,
         limit: 20,
         cursor,
       }),
-    [debouncedQuery, org, format]
+    [debouncedQuery, org, format, keyword]
   );
 
   return (
@@ -61,11 +84,60 @@ export default function HomePage() {
             <span className="text-[#d52b1e] font-semibold">
               {stats.ingested_resources.toLocaleString()} unlocked here
             </span>
+            {stats.last_synced_at && formatRelativeTime(stats.last_synced_at) && (
+              <span className="opacity-60">{' / synced '}{formatRelativeTime(stats.last_synced_at)}</span>
+            )}
           </p>
         )}
       </section>
 
+      <section className="grid sm:grid-cols-3 gap-3 mb-8 text-sm">
+        <div className="card bg-base-200 p-4">
+          <div className="flex items-center gap-2 font-semibold mb-1">
+            <span className="badge bg-[#d52b1e] text-white border-none">1</span>
+            Search everything
+          </div>
+          <p className="opacity-70">Every dataset on open.canada.ca, mirrored and searchable in English and French.</p>
+        </div>
+        <div className="card bg-base-200 p-4">
+          <div className="flex items-center gap-2 font-semibold mb-1">
+            <span className="badge bg-[#d52b1e] text-white border-none">2</span>
+            Unlock any CSV
+          </div>
+          <p className="opacity-70">One click pulls the file into our database in seconds. No signup needed.</p>
+        </div>
+        <div className="card bg-base-200 p-4">
+          <div className="flex items-center gap-2 font-semibold mb-1">
+            <span className="badge bg-[#d52b1e] text-white border-none">3</span>
+            Query it live
+          </div>
+          <p className="opacity-70">Filter, sort and export to CSV without downloading anything by hand.</p>
+        </div>
+      </section>
+
       <SearchBar value={query} onChange={setQuery} />
+
+      <div className="flex flex-wrap gap-2 items-center mt-3 justify-center">
+        <span className="text-xs opacity-50">Try:</span>
+        {EXAMPLES.map((ex) => (
+          <button
+            key={ex}
+            className="btn btn-xs btn-ghost rounded-full border border-base-300"
+            onClick={() => setQuery(ex)}
+          >
+            {ex}
+          </button>
+        ))}
+        {keyword && (
+          <button
+            className="badge bg-[#d52b1e] text-white border-none gap-1"
+            onClick={clearKeyword}
+            title="Clear keyword filter"
+          >
+            keyword: {keyword} (clear)
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2 items-center mt-4">
         <button
@@ -96,6 +168,8 @@ export default function HomePage() {
           ))}
         </select>
       </div>
+
+      {!debouncedQuery && !org && !format && !keyword && <RecentRail />}
 
       <section className="mt-6 space-y-3">
         {loading && <LoadingSpinner label="Searching the catalogue" />}
