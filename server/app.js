@@ -1,5 +1,7 @@
 require('dotenv/config');
 
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const helmet = require('helmet');
 const AppError = require('./utils/AppError');
@@ -62,6 +64,18 @@ app.use('/api/v1/resources', resourcesRouter);
 app.use('/api/v1/organizations', organizationsRouter);
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/jobs', jobsRouter);
+
+// In production the API also serves the built SPA (client/dist) so the public
+// Caddy block stays a pure reverse_proxy - no extra container mounts on the
+// shared box. API paths fall through to the JSON 404 below.
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
+    app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
+    app.use(express.static(clientDist, { index: false }));
+    app.get(/^\/(?!api\/|healthz).*/, (req, res) => {
+        res.sendFile(path.join(clientDist, 'index.html'));
+    });
+}
 
 app.use((req, res, next) => {
     next(new AppError('Not found', 404));
