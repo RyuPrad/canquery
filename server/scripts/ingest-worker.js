@@ -18,8 +18,14 @@ const caps = {
     maxRows: Number(process.env.MAX_ROWS) || 1000000,
     maxCols: Number(process.env.MAX_COLS) || 120,
     storeBudgetBytes: (Number(process.env.STORE_BUDGET_GB) || 15) * 1024 * 1024 * 1024,
-    userAgent: process.env.CKAN_USER_AGENT || 'opencanada/1.0'
+    userAgent: process.env.CKAN_USER_AGENT || 'opencanada/1.0',
+    stallTimeoutMs: Number(process.env.INGEST_STALL_TIMEOUT_MS) || 60000
 };
+
+// How often to look for jobs wedged in status='running' by a worker that was
+// hard-killed mid-job (crash/OOM/deploy). The 1h age threshold stays well above
+// any real ingest and any deploy overlap, so this never reclaims a live job.
+const STALE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 const POLL_MS = Number(process.env.INGEST_POLL_MS) || 3000;
 const MAX_ATTEMPTS = 3;
@@ -39,6 +45,16 @@ async function finishJob(id, status, error) {
 
 async function requeueJob(id, error) {
     await pool.query(`UPDATE ingest_jobs SET status = 'pending', error = $2 WHERE id = $1`, [id, error]);
+}
+
+// A worker crash mid-job leaves status='running' forever, and the partial unique
+// index on active jobs then blocks re-enqueueing that resource. Requeue anything
+// stuck running longer than any real ingest could take.
+async function requeueStaleRunning() {
+    const result = await pool.query(`UPDATE ingest_jobs SET status = 'pending', error = 'requeued stale running job' WHERE status = 'running' AND claimed_at < now() - interval '1 hour'`);
+    if (result.rowCount > 0) {
+        console.log('requeued ' + result.rowCount + ' stale running job(s)');
+    }
 }
 
 async function logRun(run) {
@@ -88,10 +104,16 @@ async function processJob(job) {
 
 async function main() {
     console.log('ingest-worker started' + (onceMode ? ' (once mode)' : ''));
-    // A worker crash mid-job leaves status='running' forever, and the partial
-    // unique index on active jobs then blocks re-enqueueing that resource.
-    await pool.query(`UPDATE ingest_jobs SET status = 'pending', error = 'requeued stale running job' WHERE status = 'running' AND claimed_at < now() - interval '1 hour'`);
+    await requeueStaleRunning();
+    let lastStaleSweepAt = Date.now();
     while (true) {
+        // Re-run the sweep periodically, not only at startup: a job orphaned by a
+        // hard kill is otherwise stuck until the next restart that happens to land
+        // more than an hour after the job was claimed.
+        if (!onceMode && Date.now() - lastStaleSweepAt >= STALE_SWEEP_INTERVAL_MS) {
+            await requeueStaleRunning();
+            lastStaleSweepAt = Date.now();
+        }
         const job = await claimJob();
         if (job) {
             await processJob(job);

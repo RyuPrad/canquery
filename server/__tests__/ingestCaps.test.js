@@ -1,8 +1,18 @@
 const fs = require('node:fs');
 const os = require('node:os');
+const { EventEmitter } = require('node:events');
 const { ReadableStream } = require('node:stream/web');
-const { downloadToTempFile } = require('../services/csvDownload');
+const { downloadToTempFile, makeSafeWriter } = require('../services/csvDownload');
 const { inferType, inferColumns, sanitizeColumnName } = require('../utils/csvTypes');
+
+// Minimal writable stand-in: write() reports backpressure, error/drain are
+// emitted by the test to drive makeSafeWriter's wait logic.
+function fakeWritable({ backpressure = false } = {}) {
+    const s = new EventEmitter();
+    s.write = jest.fn(() => !backpressure);
+    s.end = (cb) => { if (cb) cb(); };
+    return s;
+}
 
 function fakeFetch(chunks, onAbort) {
     return async (url, opts) => {
@@ -57,6 +67,69 @@ describe('ingestion caps', () => {
         expect(bytes).toBe(8);
         expect(fs.readFileSync(filePath, 'utf8')).toBe('a,b\n1,2\n');
         fs.unlinkSync(filePath);
+    });
+
+    it('a stalled download is aborted instead of hanging the worker', async () => {
+        // Sends one chunk then never closes - mirrors an upstream that accepts
+        // the socket and then goes silent. Without the stall guard this read
+        // pends forever and wedges the single worker.
+        const stallFetch = async (url, opts) => ({
+            ok: true,
+            status: 200,
+            body: new ReadableStream({
+                start(controller) {
+                    controller.enqueue(new TextEncoder().encode('a,b\n'));
+                    opts.signal.addEventListener('abort', () => {
+                        controller.error(new DOMException('aborted', 'AbortError'));
+                    });
+                }
+            })
+        });
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-ingest-')));
+        let thrown;
+        const start = Date.now();
+        try {
+            await downloadToTempFile('https://example.org/stall.csv', {
+                maxFileBytes: 1024 * 1024,
+                fetchImpl: stallFetch,
+                stallTimeoutMs: 100
+            });
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeDefined();
+        expect(thrown.message).toMatch(/stall/i);
+        expect(Date.now() - start).toBeLessThan(2000);
+        const leftover = fs.readdirSync(os.tmpdir())
+            .filter(f => f.startsWith('opencanada-ingest-') && !before.has(f));
+        expect(leftover).toHaveLength(0);
+    });
+
+    it('makeSafeWriter: a stream error during backpressure rejects instead of hanging', async () => {
+        const ws = fakeWritable({ backpressure: true });
+        const writer = makeSafeWriter(ws);
+        const p = writer.write('row\n'); // ws.write returns false -> awaits drain/error
+        ws.emit('error', new Error('ENOSPC: no space left on device'));
+        await expect(p).rejects.toThrow(/ENOSPC/);
+    });
+
+    it('makeSafeWriter: a captured error never crashes and surfaces on the next call', async () => {
+        const ws = fakeWritable();
+        const writer = makeSafeWriter(ws);
+        // No throw here proves the persistent listener swallows the unhandled
+        // 'error' that would otherwise take the process down.
+        expect(() => ws.emit('error', new Error('boom'))).not.toThrow();
+        await expect(writer.write('x')).rejects.toThrow(/boom/);
+        await expect(writer.end()).rejects.toThrow(/boom/);
+    });
+
+    it('makeSafeWriter: clean writes resolve through backpressure', async () => {
+        const ws = fakeWritable({ backpressure: true });
+        const writer = makeSafeWriter(ws);
+        const p = writer.write('row\n');
+        ws.emit('drain');
+        await expect(p).resolves.toBeUndefined();
+        await expect(writer.end()).resolves.toBeUndefined();
     });
 
     it('type inference picks the narrowest type', () => {

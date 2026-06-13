@@ -24,7 +24,7 @@ async function ingestResource(resource, caps) {
 
     const format = String(resource.format || '').toUpperCase();
     const isExcel = format === 'XLSX' || format === 'XLS';
-    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: isExcel ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent });
+    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: isExcel ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent, stallTimeoutMs: caps.stallTimeoutMs });
 
     const tempPaths = [filePath];
     try {

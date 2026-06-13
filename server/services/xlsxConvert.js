@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const ExcelJS = require('exceljs');
 const XLSX = require('xlsx');
 const { escapeCsvValue } = require('./csvLoad');
+const { makeSafeWriter } = require('./csvDownload');
 
 // Normalize any Excel cell value to a string (shared by both converters)
 function normalizeCellValue(v) {
@@ -35,6 +36,7 @@ async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
 
     const csvPath = path.join(os.tmpdir(), 'opencanada-xlsx-' + crypto.randomUUID() + '.csv');
     const ws = fs.createWriteStream(csvPath);
+    const writer = makeSafeWriter(ws);
 
     try {
         let rowCount = 0;
@@ -73,10 +75,7 @@ async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
                     throw err;
                 }
 
-                // backpressure
-                if (!ws.write(line)) {
-                    await new Promise((resolve) => ws.once('drain', resolve));
-                }
+                await writer.write(line);
 
                 bytesWritten += lineBytes;
                 rowCount += 1;
@@ -94,14 +93,13 @@ async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
 
         if (rowCount === 0) throw new Error('empty XLSX worksheet');
 
-        await new Promise((resolve) => ws.end(resolve));
+        await writer.end();
         return { csvPath, rowCount };
     } catch (err) {
-        // destroying with writes still in flight makes the fs stream emit
-        // ERR_STREAM_DESTROYED; without a listener that crashes the process.
-        ws.on('error', () => {});
-        // wait for close before unlink so the lazy open cannot recreate
-        // the file after unlink.  (mirrors csvDownload.js)
+        // makeSafeWriter holds a persistent 'error' listener, so destroying the
+        // stream with a write still in flight no longer emits an unhandled
+        // ERR_STREAM_DESTROYED that crashes the worker. Wait for close before
+        // unlink so the lazy open cannot recreate the file after unlink.
         await new Promise((resolve) => {
             ws.once('close', resolve);
             ws.destroy();
