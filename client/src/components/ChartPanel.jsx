@@ -57,14 +57,17 @@ function GridLines({ width, ys }) {
 
 function LineChart({ resourceId, q, filters, fields }) {
   const { t } = useLang();
+  // Type names differ by mode: ingested tables report INTEGER/TIMESTAMPTZ, while
+  // datastore fields come straight from CKAN as int4/int8/timestamp/float8.
+  // Match both vocabularies so datastore resources stay chartable.
   const xCandidates = fields.filter(
-    (f) => f.id !== '_id' && /date|timestamptz|integer/i.test(f.type)
+    (f) => f.id !== '_id' && /date|time|int/i.test(f.type)
   );
   // Row order (_id) is a perfectly serviceable X axis when no date or
   // integer column exists - keeps every numeric table chartable.
   const xField = xCandidates[0]?.id || (fields.some((f) => f.id === '_id') ? '_id' : undefined);
   const yCandidates = fields.filter(
-    (f) => f.id !== '_id' && f.id !== xField && /numeric|integer/i.test(f.type)
+    (f) => f.id !== '_id' && f.id !== xField && /int|numeric|float|double|real|money/i.test(f.type)
   );
   const [yField, setYField] = useState(yCandidates[0]?.id || '');
   const [rows, setRows] = useState([]);

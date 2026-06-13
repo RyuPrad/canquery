@@ -1,5 +1,23 @@
-function upsertOrganizations(db, orgs) {
-    if (!orgs || orgs.length === 0) {
+// A single `INSERT ... VALUES (...) ON CONFLICT (id) DO UPDATE` errors with
+// "cannot affect row a second time" if two rows in the same statement share the
+// conflict key. package_search paging can return the same package on adjacent
+// pages (ties on metadata_modified shuffle across the page boundary), so the
+// collected set can carry duplicate ids. Dedupe by id (last occurrence wins -
+// duplicates are the same record fetched twice) before building any upsert.
+function dedupeById(rows) {
+    if (!rows || rows.length === 0) {
+        return [];
+    }
+    const byId = new Map();
+    for (const row of rows) {
+        byId.set(row.id, row);
+    }
+    return Array.from(byId.values());
+}
+
+function upsertOrganizations(db, orgsRaw) {
+    const orgs = dedupeById(orgsRaw);
+    if (orgs.length === 0) {
         return Promise.resolve();
     }
     const chunkSize = 500;
@@ -30,8 +48,9 @@ function upsertOrganizations(db, orgs) {
     }));
 }
 
-function upsertDatasets(db, datasets) {
-    if (!datasets || datasets.length === 0) {
+function upsertDatasets(db, datasetsRaw) {
+    const datasets = dedupeById(datasetsRaw);
+    if (datasets.length === 0) {
         return Promise.resolve();
     }
     const chunkSize = 500;
@@ -87,13 +106,14 @@ function replaceResources(db, datasetIds, resources) {
     }
     const deleteSql = 'DELETE FROM resources WHERE dataset_id = ANY($1)';
     return db.query(deleteSql, [datasetIds]).then(() => {
-        if (!resources || resources.length === 0) {
+        const resourceRows = dedupeById(resources);
+        if (resourceRows.length === 0) {
             return Promise.resolve();
         }
         const chunkSize = 500;
         const chunks = [];
-        for (let i = 0; i < resources.length; i += chunkSize) {
-            chunks.push(resources.slice(i, i + chunkSize));
+        for (let i = 0; i < resourceRows.length; i += chunkSize) {
+            chunks.push(resourceRows.slice(i, i + chunkSize));
         }
 
         return Promise.all(chunks.map(chunk => {
@@ -139,15 +159,13 @@ function replaceResources(db, datasetIds, resources) {
 }
 
 function refreshOrganizationDatasetCounts(db) {
+    // Correlated subquery over every org (not a join against grouped datasets):
+    // an org whose last dataset moved away has no row in a GROUP BY org_id result,
+    // so a join would leave its count stale. count(*) returns 0 for such orgs,
+    // keeping dataset_count and the dataset_count > 0 stats filter honest.
     const sql = `
-        UPDATE organizations
-        SET dataset_count = sub.c
-        FROM (
-            SELECT org_id, count(*) AS c
-            FROM datasets
-            GROUP BY org_id
-        ) sub
-        WHERE organizations.id = sub.org_id
+        UPDATE organizations o
+        SET dataset_count = (SELECT count(*) FROM datasets d WHERE d.org_id = o.id)
     `;
     return db.query(sql);
 }
@@ -187,6 +205,7 @@ function insertSyncRun(db, run) {
 }
 
 module.exports = {
+    dedupeById,
     upsertOrganizations,
     upsertDatasets,
     replaceResources,
