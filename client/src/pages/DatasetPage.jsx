@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { fetchDataset, enqueueIngest } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import useJobPolling from '../hooks/useJobPolling.js';
+import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { useLang } from '../i18n.jsx';
@@ -81,6 +82,16 @@ export default function DatasetPage() {
         if (!cancelled) {
           setDataset(env.data);
           setNotFound(false);
+          // Resume any unlocks left in flight before a refresh so their
+          // loading badges reappear instead of reverting to "Unlock".
+          const resumed = {};
+          for (const r of (env.data.resources || [])) {
+            const stored = readUnlockJob(r.id);
+            if (stored) resumed[r.id] = stored;
+          }
+          if (Object.keys(resumed).length) {
+            setUnlockJobs(prev => ({ ...resumed, ...prev }));
+          }
         }
       })
       .catch(err => {
@@ -217,12 +228,15 @@ export default function DatasetPage() {
                 unlockJobs[resource.id] ? (
                   <PollBadge
                     jobId={unlockJobs[resource.id]}
-                    onDone={handleUnlockDone}
-                    onRetry={() => setUnlockJobs(prev => {
-                      const next = { ...prev };
-                      delete next[resource.id];
-                      return next;
-                    })}
+                    onDone={() => { clearUnlockJob(resource.id); handleUnlockDone(); }}
+                    onRetry={() => {
+                      clearUnlockJob(resource.id);
+                      setUnlockJobs(prev => {
+                        const next = { ...prev };
+                        delete next[resource.id];
+                        return next;
+                      });
+                    }}
                   />
                 ) : (
                   <button
@@ -231,6 +245,7 @@ export default function DatasetPage() {
                       try {
                         const env = await enqueueIngest(resource.id);
                         setUnlockJobs(prev => ({ ...prev, [resource.id]: env.data.id }));
+                        writeUnlockJob(resource.id, env.data.id);
                       } catch (err) {
                         setError(err);
                       }

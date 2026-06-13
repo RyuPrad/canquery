@@ -13,6 +13,7 @@ import {
 } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import useJobPolling from '../hooks/useJobPolling.js';
+import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import DataTable from '../components/DataTable.jsx';
 import ChartPanel from '../components/ChartPanel.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
@@ -61,14 +62,25 @@ function ResourcePage() {
   const [dataError, setDataError] = useState(null);
   const [dataLoading, setDataLoading] = useState(true);
 
-  const [unlockState, setUnlockState] = useState(null);
-  const [unlockJobId, setUnlockJobId] = useState(null);
+  // Seed from storage so an unlock already in flight keeps showing the loading
+  // indicator across a refresh instead of snapping back to the Unlock button.
+  const [unlockState, setUnlockState] = useState(() => (readUnlockJob(id) ? 'queued' : null));
+  const [unlockJobId, setUnlockJobId] = useState(() => readUnlockJob(id));
   const [view, setView] = useState('table');
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Stable callback: an inline arrow here would re-arm the polling effect on
-  // every render and turn it into a 0ms fetch loop.
+  // Resume (or reset) the in-flight unlock when the resource changes - covers
+  // both a fresh refresh and client-side navigation between resources.
+  useEffect(() => {
+    const stored = readUnlockJob(id);
+    setUnlockJobId(stored);
+    setUnlockState(stored ? 'queued' : null);
+  }, [id]);
+
+  // Stable per-resource callback: an inline arrow here would re-arm the polling
+  // effect on every render and turn it into a 0ms fetch loop.
   const onUnlockDone = useCallback((job) => {
+    clearUnlockJob(id);
     if (job.status === 'done') {
       setUnlockJobId(null);
       setUnlockState(null);
@@ -76,7 +88,7 @@ function ResourcePage() {
     } else {
       setUnlockState('failed');
     }
-  }, []);
+  }, [id]);
   const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone });
 
   const debouncedQ = useDebouncedValue(q, 250);
@@ -170,6 +182,7 @@ function ResourcePage() {
       setUnlockState('queued');
       const env = await enqueueIngest(id);
       setUnlockJobId(env.data.id);
+      writeUnlockJob(id, env.data.id);
     } catch {
       setUnlockState('failed');
     }
