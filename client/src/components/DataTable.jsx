@@ -1,4 +1,13 @@
+import { useLang } from '../i18n.jsx';
 
+const isNumType = (type) => /int|numeric|float|double|money/i.test(type || '');
+const isDateType = (type) => /date|time/i.test(type || '');
+
+function typeChipClass(type) {
+  if (isNumType(type)) return 'oc-type oc-type-num';
+  if (isDateType(type)) return 'oc-type oc-type-date';
+  return 'oc-type oc-type-text';
+}
 
 function DataTable({
   fields,
@@ -8,6 +17,8 @@ function DataTable({
   columnFilters,
   onColumnFilterChange,
 }) {
+  const { t } = useLang();
+
   const handleSort = (fieldId) => {
     if (sort === `${fieldId} asc`) {
       onSortChange(`${fieldId} desc`);
@@ -25,23 +36,26 @@ function DataTable({
   };
 
   return (
-    <div className="overflow-x-auto border border-base-300 rounded-lg">
-      <table className="table table-sm table-zebra">
+    <div className="oc-table-wrap">
+      <table className="oc-table">
         <thead>
           <tr>
-            {fields.map((field) => (
-              <th
-                key={field.id}
-                className="cursor-pointer select-none whitespace-nowrap"
-                onClick={() => handleSort(field.id)}
-              >
-                {field.id}
-                <span className="opacity-40 text-xs ml-1">{field.type}</span>
-                {getSortDirection(field.id) && (
-                  <span className="text-[#d52b1e]"> {getSortDirection(field.id)}</span>
-                )}
-              </th>
-            ))}
+            {fields.map((field) => {
+              const dir = getSortDirection(field.id);
+              return (
+                <th key={field.id} onClick={() => handleSort(field.id)}>
+                  <span className="inline-flex items-center gap-1.5">
+                    {field.id}
+                    <span className={typeChipClass(field.type)}>{field.type}</span>
+                    {dir && (
+                      <span className="text-[#ff6f64] font-bold">
+                        {dir === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </span>
+                </th>
+              );
+            })}
           </tr>
           <tr>
             {fields.map((field) => (
@@ -50,8 +64,8 @@ function DataTable({
                   <span />
                 ) : (
                   <input
-                    className="input input-xs input-bordered w-full min-w-24 font-normal"
-                    placeholder="filter..."
+                    className="oc-filter-input"
+                    placeholder={t('table.filter')}
                     value={columnFilters[field.id] || ''}
                     onChange={(e) => onColumnFilterChange(field.id, e.target.value)}
                   />
@@ -63,14 +77,22 @@ function DataTable({
         <tbody>
           {records.map((row, i) => (
             <tr key={i}>
-              {fields.map((field) => (
-                <td
-                  key={field.id}
-                  className="whitespace-nowrap max-w-xs overflow-hidden text-ellipsis"
-                >
-                  {String(row[field.id] ?? '')}
-                </td>
-              ))}
+              {fields.map((field) => {
+                const v = row[field.id];
+                return (
+                  <td
+                    key={field.id}
+                    className={isNumType(field.type) ? 'oc-td-num' : ''}
+                    title={v === null || v === undefined ? undefined : String(v)}
+                  >
+                    {v === null || v === undefined ? (
+                      <span className="oc-null">{'∅'}</span>
+                    ) : (
+                      String(v)
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

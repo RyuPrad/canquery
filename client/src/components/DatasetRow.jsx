@@ -1,10 +1,11 @@
-
 import { Link } from 'react-router-dom';
+import { useLang } from '../i18n.jsx';
+import { BuildingIcon, CalendarIcon, ArrowRightIcon } from './Icons.jsx';
 
 export default function DatasetRow({ dataset }) {
+  const { t } = useLang();
   const title = dataset.title?.en || dataset.title?.fr || dataset.name;
   const orgTitle = dataset.organization?.title?.en || dataset.organization?.title?.fr;
-  const displayOrg = dataset.organization && orgTitle;
   const modifiedDate = dataset.metadata_modified
     ? new Date(dataset.metadata_modified).toLocaleDateString()
     : null;
@@ -12,24 +13,41 @@ export default function DatasetRow({ dataset }) {
   return (
     <Link
       to={'/datasets/' + (dataset.name || dataset.id)}
-      className="block card bg-base-200 hover:bg-base-300 transition-colors p-4"
+      className="oc-card block p-4 sm:px-5 group"
     >
-      <div className="flex justify-between gap-3">
-        <div>
-          <div className="font-semibold text-base-content">{title}</div>
-          <div className="text-sm opacity-60">
-            {displayOrg && <>{displayOrg}</>}
-            {displayOrg && modifiedDate && ' '}
-            {modifiedDate}
+      <div className="flex justify-between items-center gap-4">
+        <div className="min-w-0">
+          <div className="font-semibold text-[0.95rem] leading-snug line-clamp-2 group-hover:text-white transition-colors">
+            {title}
+          </div>
+          <div className="text-[0.8rem] text-base-content/45 mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap">
+            {orgTitle && (
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <BuildingIcon size={12} className="shrink-0" />
+                <span className="truncate">{orgTitle}</span>
+              </span>
+            )}
+            {modifiedDate && (
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarIcon size={12} />
+                {modifiedDate}
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex gap-2 items-center shrink-0">
-          <span className="badge badge-ghost">{dataset.resource_count} resources</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="oc-chip">
+            {dataset.resource_count} {t('row.resources')}
+          </span>
           {dataset.queryable_count > 0 && (
-            <span className="badge bg-[#d52b1e] text-white border-none">
-              {dataset.queryable_count} queryable
+            <span className="oc-chip oc-chip-red">
+              {dataset.queryable_count} {t('row.queryable')}
             </span>
           )}
+          <ArrowRightIcon
+            size={15}
+            className="opacity-0 group-hover:opacity-50 transition-opacity hidden sm:block"
+          />
         </div>
       </div>
     </Link>

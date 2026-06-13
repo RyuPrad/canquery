@@ -6,21 +6,58 @@ import useJobPolling from '../hooks/useJobPolling.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { useLang } from '../i18n.jsx';
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  BuildingIcon,
+  CalendarIcon,
+  DownloadIcon,
+  UnlockIcon,
+} from '../components/Icons.jsx';
+
+const FMT_STYLES = {
+  CSV: { color: '#5eead4', background: 'rgba(45,212,191,0.12)' },
+  XLSX: { color: '#86efac', background: 'rgba(74,222,128,0.12)' },
+  XLS: { color: '#86efac', background: 'rgba(74,222,128,0.12)' },
+  JSON: { color: '#fcd34d', background: 'rgba(251,191,36,0.12)' },
+  GEOJSON: { color: '#93c5fd', background: 'rgba(106,166,255,0.14)' },
+  PDF: { color: '#ff958c', background: 'rgba(213,43,30,0.14)' },
+  XML: { color: '#c4b5fd', background: 'rgba(167,139,250,0.13)' },
+};
+const FMT_FALLBACK = { color: '#9aa7bd', background: 'rgba(154,167,189,0.12)' };
+
+function FormatTile({ format }) {
+  const style = FMT_STYLES[format] || FMT_FALLBACK;
+  const label = (format || 'FILE').slice(0, 7);
+  return (
+    <span className="oc-fmt" style={style}>
+      {label}
+    </span>
+  );
+}
 
 function PollBadge({ jobId, onDone, onRetry }) {
+  const { t } = useLang();
   const { job } = useJobPolling(jobId, { onDone });
   if (job && job.status === 'failed') {
     return (
-      <span className='flex items-center gap-1'>
-        <span className='badge badge-error badge-outline' title={job.error || 'The file could not be loaded'}>
-          could not load this file
+      <span className="flex items-center gap-1.5">
+        <span className="oc-badge oc-badge-fileonly" title={job.error || t('dataset.load_failed')}>
+          {t('dataset.load_failed')}
         </span>
-        <button className='btn btn-xs btn-outline' onClick={onRetry}>Retry</button>
+        <button className="btn btn-xs btn-outline rounded-lg border-base-content/20" onClick={onRetry}>
+          {t('common.retry')}
+        </button>
       </span>
     );
   }
-  const label = !job || job.status === 'pending' ? 'queued...' : 'loading data...';
-  return <span className='badge badge-warning gap-1'>{label}</span>;
+  const label = !job || job.status === 'pending' ? t('dataset.queued') : t('dataset.loading_data');
+  return (
+    <span className="oc-badge oc-badge-ingestable">
+      <span className="loading loading-spinner loading-xs"></span>
+      {label}
+    </span>
+  );
 }
 
 export default function DatasetPage() {
@@ -61,9 +98,9 @@ export default function DatasetPage() {
 
   if (notFound) {
     return (
-      <div className='text-center py-20'>
-        <h1>Dataset not found</h1>
-        <Link to='/' className='link'>Back to search</Link>
+      <div className="text-center py-28 space-y-3 oc-fade">
+        <h1 className="text-2xl font-bold font-display">{t('common.dataset_not_found')}</h1>
+        <Link to="/" className="link link-hover text-base-content/60">{t('common.back_search')}</Link>
       </div>
     );
   }
@@ -73,28 +110,39 @@ export default function DatasetPage() {
   }
 
   if (error) {
-    return <div className='alert alert-error'>{error.message}</div>;
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="alert alert-error">{error.message}</div>
+      </div>
+    );
   }
 
   const handleUnlockDone = () => setRefreshKey(k => k + 1);
+  const queryable = (mode) => mode === 'datastore' || mode === 'ingested';
 
   return (
-    <div className='space-y-3 py-6'>
-      <div className='text-sm opacity-60'>
-        <Link to='/' className='link'>back to search</Link>
-      </div>
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 oc-fade">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors"
+      >
+        <ArrowLeftIcon size={14} />
+        {t('common.back_search')}
+      </Link>
 
-      <div className='flex justify-between items-start'>
-        <h1 className='text-3xl font-bold'>{pick(dataset.title)}</h1>
-        <div className='join'>
+      <div className="flex justify-between items-start gap-4">
+        <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight leading-tight">
+          {pick(dataset.title)}
+        </h1>
+        <div className="oc-seg shrink-0 mt-1.5">
           <button
-            className={'btn btn-xs join-item' + (contentLang === 'en' ? ' bg-[#d52b1e] text-white border-none' : '')}
+            className={'oc-seg-btn' + (contentLang === 'en' ? ' oc-seg-active' : '')}
             onClick={() => setContentLang('en')}
           >
             EN
           </button>
           <button
-            className={'btn btn-xs join-item' + (contentLang === 'fr' ? ' bg-[#d52b1e] text-white border-none' : '')}
+            className={'oc-seg-btn' + (contentLang === 'fr' ? ' oc-seg-active' : '')}
             onClick={() => setContentLang('fr')}
           >
             FR
@@ -102,24 +150,31 @@ export default function DatasetPage() {
         </div>
       </div>
 
-      {dataset.organization && (
-        <div className='opacity-70'>{pick(dataset.organization.title)}</div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-base-content/55">
+        {dataset.organization && (
+          <span className="inline-flex items-center gap-1.5">
+            <BuildingIcon size={14} />
+            {pick(dataset.organization.title)}
+          </span>
+        )}
+        {dataset.metadata_modified && (
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarIcon size={14} />
+            {t('common.updated')} {new Date(dataset.metadata_modified).toLocaleDateString()}
+          </span>
+        )}
+      </div>
 
-      {dataset.metadata_modified && (
-        <div className='text-sm opacity-50'>
-          Updated {new Date(dataset.metadata_modified).toLocaleDateString()}
-        </div>
-      )}
+      <p className="max-w-3xl whitespace-pre-wrap text-[0.95rem] leading-relaxed text-base-content/75">
+        {pick(dataset.notes)}
+      </p>
 
-      <p className='mt-4 max-w-3xl whitespace-pre-wrap opacity-90'>{pick(dataset.notes)}</p>
-
-      <div className='flex flex-wrap gap-1 mt-3'>
+      <div className="flex flex-wrap gap-1.5">
         {(contentLang === 'fr' ? dataset.keywords?.fr : dataset.keywords?.en)?.map(kw => (
           <Link
             key={kw}
             to={'/?keyword=' + encodeURIComponent(kw)}
-            className='badge badge-outline badge-sm hover:bg-base-300'
+            className="oc-pill !text-xs !font-medium"
             title={'Find every dataset tagged ' + kw}
           >
             {kw}
@@ -127,29 +182,35 @@ export default function DatasetPage() {
         ))}
       </div>
 
-      <h2 className='text-xl font-semibold mt-8 mb-3'>
-        {t('dataset.resources')} ({dataset.resources.length})
+      <h2 className="text-lg font-semibold font-display pt-6 flex items-center gap-2.5">
+        {t('dataset.resources')}
+        <span className="oc-chip oc-chip-mono">{dataset.resources.length}</span>
       </h2>
-      <div className='space-y-2'>
+      <div className="space-y-2.5">
         {dataset.resources.map(resource => (
-          <div key={resource.id} className='card bg-base-200 p-4 flex flex-row flex-wrap items-center gap-3'>
-            <ResourceBadge mode={resource.query_mode} />
-            <div className='flex-1 min-w-48'>
-              <div className='font-medium'>{pick(resource.name) || resource.format || resource.id}</div>
-              <div className='text-xs opacity-50'>
+          <div
+            key={resource.id}
+            className="oc-card oc-card-hover p-3.5 sm:p-4 flex flex-row flex-wrap items-center gap-3.5"
+          >
+            <FormatTile format={resource.format} />
+            <div className="flex-1 min-w-48">
+              <div className="font-medium text-[0.92rem] leading-snug">
+                {pick(resource.name) || resource.format || resource.id}
+              </div>
+              <div className="text-xs text-base-content/40 mt-0.5 font-mono">
                 {resource.format}
-                {resource.size_bytes ? ' / ' + Math.round(resource.size_bytes / 1024) + ' KB' : ''}
+                {resource.size_bytes ? ' · ' + Math.round(resource.size_bytes / 1024) + ' KB' : ''}
               </div>
             </div>
-            <div className='flex items-center gap-1'>
-              {resource.query_mode === 'datastore' && (
-                <Link to={'/resources/' + resource.id} className='btn btn-xs btn-outline'>
-                  Explore data
-                </Link>
-              )}
-              {resource.query_mode === 'ingested' && (
-                <Link to={'/resources/' + resource.id} className='btn btn-xs btn-outline'>
-                  Explore data
+            <ResourceBadge mode={resource.query_mode} />
+            <div className="flex items-center gap-1.5">
+              {queryable(resource.query_mode) && (
+                <Link
+                  to={'/resources/' + resource.id}
+                  className="btn btn-xs btn-primary rounded-lg gap-1"
+                >
+                  {t('common.explore')}
+                  <ArrowRightIcon size={11} />
                 </Link>
               )}
               {resource.query_mode === 'ingestable' && (
@@ -165,7 +226,7 @@ export default function DatasetPage() {
                   />
                 ) : (
                   <button
-                    className='btn btn-xs bg-[#d52b1e] text-white border-none'
+                    className="btn btn-xs btn-primary rounded-lg gap-1"
                     onClick={async () => {
                       try {
                         const env = await enqueueIngest(resource.id);
@@ -175,40 +236,20 @@ export default function DatasetPage() {
                       }
                     }}
                   >
+                    <UnlockIcon size={11} />
                     {t('dataset.unlock')}
                   </button>
                 )
               )}
-              {(resource.query_mode === 'ingestable' || resource.query_mode === 'file-only') && (
-                <a
-                  href={resource.url}
-                  target='_blank'
-                  rel='noreferrer'
-                  className='btn btn-xs btn-ghost'
-                >
-                  {t('dataset.download')}
-                </a>
-              )}
-              {resource.query_mode === 'datastore' && (
-                <a
-                  href={resource.url}
-                  target='_blank'
-                  rel='noreferrer'
-                  className='btn btn-xs btn-ghost'
-                >
-                  {t('dataset.download')}
-                </a>
-              )}
-              {resource.query_mode === 'ingested' && (
-                <a
-                  href={resource.url}
-                  target='_blank'
-                  rel='noreferrer'
-                  className='btn btn-xs btn-ghost'
-                >
-                  {t('dataset.download')}
-                </a>
-              )}
+              <a
+                href={resource.url}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-xs btn-ghost rounded-lg gap-1 text-base-content/60"
+              >
+                <DownloadIcon size={11} />
+                {t('dataset.download')}
+              </a>
             </div>
           </div>
         ))}

@@ -1,24 +1,26 @@
 import { useState, useEffect } from 'react';
 import { queryResource } from '../api/catalog.js';
+import { useLang } from '../i18n.jsx';
 
 export default function ChartPanel({ resourceId, q, filters, fields, queryMode }) {
+  const { t } = useLang();
   const [chartType, setChartType] = useState('line');
 
   if (queryMode === 'ingested') {
     return (
       <div className="space-y-2">
-        <div className="tabs tabs-boxed w-fit mb-2">
+        <div className="oc-seg mb-2">
           <button
-            className={`tab tab-sm${chartType === 'line' ? ' tab-active' : ''}`}
+            className={'oc-seg-btn' + (chartType === 'line' ? ' oc-seg-active' : '')}
             onClick={() => setChartType('line')}
           >
-            Line
+            {t('chart.line')}
           </button>
           <button
-            className={`tab tab-sm${chartType === 'bar' ? ' tab-active' : ''}`}
+            className={'oc-seg-btn' + (chartType === 'bar' ? ' oc-seg-active' : '')}
             onClick={() => setChartType('bar')}
           >
-            Bar
+            {t('chart.bar')}
           </button>
         </div>
         {chartType === 'line' ? (
@@ -33,7 +35,28 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode }
   return <LineChart resourceId={resourceId} q={q} filters={filters} fields={fields} />;
 }
 
+const selectClass =
+  'select select-xs bg-base-200 border-base-content/10 rounded-md font-mono text-[0.72rem]';
+
+// Shared dashed horizontal gridlines - <line> elements on purpose: tests count
+// the <rect> bars, so nothing decorative may add rects to the SVG.
+function GridLines({ width, ys }) {
+  return ys.map((y) => (
+    <line
+      key={y}
+      x1="40"
+      x2={width}
+      y1={y}
+      y2={y}
+      stroke="currentColor"
+      strokeOpacity="0.07"
+      strokeDasharray="4 6"
+    />
+  ));
+}
+
 function LineChart({ resourceId, q, filters, fields }) {
+  const { t } = useLang();
   const xCandidates = fields.filter(
     (f) => f.id !== '_id' && /date|timestamptz|integer/i.test(f.type)
   );
@@ -80,9 +103,7 @@ function LineChart({ resourceId, q, filters, fields }) {
 
   if (!xField || !yCandidates.length) {
     return (
-      <div className="text-center opacity-60 py-10">
-        No numeric columns to chart in this table.
-      </div>
+      <div className="text-center text-base-content/50 py-10">{t('chart.no_numeric')}</div>
     );
   }
 
@@ -92,9 +113,7 @@ function LineChart({ resourceId, q, filters, fields }) {
 
   if (points.length < 2) {
     return (
-      <div className="text-center opacity-60 py-10">
-        Not enough numeric data to draw a chart.
-      </div>
+      <div className="text-center text-base-content/50 py-10">{t('chart.not_enough')}</div>
     );
   }
 
@@ -104,28 +123,27 @@ function LineChart({ resourceId, q, filters, fields }) {
   const span = maxY - minY || 1;
   const px = (i) => 40 + (i / Math.max(1, points.length - 1)) * 740;
   const py = (y) => 250 - ((y - minY) / span) * 220;
+  const linePoints = points.map((p, i) => px(i) + ',' + py(p.y)).join(' ');
+  const areaPath =
+    'M' + px(0) + ',250 L' + linePoints.replaceAll(' ', ' L') + ' L' + px(points.length - 1) + ',250 Z';
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs opacity-60">Y axis:</span>
-        <select
-          className="select select-bordered select-xs"
-          value={yField}
-          onChange={(e) => setYField(e.target.value)}
-        >
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-xs text-base-content/50">{t('chart.y')}:</span>
+        <select className={selectClass} value={yField} onChange={(e) => setYField(e.target.value)}>
           {yCandidates.map((f) => (
             <option key={f.id} value={f.id}>
               {f.id}
             </option>
           ))}
         </select>
-        <span className="text-xs opacity-40 ml-auto">
-          X: {xField} (first {points.length} rows)
+        <span className="text-xs text-base-content/35 ml-auto font-mono">
+          X: {xField} · {points.length} {t('resource.rows')}
         </span>
       </div>
       {loading ? (
-        <div className="text-center opacity-60 py-10">Drawing chart...</div>
+        <div className="text-center text-base-content/50 py-10">{t('chart.drawing')}</div>
       ) : error ? (
         <div className="alert alert-error">{error.message}</div>
       ) : (
@@ -133,18 +151,27 @@ function LineChart({ resourceId, q, filters, fields }) {
           width="100%"
           viewBox="0 0 800 280"
           preserveAspectRatio="none"
-          className="w-full h-72 bg-base-200 rounded-lg"
+          className="w-full h-72 oc-card"
         >
+          <defs>
+            <linearGradient id="ocAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#d52b1e" stopOpacity="0.35" />
+              <stop offset="1" stopColor="#d52b1e" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          <GridLines width={780} ys={[30, 103, 177, 250]} />
+          <path d={areaPath} fill="url(#ocAreaGrad)" />
           <polyline
-            points={points.map((p, i) => px(i) + ',' + py(p.y)).join(' ')}
+            points={linePoints}
             fill="none"
-            stroke="#d52b1e"
+            stroke="#ff5d50"
             strokeWidth="2"
+            strokeLinejoin="round"
           />
-          <text x="6" y="34" fill="currentColor" fontSize="11" opacity="0.6">
+          <text x="6" y="34" fill="currentColor" fontSize="11" opacity="0.5" fontFamily="monospace">
             {maxY.toFixed(2)}
           </text>
-          <text x="6" y="252" fill="currentColor" fontSize="11" opacity="0.6">
+          <text x="6" y="252" fill="currentColor" fontSize="11" opacity="0.5" fontFamily="monospace">
             {minY.toFixed(2)}
           </text>
         </svg>
@@ -154,6 +181,7 @@ function LineChart({ resourceId, q, filters, fields }) {
 }
 
 function BarChart({ resourceId, q, filters, fields }) {
+  const { t } = useLang();
   const candidates = fields.filter(f => f.id !== '_id');
   const numericFields = candidates.filter(f => /numeric|integer/i.test(f.type));
   const [xCol, setXCol] = useState(candidates[0]?.id || '');
@@ -201,9 +229,7 @@ function BarChart({ resourceId, q, filters, fields }) {
 
   if (candidates.length === 0) {
     return (
-      <div className="text-center opacity-60 py-10">
-        No columns to chart in this table.
-      </div>
+      <div className="text-center text-base-content/50 py-10">{t('chart.no_numeric')}</div>
     );
   }
 
@@ -214,24 +240,16 @@ function BarChart({ resourceId, q, filters, fields }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <span className="text-xs opacity-60">X axis:</span>
-        <select
-          className="select select-bordered select-xs"
-          value={xCol}
-          onChange={(e) => setXCol(e.target.value)}
-        >
+        <span className="text-xs text-base-content/50">{t('chart.x')}:</span>
+        <select className={selectClass} value={xCol} onChange={(e) => setXCol(e.target.value)}>
           {candidates.map((f) => (
             <option key={f.id} value={f.id}>
               {f.id}
             </option>
           ))}
         </select>
-        <span className="text-xs opacity-60">Function:</span>
-        <select
-          className="select select-bordered select-xs"
-          value={aggFn}
-          onChange={(e) => setAggFn(e.target.value)}
-        >
+        <span className="text-xs text-base-content/50">{t('chart.fn')}:</span>
+        <select className={selectClass} value={aggFn} onChange={(e) => setAggFn(e.target.value)}>
           <option value="count">count</option>
           <option value="sum" disabled={numericFields.length === 0}>sum</option>
           <option value="avg" disabled={numericFields.length === 0}>avg</option>
@@ -240,9 +258,9 @@ function BarChart({ resourceId, q, filters, fields }) {
         </select>
         {aggFn !== 'count' && (
           <>
-            <span className="text-xs opacity-60">Value column:</span>
+            <span className="text-xs text-base-content/50">{t('chart.value_col')}:</span>
             <select
-              className="select select-bordered select-xs"
+              className={selectClass}
               value={aggCol}
               onChange={(e) => setAggCol(e.target.value)}
               disabled={aggFn === 'count'}
@@ -257,12 +275,8 @@ function BarChart({ resourceId, q, filters, fields }) {
         )}
         {dateX && (
           <>
-            <span className="text-xs opacity-60">Bucket:</span>
-            <select
-              className="select select-bordered select-xs"
-              value={bucket}
-              onChange={(e) => setBucket(e.target.value)}
-            >
+            <span className="text-xs text-base-content/50">{t('chart.bucket')}:</span>
+            <select className={selectClass} value={bucket} onChange={(e) => setBucket(e.target.value)}>
               <option value="year">year</option>
               <option value="month">month</option>
               <option value="day">day</option>
@@ -271,18 +285,24 @@ function BarChart({ resourceId, q, filters, fields }) {
         )}
       </div>
       {loading ? (
-        <div className="text-center opacity-60 py-10">Drawing chart...</div>
+        <div className="text-center text-base-content/50 py-10">{t('chart.drawing')}</div>
       ) : error ? (
         <div className="alert alert-error">{error.message}</div>
       ) : bars.length === 0 ? (
-        <div className="text-center opacity-60 py-10">No data to chart.</div>
+        <div className="text-center text-base-content/50 py-10">{t('chart.no_data')}</div>
       ) : (
         <svg
           width="100%"
           viewBox="0 0 800 320"
           preserveAspectRatio="none"
-          className="w-full h-80 bg-base-200 rounded-lg"
+          className="w-full h-80 oc-card"
         >
+          <defs>
+            <linearGradient id="ocBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#ff6a5e" />
+              <stop offset="1" stopColor="#b22216" />
+            </linearGradient>
+          </defs>
           {(() => {
             const vals = bars.map(b => b.value);
             const minY = Math.min(0, ...vals);
@@ -302,19 +322,29 @@ function BarChart({ resourceId, q, filters, fields }) {
             };
             return (
               <>
+                <GridLines width={780} ys={[30, 103, 177, 250]} />
+                <line
+                  x1="40"
+                  x2="780"
+                  y1={y0}
+                  y2={y0}
+                  stroke="currentColor"
+                  strokeOpacity="0.18"
+                />
                 {bars.map((bar, i) => {
                   const xPos = 40 + i * slot + slot * 0.1;
                   const barY = Math.min(y(bar.value), y0);
                   const barHeight = Math.max(1, Math.abs(y(bar.value) - y0));
                   const keyLabel = bar.key === null || bar.key === undefined || bar.key === '' ? '(empty)' : String(bar.key);
                   return (
-                    <g key={i}>
+                    <g key={i} className="hover:opacity-80">
                       <rect
                         x={xPos}
                         y={barY}
                         width={barW}
                         height={barHeight}
-                        fill="#d52b1e"
+                        rx="2"
+                        fill="url(#ocBarGrad)"
                       />
                       <title>{keyLabel}: {bar.value}</title>
                     </g>
@@ -330,18 +360,19 @@ function BarChart({ resourceId, q, filters, fields }) {
                       y={268}
                       fontSize={10}
                       fill="currentColor"
-                      opacity={0.6}
+                      opacity={0.5}
                       textAnchor="end"
+                      fontFamily="monospace"
                       transform={'rotate(-35 ' + cx + ' 268)'}
                     >
                       {fmtKey(bar.key)}
                     </text>
                   );
                 })}
-                <text x="6" y="34" fill="currentColor" fontSize="11" opacity="0.6">
+                <text x="6" y="34" fill="currentColor" fontSize="11" opacity="0.5" fontFamily="monospace">
                   {maxY.toFixed(2)}
                 </text>
-                <text x="6" y="252" fill="currentColor" fontSize="11" opacity="0.6">
+                <text x="6" y="252" fill="currentColor" fontSize="11" opacity="0.5" fontFamily="monospace">
                   {minY.toFixed(2)}
                 </text>
               </>

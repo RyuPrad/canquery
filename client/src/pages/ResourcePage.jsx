@@ -18,6 +18,16 @@ import ChartPanel from '../components/ChartPanel.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import { useLang } from '../i18n.jsx';
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  DownloadIcon,
+  LockIcon,
+  SearchIcon,
+  TableIcon,
+  LineChartIcon,
+  FileIcon,
+} from '../components/Icons.jsx';
 
 const PAGE_SIZE = 50;
 
@@ -167,30 +177,34 @@ function ResourcePage() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        Resource not found
-        <Link to="/" className="link ml-2">
-          Home
+      <div className="text-center py-28 space-y-3 oc-fade">
+        <h1 className="text-2xl font-bold font-display">{t('common.resource_not_found')}</h1>
+        <Link to="/" className="link link-hover text-base-content/60">
+          {t('common.back_search')}
         </Link>
       </div>
     );
   }
 
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const unlockWorking = unlockState === 'queued';
+
   return (
-    <div className="p-4 md:p-8 max-w-screen-2xl mx-auto space-y-4">
+    <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6 space-y-4">
       {resourceError && (
         <div className="alert alert-error my-4">{resourceError.message}</div>
       )}
       {resource && (
-        <div className="py-4 space-y-2">
+        <div className="space-y-2.5 oc-fade">
           <Link
             to={`/datasets/${resource.dataset.id}`}
-            className="link text-sm opacity-60"
+            className="inline-flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors"
           >
-            back to {resource.dataset.title.en || resource.dataset.name}
+            <ArrowLeftIcon size={14} />
+            {resource.dataset.title.en || resource.dataset.name}
           </Link>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-2xl font-bold font-display tracking-tight">
               {resource.name.en || resource.name.fr || resource.id}
             </h1>
             <ResourceBadge mode={resource.query_mode} />
@@ -198,44 +212,72 @@ function ResourcePage() {
               href={resource.url}
               target="_blank"
               rel="noreferrer"
-              className="btn btn-xs btn-ghost"
+              className="oc-nav-link !text-xs opacity-70"
             >
-              Raw download
+              <DownloadIcon size={13} />
+              {t('resource.raw')}
             </a>
           </div>
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 items-center mt-2">
-        <input
-          className="input input-bordered input-sm w-72"
-          placeholder={t('resource.search_placeholder')}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+      <div className="flex flex-wrap gap-2.5 items-center">
+        <div className="oc-search oc-search-sm w-full sm:w-80">
+          <SearchIcon size={14} className="opacity-40 shrink-0" />
+          <input
+            placeholder={t('resource.search_placeholder')}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
         {data && (
-          <span className="text-sm opacity-60 ml-auto">
-            {data.total.toLocaleString()} rows
+          <span className="oc-chip oc-chip-mono ml-auto">
+            {data.total.toLocaleString()} {t('resource.rows')}
           </span>
         )}
         {data && (
-          <a className="btn btn-xs btn-outline" href={exportHref} download title="Exports the current filters and sort, up to 10,000 rows">
+          <a
+            className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
+            href={exportHref}
+            download
+            title={t('resource.export_tip')}
+          >
+            <DownloadIcon size={13} />
             {t('resource.download_filtered')}
           </a>
         )}
       </div>
 
       {dataLoading && !data ? (
-        <LoadingSpinner label={t('resource.querying')} />
+        <div className="space-y-3">
+          <div className="oc-skel h-10 w-64" />
+          <div className="oc-skel h-[420px]" />
+        </div>
       ) : dataError instanceof NotIngestedError ? (
-        <div className="card bg-base-200 p-8 text-center space-y-3">
-          <p>{resource?.format === 'XLSX' || resource?.format === 'XLS' ? t('resource.not_unlocked_excel') : t('resource.not_unlocked_csv')} {t('resource.one_click')}</p>
+        <div className="oc-card p-10 sm:p-14 text-center space-y-5 max-w-xl mx-auto oc-fade">
+          <span
+            className={
+              'w-14 h-14 rounded-2xl bg-primary/15 text-[#ff8d85] inline-flex items-center justify-center' +
+              (unlockWorking ? ' oc-pulse' : '')
+            }
+          >
+            <LockIcon size={24} />
+          </span>
+          <p className="text-base-content/70 leading-relaxed">
+            {resource?.format === 'XLSX' || resource?.format === 'XLS'
+              ? t('resource.not_unlocked_excel')
+              : t('resource.not_unlocked_csv')}{' '}
+            {t('resource.one_click')}
+          </p>
           <div className="flex justify-center">
             <button
-              className="btn bg-[#d52b1e] text-white border-none btn-sm"
+              className="btn btn-primary rounded-xl px-7 shadow-lg shadow-primary/25"
               onClick={handleUnlock}
-              disabled={unlockState === 'queued' && !unlockJob}
+              disabled={unlockWorking && !unlockJob}
             >
+              {unlockWorking && (
+                <span className="loading loading-spinner loading-xs"></span>
+              )}
               {unlockState === null
                 ? t('resource.unlock')
                 : unlockState === 'queued'
@@ -244,16 +286,23 @@ function ResourcePage() {
             </button>
           </div>
           {unlockState === 'queued' && (
-            <p className="text-xs opacity-50">{t('resource.will_appear')}</p>
+            <p className="text-xs text-base-content/40">{t('resource.will_appear')}</p>
           )}
           {unlockState === 'failed' && unlockJob && unlockJob.error && (
-            <p className="text-xs opacity-50">{unlockJob.error}</p>
+            <p className="text-xs text-base-content/40">{unlockJob.error}</p>
           )}
         </div>
       ) : dataError instanceof FileOnlyError ? (
-        <div className="alert alert-warning">
-          <span>This resource is a plain file download.</span>
-          <a href={dataError.download_url} className="link">
+        <div className="oc-card p-10 text-center space-y-4 max-w-xl mx-auto oc-fade">
+          <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
+            <FileIcon size={24} />
+          </span>
+          <p className="text-base-content/70">{t('resource.file_only')}</p>
+          <a
+            href={dataError.download_url}
+            className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
+          >
+            <DownloadIcon size={13} />
             {t('resource.download_here')}
           </a>
         </div>
@@ -261,47 +310,65 @@ function ResourcePage() {
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
         <>
-          <div className="tabs tabs-boxed w-fit">
-            <button className={'tab tab-sm' + (view === 'table' ? ' tab-active' : '')} onClick={() => setView('table')}>{t('resource.table')}</button>
-            <button className={'tab tab-sm' + (view === 'chart' ? ' tab-active' : '')} onClick={() => setView('chart')}>{t('resource.chart')}</button>
+          <div className="oc-seg">
+            <button
+              className={'oc-seg-btn' + (view === 'table' ? ' oc-seg-active' : '')}
+              onClick={() => setView('table')}
+            >
+              <TableIcon size={13} />
+              {t('resource.table')}
+            </button>
+            <button
+              className={'oc-seg-btn' + (view === 'chart' ? ' oc-seg-active' : '')}
+              onClick={() => setView('chart')}
+            >
+              <LineChartIcon size={13} />
+              {t('resource.chart')}
+            </button>
           </div>
           {view === 'chart' ? (
             <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} />
           ) : (
-          <DataTable
-            fields={data.fields}
-            records={data.records}
-            sort={sort}
-            onSortChange={setSort}
-            columnFilters={columnFilters}
-            onColumnFilterChange={(id, text) =>
-              setColumnFilters((prev) => ({ ...prev, [id]: text }))
-            }
-          />
+            <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+              <DataTable
+                fields={data.fields}
+                records={data.records}
+                sort={sort}
+                onSortChange={setSort}
+                columnFilters={columnFilters}
+                onColumnFilterChange={(id, text) =>
+                  setColumnFilters((prev) => ({ ...prev, [id]: text }))
+                }
+              />
+            </div>
           )}
           {data.total > PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button
-                className="btn btn-sm btn-outline"
+                className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
                 disabled={page === 0}
                 onClick={() => setPage(page - 1)}
+                aria-label={t('resource.prev')}
               >
-                Prev
+                <ArrowLeftIcon size={14} />
               </button>
-              <span className="text-sm opacity-70">
-                page {page + 1} of {Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+              <span className="text-sm text-base-content/60 font-mono tabular-nums">
+                {t('resource.page')} {page + 1} / {totalPages}
               </span>
               <button
-                className="btn btn-sm btn-outline"
+                className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
                 disabled={(page + 1) * PAGE_SIZE >= data.total}
                 onClick={() => setPage(page + 1)}
+                aria-label={t('resource.next')}
               >
-                Next
+                <ArrowRightIcon size={14} />
               </button>
             </div>
           )}
         </>
-      ) : null}
+      ) : (
+        <LoadingSpinner label={t('resource.querying')} />
+      )}
     </div>
   );
 }

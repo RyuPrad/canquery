@@ -1,4 +1,28 @@
 import { useState } from 'react';
+import { CopyIcon, CheckIcon, PlayIcon } from '../components/Icons.jsx';
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (insecure context) - silently ignore.
+    }
+  };
+  return (
+    <button
+      className="btn btn-xs btn-ghost rounded-md gap-1 text-base-content/50 hover:text-base-content"
+      onClick={copy}
+      title="Copy to clipboard"
+    >
+      {copied ? <CheckIcon size={12} className="text-success" /> : <CopyIcon size={12} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
 
 function Endpoint({ method, path, desc, example, runPath }) {
   const [result, setResult] = useState(null);
@@ -16,24 +40,32 @@ function Endpoint({ method, path, desc, example, runPath }) {
     }
   };
   return (
-    <div className="card bg-base-200 p-4 space-y-2">
-      <div className="flex gap-2 items-center">
-        <span className={`badge ${method === 'GET' ? 'badge-success' : 'badge-warning'} font-mono text-xs`}>
+    <div className="oc-card p-4 sm:p-5 space-y-3">
+      <div className="flex gap-2.5 items-center flex-wrap">
+        <span className={method === 'GET' ? 'oc-method oc-method-get' : 'oc-method oc-method-post'}>
           {method}
         </span>
-        <code className="font-mono text-sm">{path}</code>
-        {runPath && (
-          <button className="btn btn-xs bg-[#d52b1e] text-white border-none ml-auto" onClick={run} disabled={running}>
-            {running ? 'Running...' : 'Run it'}
-          </button>
-        )}
+        <code className="font-mono text-sm text-base-content/90">{path}</code>
+        <div className="ml-auto flex items-center gap-1">
+          <CopyButton text={example} />
+          {runPath && (
+            <button
+              className="btn btn-xs btn-primary rounded-md gap-1"
+              onClick={run}
+              disabled={running}
+            >
+              <PlayIcon size={11} />
+              {running ? 'Running...' : 'Run it'}
+            </button>
+          )}
+        </div>
       </div>
-      <p className="text-sm opacity-70">{desc}</p>
-      <pre className="bg-base-300 rounded p-3 text-xs overflow-x-auto">
+      <p className="text-sm text-base-content/60 leading-relaxed">{desc}</p>
+      <pre className="oc-code">
         <code>{example}</code>
       </pre>
       {result && (
-        <pre className="bg-base-300 rounded p-3 text-xs overflow-x-auto max-h-64">
+        <pre className="oc-code max-h-64 overflow-y-auto">
           <code>{result}</code>
         </pre>
       )}
@@ -45,14 +77,14 @@ export default function DocsPage() {
   const BASE = window.location.origin;
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold py-6">API documentation</h1>
-      <p className="opacity-70 max-w-2xl">
+    <div className="max-w-4xl mx-auto px-4 py-8 oc-fade">
+      <h1 className="text-3xl font-bold font-display tracking-tight pb-4">API documentation</h1>
+      <p className="text-base-content/60 max-w-2xl leading-relaxed">
         Anonymous JSON API over the mirrored open.canada.ca catalogue. Every response is wrapped in an envelope
         with data, pagination.nextCursor and meta (including the Open Government Licence attribution). Rate limit:
         120 requests per minute per IP; POST ingest: 5 per hour.
       </p>
-      <div className="space-y-4 mt-6">
+      <div className="space-y-4 mt-8">
         <Endpoint
           method="GET"
           path="/api/v1/resources/recently-unlocked"
