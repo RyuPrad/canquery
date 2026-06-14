@@ -19,6 +19,15 @@ function csvEscape(v) {
     return s;
 }
 
+async function profileResource(req, res) {
+    const result = await queryService.profileResource(req.params.id);
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(envelope(
+        { row_count: result.row_count, columns: result.columns },
+        { meta: { query_mode: result.query_mode } }
+    ));
+}
+
 async function exportResourceCsv(req, res) {
     const { q, filters, sort, group_by, agg, agg_column, bucket } = req.query;
     const { fields, records } = await queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket });
@@ -33,4 +42,4 @@ async function exportResourceCsv(req, res) {
     res.send(lines.join('\n') + '\n');
 }
 
-module.exports = { queryResource: catchAsync(queryResource), exportResourceCsv: catchAsync(exportResourceCsv) };
+module.exports = { queryResource: catchAsync(queryResource), profileResource: catchAsync(profileResource), exportResourceCsv: catchAsync(exportResourceCsv) };

@@ -9,5 +9,6 @@ router.get('/popular', catalogController.getPopular);
 router.get('/:id', catalogController.getResource);
 router.get('/:id/query', queryController.queryResource);
 router.get('/:id/query.csv', queryController.exportResourceCsv);
+router.get('/:id/profile', queryController.profileResource);
 router.post('/:id/ingest', ingestLimiter, ingestController.enqueueIngest);
 module.exports = router;

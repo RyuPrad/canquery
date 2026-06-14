@@ -2,12 +2,15 @@ const { getResourceById } = require('../db/catalogReadQueries');
 const { computeQueryMode } = require('./catalogService');
 const { datastoreSearch } = require('./ckanClient');
 const { parseFilters, validateSort, validateAggregation } = require('../utils/filterGrammar');
-const { queryStoreTable, aggregateStoreTable, touchLastAccessed } = require('../db/storeQueries');
+const { queryStoreTable, aggregateStoreTable, touchLastAccessed, profileStoreTable } = require('../db/storeQueries');
 const { logQueryHit } = require('../db/queryLogQueries');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000 });
+// Ingested data is immutable until a re-ingest replaces it, so a profile can be
+// cached hard. The key folds in ingested_at so a refresh busts a stale profile.
+const profileCache = createCache({ name: 'store-profile', ttlMs: 30 * 60 * 1000, negativeTtlMs: 30 * 1000 });
 
 const hasAggParams = (group_by, agg, agg_column, bucket) => [group_by, agg, agg_column, bucket].some(v => v !== undefined && v !== null && v !== '');
 
@@ -138,4 +141,34 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
     throw err;
 }
 
-module.exports = { queryResource, queryResourceForExport };
+async function profileResource(id) {
+    const row = await getResourceById(id);
+    if (!row) throw new AppError('Resource not found', 404);
+
+    const mode = computeQueryMode(row);
+
+    if (mode === 'ingested') {
+        const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
+        const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
+        const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }));
+        return { query_mode: 'ingested', row_count: profile.rowCount, columns: profile.columns };
+    }
+
+    if (mode === 'datastore') {
+        // CKAN's datastore_search has no cheap per-column distinct/range probe,
+        // so the auto-dashboard is an unlocked-table feature only.
+        throw new AppError('Profiling is only supported for unlocked (ingested) resources', 400);
+    }
+
+    if (mode === 'ingestable') {
+        const err = new AppError('Resource is not ingested yet', 409);
+        err.hint = 'POST /api/v1/resources/' + id + '/ingest';
+        throw err;
+    }
+
+    const err = new AppError('Resource is a file download only and cannot be profiled', 422);
+    err.download_url = row.url;
+    throw err;
+}
+
+module.exports = { queryResource, queryResourceForExport, profileResource };

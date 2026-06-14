@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   fetchResource,
@@ -15,7 +15,9 @@ import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import useJobPolling from '../hooks/useJobPolling.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import DataTable from '../components/DataTable.jsx';
-import ChartPanel from '../components/ChartPanel.jsx';
+// Recharts is heavy and only needed on the Chart tab - split it into its own
+// chunk so the rest of the app stays lean.
+const ChartPanel = lazy(() => import('../components/ChartPanel.jsx'));
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import { useLang } from '../i18n.jsx';
@@ -340,7 +342,9 @@ function ResourcePage() {
             </button>
           </div>
           {view === 'chart' ? (
-            <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} />
+            <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
+              <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} />
+            </Suspense>
           ) : (
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
               <DataTable

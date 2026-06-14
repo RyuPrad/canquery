@@ -16,6 +16,10 @@ export function queryResource(id, { q, filters, sort, limit, offset, group_by, a
   return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket });
 }
 
+export function fetchResourceProfile(id) {
+  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/profile');
+}
+
 export function enqueueIngest(id) {
   return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/ingest');
 }
