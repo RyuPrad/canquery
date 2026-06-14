@@ -18,7 +18,7 @@ function pickHero(insights) {
 
 // A gallery tile: profiles its resource (lazily, once scrolled near) and shows a
 // KPI strip + one hero chart, so a visitor grasps the dataset at a glance.
-export default function InsightCard({ item }) {
+export default function InsightCard({ item, showDataset = true }) {
   const { t, lang } = useLang();
   const id = item.resource_id;
   const name = item.name?.en || item.name?.fr || item.dataset?.title?.en || item.dataset?.name || id;
@@ -94,7 +94,7 @@ export default function InsightCard({ item }) {
           <Link to={to} className="font-display font-semibold tracking-tight hover:text-primary transition-colors block truncate">
             {name}
           </Link>
-          {datasetTitle && <p className="text-xs text-base-content/45 truncate">{datasetTitle}</p>}
+          {showDataset && datasetTitle && <p className="text-xs text-base-content/45 truncate">{datasetTitle}</p>}
         </div>
         <span className="cq-chip cq-chip-red shrink-0">{t('badge.ingested')}</span>
       </div>

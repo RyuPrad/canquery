@@ -10,7 +10,7 @@ vi.mock('../api/catalog.js', () => ({
 }));
 import { fetchRecentlyUnlocked, fetchResourceProfile, queryResource } from '../api/catalog.js';
 
-const ITEM = { resource_id: 'r1', name: { en: 'Grants by province' }, dataset: { title: { en: 'Federal Grants' } }, row_count: 420, ingested_at: '2026-06-14' };
+const ITEM = { resource_id: 'r1', name: { en: 'Grants by province' }, dataset: { id: 'd1', title: { en: 'Federal Grants' } }, row_count: 420, ingested_at: '2026-06-14' };
 const PROFILE = { row_count: 420, columns: [
   { id: 'status', type: 'TEXT', distinct: 3, nulls: 0 },
   { id: 'amount', type: 'NUMERIC', distinct: 400, nulls: 0, avg: 25000, min: 0, max: 500000 },
@@ -39,6 +39,20 @@ describe('InsightsPage gallery', () => {
     await waitFor(() => expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ group_by: 'status' })));
     const groupBys = queryResource.mock.calls.map((c) => c[1].group_by);
     expect(groupBys).not.toContain('_id');
+  });
+
+  test('groups multiple resources under one dataset header', async () => {
+    fetchRecentlyUnlocked.mockResolvedValue({ data: [
+      { resource_id: 'r1', name: { en: 'Active corps' }, dataset: { id: 'fed', title: { en: 'Federal Corporations' } }, row_count: 100 },
+      { resource_id: 'r2', name: { en: 'Other corps' }, dataset: { id: 'fed', title: { en: 'Federal Corporations' } }, row_count: 50 },
+    ] });
+    renderPage();
+    // Dataset title appears once (the section header), not repeated on each card.
+    await waitFor(() => expect(screen.getAllByText('Federal Corporations')).toHaveLength(1));
+    expect(screen.getByText('Active corps')).toBeInTheDocument();
+    expect(screen.getByText('Other corps')).toBeInTheDocument();
+    // Count chip reflects the group size.
+    expect(screen.getByText(/2\s+resources/)).toBeInTheDocument();
   });
 
   test('empty state when nothing is unlocked', async () => {
