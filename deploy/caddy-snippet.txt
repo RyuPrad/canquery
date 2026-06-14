@@ -1,22 +1,21 @@
-# Caddy site block for the opencanada front door - AS DEPLOYED (2026-06-13).
+# Caddy site block for the canquery front door - AS DEPLOYED (2026-06-13).
 # Express serves the built SPA itself in production, so this block is a pure
 # reverse_proxy: additive to the live Caddyfile, reload-only, no container
 # mounts touched on the shared box.
 #
 # Live Caddyfile: opt/<platform>-project/volumes/proxy/caddy/Caddyfile
+# Sanitized snapshot (<host> repo): opt/<platform>-project/deploy/caddy/Caddyfile.canquery
 # Reload (bcrypt gotcha - a bare `caddy reload` fails because the container env
 # holds the PLAINTEXT PROXY_AUTH_PASSWORD; re-hash it inline first):
 #   docker exec <platform>-caddy sh -c 'PROXY_AUTH_PASSWORD=$(caddy hash-password \
 #     --plaintext "$PROXY_AUTH_PASSWORD") && caddy reload \
 #     --config /etc/caddy/Caddyfile --adapter caddyfile'
 #
-# Real domain canquery.com went live 2026-06-13 (DNS A: canquery.com + www →
-# <redacted-ip>). The temporary <redacted-host> label is kept in the same block during
-# the transition and can be dropped later. reverse_proxy targets 172.18.0.1
-# (the Docker bridge gateway) because Caddy runs inside the <platform>-caddy
-# container and reaches the host's :3100 through it.
+# Domain canquery.com (DNS A: canquery.com + www → <redacted-ip>). reverse_proxy
+# targets 172.18.0.1 (the Docker bridge gateway) because Caddy runs inside the
+# <platform>-caddy container and reaches the host's :3100 through it.
 
-canquery.com, <redacted-host> {
+canquery.com {
 	encode zstd gzip
 	header -Server
 	reverse_proxy 172.18.0.1:3100

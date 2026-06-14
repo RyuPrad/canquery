@@ -14,7 +14,7 @@ export default function Navbar() {
             <MapleLeaf size={15} />
           </span>
           <span className="font-display font-bold text-lg tracking-tight">
-            open<span className="oc-red-grad">canada</span>
+            can<span className="oc-red-grad">query</span>
           </span>
         </Link>
         <nav className="ml-auto flex flex-wrap gap-0.5 items-center">
