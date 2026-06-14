@@ -32,9 +32,9 @@ export function fetchOrganizations({ limit, cursor } = {}) {
   return getJSON('/api/v1/organizations', { limit, cursor });
 }
 
-export async function fetchRecentlyUnlocked() {
+export async function fetchRecentlyUnlocked(limit) {
   try {
-    return await getJSON('/api/v1/resources/recently-unlocked');
+    return await getJSON('/api/v1/resources/recently-unlocked', { limit });
   } catch {
     return null;
   }

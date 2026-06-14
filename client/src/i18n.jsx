@@ -7,8 +7,13 @@ import { createContext, useContext, useState, useCallback } from 'react';
 export const STRINGS = {
   en: {
     'nav.datasets': 'Datasets',
+    'nav.insights': 'Insights',
     'nav.organizations': 'Organizations',
     'nav.docs': 'API docs',
+    'insights.title': 'Data, visualized',
+    'insights.subtitle': 'Unlocked datasets turned into instant visual stories - explore the highlights, no querying required.',
+    'insights.empty': 'No visualized datasets yet. Unlock a CSV or Excel file and it will appear here.',
+    'insights.open': 'Open full dashboard',
     'footer.licence_pre': 'Contains information licensed under the',
     'footer.licence_link': 'Open Government Licence - Canada',
     'footer.independent': 'canquery is an independent project and is not affiliated with the Government of Canada.',
@@ -127,8 +132,13 @@ export const STRINGS = {
   },
   fr: {
     'nav.datasets': 'Jeux de données',
+    'nav.insights': 'Aperçus',
     'nav.organizations': 'Organisations',
     'nav.docs': 'API',
+    'insights.title': 'Les données, visualisées',
+    'insights.subtitle': 'Des jeux de données déverrouillés transformés en récits visuels instantanés - explorez les points saillants, sans aucune requête.',
+    'insights.empty': 'Aucun jeu de données visualisé pour l’instant. Déverrouillez un fichier CSV ou Excel et il apparaîtra ici.',
+    'insights.open': 'Ouvrir le tableau de bord',
     'footer.licence_pre': 'Contient de l’information visée par la',
     'footer.licence_link': 'Licence du gouvernement ouvert – Canada',
     'footer.independent': 'canquery est un projet indépendant, sans affiliation avec le gouvernement du Canada.',

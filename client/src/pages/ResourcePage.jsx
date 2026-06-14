@@ -68,7 +68,7 @@ function ResourcePage() {
   // indicator across a refresh instead of snapping back to the Unlock button.
   const [unlockState, setUnlockState] = useState(() => (readUnlockJob(id) ? 'queued' : null));
   const [unlockJobId, setUnlockJobId] = useState(() => readUnlockJob(id));
-  const [view, setView] = useState('table');
+  const [view, setView] = useState(() => (searchParams.get('view') === 'chart' ? 'chart' : 'table'));
   const [reloadKey, setReloadKey] = useState(0);
 
   // Resume (or reset) the in-flight unlock when the resource changes - covers
@@ -126,8 +126,9 @@ function ResourcePage() {
     if (Object.keys(activeCf).length) next.cf = JSON.stringify(activeCf);
     if (sort) next.sort = sort;
     if (page > 0) next.page = String(page);
+    if (view === 'chart') next.view = 'chart';
     setSearchParams(next, { replace: true });
-  }, [debouncedQ, debouncedFilters, sort, page, setSearchParams]);
+  }, [debouncedQ, debouncedFilters, sort, page, view, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;

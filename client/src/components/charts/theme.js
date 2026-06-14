@@ -91,6 +91,16 @@ export function yearOf(value) {
   return Number.isNaN(d.getTime()) ? String(value) : String(d.getUTCFullYear());
 }
 
+// Maps a KPI spec (from classify.buildKpis) to display { value, label, sub }.
+// Lives here (not in a component file) so both KpiRow and InsightCard can share
+// it without tripping react-refresh's component-only-exports rule.
+export function kpiView(kpi, lang, t) {
+  if (kpi.role === 'rows') return { value: fmtInt(kpi.value, lang), label: t('chart.kpi_rows') };
+  if (kpi.role === 'distinct') return { value: fmtInt(kpi.value, lang), label: t('chart.kpi_categories'), sub: humanize(kpi.column) };
+  if (kpi.role === 'avg') return { value: fmtNum(kpi.value, lang), label: t('chart.kpi_avg'), sub: humanize(kpi.column) };
+  return { value: yearOf(kpi.min) + '–' + yearOf(kpi.max), label: t('chart.kpi_span'), sub: humanize(kpi.column) };
+}
+
 // Real catalogue files carry footnote/source rows that ingest as data with null
 // metric values (and an empty key). Drop points with no usable value so a chart
 // never shows a paragraph-long axis label sitting at zero. A genuine 0 is kept.

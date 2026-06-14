@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
-import { MapleLeaf, ExternalIcon } from './Icons.jsx';
+import { MapleLeaf, ExternalIcon, SparklesIcon } from './Icons.jsx';
 
 const navClass = ({ isActive }) => 'cq-nav-link' + (isActive ? ' cq-nav-active' : '');
 
@@ -20,6 +20,10 @@ export default function Navbar() {
         <nav className="ml-auto flex flex-wrap gap-0.5 items-center">
           <NavLink to="/" end className={navClass}>
             {t('nav.datasets')}
+          </NavLink>
+          <NavLink to="/insights" className={navClass}>
+            <SparklesIcon size={13} className="text-secondary" />
+            {t('nav.insights')}
           </NavLink>
           <NavLink to="/organizations" className={navClass}>
             {t('nav.organizations')}
