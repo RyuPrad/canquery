@@ -218,7 +218,7 @@ const LangContext = createContext({ lang: 'en', setLang: () => {}, t: (key) => l
 export function LangProvider({ children }) {
   const [lang, setLangState] = useState(() => {
     try {
-      return localStorage.getItem('oc-lang') === 'fr' ? 'fr' : 'en';
+      return localStorage.getItem('cq-lang') === 'fr' ? 'fr' : 'en';
     } catch {
       return 'en';
     }
@@ -226,7 +226,7 @@ export function LangProvider({ children }) {
   const setLang = useCallback((next) => {
     setLangState(next);
     try {
-      localStorage.setItem('oc-lang', next);
+      localStorage.setItem('cq-lang', next);
     } catch {
       // private mode - language just won't persist
     }

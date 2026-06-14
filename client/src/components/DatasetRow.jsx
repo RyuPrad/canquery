@@ -13,7 +13,7 @@ export default function DatasetRow({ dataset }) {
   return (
     <Link
       to={'/datasets/' + (dataset.name || dataset.id)}
-      className="oc-card block p-4 sm:px-5 group"
+      className="cq-card block p-4 sm:px-5 group"
     >
       <div className="flex justify-between items-center gap-4">
         <div className="min-w-0">
@@ -36,11 +36,11 @@ export default function DatasetRow({ dataset }) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="oc-chip">
+          <span className="cq-chip">
             {dataset.resource_count} {t('row.resources')}
           </span>
           {dataset.queryable_count > 0 && (
-            <span className="oc-chip oc-chip-red">
+            <span className="cq-chip cq-chip-red">
               {dataset.queryable_count} {t('row.queryable')}
             </span>
           )}

@@ -2,7 +2,7 @@ const { fetchWithBackoff } = require('../utils/fetchWithBackoff');
 const AppError = require('../utils/AppError');
 
 const BASE = process.env.CKAN_BASE_URL || 'https://open.canada.ca/data/api/3/action';
-const USER_AGENT = process.env.CKAN_USER_AGENT || 'opencanada/1.0';
+const USER_AGENT = process.env.CKAN_USER_AGENT || 'canquery/1.0';
 
 async function ckanAction(action, params) {
     const searchParams = new URLSearchParams();

@@ -18,7 +18,7 @@ describe('query API datastore path', () => {
         expect(res.status).toBe(200);
         expect(res.body.data.total).toBe(42);
         expect(res.body.meta.query_mode).toBe('datastore');
-        expect(res.body.meta.source).toBe('opencanada');
+        expect(res.body.meta.source).toBe('canquery');
         expect(ckan.datastoreSearch).toHaveBeenCalledWith({ resourceId: 'ds-1', q: undefined, filters: undefined, sort: undefined, limit: 2, offset: 0 });
     });
 

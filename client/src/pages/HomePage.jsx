@@ -26,7 +26,7 @@ const EXAMPLES = ['housing', 'wildfire', 'electric vehicles', 'water quality', '
 function StatCard({ icon, value, label, tone, delay }) {
   const n = useCountUp(value);
   return (
-    <div className={`oc-card p-4 sm:p-5 flex items-center gap-3.5 text-left oc-fade ${delay}`}>
+    <div className={`cq-card p-4 sm:p-5 flex items-center gap-3.5 text-left cq-fade ${delay}`}>
       <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tone}`}>
         {icon}
       </span>
@@ -42,7 +42,7 @@ function StatCard({ icon, value, label, tone, delay }) {
 
 function StepCard({ icon, number, title, desc, tone, delay }) {
   return (
-    <div className={`oc-card p-5 relative overflow-hidden oc-fade ${delay}`}>
+    <div className={`cq-card p-5 relative overflow-hidden cq-fade ${delay}`}>
       <span
         className="absolute -top-4 right-1 font-display font-bold text-[4.5rem] leading-none text-base-content/5 select-none"
         aria-hidden="true"
@@ -123,12 +123,12 @@ export default function HomePage() {
   return (
     <div className="relative">
       <div
-        className="absolute inset-x-0 top-0 h-[440px] oc-grid-bg pointer-events-none"
+        className="absolute inset-x-0 top-0 h-[440px] cq-grid-bg pointer-events-none"
         aria-hidden="true"
       />
       <div className="relative max-w-6xl mx-auto px-4 pb-4">
-        <section className="pt-14 pb-2 text-center oc-fade">
-          <div className="oc-chip oc-chip-mono mb-5 !px-3 !py-1.5">
+        <section className="pt-14 pb-2 text-center cq-fade">
+          <div className="cq-chip cq-chip-mono mb-5 !px-3 !py-1.5">
             <MapleLeaf size={11} className="text-primary" />
             {t('home.hero_chip')}
             {synced && (
@@ -137,7 +137,7 @@ export default function HomePage() {
               </span>
             )}
           </div>
-          <h1 className="font-display font-bold tracking-tight text-4xl sm:text-5xl md:text-[3.6rem] leading-[1.05] oc-title-grad pb-1">
+          <h1 className="font-display font-bold tracking-tight text-4xl sm:text-5xl md:text-[3.6rem] leading-[1.05] cq-title-grad pb-1">
             {t('home.title')}
           </h1>
           <p className="text-base sm:text-lg text-base-content/55 max-w-2xl mx-auto mt-4 leading-relaxed">
@@ -151,13 +151,13 @@ export default function HomePage() {
           <div className="flex flex-wrap gap-2 items-center justify-center mt-4">
             <span className="text-xs text-base-content/35">{t('home.try')}</span>
             {EXAMPLES.map((ex) => (
-              <button key={ex} className="oc-pill !text-xs" onClick={() => setQuery(ex)}>
+              <button key={ex} className="cq-pill !text-xs" onClick={() => setQuery(ex)}>
                 {ex}
               </button>
             ))}
             {keyword && (
               <button
-                className="oc-pill oc-pill-active !text-xs inline-flex items-center gap-1.5"
+                className="cq-pill cq-pill-active !text-xs inline-flex items-center gap-1.5"
                 onClick={clearKeyword}
                 title={t('home.keyword_clear')}
               >
@@ -175,21 +175,21 @@ export default function HomePage() {
               tone="bg-accent/10 text-accent"
               value={stats.datasets}
               label={t('home.datasets_mirrored')}
-              delay="oc-fade-1"
+              delay="cq-fade-1"
             />
             <StatCard
               icon={<ZapIcon size={18} />}
               tone="bg-success/10 text-success"
               value={stats.datastore_active_resources}
               label={t('home.queryable_upstream')}
-              delay="oc-fade-2"
+              delay="cq-fade-2"
             />
             <StatCard
               icon={<UnlockIcon size={18} />}
               tone="bg-primary/15 text-[#ff8d85]"
               value={stats.ingested_resources}
               label={t('home.unlocked_here')}
-              delay="oc-fade-3"
+              delay="cq-fade-3"
             />
           </section>
         )}
@@ -202,7 +202,7 @@ export default function HomePage() {
               tone="bg-accent/10 text-accent"
               title={t('home.step1_title')}
               desc={t('home.step1_desc')}
-              delay="oc-fade-2"
+              delay="cq-fade-2"
             />
             <StepCard
               number="2"
@@ -210,7 +210,7 @@ export default function HomePage() {
               tone="bg-primary/15 text-[#ff8d85]"
               title={t('home.step2_title')}
               desc={t('home.step2_desc')}
-              delay="oc-fade-3"
+              delay="cq-fade-3"
             />
             <StepCard
               number="3"
@@ -218,14 +218,14 @@ export default function HomePage() {
               tone="bg-secondary/10 text-secondary"
               title={t('home.step3_title')}
               desc={t('home.step3_desc')}
-              delay="oc-fade-4"
+              delay="cq-fade-4"
             />
           </section>
         )}
 
         <div className="flex flex-wrap gap-2 items-center mt-10">
           <button
-            className={'oc-pill' + (format === '' ? ' oc-pill-active' : '')}
+            className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
             onClick={() => setFormat('')}
           >
             {t('home.all_formats')}
@@ -233,7 +233,7 @@ export default function HomePage() {
           {FORMATS.map((f) => (
             <button
               key={f}
-              className={'oc-pill' + (format === f ? ' oc-pill-active' : '')}
+              className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
               onClick={() => setFormat(f)}
             >
               {f}
@@ -264,13 +264,13 @@ export default function HomePage() {
           {loading && (
             <div className="space-y-3" aria-label={t('home.searching')}>
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="oc-skel h-[74px]" />
+                <div key={i} className="cq-skel h-[74px]" />
               ))}
             </div>
           )}
           {error && <div className="alert alert-error">{error.message}</div>}
           {items.length === 0 && !loading && !error && (
-            <div className="text-center py-16 space-y-2 oc-fade">
+            <div className="text-center py-16 space-y-2 cq-fade">
               <MapleLeaf size={34} className="mx-auto text-base-content/15" />
               <p className="text-base-content/60">{t('home.no_results')}</p>
               <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>

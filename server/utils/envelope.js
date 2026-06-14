@@ -1,6 +1,6 @@
 // Stable response envelope for every /api/v1 endpoint.
 const BASE_META = Object.freeze({
-    source: 'opencanada',
+    source: 'canquery',
     license: 'Open Government Licence – Canada',
     upstream: 'open.canada.ca'
 });

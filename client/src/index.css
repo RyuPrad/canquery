@@ -8,7 +8,7 @@
    aurora teal/ice accents. Accent stays deliberately distinct from
    <other-project>'s orange. */
 @plugin "daisyui/theme" {
-  name: "opencanada";
+  name: "canquery";
   default: true;
   color-scheme: dark;
 
@@ -99,7 +99,7 @@ button:focus-visible,
 
 /* ------------------------------------------------------------ surfaces */
 
-.oc-card {
+.cq-card {
   border-radius: var(--radius-box);
   border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
   background: linear-gradient(
@@ -109,8 +109,8 @@ button:focus-visible,
   );
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
-a.oc-card:hover,
-.oc-card-hover:hover {
+a.cq-card:hover,
+.cq-card-hover:hover {
   border-color: color-mix(in oklab, var(--color-primary) 45%, transparent);
   transform: translateY(-2px);
   box-shadow:
@@ -118,14 +118,14 @@ a.oc-card:hover,
     0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
-.oc-glass {
+.cq-glass {
   background: color-mix(in srgb, var(--color-base-100) 78%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
 }
 
-.oc-grid-bg {
+.cq-grid-bg {
   background-image:
     linear-gradient(color-mix(in oklab, var(--color-base-content) 5%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in oklab, var(--color-base-content) 5%, transparent) 1px, transparent 1px);
@@ -134,7 +134,7 @@ a.oc-card:hover,
   -webkit-mask-image: radial-gradient(ellipse 75% 90% at 50% 0%, black 20%, transparent 75%);
 }
 
-.oc-logo-tile {
+.cq-logo-tile {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -149,14 +149,14 @@ a.oc-card:hover,
   flex: none;
 }
 
-.oc-title-grad {
+.cq-title-grad {
   background: linear-gradient(180deg, #ffffff 25%, #aebacd);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-.oc-red-grad {
+.cq-red-grad {
   background: linear-gradient(92deg, #ff6a5e, #d52b1e 60%, #ff8d6b);
   -webkit-background-clip: text;
   background-clip: text;
@@ -165,7 +165,7 @@ a.oc-card:hover,
 
 /* ------------------------------------------------------------ controls */
 
-.oc-search {
+.cq-search {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -177,13 +177,13 @@ a.oc-card:hover,
   backdrop-filter: blur(8px);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.oc-search:focus-within {
+.cq-search:focus-within {
   border-color: color-mix(in oklab, var(--color-primary) 60%, transparent);
   box-shadow:
     0 0 0 4px rgba(213, 43, 30, 0.14),
     0 12px 44px -14px rgba(213, 43, 30, 0.35);
 }
-.oc-search input {
+.cq-search input {
   background: transparent;
   border: none;
   outline: none;
@@ -193,20 +193,20 @@ a.oc-card:hover,
   font-size: 1rem;
   color: var(--color-base-content);
 }
-.oc-search input::placeholder {
+.cq-search input::placeholder {
   color: color-mix(in oklab, var(--color-base-content) 38%, transparent);
 }
-.oc-search-sm {
+.cq-search-sm {
   height: 2.5rem;
   border-radius: 0.7rem;
   padding: 0 0.8rem;
   gap: 0.5rem;
 }
-.oc-search-sm input {
+.cq-search-sm input {
   font-size: 0.85rem;
 }
 
-.oc-kbd {
+.cq-kbd {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   line-height: 1;
@@ -219,7 +219,7 @@ a.oc-card:hover,
   flex: none;
 }
 
-.oc-pill {
+.cq-pill {
   padding: 0.28rem 0.85rem;
   border-radius: 999px;
   font-size: 0.75rem;
@@ -231,19 +231,19 @@ a.oc-card:hover,
   cursor: pointer;
   white-space: nowrap;
 }
-.oc-pill:hover {
+.cq-pill:hover {
   border-color: color-mix(in oklab, var(--color-base-content) 28%, transparent);
   color: var(--color-base-content);
 }
-.oc-pill-active,
-.oc-pill-active:hover {
+.cq-pill-active,
+.cq-pill-active:hover {
   background: var(--color-primary);
   border-color: transparent;
   color: #fff;
   box-shadow: 0 2px 14px -2px rgba(213, 43, 30, 0.6);
 }
 
-.oc-seg {
+.cq-seg {
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -251,7 +251,7 @@ a.oc-card:hover,
   background: color-mix(in srgb, var(--color-base-300) 50%, transparent);
   border: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
 }
-.oc-seg-btn {
+.cq-seg-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -264,11 +264,11 @@ a.oc-card:hover,
   cursor: pointer;
   white-space: nowrap;
 }
-.oc-seg-btn:hover {
+.cq-seg-btn:hover {
   color: var(--color-base-content);
 }
-.oc-seg-active,
-.oc-seg-active:hover {
+.cq-seg-active,
+.cq-seg-active:hover {
   background: linear-gradient(
     180deg,
     color-mix(in oklab, var(--color-base-content) 13%, var(--color-base-200)),
@@ -278,7 +278,7 @@ a.oc-card:hover,
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
 }
 
-.oc-nav-link {
+.cq-nav-link {
   font-size: 0.85rem;
   font-weight: 500;
   padding: 0.42rem 0.85rem;
@@ -290,19 +290,19 @@ a.oc-card:hover,
   gap: 0.4rem;
   white-space: nowrap;
 }
-.oc-nav-link:hover {
+.cq-nav-link:hover {
   color: var(--color-base-content);
   background: color-mix(in srgb, var(--color-base-200) 80%, transparent);
 }
-.oc-nav-active,
-.oc-nav-active:hover {
+.cq-nav-active,
+.cq-nav-active:hover {
   color: #fff;
   background: color-mix(in srgb, var(--color-base-300) 75%, transparent);
 }
 
 /* -------------------------------------------------------- chips/badges */
 
-.oc-chip {
+.cq-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -315,17 +315,17 @@ a.oc-card:hover,
   color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
   white-space: nowrap;
 }
-.oc-chip-red {
+.cq-chip-red {
   color: #ff958c;
   background: rgba(213, 43, 30, 0.14);
   border-color: rgba(255, 111, 100, 0.32);
 }
-.oc-chip-mono {
+.cq-chip-mono {
   font-family: var(--font-mono);
   font-weight: 500;
 }
 
-.oc-badge {
+.cq-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
@@ -337,7 +337,7 @@ a.oc-card:hover,
   border: 1px solid;
   white-space: nowrap;
 }
-.oc-badge::before {
+.cq-badge::before {
   content: "";
   width: 6px;
   height: 6px;
@@ -346,47 +346,47 @@ a.oc-card:hover,
   box-shadow: 0 0 7px currentColor;
   flex: none;
 }
-.oc-badge-datastore {
+.cq-badge-datastore {
   color: #4ade80;
   border-color: rgba(74, 222, 128, 0.35);
   background: rgba(74, 222, 128, 0.08);
 }
-.oc-badge-ingested {
+.cq-badge-ingested {
   color: #ff8d85;
   border-color: rgba(255, 111, 100, 0.4);
   background: rgba(213, 43, 30, 0.15);
 }
-.oc-badge-ingestable {
+.cq-badge-ingestable {
   color: #fbbf24;
   border-color: rgba(251, 191, 36, 0.35);
   background: rgba(251, 191, 36, 0.08);
 }
-.oc-badge-fileonly {
+.cq-badge-fileonly {
   color: #94a3b8;
   border-color: rgba(148, 163, 184, 0.28);
   background: rgba(148, 163, 184, 0.07);
 }
-.oc-badge-fileonly::before {
+.cq-badge-fileonly::before {
   box-shadow: none;
 }
 
 /* --------------------------------------------------------------- table */
 
-.oc-table-wrap {
+.cq-table-wrap {
   border: 1px solid color-mix(in oklab, var(--color-base-content) 9%, transparent);
   border-radius: var(--radius-box);
   overflow: auto;
   max-height: 70vh;
   background: color-mix(in srgb, var(--color-base-200) 55%, transparent);
 }
-.oc-table {
+.cq-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-family: var(--font-mono);
   font-size: 0.775rem;
 }
-.oc-table thead th {
+.cq-table thead th {
   position: sticky;
   z-index: 2;
   background: color-mix(in srgb, var(--color-base-300) 55%, var(--color-base-100));
@@ -394,7 +394,7 @@ a.oc-card:hover,
   white-space: nowrap;
   font-family: var(--font-sans);
 }
-.oc-table thead tr:first-child th {
+.cq-table thead tr:first-child th {
   top: 0;
   height: 2.5rem;
   padding: 0 0.75rem;
@@ -403,15 +403,15 @@ a.oc-card:hover,
   cursor: pointer;
   user-select: none;
 }
-.oc-table thead tr:first-child th:hover {
+.cq-table thead tr:first-child th:hover {
   color: #fff;
 }
-.oc-table thead tr:nth-child(2) th {
+.cq-table thead tr:nth-child(2) th {
   top: 2.5rem;
   padding: 0.3rem 0.5rem 0.55rem;
   border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
 }
-.oc-table td {
+.cq-table td {
   padding: 0.42rem 0.75rem;
   border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 4%, transparent);
   white-space: nowrap;
@@ -421,21 +421,21 @@ a.oc-card:hover,
   font-variant-numeric: tabular-nums;
   color: color-mix(in oklab, var(--color-base-content) 86%, transparent);
 }
-.oc-table tbody tr:nth-child(2n) td {
+.cq-table tbody tr:nth-child(2n) td {
   background: color-mix(in srgb, var(--color-base-content) 2.5%, transparent);
 }
-.oc-table tbody tr:hover td {
+.cq-table tbody tr:hover td {
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
-.oc-td-num {
+.cq-td-num {
   text-align: right;
 }
-.oc-null {
+.cq-null {
   opacity: 0.25;
   font-style: italic;
 }
 
-.oc-type {
+.cq-type {
   font-family: var(--font-mono);
   font-size: 0.58rem;
   font-weight: 500;
@@ -444,20 +444,20 @@ a.oc-card:hover,
   letter-spacing: 0.02em;
   vertical-align: middle;
 }
-.oc-type-num {
+.cq-type-num {
   color: #5eead4;
   background: rgba(45, 212, 191, 0.12);
 }
-.oc-type-date {
+.cq-type-date {
   color: #93c5fd;
   background: rgba(106, 166, 255, 0.14);
 }
-.oc-type-text {
+.cq-type-text {
   color: #9aa7bd;
   background: rgba(154, 167, 189, 0.12);
 }
 
-.oc-filter-input {
+.cq-filter-input {
   width: 100%;
   min-width: 6rem;
   font-family: var(--font-mono);
@@ -471,17 +471,17 @@ a.oc-card:hover,
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.oc-filter-input::placeholder {
+.cq-filter-input::placeholder {
   color: color-mix(in oklab, var(--color-base-content) 30%, transparent);
 }
-.oc-filter-input:focus {
+.cq-filter-input:focus {
   border-color: color-mix(in oklab, var(--color-primary) 55%, transparent);
   box-shadow: 0 0 0 3px rgba(213, 43, 30, 0.12);
 }
 
 /* ---------------------------------------------------------------- code */
 
-.oc-code {
+.cq-code {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.6;
@@ -491,7 +491,7 @@ a.oc-card:hover,
   padding: 0.8rem 1rem;
   overflow-x: auto;
 }
-.oc-method {
+.cq-method {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 700;
@@ -499,12 +499,12 @@ a.oc-card:hover,
   padding: 0.2rem 0.55rem;
   border-radius: 0.45rem;
 }
-.oc-method-get {
+.cq-method-get {
   color: #4ade80;
   background: rgba(74, 222, 128, 0.1);
   border: 1px solid rgba(74, 222, 128, 0.3);
 }
-.oc-method-post {
+.cq-method-post {
   color: #fbbf24;
   background: rgba(251, 191, 36, 0.1);
   border: 1px solid rgba(251, 191, 36, 0.3);
@@ -512,7 +512,7 @@ a.oc-card:hover,
 
 /* ------------------------------------------------------------ rails etc */
 
-.oc-rail {
+.cq-rail {
   display: flex;
   gap: 0.8rem;
   overflow-x: auto;
@@ -521,11 +521,11 @@ a.oc-card:hover,
   mask-image: linear-gradient(90deg, black 94%, transparent);
   -webkit-mask-image: linear-gradient(90deg, black 94%, transparent);
 }
-.oc-rail > * {
+.cq-rail > * {
   scroll-snap-align: start;
 }
 
-.oc-fmt {
+.cq-fmt {
   width: 2.7rem;
   height: 2.7rem;
   border-radius: 0.7rem;
@@ -541,7 +541,7 @@ a.oc-card:hover,
 
 /* ------------------------------------------------------------ motion */
 
-@keyframes oc-fade-up {
+@keyframes cq-fade-up {
   from {
     opacity: 0;
     transform: translateY(12px);
@@ -551,19 +551,19 @@ a.oc-card:hover,
     transform: none;
   }
 }
-.oc-fade {
-  animation: oc-fade-up 0.55s cubic-bezier(0.21, 0.6, 0.35, 1) both;
+.cq-fade {
+  animation: cq-fade-up 0.55s cubic-bezier(0.21, 0.6, 0.35, 1) both;
 }
-.oc-fade-1 { animation-delay: 0.06s; }
-.oc-fade-2 { animation-delay: 0.12s; }
-.oc-fade-3 { animation-delay: 0.18s; }
-.oc-fade-4 { animation-delay: 0.24s; }
+.cq-fade-1 { animation-delay: 0.06s; }
+.cq-fade-2 { animation-delay: 0.12s; }
+.cq-fade-3 { animation-delay: 0.18s; }
+.cq-fade-4 { animation-delay: 0.24s; }
 
-@keyframes oc-shimmer {
+@keyframes cq-shimmer {
   from { background-position: 200% 0; }
   to { background-position: -200% 0; }
 }
-.oc-skel {
+.cq-skel {
   border-radius: var(--radius-box);
   background: linear-gradient(
     90deg,
@@ -572,26 +572,26 @@ a.oc-card:hover,
     var(--color-base-200) 75%
   );
   background-size: 200% 100%;
-  animation: oc-shimmer 1.4s linear infinite;
+  animation: cq-shimmer 1.4s linear infinite;
 }
 
-@keyframes oc-pulse {
+@keyframes cq-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(213, 43, 30, 0.45); }
   50% { box-shadow: 0 0 0 12px rgba(213, 43, 30, 0); }
 }
-.oc-pulse {
-  animation: oc-pulse 1.6s ease-out infinite;
+.cq-pulse {
+  animation: cq-pulse 1.6s ease-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-fade,
-  .oc-skel,
-  .oc-pulse {
+  .cq-fade,
+  .cq-skel,
+  .cq-pulse {
     animation: none;
   }
-  .oc-card,
-  a.oc-card:hover,
-  .oc-card-hover:hover {
+  .cq-card,
+  a.cq-card:hover,
+  .cq-card-hover:hover {
     transform: none;
     transition: none;
   }

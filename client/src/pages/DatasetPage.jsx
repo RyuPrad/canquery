@@ -31,7 +31,7 @@ function FormatTile({ format }) {
   const style = FMT_STYLES[format] || FMT_FALLBACK;
   const label = (format || 'FILE').slice(0, 7);
   return (
-    <span className="oc-fmt" style={style}>
+    <span className="cq-fmt" style={style}>
       {label}
     </span>
   );
@@ -43,7 +43,7 @@ function PollBadge({ jobId, onDone, onRetry }) {
   if (job && job.status === 'failed') {
     return (
       <span className="flex items-center gap-1.5">
-        <span className="oc-badge oc-badge-fileonly" title={job.error || t('dataset.load_failed')}>
+        <span className="cq-badge cq-badge-fileonly" title={job.error || t('dataset.load_failed')}>
           {t('dataset.load_failed')}
         </span>
         <button className="btn btn-xs btn-outline rounded-lg border-base-content/20" onClick={onRetry}>
@@ -54,7 +54,7 @@ function PollBadge({ jobId, onDone, onRetry }) {
   }
   const label = !job || job.status === 'pending' ? t('dataset.queued') : t('dataset.loading_data');
   return (
-    <span className="oc-badge oc-badge-ingestable">
+    <span className="cq-badge cq-badge-ingestable">
       <span className="loading loading-spinner loading-xs"></span>
       {label}
     </span>
@@ -109,7 +109,7 @@ export default function DatasetPage() {
 
   if (notFound) {
     return (
-      <div className="text-center py-28 space-y-3 oc-fade">
+      <div className="text-center py-28 space-y-3 cq-fade">
         <h1 className="text-2xl font-bold font-display">{t('common.dataset_not_found')}</h1>
         <Link to="/" className="link link-hover text-base-content/60">{t('common.back_search')}</Link>
       </div>
@@ -132,7 +132,7 @@ export default function DatasetPage() {
   const queryable = (mode) => mode === 'datastore' || mode === 'ingested';
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 oc-fade">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 cq-fade">
       <Link
         to="/"
         className="inline-flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors"
@@ -145,15 +145,15 @@ export default function DatasetPage() {
         <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight leading-tight">
           {pick(dataset.title)}
         </h1>
-        <div className="oc-seg shrink-0 mt-1.5">
+        <div className="cq-seg shrink-0 mt-1.5">
           <button
-            className={'oc-seg-btn' + (contentLang === 'en' ? ' oc-seg-active' : '')}
+            className={'cq-seg-btn' + (contentLang === 'en' ? ' cq-seg-active' : '')}
             onClick={() => setContentLang('en')}
           >
             EN
           </button>
           <button
-            className={'oc-seg-btn' + (contentLang === 'fr' ? ' oc-seg-active' : '')}
+            className={'cq-seg-btn' + (contentLang === 'fr' ? ' cq-seg-active' : '')}
             onClick={() => setContentLang('fr')}
           >
             FR
@@ -185,7 +185,7 @@ export default function DatasetPage() {
           <Link
             key={kw}
             to={'/?keyword=' + encodeURIComponent(kw)}
-            className="oc-pill !text-xs !font-medium"
+            className="cq-pill !text-xs !font-medium"
             title={'Find every dataset tagged ' + kw}
           >
             {kw}
@@ -195,13 +195,13 @@ export default function DatasetPage() {
 
       <h2 className="text-lg font-semibold font-display pt-6 flex items-center gap-2.5">
         {t('dataset.resources')}
-        <span className="oc-chip oc-chip-mono">{dataset.resources.length}</span>
+        <span className="cq-chip cq-chip-mono">{dataset.resources.length}</span>
       </h2>
       <div className="space-y-2.5">
         {dataset.resources.map(resource => (
           <div
             key={resource.id}
-            className="oc-card oc-card-hover p-3.5 sm:p-4 flex flex-row flex-wrap items-center gap-3.5"
+            className="cq-card cq-card-hover p-3.5 sm:p-4 flex flex-row flex-wrap items-center gap-3.5"
           >
             <FormatTile format={resource.format} />
             <div className="flex-1 min-w-48">

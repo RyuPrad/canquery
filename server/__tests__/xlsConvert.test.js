@@ -43,7 +43,7 @@ describe('convertXlsToCsv', () => {
     });
 
     it('converts strings and numbers with the header preserved', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
         fixturePaths.push(fixturePath);
         const ws = XLSX.utils.aoa_to_sheet([['name', 'amount'], ['ottawa', 42]]);
         const wb = XLSX.utils.book_new();
@@ -56,7 +56,7 @@ describe('convertXlsToCsv', () => {
     });
 
     it('date cells become ISO-style strings, not Excel serials', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
         fixturePaths.push(fixturePath);
         const ws = XLSX.utils.aoa_to_sheet([['when'], [new Date(Date.UTC(2024, 0, 15))]]);
         const wb = XLSX.utils.book_new();
@@ -69,7 +69,7 @@ describe('convertXlsToCsv', () => {
     });
 
     it('only the first sheet is converted', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
         fixturePaths.push(fixturePath);
         const ws1 = XLSX.utils.aoa_to_sheet([['col1'], ['appears']]);
         const ws2 = XLSX.utils.aoa_to_sheet([['SHOULD_NOT_APPEAR']]);
@@ -83,7 +83,7 @@ describe('convertXlsToCsv', () => {
     });
 
     it('tiny maxRows throws CAP_ROWS', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xls-fixture-' + Date.now() + '-' + (counter++) + '.xls');
         fixturePaths.push(fixturePath);
         const rows = [['col1']];
         for (let i = 0; i < 30; i += 1) {
@@ -94,7 +94,7 @@ describe('convertXlsToCsv', () => {
         XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
         XLSX.writeFile(wb, fixturePath, { bookType: 'biff8' });
 
-        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xls-') && f.endsWith('.csv')));
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xls-') && f.endsWith('.csv')));
         let thrown;
         try {
             await convertXlsToCsv(fixturePath, { maxRows: 5, maxCols: 50, maxCsvBytes: 1024 * 1024 });
@@ -103,7 +103,7 @@ describe('convertXlsToCsv', () => {
         }
         expect(thrown).toBeDefined();
         expect(thrown.code).toBe('CAP_ROWS');
-        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xls-') && f.endsWith('.csv')));
+        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xls-') && f.endsWith('.csv')));
         expect(after.size - before.size).toBe(0);
     });
 });

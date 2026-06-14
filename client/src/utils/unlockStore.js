@@ -2,7 +2,7 @@
 // a page refresh or navigation. The job lives in the backend queue; this just
 // remembers which job belongs to which resource on this device. Keyed by
 // resource id, written on enqueue, cleared when the job finishes.
-const keyFor = (resourceId) => 'oc-unlock-job-' + resourceId;
+const keyFor = (resourceId) => 'cq-unlock-job-' + resourceId;
 
 export function readUnlockJob(resourceId) {
   if (!resourceId) return null;

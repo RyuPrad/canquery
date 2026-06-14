@@ -43,7 +43,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('converts strings, numbers and booleans with the header preserved', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -57,7 +57,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('date cells become ISO strings, not Excel serial numbers', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -71,7 +71,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('formula cells emit their cached result', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -86,7 +86,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('richText cells join their segments', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -101,7 +101,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('sparse rows pad missing cells', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -117,7 +117,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('only the first worksheet is converted', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet1 = wb.addWorksheet('Sheet1');
@@ -132,7 +132,7 @@ describe('convertXlsxToCsv', () => {
     });
 
     it('tiny maxRows throws CAP_ROWS', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -142,7 +142,7 @@ describe('convertXlsxToCsv', () => {
         }
         await wb.xlsx.writeFile(fixturePath);
 
-        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xlsx-') && f.endsWith('.csv')));
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xlsx-') && f.endsWith('.csv')));
         let thrown;
         try {
             await convertXlsxToCsv(fixturePath, { maxRows: 5, maxCols: 50, maxCsvBytes: 1024 * 1024 });
@@ -151,12 +151,12 @@ describe('convertXlsxToCsv', () => {
         }
         expect(thrown).toBeDefined();
         expect(thrown.code).toBe('CAP_ROWS');
-        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xlsx-') && f.endsWith('.csv')));
+        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xlsx-') && f.endsWith('.csv')));
         expect(after.size - before.size).toBe(0);
     }, 15000);
 
     it('tiny maxCols throws CAP_COLS', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -166,7 +166,7 @@ describe('convertXlsxToCsv', () => {
         }
         await wb.xlsx.writeFile(fixturePath);
 
-        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xlsx-') && f.endsWith('.csv')));
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xlsx-') && f.endsWith('.csv')));
         let thrown;
         try {
             await convertXlsxToCsv(fixturePath, { maxRows: 1000, maxCols: 3, maxCsvBytes: 1024 * 1024 });
@@ -175,12 +175,12 @@ describe('convertXlsxToCsv', () => {
         }
         expect(thrown).toBeDefined();
         expect(thrown.code).toBe('CAP_COLS');
-        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xlsx-') && f.endsWith('.csv')));
+        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xlsx-') && f.endsWith('.csv')));
         expect(after.size - before.size).toBe(0);
     });
 
     it('tiny maxCsvBytes throws CAP_FILE', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('Sheet1');
@@ -189,7 +189,7 @@ describe('convertXlsxToCsv', () => {
         sheet.addRow(['4', '5', '6']);
         await wb.xlsx.writeFile(fixturePath);
 
-        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xlsx-') && f.endsWith('.csv')));
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xlsx-') && f.endsWith('.csv')));
         let thrown;
         try {
             await convertXlsxToCsv(fixturePath, { maxRows: 1000, maxCols: 50, maxCsvBytes: 10 });
@@ -198,12 +198,12 @@ describe('convertXlsxToCsv', () => {
         }
         expect(thrown).toBeDefined();
         expect(thrown.code).toBe('CAP_FILE');
-        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-xlsx-') && f.endsWith('.csv')));
+        const after = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-xlsx-') && f.endsWith('.csv')));
         expect(after.size - before.size).toBe(0);
     });
 
     it('empty worksheet throws', async () => {
-        const fixturePath = path.join(os.tmpdir(), 'opencanada-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
         fixturePaths.push(fixturePath);
         const wb = new ExcelJS.Workbook();
         wb.addWorksheet('Sheet1');

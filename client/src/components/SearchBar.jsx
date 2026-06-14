@@ -29,7 +29,7 @@ export default function SearchBar({ value, onChange, placeholder }) {
 
   const ph = placeholder || t('home.search_placeholder');
   return (
-    <div className="oc-search">
+    <div className="cq-search">
       <SearchIcon size={18} className="opacity-40 shrink-0" />
       <input
         ref={inputRef}
@@ -38,7 +38,7 @@ export default function SearchBar({ value, onChange, placeholder }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={ph}
       />
-      <kbd className="oc-kbd hidden sm:block">/</kbd>
+      <kbd className="cq-kbd hidden sm:block">/</kbd>
     </div>
   );
 }

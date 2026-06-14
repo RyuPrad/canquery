@@ -41,7 +41,7 @@ describe('ingestion caps', () => {
         for (let i = 0; i < 20; i += 1) {
             chunks.push('x'.repeat(1024));
         }
-        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-ingest-')));
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-ingest-')));
         let thrown;
         try {
             await downloadToTempFile('https://example.org/big.csv', {
@@ -55,7 +55,7 @@ describe('ingestion caps', () => {
         expect(thrown.code).toBe('CAP_FILE');
         expect(abortSpy).toHaveBeenCalled();
         const leftover = fs.readdirSync(os.tmpdir())
-            .filter(f => f.startsWith('opencanada-ingest-') && !before.has(f));
+            .filter(f => f.startsWith('canquery-ingest-') && !before.has(f));
         expect(leftover).toHaveLength(0);
     });
 
@@ -85,7 +85,7 @@ describe('ingestion caps', () => {
                 }
             })
         });
-        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('opencanada-ingest-')));
+        const before = new Set(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('canquery-ingest-')));
         let thrown;
         const start = Date.now();
         try {
@@ -101,7 +101,7 @@ describe('ingestion caps', () => {
         expect(thrown.message).toMatch(/stall/i);
         expect(Date.now() - start).toBeLessThan(2000);
         const leftover = fs.readdirSync(os.tmpdir())
-            .filter(f => f.startsWith('opencanada-ingest-') && !before.has(f));
+            .filter(f => f.startsWith('canquery-ingest-') && !before.has(f));
         expect(leftover).toHaveLength(0);
     });
 

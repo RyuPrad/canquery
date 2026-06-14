@@ -12,7 +12,7 @@ function OrgCard({ org, t }) {
       key={org.id}
       to={'/?org=' + encodeURIComponent(org.name)}
       title={'See every dataset from ' + title}
-      className="oc-card p-4 flex items-center gap-3.5 group"
+      className="cq-card p-4 flex items-center gap-3.5 group"
     >
       <span className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center font-display font-bold text-base shrink-0">
         {title.charAt(0).toUpperCase()}
@@ -23,7 +23,7 @@ function OrgCard({ org, t }) {
         </div>
         <div className="text-xs text-base-content/35 font-mono truncate mt-0.5">{org.name}</div>
       </div>
-      <span className="oc-chip oc-chip-mono shrink-0">
+      <span className="cq-chip cq-chip-mono shrink-0">
         {org.dataset_count} {t('orgs.datasets')}
       </span>
     </Link>
@@ -43,11 +43,11 @@ export default function OrganizationsPage() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 oc-fade">
+    <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
       <h1 className="text-3xl font-bold font-display tracking-tight pb-6">
         {t('nav.organizations')}
       </h1>
-      <div className="oc-search oc-search-sm w-full max-w-md">
+      <div className="cq-search cq-search-sm w-full max-w-md">
         <SearchIcon size={14} className="opacity-40 shrink-0" />
         <input
           placeholder={t('orgs.filter_placeholder')}
@@ -58,7 +58,7 @@ export default function OrganizationsPage() {
       {loading ? (
         <div className="grid gap-3 mt-5 sm:grid-cols-2" aria-label={t('orgs.loading')}>
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="oc-skel h-[74px]" />
+            <div key={i} className="cq-skel h-[74px]" />
           ))}
         </div>
       ) : error ? (

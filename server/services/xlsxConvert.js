@@ -34,7 +34,7 @@ async function convertXlsxToCsv(xlsxPath, { maxRows, maxCols, maxCsvBytes }) {
         worksheets: 'emit'
     });
 
-    const csvPath = path.join(os.tmpdir(), 'opencanada-xlsx-' + crypto.randomUUID() + '.csv');
+    const csvPath = path.join(os.tmpdir(), 'canquery-xlsx-' + crypto.randomUUID() + '.csv');
     const ws = fs.createWriteStream(csvPath);
     const writer = makeSafeWriter(ws);
 
@@ -163,7 +163,7 @@ async function convertXlsToCsv(xlsPath, { maxRows, maxCols, maxCsvBytes }) {
 
     if (rowCount === 0) throw new Error('empty XLS worksheet');
 
-    const csvPath = path.join(os.tmpdir(), 'opencanada-xls-' + crypto.randomUUID() + '.csv');
+    const csvPath = path.join(os.tmpdir(), 'canquery-xls-' + crypto.randomUUID() + '.csv');
     await fs.promises.writeFile(csvPath, lines.join(''));
     return { csvPath, rowCount };
 }

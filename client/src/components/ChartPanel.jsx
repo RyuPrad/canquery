@@ -9,15 +9,15 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode }
   if (queryMode === 'ingested') {
     return (
       <div className="space-y-2">
-        <div className="oc-seg mb-2">
+        <div className="cq-seg mb-2">
           <button
-            className={'oc-seg-btn' + (chartType === 'line' ? ' oc-seg-active' : '')}
+            className={'cq-seg-btn' + (chartType === 'line' ? ' cq-seg-active' : '')}
             onClick={() => setChartType('line')}
           >
             {t('chart.line')}
           </button>
           <button
-            className={'oc-seg-btn' + (chartType === 'bar' ? ' oc-seg-active' : '')}
+            className={'cq-seg-btn' + (chartType === 'bar' ? ' cq-seg-active' : '')}
             onClick={() => setChartType('bar')}
           >
             {t('chart.bar')}
@@ -154,7 +154,7 @@ function LineChart({ resourceId, q, filters, fields }) {
           width="100%"
           viewBox="0 0 800 280"
           preserveAspectRatio="none"
-          className="w-full h-72 oc-card"
+          className="w-full h-72 cq-card"
         >
           <defs>
             <linearGradient id="ocAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -298,7 +298,7 @@ function BarChart({ resourceId, q, filters, fields }) {
           width="100%"
           viewBox="0 0 800 320"
           preserveAspectRatio="none"
-          className="w-full h-80 oc-card"
+          className="w-full h-80 cq-card"
         >
           <defs>
             <linearGradient id="ocBarGrad" x1="0" y1="0" x2="0" y2="1">

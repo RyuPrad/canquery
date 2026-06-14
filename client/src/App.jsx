@@ -21,7 +21,7 @@ function ScrollToTop() {
 function NotFound() {
   const { t } = useLang()
   return (
-    <div className="text-center py-28 space-y-4 oc-fade">
+    <div className="text-center py-28 space-y-4 cq-fade">
       <MapleLeaf size={44} className="mx-auto text-primary opacity-80" />
       <h1 className="text-3xl font-bold font-display">{t('common.not_found')}</h1>
       <Link to="/" className="link link-hover text-base-content/60">

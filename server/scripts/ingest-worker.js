@@ -18,7 +18,7 @@ const caps = {
     maxRows: Number(process.env.MAX_ROWS) || 1000000,
     maxCols: Number(process.env.MAX_COLS) || 120,
     storeBudgetBytes: (Number(process.env.STORE_BUDGET_GB) || 15) * 1024 * 1024 * 1024,
-    userAgent: process.env.CKAN_USER_AGENT || 'opencanada/1.0',
+    userAgent: process.env.CKAN_USER_AGENT || 'canquery/1.0',
     stallTimeoutMs: Number(process.env.INGEST_STALL_TIMEOUT_MS) || 60000
 };
 

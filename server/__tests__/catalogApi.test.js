@@ -51,7 +51,7 @@ describe('Catalog API', () => {
         expect(res.body).toHaveProperty('data');
         expect(res.body).toHaveProperty('pagination');
         expect(res.body.pagination).toHaveProperty('nextCursor', null);
-        expect(res.body.meta.source).toBe('opencanada');
+        expect(res.body.meta.source).toBe('canquery');
         expect(res.body.meta.upstream).toBe('open.canada.ca');
         expect(typeof res.body.meta.license).toBe('string');
         expect(res.body.data[0].title.en).toBe('Title 1');
@@ -132,7 +132,7 @@ describe('Catalog API', () => {
         const res = await request(app).get('/api/v1/stats');
         expect(res.status).toBe(200);
         expect(res.body.data.store_bytes).toBe(1234);
-        expect(res.body.meta.source).toBe('opencanada');
+        expect(res.body.meta.source).toBe('canquery');
     });
 
     it('healthz reports ok when db and upstream are reachable', async () => {

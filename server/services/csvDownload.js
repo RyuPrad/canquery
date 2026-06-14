@@ -44,7 +44,7 @@ function makeSafeWriter(ws) {
 async function downloadToTempFile(url, { maxFileBytes, fetchImpl, userAgent, stallTimeoutMs } = {}) {
     const doFetch = fetchImpl || fetch;
     const stallMs = Number(stallTimeoutMs) > 0 ? Number(stallTimeoutMs) : 60000;
-    const filePath = path.join(os.tmpdir(), 'opencanada-ingest-' + crypto.randomUUID() + '.csv');
+    const filePath = path.join(os.tmpdir(), 'canquery-ingest-' + crypto.randomUUID() + '.csv');
     const controller = new AbortController();
 
     // Inactivity guard. Every other outbound fetch goes through
@@ -68,7 +68,7 @@ async function downloadToTempFile(url, { maxFileBytes, fetchImpl, userAgent, sta
         res = await doFetch(url, {
             redirect: 'follow',
             signal: controller.signal,
-            headers: { 'User-Agent': userAgent || 'opencanada/1.0' }
+            headers: { 'User-Agent': userAgent || 'canquery/1.0' }
         });
     } catch (err) {
         disarm();

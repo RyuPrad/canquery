@@ -1,10 +1,12 @@
-# opencanada
+# canquery
 
 One consistent query API + web UI over the whole of Canada's open data portal.
 
+**Live:** https://canquery.com
+
 [open.canada.ca](https://open.canada.ca/data/) catalogues ~50,000 datasets, but only
 ~1,000 resources are loaded into CKAN's DataStore and therefore queryable through the
-official `datastore_search` API. The other ~98% are bare file downloads. **opencanada**
+official `datastore_search` API. The other ~98% are bare file downloads. **canquery**
 makes the whole catalogue feel queryable through one endpoint:
 
 | Tier | When | What happens |
@@ -30,12 +32,12 @@ Prereqs: Node 20+, PostgreSQL 16.
 
 ```bash
 # 1. Database
-sudo -u postgres psql -c "CREATE ROLE opencanada LOGIN PASSWORD 'opencanada_dev'" \
-                      -c "CREATE DATABASE opencanada OWNER opencanada"
+sudo -u postgres psql -c "CREATE ROLE canquery LOGIN PASSWORD 'canquery_dev'" \
+                      -c "CREATE DATABASE canquery OWNER canquery"
 
 # 2. Server
 cd server
-cp .env.example .env          # fill in OPENCANADA_DATABASE_URL etc.
+cp .env.example .env          # fill in CANQUERY_DATABASE_URL etc.
 npm install
 npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
@@ -98,8 +100,8 @@ to TEXT per column when a later cast fails.
 ## Tests & lint
 
 ```bash
-cd server && npm test && npm run lint   # Jest + Supertest (45 tests)
-cd client && npm test && npm run lint   # Vitest + Testing Library
+cd server && npm test && npm run lint   # Jest + Supertest (120 tests)
+cd client && npm test && npm run lint   # Vitest (13 tests)
 ```
 
 Coverage includes the four `/query` modes, filter-grammar injection attempts,

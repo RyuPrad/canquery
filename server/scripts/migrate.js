@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const client = new Client({
-    connectionString: process.env.OPENCANADA_DATABASE_URL
+    connectionString: process.env.CANQUERY_DATABASE_URL || process.env.OPENCANADA_DATABASE_URL
 });
 
 async function main() {

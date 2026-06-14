@@ -20,20 +20,20 @@ export default function PopularRail() {
   if (items.length === 0) return null;
 
   return (
-    <section className="mt-10 oc-fade">
+    <section className="mt-10 cq-fade">
       <div className="flex items-center gap-2 text-sm font-semibold text-base-content/55 mb-3">
         <ZapIcon size={15} className="text-warning" />
         {t('rails.popular')}
       </div>
-      <div className="oc-rail">
+      <div className="cq-rail">
         {items.map(item => (
           <Link
             key={item.resource_id}
             to={'/resources/' + item.resource_id}
-            className="oc-card p-3.5 w-60 shrink-0 space-y-1.5"
+            className="cq-card p-3.5 w-60 shrink-0 space-y-1.5"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="oc-chip">
+              <span className="cq-chip">
                 <ZapIcon size={10} />
                 {item.hits} {item.hits === 1 ? t('rails.query_one') : t('rails.query_many')}
               </span>

@@ -1,15 +1,15 @@
-# /etc/systemd/system/opencanada-worker.service
+# /etc/systemd/system/canquery-worker.service
 # Long-running ingest worker (systemd rather than tmux, per the runbook).
 [Unit]
-Description=opencanada ingest worker (drains ingest_jobs)
+Description=canquery ingest worker (drains ingest_jobs)
 After=network-online.target postgresql.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=opencanada
-Group=opencanada
-WorkingDirectory=/home/opencanada/opencanada/server
+User=canquery
+Group=canquery
+WorkingDirectory=/home/canquery/canquery/server
 ExecStart=/usr/bin/node scripts/ingest-worker.js
 Environment=NODE_ENV=production
 Restart=on-failure
@@ -17,7 +17,7 @@ RestartSec=10
 
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/opencanada/opencanada/server /tmp
+ReadWritePaths=/home/canquery/canquery/server /tmp
 PrivateTmp=true
 NoNewPrivileges=true
 

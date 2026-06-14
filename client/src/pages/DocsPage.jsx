@@ -40,9 +40,9 @@ function Endpoint({ method, path, desc, example, runPath }) {
     }
   };
   return (
-    <div className="oc-card p-4 sm:p-5 space-y-3">
+    <div className="cq-card p-4 sm:p-5 space-y-3">
       <div className="flex gap-2.5 items-center flex-wrap">
-        <span className={method === 'GET' ? 'oc-method oc-method-get' : 'oc-method oc-method-post'}>
+        <span className={method === 'GET' ? 'cq-method cq-method-get' : 'cq-method cq-method-post'}>
           {method}
         </span>
         <code className="font-mono text-sm text-base-content/90">{path}</code>
@@ -61,11 +61,11 @@ function Endpoint({ method, path, desc, example, runPath }) {
         </div>
       </div>
       <p className="text-sm text-base-content/60 leading-relaxed">{desc}</p>
-      <pre className="oc-code">
+      <pre className="cq-code">
         <code>{example}</code>
       </pre>
       {result && (
-        <pre className="oc-code max-h-64 overflow-y-auto">
+        <pre className="cq-code max-h-64 overflow-y-auto">
           <code>{result}</code>
         </pre>
       )}
@@ -77,7 +77,7 @@ export default function DocsPage() {
   const BASE = window.location.origin;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 oc-fade">
+    <div className="max-w-4xl mx-auto px-4 py-8 cq-fade">
       <h1 className="text-3xl font-bold font-display tracking-tight pb-4">API documentation</h1>
       <p className="text-base-content/60 max-w-2xl leading-relaxed">
         Anonymous JSON API over the mirrored open.canada.ca catalogue. Every response is wrapped in an envelope

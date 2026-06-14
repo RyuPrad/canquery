@@ -1,16 +1,16 @@
-# /etc/systemd/system/opencanada-api.service
+# /etc/systemd/system/canquery-api.service
 # Mirrors <other-project>-api.service hardening. The app loads its own .env via
 # dotenv; the unit sets only NODE_ENV.
 [Unit]
-Description=opencanada API (Express, :3100)
-After=network-online.target opencanada-api-port3100-firewall.service
-Wants=network-online.target opencanada-api-port3100-firewall.service
+Description=canquery API (Express, :3100)
+After=network-online.target canquery-api-port3100-firewall.service
+Wants=network-online.target canquery-api-port3100-firewall.service
 
 [Service]
 Type=simple
-User=opencanada
-Group=opencanada
-WorkingDirectory=/home/opencanada/opencanada/server
+User=canquery
+Group=canquery
+WorkingDirectory=/home/canquery/canquery/server
 ExecStart=/usr/bin/node server.js
 Environment=NODE_ENV=production
 Restart=on-failure
@@ -19,7 +19,7 @@ RestartSec=3
 # Hardening (mirror of <other-project>-api.service)
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/opencanada/opencanada/server
+ReadWritePaths=/home/canquery/canquery/server
 PrivateTmp=true
 NoNewPrivileges=true
 

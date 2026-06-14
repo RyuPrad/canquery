@@ -9,11 +9,11 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-4 py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">
-            <span className="oc-logo-tile">
+            <span className="cq-logo-tile">
               <MapleLeaf size={15} />
             </span>
             <span className="font-display font-bold text-lg tracking-tight">
-              can<span className="oc-red-grad">query</span>
+              can<span className="cq-red-grad">query</span>
             </span>
           </div>
           <p className="text-sm text-base-content/55 max-w-xs">{t('footer.tag')}</p>

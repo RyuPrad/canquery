@@ -190,7 +190,7 @@ function ResourcePage() {
 
   if (notFound) {
     return (
-      <div className="text-center py-28 space-y-3 oc-fade">
+      <div className="text-center py-28 space-y-3 cq-fade">
         <h1 className="text-2xl font-bold font-display">{t('common.resource_not_found')}</h1>
         <Link to="/" className="link link-hover text-base-content/60">
           {t('common.back_search')}
@@ -208,7 +208,7 @@ function ResourcePage() {
         <div className="alert alert-error my-4">{resourceError.message}</div>
       )}
       {resource && (
-        <div className="space-y-2.5 oc-fade">
+        <div className="space-y-2.5 cq-fade">
           <Link
             to={`/datasets/${resource.dataset.id}`}
             className="inline-flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors"
@@ -225,7 +225,7 @@ function ResourcePage() {
               href={resource.url}
               target="_blank"
               rel="noreferrer"
-              className="oc-nav-link !text-xs opacity-70"
+              className="cq-nav-link !text-xs opacity-70"
             >
               <DownloadIcon size={13} />
               {t('resource.raw')}
@@ -235,7 +235,7 @@ function ResourcePage() {
       )}
 
       <div className="flex flex-wrap gap-2.5 items-center">
-        <div className="oc-search oc-search-sm w-full sm:w-80">
+        <div className="cq-search cq-search-sm w-full sm:w-80">
           <SearchIcon size={14} className="opacity-40 shrink-0" />
           <input
             placeholder={t('resource.search_placeholder')}
@@ -244,7 +244,7 @@ function ResourcePage() {
           />
         </div>
         {data && (
-          <span className="oc-chip oc-chip-mono ml-auto">
+          <span className="cq-chip cq-chip-mono ml-auto">
             {data.total.toLocaleString()} {t('resource.rows')}
           </span>
         )}
@@ -263,15 +263,15 @@ function ResourcePage() {
 
       {dataLoading && !data ? (
         <div className="space-y-3">
-          <div className="oc-skel h-10 w-64" />
-          <div className="oc-skel h-[420px]" />
+          <div className="cq-skel h-10 w-64" />
+          <div className="cq-skel h-[420px]" />
         </div>
       ) : dataError instanceof NotIngestedError ? (
-        <div className="oc-card p-10 sm:p-14 text-center space-y-5 max-w-xl mx-auto oc-fade">
+        <div className="cq-card p-10 sm:p-14 text-center space-y-5 max-w-xl mx-auto cq-fade">
           <span
             className={
               'w-14 h-14 rounded-2xl bg-primary/15 text-[#ff8d85] inline-flex items-center justify-center' +
-              (unlockWorking ? ' oc-pulse' : '')
+              (unlockWorking ? ' cq-pulse' : '')
             }
           >
             <LockIcon size={24} />
@@ -306,7 +306,7 @@ function ResourcePage() {
           )}
         </div>
       ) : dataError instanceof FileOnlyError ? (
-        <div className="oc-card p-10 text-center space-y-4 max-w-xl mx-auto oc-fade">
+        <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
           <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
             <FileIcon size={24} />
           </span>
@@ -323,16 +323,16 @@ function ResourcePage() {
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
         <>
-          <div className="oc-seg">
+          <div className="cq-seg">
             <button
-              className={'oc-seg-btn' + (view === 'table' ? ' oc-seg-active' : '')}
+              className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}
               onClick={() => setView('table')}
             >
               <TableIcon size={13} />
               {t('resource.table')}
             </button>
             <button
-              className={'oc-seg-btn' + (view === 'chart' ? ' oc-seg-active' : '')}
+              className={'cq-seg-btn' + (view === 'chart' ? ' cq-seg-active' : '')}
               onClick={() => setView('chart')}
             >
               <LineChartIcon size={13} />

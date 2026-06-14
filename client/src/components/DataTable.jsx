@@ -4,9 +4,9 @@ const isNumType = (type) => /int|numeric|float|double|money/i.test(type || '');
 const isDateType = (type) => /date|time/i.test(type || '');
 
 function typeChipClass(type) {
-  if (isNumType(type)) return 'oc-type oc-type-num';
-  if (isDateType(type)) return 'oc-type oc-type-date';
-  return 'oc-type oc-type-text';
+  if (isNumType(type)) return 'cq-type cq-type-num';
+  if (isDateType(type)) return 'cq-type cq-type-date';
+  return 'cq-type cq-type-text';
 }
 
 function DataTable({
@@ -36,8 +36,8 @@ function DataTable({
   };
 
   return (
-    <div className="oc-table-wrap">
-      <table className="oc-table">
+    <div className="cq-table-wrap">
+      <table className="cq-table">
         <thead>
           <tr>
             {fields.map((field) => {
@@ -64,7 +64,7 @@ function DataTable({
                   <span />
                 ) : (
                   <input
-                    className="oc-filter-input"
+                    className="cq-filter-input"
                     placeholder={t('table.filter')}
                     value={columnFilters[field.id] || ''}
                     onChange={(e) => onColumnFilterChange(field.id, e.target.value)}
@@ -82,11 +82,11 @@ function DataTable({
                 return (
                   <td
                     key={field.id}
-                    className={isNumType(field.type) ? 'oc-td-num' : ''}
+                    className={isNumType(field.type) ? 'cq-td-num' : ''}
                     title={v === null || v === undefined ? undefined : String(v)}
                   >
                     {v === null || v === undefined ? (
-                      <span className="oc-null">{'∅'}</span>
+                      <span className="cq-null">{'∅'}</span>
                     ) : (
                       String(v)
                     )}
