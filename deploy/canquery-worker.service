@@ -1,5 +1,5 @@
 # /etc/systemd/system/canquery-worker.service
-# Long-running ingest worker (systemd rather than tmux, per the runbook).
+# Long-running ingest worker that drains the ingest queue.
 [Unit]
 Description=canquery ingest worker (drains ingest_jobs)
 After=network-online.target postgresql.service

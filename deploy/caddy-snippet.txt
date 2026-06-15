@@ -1,26 +1,18 @@
-# Caddy site block for the canquery front door - AS DEPLOYED (2026-06-13).
-# Express serves the built SPA itself in production, so this block is a pure
-# reverse_proxy: additive to the live Caddyfile, reload-only, no container
-# mounts touched on the shared box.
+# Caddy site block for canquery.
 #
-# Live Caddyfile: opt/<platform>-project/volumes/proxy/caddy/Caddyfile
-# Sanitized snapshot (<host> repo): opt/<platform>-project/deploy/caddy/Caddyfile.canquery
-# Reload (bcrypt gotcha - a bare `caddy reload` fails because the container env
-# holds the PLAINTEXT PROXY_AUTH_PASSWORD; re-hash it inline first):
-#   docker exec <platform>-caddy sh -c 'PROXY_AUTH_PASSWORD=$(caddy hash-password \
-#     --plaintext "$PROXY_AUTH_PASSWORD") && caddy reload \
-#     --config /etc/caddy/Caddyfile --adapter caddyfile'
+# The Express process serves the built SPA itself in production, so this is a
+# pure reverse_proxy - no static file mounts needed. Substitute <your-domain>.
 #
-# Domain canquery.com (DNS A: canquery.com + www → <redacted-ip>). reverse_proxy
-# targets 172.18.0.1 (the Docker bridge gateway) because Caddy runs inside the
-# <platform>-caddy container and reaches the host's :3100 through it.
+# The proxy target is the API's loopback address. If Caddy runs inside Docker
+# and the API runs on the host, target the Docker bridge gateway instead
+# (commonly 172.x.0.1) so the container can reach the host's :3100.
 
-canquery.com {
+<your-domain> {
 	encode zstd gzip
 	header -Server
-	reverse_proxy 172.18.0.1:3100
+	reverse_proxy 127.0.0.1:3100
 }
 
-www.canquery.com {
-	redir https://canquery.com{uri} permanent
+www.<your-domain> {
+	redir https://<your-domain>{uri} permanent
 }

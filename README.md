@@ -23,7 +23,7 @@ into Postgres by sync scripts and searched with a generated tsvector (English + 
 ```
 server/   Express 5 API + pipelines (routes → controllers → services → db, no ORM)
 client/   React 19 + Vite + Tailwind 4 + daisyUI SPA
-deploy/   systemd units, cron drop-in, Caddy snippet, DEPLOY.md runbook
+deploy/   systemd units, cron drop-in, Caddy snippet, DEPLOY.md guide
 ```
 
 ## Local setup
@@ -97,24 +97,42 @@ Safety rails (env-tunable): `MAX_FILE_MB=50`, `MAX_ROWS=1000000`, `MAX_COLS=120`
 Type inference (1,000-row sample → INTEGER/NUMERIC/DATE/TIMESTAMPTZ/TEXT) falls back
 to TEXT per column when a later cast fails.
 
+## Web UI
+
+The SPA (`client/`) is search → dataset → resource explorer, with a
+sortable/filterable data grid and CSV export. Unlocked resources also get an
+auto **Insights** dashboard that profiles the table and renders KPIs + charts
+(donuts, bars, time-series) with zero configuration, and an **`/insights`**
+gallery that surfaces those dashboards grouped by dataset. English/French
+throughout.
+
 ## Tests & lint
 
 ```bash
-cd server && npm test && npm run lint   # Jest + Supertest (120 tests)
-cd client && npm test && npm run lint   # Vitest (13 tests)
+cd server && npm test && npm run lint   # Jest + Supertest (125 tests)
+cd client && npm test && npm run lint   # Vitest (31 tests)
 ```
 
 Coverage includes the four `/query` modes, filter-grammar injection attempts,
-mid-stream cap aborts, eviction budget honoring, and the stable envelope shape.
+mid-stream cap aborts, eviction budget honoring, the stable envelope shape, the
+column-profile endpoint, and the auto-insights column classifier. The server
+suite mocks the database, so it runs without Postgres (this is what CI runs).
 
 ## Deployment
 
-See [`deploy/DEPLOY.md`](deploy/DEPLOY.md) - systemd units, cron schedule, Caddy
-routing and the house rules for the target server. Nothing in `deploy/` runs
-automatically; every live-server step requires explicit operator action.
+See [`deploy/DEPLOY.md`](deploy/DEPLOY.md) for a generic single-server setup:
+Postgres, `.env`, systemd units, the cron schedule, and a reverse-proxy (Caddy)
+example. In production the API process serves the built SPA, so the only
+public-facing piece is a TLS-terminating reverse proxy in front of `:3100`.
+
+## Contributing
+
+Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for setup and
+the PR checklist, and [SECURITY.md](SECURITY.md) to report vulnerabilities
+privately.
 
 ## License & attribution
 
-Code: MIT. Data: contains information licensed under the
-[Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).
+Code: **MIT** - see [LICENSE](LICENSE). Data: contains information licensed under
+the [Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).
 This project is independent and not affiliated with the Government of Canada.

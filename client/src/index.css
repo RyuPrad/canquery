@@ -5,8 +5,7 @@
 }
 
 /* "Northern observatory" - deep blue-black night sky, maple red primary,
-   aurora teal/ice accents. Accent stays deliberately distinct from
-   <other-project>'s orange. */
+   aurora teal/ice accents. */
 @plugin "daisyui/theme" {
   name: "canquery";
   default: true;

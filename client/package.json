@@ -3,6 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "description": "canquery web UI - search, unlock, query, and visualize Canada's open data.",
+  "license": "MIT",
+  "author": "RyuPrad",
+  "homepage": "https://canquery.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RyuPrad/canquery.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RyuPrad/canquery/issues"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

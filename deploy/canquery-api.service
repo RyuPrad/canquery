@@ -1,10 +1,10 @@
 # /etc/systemd/system/canquery-api.service
-# Mirrors <other-project>-api.service hardening. The app loads its own .env via
-# dotenv; the unit sets only NODE_ENV.
+# The app loads its own .env via dotenv; the unit sets only NODE_ENV.
+# Adjust User/Group and paths if your install differs from /home/canquery.
 [Unit]
 Description=canquery API (Express, :3100)
-After=network-online.target canquery-api-port3100-firewall.service
-Wants=network-online.target canquery-api-port3100-firewall.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -16,7 +16,7 @@ Environment=NODE_ENV=production
 Restart=on-failure
 RestartSec=3
 
-# Hardening (mirror of <other-project>-api.service)
+# Hardening
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/canquery/canquery/server

@@ -2,6 +2,17 @@
     "name": "canquery-server",
     "version": "1.0.0",
     "private": true,
+    "description": "canquery API - one consistent query API over Canada's open data portal (catalogue mirror, datastore proxy, on-demand CSV/Excel ingestion).",
+    "license": "MIT",
+    "author": "RyuPrad",
+    "homepage": "https://canquery.com",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/RyuPrad/canquery.git"
+    },
+    "bugs": {
+        "url": "https://github.com/RyuPrad/canquery/issues"
+    },
     "main": "server.js",
     "scripts": {
         "start": "node server.js",

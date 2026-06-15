@@ -1,6 +1,6 @@
-// Ported from <other-project>'s pipeline scripts: retry 429 and 5xx with
-// exponential backoff and a hard per-request timeout. Network errors retry
-// on the same schedule; non-429 4xx responses return to the caller.
+// Retry 429 and 5xx with exponential backoff and a hard per-request timeout.
+// Network errors retry on the same schedule; non-429 4xx responses return to
+// the caller.
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 4;
 
