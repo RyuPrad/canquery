@@ -136,3 +136,6 @@ privately.
 Code: **MIT** - see [LICENSE](LICENSE). Data: contains information licensed under
 the [Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).
 This project is independent and not affiliated with the Government of Canada.
+
+Built by [@RyuPrad](https://github.com/RyuPrad) ·
+[github.com/RyuPrad/canquery](https://github.com/RyuPrad/canquery)

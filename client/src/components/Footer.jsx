@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
-import { MapleLeaf, ExternalIcon } from './Icons.jsx';
+import { MapleLeaf, ExternalIcon, GithubIcon } from './Icons.jsx';
+
+const REPO_URL = 'https://github.com/RyuPrad/canquery';
+const PROFILE_URL = 'https://github.com/RyuPrad';
 
 export default function Footer() {
   const { t } = useLang();
@@ -17,6 +20,28 @@ export default function Footer() {
             </span>
           </div>
           <p className="text-sm text-base-content/55 max-w-xs">{t('footer.tag')}</p>
+          <div className="space-y-1.5 pt-1">
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-sm text-base-content/65 hover:text-base-content transition-colors"
+            >
+              <GithubIcon size={15} />
+              {t('footer.source')}
+            </a>
+            <p className="text-xs text-base-content/40">
+              {t('footer.built_by')}{' '}
+              <a
+                href={PROFILE_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="link link-hover text-base-content/60"
+              >
+                @RyuPrad
+              </a>
+            </p>
+          </div>
         </div>
         <div className="space-y-3">
           <div className="text-xs font-semibold uppercase tracking-widest text-base-content/40">
