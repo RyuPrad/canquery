@@ -107,7 +107,7 @@ export default function InsightCard({ item, showDataset = true }) {
             {item.row_count.toLocaleString()} {t('rails.rows')}
           </span>
         ) : <span />}
-        <Link to={to} className="inline-flex items-center gap-1 text-sm text-[#ff8d85] hover:text-primary transition-colors">
+        <Link to={to} className="inline-flex items-center gap-1 text-sm cq-fg-red hover:text-primary transition-colors">
           {t('insights.open')} <ArrowRightIcon size={14} />
         </Link>
       </div>

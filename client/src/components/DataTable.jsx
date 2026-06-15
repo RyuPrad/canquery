@@ -48,7 +48,7 @@ function DataTable({
                     {field.id}
                     <span className={typeChipClass(field.type)}>{field.type}</span>
                     {dir && (
-                      <span className="text-[#ff6f64] font-bold">
+                      <span className="cq-fg-red font-bold">
                         {dir === 'asc' ? '↑' : '↓'}
                       </span>
                     )}

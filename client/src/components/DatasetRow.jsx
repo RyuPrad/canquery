@@ -17,7 +17,7 @@ export default function DatasetRow({ dataset }) {
     >
       <div className="flex justify-between items-center gap-4">
         <div className="min-w-0">
-          <div className="font-semibold text-[0.95rem] leading-snug line-clamp-2 group-hover:text-white transition-colors">
+          <div className="font-semibold text-[0.95rem] leading-snug line-clamp-2 group-hover:text-base-content transition-colors">
             {title}
           </div>
           <div className="text-[0.8rem] text-base-content/45 mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap">

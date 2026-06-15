@@ -18,7 +18,7 @@ function OrgCard({ org, t }) {
         {title.charAt(0).toUpperCase()}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="font-medium text-[0.92rem] leading-snug line-clamp-2 group-hover:text-white transition-colors">
+        <div className="font-medium text-[0.92rem] leading-snug line-clamp-2 group-hover:text-base-content transition-colors">
           {title}
         </div>
         <div className="text-xs text-base-content/35 font-mono truncate mt-0.5">{org.name}</div>

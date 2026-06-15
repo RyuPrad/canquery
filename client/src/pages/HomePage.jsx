@@ -186,7 +186,7 @@ export default function HomePage() {
             />
             <StatCard
               icon={<UnlockIcon size={18} />}
-              tone="bg-primary/15 text-[#ff8d85]"
+              tone="bg-primary/15 cq-fg-red"
               value={stats.ingested_resources}
               label={t('home.unlocked_here')}
               delay="cq-fade-3"
@@ -207,7 +207,7 @@ export default function HomePage() {
             <StepCard
               number="2"
               icon={<UnlockIcon size={18} />}
-              tone="bg-primary/15 text-[#ff8d85]"
+              tone="bg-primary/15 cq-fg-red"
               title={t('home.step2_title')}
               desc={t('home.step2_desc')}
               delay="cq-fade-3"

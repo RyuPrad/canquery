@@ -8,13 +8,16 @@ import '@fontsource-variable/jetbrains-mono'
 import './index.css'
 import App from './App'
 import { LangProvider } from './i18n.jsx'
+import { ThemeProvider } from './theme.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
-      <LangProvider>
-        <App />
-      </LangProvider>
+      <ThemeProvider>
+        <LangProvider>
+          <App />
+        </LangProvider>
+      </ThemeProvider>
     </BrowserRouter>
   </StrictMode>
 )

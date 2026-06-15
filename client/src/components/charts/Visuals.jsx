@@ -6,19 +6,21 @@ import {
   AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
+import { useTheme } from '../../theme.jsx';
 import {
-  PALETTE, colorAt, AXIS_TICK, GRID_STROKE, TOOLTIP_STYLE,
+  PALETTE, colorAt, axisTick, gridStroke, tooltipStyle, sliceStroke, cursorFill, tooltipMuted, tooltipValue,
   fmtInt, fmtNum, fmtBucketKey, fmtCategory, truncate,
 } from './theme.js';
 
 // ── Shared tooltip ────────────────────────────────────────────────────────
 function ChartTooltip({ active, payload, lang }) {
+  const { dark } = useTheme();
   if (!active || !payload || !payload.length) return null;
   const p = payload[0].payload || {};
   return (
-    <div style={TOOLTIP_STYLE}>
-      <div style={{ color: 'rgba(230,238,250,0.6)', marginBottom: 2 }}>{p.label}</div>
-      <div style={{ color: '#fff', fontWeight: 600 }}>
+    <div style={tooltipStyle(dark)}>
+      <div style={{ color: tooltipMuted(dark), marginBottom: 2 }}>{p.label}</div>
+      <div style={{ color: tooltipValue(dark), fontWeight: 600 }}>
         {fmtNum(p.value, lang)}
         {p.pct != null ? '  ·  ' + p.pct + '%' : ''}
       </div>
@@ -80,6 +82,7 @@ export function KpiCard({ label, value, sub, accent = 0, icon }) {
 
 // ── Donut (proportions) ─────────────────────────────────────────────────────
 export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height = 260 }) {
+  const { dark } = useTheme();
   const total = records.reduce((s, r) => s + Number(r.value || 0), 0);
   const data = records.map((r, i) => ({
     label: fmtCategory(r.key),
@@ -94,7 +97,7 @@ export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height 
         <ResponsiveContainer width="100%" height={height}>
           <PieChart>
             <Pie data={data} dataKey="value" nameKey="label" innerRadius="60%" outerRadius="88%"
-                 paddingAngle={1.5} stroke="rgba(10,14,22,0.65)" strokeWidth={2} startAngle={90} endAngle={-270}>
+                 paddingAngle={1.5} stroke={sliceStroke(dark)} strokeWidth={2} startAngle={90} endAngle={-270}>
               {data.map((d) => <Cell key={d.label} fill={d.color} />)}
             </Pie>
             <Tooltip content={<ChartTooltip lang={lang} />} />
@@ -120,6 +123,7 @@ export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height 
 
 // ── Horizontal category bars ────────────────────────────────────────────────
 export function CategoryBar({ records, lang, colorOffset = 0, height = 260 }) {
+  const { dark } = useTheme();
   const gradId = useId();
   const base = colorAt(colorOffset);
   const data = records.map((r) => ({ label: fmtCategory(r.key), value: Number(r.value || 0) }));
@@ -134,12 +138,12 @@ export function CategoryBar({ records, lang, colorOffset = 0, height = 260 }) {
             <stop offset="1" stopColor={base} stopOpacity={1} />
           </linearGradient>
         </defs>
-        <CartesianGrid horizontal={false} stroke={GRID_STROKE} />
-        <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false}
+        <CartesianGrid horizontal={false} stroke={gridStroke(dark)} />
+        <XAxis type="number" tick={axisTick(dark)} tickLine={false} axisLine={false}
                tickFormatter={(v) => fmtNum(v, lang)} />
-        <YAxis type="category" dataKey="label" width={132} tick={AXIS_TICK} tickLine={false} axisLine={false}
+        <YAxis type="category" dataKey="label" width={132} tick={axisTick(dark)} tickLine={false} axisLine={false}
                interval={0} tickFormatter={(v) => truncate(v, 20)} />
-        <Tooltip cursor={{ fill: 'rgba(255,255,255,0.04)' }} content={<ChartTooltip lang={lang} />} />
+        <Tooltip cursor={{ fill: cursorFill(dark) }} content={<ChartTooltip lang={lang} />} />
         <Bar dataKey="value" fill={'url(#' + gradId + ')'} radius={[0, 6, 6, 0]} maxBarSize={28} />
       </BarChart>
     </ResponsiveContainer>
@@ -148,6 +152,7 @@ export function CategoryBar({ records, lang, colorOffset = 0, height = 260 }) {
 
 // ── Time series (area or line over buckets) ─────────────────────────────────
 export function TimeSeriesChart({ records, lang, bucket, type = 'area', categorical = false, colorOffset = 0, height = 260 }) {
+  const { dark } = useTheme();
   const gradId = useId();
   const color = colorAt(colorOffset);
   const data = records.map((r) => ({
@@ -157,9 +162,9 @@ export function TimeSeriesChart({ records, lang, bucket, type = 'area', categori
 
   const axes = (
     <>
-      <CartesianGrid vertical={false} stroke={GRID_STROKE} />
-      <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={false} minTickGap={26} />
-      <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={46}
+      <CartesianGrid vertical={false} stroke={gridStroke(dark)} />
+      <XAxis dataKey="label" tick={axisTick(dark)} tickLine={false} axisLine={false} minTickGap={26} />
+      <YAxis tick={axisTick(dark)} tickLine={false} axisLine={false} width={46}
              tickFormatter={(v) => fmtNum(v, lang)} />
       <Tooltip cursor={{ stroke: color, strokeOpacity: 0.35 }} content={<ChartTooltip lang={lang} />} />
     </>

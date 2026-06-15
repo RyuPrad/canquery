@@ -10,6 +10,7 @@
   name: "canquery";
   default: true;
   color-scheme: dark;
+  color-scheme: dark;
 
   --color-base-100: #0a0e16;
   --color-base-200: #111726;
@@ -44,6 +45,95 @@
   --noise: 0;
 }
 
+/* "Northern daylight" - the light counterpart: clean cool-white paper, the same
+   maple red, slightly deepened teal/ice for contrast on light surfaces. */
+@plugin "daisyui/theme" {
+  name: "canquery-light";
+  color-scheme: light;
+
+  --color-base-100: #f4f7fc;
+  --color-base-200: #ffffff;
+  --color-base-300: #e3e9f1;
+  --color-base-content: #18212f;
+
+  --color-primary: #d52b1e;
+  --color-primary-content: #ffffff;
+  --color-secondary: #0d9488;
+  --color-secondary-content: #ffffff;
+  --color-accent: #2563eb;
+  --color-accent-content: #ffffff;
+  --color-neutral: #e2e8f0;
+  --color-neutral-content: #1e293b;
+
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+  --color-success: #15803d;
+  --color-success-content: #ffffff;
+  --color-warning: #b45309;
+  --color-warning-content: #ffffff;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Semantic tokens that are not part of daisyUI's palette (aurora glow, glass,
+   chart axes, status colors, etc.). :root holds the dark values; the light
+   theme overrides them. cq-* classes and the chart layer read these so both
+   modes flip cleanly. */
+:root {
+  --cq-aurora:
+    radial-gradient(900px 480px at 85% -10%, rgba(213, 43, 30, 0.16), transparent 65%),
+    radial-gradient(1100px 560px at 12% -14%, rgba(45, 212, 191, 0.11), transparent 60%),
+    radial-gradient(800px 420px at 50% -18%, rgba(106, 166, 255, 0.10), transparent 60%);
+  --cq-scrollbar: #283349;
+  --cq-scrollbar-thumb: #232c3e;
+  --cq-scrollbar-thumb-hover: #2e3a52;
+  --cq-title-grad: linear-gradient(180deg, #ffffff 25%, #aebacd);
+  --cq-on-elevated: #ffffff;
+  --cq-accent-red: #ff8d85;
+  --cq-chip-red-text: #ff958c;
+  --cq-badge-datastore: #4ade80;
+  --cq-badge-ingested: #ff8d85;
+  --cq-badge-ingestable: #fbbf24;
+  --cq-badge-fileonly: #94a3b8;
+  --cq-type-num: #5eead4;
+  --cq-type-date: #93c5fd;
+  --cq-type-text: #9aa7bd;
+  --cq-method-get: #4ade80;
+  --cq-method-post: #fbbf24;
+}
+
+[data-theme="canquery-light"] {
+  --cq-aurora:
+    radial-gradient(900px 480px at 85% -10%, rgba(213, 43, 30, 0.10), transparent 60%),
+    radial-gradient(1100px 560px at 12% -14%, rgba(13, 148, 136, 0.08), transparent 58%),
+    radial-gradient(800px 420px at 50% -18%, rgba(37, 99, 235, 0.07), transparent 60%);
+  --cq-scrollbar: #c2ccdb;
+  --cq-scrollbar-thumb: #cbd5e3;
+  --cq-scrollbar-thumb-hover: #aeb9c9;
+  --cq-title-grad: linear-gradient(180deg, #0c1422 30%, #41506b);
+  --cq-on-elevated: #0c1422;
+  --cq-accent-red: #d52b1e;
+  --cq-chip-red-text: #c2200f;
+  --cq-badge-datastore: #15803d;
+  --cq-badge-ingested: #c2200f;
+  --cq-badge-ingestable: #b45309;
+  --cq-badge-fileonly: #475569;
+  --cq-type-num: #0d9488;
+  --cq-type-date: #2563eb;
+  --cq-type-text: #64748b;
+  --cq-method-get: #15803d;
+  --cq-method-post: #b45309;
+}
+
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Space Grotesk Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
@@ -55,10 +145,7 @@
 body {
   background-color: var(--color-base-100);
   /* Aurora over the data: red + teal + ice glows bleeding down from the top. */
-  background-image:
-    radial-gradient(900px 480px at 85% -10%, rgba(213, 43, 30, 0.16), transparent 65%),
-    radial-gradient(1100px 560px at 12% -14%, rgba(45, 212, 191, 0.11), transparent 60%),
-    radial-gradient(800px 420px at 50% -18%, rgba(106, 166, 255, 0.10), transparent 60%);
+  background-image: var(--cq-aurora);
   background-repeat: no-repeat;
 }
 
@@ -69,20 +156,20 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #283349 transparent;
+  scrollbar-color: var(--cq-scrollbar) transparent;
 }
 ::-webkit-scrollbar {
   width: 10px;
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #232c3e;
+  background: var(--cq-scrollbar-thumb);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #2e3a52;
+  background-color: var(--cq-scrollbar-thumb-hover);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -149,7 +236,7 @@ a.cq-card:hover,
 }
 
 .cq-title-grad {
-  background: linear-gradient(180deg, #ffffff 25%, #aebacd);
+  background: var(--cq-title-grad);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -273,7 +360,7 @@ a.cq-card:hover,
     color-mix(in oklab, var(--color-base-content) 13%, var(--color-base-200)),
     var(--color-base-200)
   );
-  color: #fff;
+  color: var(--cq-on-elevated);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
 }
 
@@ -295,7 +382,7 @@ a.cq-card:hover,
 }
 .cq-nav-active,
 .cq-nav-active:hover {
-  color: #fff;
+  color: var(--cq-on-elevated);
   background: color-mix(in srgb, var(--color-base-300) 75%, transparent);
 }
 
@@ -315,7 +402,7 @@ a.cq-card:hover,
   white-space: nowrap;
 }
 .cq-chip-red {
-  color: #ff958c;
+  color: var(--cq-chip-red-text);
   background: rgba(213, 43, 30, 0.14);
   border-color: rgba(255, 111, 100, 0.32);
 }
@@ -346,22 +433,22 @@ a.cq-card:hover,
   flex: none;
 }
 .cq-badge-datastore {
-  color: #4ade80;
+  color: var(--cq-badge-datastore);
   border-color: rgba(74, 222, 128, 0.35);
   background: rgba(74, 222, 128, 0.08);
 }
 .cq-badge-ingested {
-  color: #ff8d85;
+  color: var(--cq-badge-ingested);
   border-color: rgba(255, 111, 100, 0.4);
   background: rgba(213, 43, 30, 0.15);
 }
 .cq-badge-ingestable {
-  color: #fbbf24;
+  color: var(--cq-badge-ingestable);
   border-color: rgba(251, 191, 36, 0.35);
   background: rgba(251, 191, 36, 0.08);
 }
 .cq-badge-fileonly {
-  color: #94a3b8;
+  color: var(--cq-badge-fileonly);
   border-color: rgba(148, 163, 184, 0.28);
   background: rgba(148, 163, 184, 0.07);
 }
@@ -403,7 +490,7 @@ a.cq-card:hover,
   user-select: none;
 }
 .cq-table thead tr:first-child th:hover {
-  color: #fff;
+  color: var(--cq-on-elevated);
 }
 .cq-table thead tr:nth-child(2) th {
   top: 2.5rem;
@@ -444,15 +531,15 @@ a.cq-card:hover,
   vertical-align: middle;
 }
 .cq-type-num {
-  color: #5eead4;
+  color: var(--cq-type-num);
   background: rgba(45, 212, 191, 0.12);
 }
 .cq-type-date {
-  color: #93c5fd;
+  color: var(--cq-type-date);
   background: rgba(106, 166, 255, 0.14);
 }
 .cq-type-text {
-  color: #9aa7bd;
+  color: var(--cq-type-text);
   background: rgba(154, 167, 189, 0.12);
 }
 
@@ -484,8 +571,11 @@ a.cq-card:hover,
   font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.6;
+  /* Code blocks stay dark in both themes (terminal-style), so pin a light text
+     colour rather than inheriting base-content (which is dark in light mode). */
   background: #0c1220;
-  border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  color: #d7def0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.75rem;
   padding: 0.8rem 1rem;
   overflow-x: auto;
@@ -499,14 +589,20 @@ a.cq-card:hover,
   border-radius: 0.45rem;
 }
 .cq-method-get {
-  color: #4ade80;
+  color: var(--cq-method-get);
   background: rgba(74, 222, 128, 0.1);
   border: 1px solid rgba(74, 222, 128, 0.3);
 }
 .cq-method-post {
-  color: #fbbf24;
+  color: var(--cq-method-post);
   background: rgba(251, 191, 36, 0.1);
   border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* Theme-aware maple-red accent for inline text/icons (lighter on dark, the
+   solid brand red on light). */
+.cq-fg-red {
+  color: var(--cq-accent-red);
 }
 
 /* ------------------------------------------------------------ rails etc */

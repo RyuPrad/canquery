@@ -273,7 +273,7 @@ function ResourcePage() {
         <div className="cq-card p-10 sm:p-14 text-center space-y-5 max-w-xl mx-auto cq-fade">
           <span
             className={
-              'w-14 h-14 rounded-2xl bg-primary/15 text-[#ff8d85] inline-flex items-center justify-center' +
+              'w-14 h-14 rounded-2xl bg-primary/15 cq-fg-red inline-flex items-center justify-center' +
               (unlockWorking ? ' cq-pulse' : '')
             }
           >

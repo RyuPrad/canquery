@@ -19,23 +19,32 @@ export const PALETTE = [
 
 export const colorAt = (i) => PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
 
-export const AXIS_TICK = {
-  fill: 'rgba(230,238,250,0.45)',
+const MONO = "'JetBrains Mono Variable', ui-monospace, monospace";
+
+// Chart chrome is theme-aware: light-on-dark in dark mode, dark-on-light in
+// light mode. The categorical PALETTE above reads on both. Pass `dark` from
+// useTheme() so charts re-render with the right chrome on toggle.
+export const axisTick = (dark) => ({
+  fill: dark ? 'rgba(230,238,250,0.45)' : 'rgba(20,30,52,0.55)',
   fontSize: 11,
-  fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace",
-};
+  fontFamily: MONO,
+});
 
-export const GRID_STROKE = 'rgba(255,255,255,0.06)';
+export const gridStroke = (dark) => (dark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.09)');
+export const sliceStroke = (dark) => (dark ? 'rgba(10,14,22,0.65)' : '#ffffff');
+export const cursorFill = (dark) => (dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.05)');
+export const tooltipMuted = (dark) => (dark ? 'rgba(230,238,250,0.6)' : 'rgba(20,30,52,0.62)');
+export const tooltipValue = (dark) => (dark ? '#ffffff' : '#0c1422');
 
-export const TOOLTIP_STYLE = {
-  background: 'rgba(17,23,38,0.96)',
-  border: '1px solid #1c2435',
+export const tooltipStyle = (dark) => ({
+  background: dark ? 'rgba(17,23,38,0.96)' : 'rgba(255,255,255,0.98)',
+  border: '1px solid ' + (dark ? '#1c2435' : '#e3e9f1'),
   borderRadius: '0.75rem',
-  boxShadow: '0 10px 30px -10px rgba(0,0,0,0.6)',
+  boxShadow: dark ? '0 10px 30px -10px rgba(0,0,0,0.6)' : '0 10px 30px -12px rgba(15,23,42,0.25)',
   fontSize: '0.78rem',
-  fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace",
+  fontFamily: MONO,
   padding: '0.5rem 0.7rem',
-};
+});
 
 const localeFor = (lang) => (lang === 'fr' ? 'fr-CA' : 'en-CA');
 
