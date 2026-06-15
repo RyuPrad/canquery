@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "canquery web UI - search, unlock, query, and visualize Canada's open data.",
+  "description": "Web UI to search, unlock, query, and visualize Canada's open data.",
   "license": "MIT",
   "author": "RyuPrad",
   "homepage": "https://canquery.com",
