@@ -66,6 +66,7 @@ function DataTable({
                   <input
                     className="cq-filter-input"
                     placeholder={t('table.filter')}
+                    title={t('table.filter_tip')}
                     value={columnFilters[field.id] || ''}
                     onChange={(e) => onColumnFilterChange(field.id, e.target.value)}
                   />
@@ -75,26 +76,37 @@ function DataTable({
           </tr>
         </thead>
         <tbody>
-          {records.map((row, i) => (
-            <tr key={i}>
-              {fields.map((field) => {
-                const v = row[field.id];
-                return (
-                  <td
-                    key={field.id}
-                    className={isNumType(field.type) ? 'cq-td-num' : ''}
-                    title={v === null || v === undefined ? undefined : String(v)}
-                  >
-                    {v === null || v === undefined ? (
-                      <span className="cq-null">{'∅'}</span>
-                    ) : (
-                      String(v)
-                    )}
-                  </td>
-                );
-              })}
+          {records.length === 0 ? (
+            <tr>
+              <td colSpan={fields.length}>
+                <div className="py-12 text-center space-y-1">
+                  <p className="text-base-content/60">{t('table.no_rows')}</p>
+                  <p className="text-xs text-base-content/40">{t('table.no_rows_hint')}</p>
+                </div>
+              </td>
             </tr>
-          ))}
+          ) : (
+            records.map((row, i) => (
+              <tr key={i}>
+                {fields.map((field) => {
+                  const v = row[field.id];
+                  return (
+                    <td
+                      key={field.id}
+                      className={isNumType(field.type) ? 'cq-td-num' : ''}
+                      title={v === null || v === undefined ? undefined : String(v)}
+                    >
+                      {v === null || v === undefined ? (
+                        <span className="cq-null">{'∅'}</span>
+                      ) : (
+                        String(v)
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>

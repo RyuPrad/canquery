@@ -14,6 +14,7 @@ import {
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import useJobPolling from '../hooks/useJobPolling.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
+import { buildColumnFilters } from '../utils/columnFilter.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
 // chunk so the rest of the app stays lean.
@@ -134,10 +135,7 @@ function ResourcePage() {
     let cancelled = false;
     setDataLoading(true);
 
-    const filters = {};
-    for (const [col, text] of Object.entries(debouncedFilters)) {
-      if (text) filters[col] = { op: 'contains', value: text };
-    }
+    const filters = buildColumnFilters(debouncedFilters);
 
     queryResource(id, {
       q: debouncedQ || undefined,
@@ -170,10 +168,7 @@ function ResourcePage() {
     return () => { cancelled = true; };
   }, [id, debouncedQ, debouncedFilters, sort, page, reloadKey]);
 
-  const exportFilters = {};
-  for (const [col, text] of Object.entries(debouncedFilters)) {
-    if (text) exportFilters[col] = { op: 'contains', value: text };
-  }
+  const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
     q: debouncedQ || undefined,
     filters: Object.keys(exportFilters).length ? exportFilters : undefined,

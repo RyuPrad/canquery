@@ -135,6 +135,9 @@ export const STRINGS = {
     'chart.try_custom': 'Try the Custom tab to build your own chart.',
     'chart.profile_failed': "Couldn't load insights for this table.",
     'table.filter': 'filter...',
+    'table.filter_tip': 'Type to match text, or start with >, >=, <, <= or = for numbers (e.g. >2 keeps values above 2).',
+    'table.no_rows': 'No rows match your filters.',
+    'table.no_rows_hint': 'Clear or adjust the column filters and the search above.',
   },
   fr: {
     'nav.datasets': 'Jeux de données',
@@ -266,6 +269,9 @@ export const STRINGS = {
     'chart.try_custom': 'Essayez l’onglet « Sur mesure » pour créer votre graphique.',
     'chart.profile_failed': 'Impossible de charger les aperçus pour cette table.',
     'table.filter': 'filtrer...',
+    'table.filter_tip': 'Tapez du texte à rechercher, ou commencez par >, >=, <, <= ou = pour les nombres (ex. : >2 garde les valeurs supérieures à 2).',
+    'table.no_rows': 'Aucune ligne ne correspond à vos filtres.',
+    'table.no_rows_hint': 'Effacez ou ajustez les filtres de colonne et la recherche ci-dessus.',
   },
 };
 

@@ -95,26 +95,30 @@ function validateSort(sort, knownColumns) {
     if (sort === undefined || sort === null || sort === '') {
         return null;
     }
-    const parts = sort.trim().split(/\s+/);
-    if (parts.length === 0 || parts.length > 2) {
-        throw new AppError('invalid sort', 400);
-    }
-    const column = parts[0];
-    const directionRaw = parts[1];
+    const trimmed = String(sort).trim();
+    const known = new Set(knownColumns);
+
+    let column;
     let direction = 'ASC';
-    if (directionRaw !== undefined) {
-        const dirLower = directionRaw.toLowerCase();
-        if (dirLower === 'desc') {
-            direction = 'DESC';
-        } else if (dirLower === 'asc') {
-            direction = 'ASC';
+
+    if (known.has(trimmed)) {
+        // The whole value is a column name: no direction was given (default
+        // ascending), or the column itself legitimately ends in "asc"/"desc".
+        column = trimmed;
+    } else {
+        // Column names routinely contain spaces and parentheses (e.g.
+        // "Temperature departure in winter (degree Celsius)"), so splitting on
+        // whitespace shreds them. Peel an optional trailing asc/desc direction
+        // off the end and treat everything before it as the column name.
+        const match = /^([\s\S]+?)\s+(asc|desc)$/i.exec(trimmed);
+        if (match && known.has(match[1])) {
+            column = match[1];
+            direction = match[2].toLowerCase() === 'desc' ? 'DESC' : 'ASC';
         } else {
-            throw new AppError('invalid sort', 400);
+            throw new AppError(`unknown sort column: ${trimmed}`, 400);
         }
     }
-    if (!knownColumns.includes(column)) {
-        throw new AppError(`unknown sort column: ${column}`, 400);
-    }
+
     return {
         column: column,
         direction: direction,

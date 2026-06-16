@@ -94,6 +94,28 @@ describe('filterGrammar', () => {
             expect400(() => validateSort('unknown_col asc', ['amount']));
             expect(validateSort(undefined, ['amount'])).toBeNull();
         });
+
+        it('handles column names containing spaces and parentheses', () => {
+            const col = 'Temperature departure in winter (degree Celsius)';
+            expect(validateSort(`${col} asc`, [col]).sql).toBe(`"${col}" ASC`);
+            expect(validateSort(`${col} desc`, [col]).sql).toBe(`"${col}" DESC`);
+        });
+
+        it('defaults to ascending when a multi-word column has no direction', () => {
+            const col = 'Gross domestic product';
+            expect(validateSort(col, [col]).sql).toBe(`"${col}" ASC`);
+        });
+
+        it('prefers an exact column match over peeling a direction token', () => {
+            // A column whose name itself ends in "desc" must not be mistaken
+            // for "<column> descending".
+            const col = 'sort desc';
+            expect(validateSort(col, [col]).sql).toBe(`"${col}" ASC`);
+        });
+
+        it('rejects an unknown multi-word column with 400', () => {
+            expect400(() => validateSort('made up column asc', ['amount']));
+        });
     });
 
     describe('validateAggregation', () => {
