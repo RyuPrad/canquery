@@ -3,6 +3,7 @@ const queryLogQueries = require('../db/queryLogQueries');
 const { packageList } = require('./ckanClient');
 const AppError = require('../utils/AppError');
 const { createCache } = require('../utils/cache');
+const { toAbsoluteUrl } = require('../utils/resolveUrl');
 
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
 const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
@@ -46,7 +47,7 @@ const shapeResource = (row) => ({
     dataset_id: row.dataset_id,
     name: { en: row.name_en, fr: row.name_fr },
     format: row.format,
-    url: row.url,
+    url: toAbsoluteUrl(row.url),
     size_bytes: toNumberOrNull(row.size_bytes),
     datastore_active: row.datastore_active,
     language: row.language,

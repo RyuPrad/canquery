@@ -2,6 +2,7 @@ const { getResourceById } = require('../db/catalogReadQueries');
 const { computeQueryMode, ingestCapBytesFor } = require('./catalogService');
 const { enqueueJob, getJobById } = require('../db/ingestQueries');
 const AppError = require('../utils/AppError');
+const { toAbsoluteUrl } = require('../utils/resolveUrl');
 
 function isIngestableFile(row) {
     const cap = ingestCapBytesFor(row.format);
@@ -21,7 +22,7 @@ async function enqueueIngest(resourceId) {
     // plain download, same as a file-only resource.
     if (mode === 'file-only' || (mode === 'datastore' && !isIngestableFile(row))) {
         const err = new AppError('Only CSV, XLSX or XLS resources under the size cap can be ingested', 422);
-        err.download_url = row.url;
+        err.download_url = toAbsoluteUrl(row.url);
         throw err;
     }
     const job = await enqueueJob(resourceId);

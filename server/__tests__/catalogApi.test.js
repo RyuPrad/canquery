@@ -118,6 +118,8 @@ describe('Catalog API', () => {
         expect(res.status).toBe(200);
         const modes = res.body.data.resources.map(r => r.query_mode);
         expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'ingestable']);
+        // Relative catalogue URLs are resolved to absolute so the client's links work.
+        expect(res.body.data.resources[0].url).toBe('https://open.canada.ca/u');
     });
 
     it('GET /api/v1/stats wraps totals in the envelope', async () => {

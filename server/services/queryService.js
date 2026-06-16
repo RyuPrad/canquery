@@ -6,6 +6,7 @@ const { queryStoreTable, aggregateStoreTable, touchLastAccessed, profileStoreTab
 const { logQueryHit } = require('../db/queryLogQueries');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
+const { toAbsoluteUrl } = require('../utils/resolveUrl');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000 });
 // Ingested data is immutable until a re-ingest replaces it, so a profile can be
@@ -88,7 +89,7 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
     }
 
     const err = new AppError('Resource is a file download only and cannot be queried', 422);
-    err.download_url = row.url;
+    err.download_url = toAbsoluteUrl(row.url);
     throw err;
 }
 
@@ -149,7 +150,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
     }
 
     const err = new AppError('Resource is a file download only and cannot be queried', 422);
-    err.download_url = row.url;
+    err.download_url = toAbsoluteUrl(row.url);
     throw err;
 }
 
@@ -179,7 +180,7 @@ async function profileResource(id) {
     }
 
     const err = new AppError('Resource is a file download only and cannot be profiled', 422);
-    err.download_url = row.url;
+    err.download_url = toAbsoluteUrl(row.url);
     throw err;
 }
 
