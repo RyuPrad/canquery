@@ -83,6 +83,7 @@ function ResourcePage() {
   const [upgrade, setUpgrade] = useState(null);
   const resourceRef = useRef(null);
   const upgradeRequestedRef = useRef(false);
+  const upgradedRef = useRef(false);
 
   // Resume (or reset) the in-flight unlock when the resource changes - covers
   // both a fresh refresh and client-side navigation between resources.
@@ -93,17 +94,24 @@ function ResourcePage() {
     setUpgrade(null);
   }, [id]);
 
-  // Keep a ref to the loaded resource so the query effect can size-check it
-  // without taking it as a dependency, and reset the upgrade guard on each new
-  // load cycle (resource change or the reload after an upgrade completes).
+  // Keep a ref to the loaded resource so the query effect can read its mode/size
+  // without taking it as a dependency. The upgrade guards reset only when the
+  // resource id changes (not on the post-upgrade reload), so a given resource is
+  // upgraded at most once per visit and the reload query is allowed through.
   useEffect(() => { resourceRef.current = resource; }, [resource]);
-  useEffect(() => { upgradeRequestedRef.current = false; }, [id, reloadKey]);
+  useEffect(() => {
+    upgradeRequestedRef.current = false;
+    upgradedRef.current = false;
+  }, [id]);
 
   // Stable per-resource callback: an inline arrow here would re-arm the polling
   // effect on every render and turn it into a 0ms fetch loop.
   const onUnlockDone = useCallback((job) => {
     clearUnlockJob(id);
     if (job.status === 'done') {
+      // The resource is now ingested; let the reload query run against local
+      // storage instead of re-detecting it as a datastore resource.
+      upgradedRef.current = true;
       setUnlockJobId(null);
       setUnlockState(null);
       setUpgrade(null);
@@ -114,6 +122,27 @@ function ResourcePage() {
     }
   }, [id]);
   const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone });
+
+  // Pull a proxied (datastore) resource into local storage so the full filter
+  // grammar works. Idempotent per visit; used both proactively (mode known) and
+  // as a fallback when a query returns the upgrade hint.
+  const triggerUpgrade = useCallback(() => {
+    if (upgradeRequestedRef.current) return;
+    const size = resourceRef.current?.size_bytes;
+    if (typeof size === 'number' && size > AUTO_INGEST_MAX_BYTES) {
+      upgradeRequestedRef.current = true;
+      setUpgrade('blocked');
+      return;
+    }
+    upgradeRequestedRef.current = true;
+    setUpgrade('preparing');
+    enqueueIngest(id)
+      .then((env) => {
+        writeUnlockJob(id, env.data.id);
+        setUnlockJobId(env.data.id);
+      })
+      .catch(() => setUpgrade('unavailable'));
+  }, [id]);
 
   const debouncedQ = useDebouncedValue(q, 250);
   const debouncedFilters = useDebouncedValue(columnFilters, 250);
@@ -157,6 +186,16 @@ function ResourcePage() {
     setDataLoading(true);
 
     const filters = buildColumnFilters(debouncedFilters);
+    const hasNonEq = Object.values(filters).some((f) => f.op !== 'eq');
+
+    // Known proxied datastore resource + a filter the upstream can't serve:
+    // upgrade it locally instead of firing a query that would 400. Once the
+    // upgrade has completed (upgradedRef) the reload query is allowed through.
+    if (resourceRef.current?.query_mode === 'datastore' && hasNonEq && !upgradedRef.current) {
+      triggerUpgrade();
+      setDataLoading(false);
+      return () => { cancelled = true; };
+    }
 
     queryResource(id, {
       q: debouncedQ || undefined,
@@ -180,24 +219,10 @@ function ResourcePage() {
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof DatastoreFilterError) {
-          // The proxied upstream only does equality. Transparently upgrade this
-          // resource into local storage so substring/range filters work, keeping
-          // the rows already on screen visible while the ingest runs.
-          const size = resourceRef.current?.size_bytes;
-          if (typeof size === 'number' && size > AUTO_INGEST_MAX_BYTES) {
-            setUpgrade('blocked');
-            return;
-          }
-          setUpgrade('preparing');
-          if (!upgradeRequestedRef.current) {
-            upgradeRequestedRef.current = true;
-            enqueueIngest(id)
-              .then((env) => {
-                writeUnlockJob(id, env.data.id);
-                setUnlockJobId(env.data.id);
-              })
-              .catch(() => setUpgrade('unavailable'));
-          }
+          // Fallback for the first load before the mode is known: the proxy
+          // rejected a non-equality filter, so upgrade to local storage. The
+          // rows already on screen stay visible while the ingest runs.
+          triggerUpgrade();
           return;
         }
         setData(null);
@@ -208,7 +233,7 @@ function ResourcePage() {
       });
 
     return () => { cancelled = true; };
-  }, [id, debouncedQ, debouncedFilters, sort, page, reloadKey]);
+  }, [id, debouncedQ, debouncedFilters, sort, page, reloadKey, triggerUpgrade]);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {

@@ -5,6 +5,7 @@ const { loadCsvIntoStore } = require('./csvLoad');
 const { convertXlsxToCsv, convertXlsToCsv } = require('./xlsxConvert');
 const { TABLE_NAME_RE } = require('../db/storeQueries');
 const { evictUntilUnderBudget } = require('./evictService');
+const { toAbsoluteUrl } = require('../utils/resolveUrl');
 
 function tableNameFor(resourceId) {
     return 'r_' + String(resourceId).toLowerCase().replace(/[^0-9a-f]/g, '_');
@@ -33,7 +34,7 @@ async function ingestResource(resource, caps) {
 
     const format = String(resource.format || '').toUpperCase();
     const isExcel = format === 'XLSX' || format === 'XLS';
-    const { filePath, bytes } = await downloadToTempFile(resource.url, { maxFileBytes: isExcel ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent, stallTimeoutMs: caps.stallTimeoutMs });
+    const { filePath, bytes } = await downloadToTempFile(toAbsoluteUrl(resource.url), { maxFileBytes: isExcel ? caps.maxXlsxBytes : caps.maxFileBytes, fetchImpl: caps.fetchImpl, userAgent: caps.userAgent, stallTimeoutMs: caps.stallTimeoutMs });
 
     const tempPaths = [filePath];
     try {
