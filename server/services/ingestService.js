@@ -1,7 +1,12 @@
 const { getResourceById } = require('../db/catalogReadQueries');
-const { computeQueryMode } = require('./catalogService');
+const { computeQueryMode, ingestCapBytesFor } = require('./catalogService');
 const { enqueueJob, getJobById } = require('../db/ingestQueries');
 const AppError = require('../utils/AppError');
+
+function isIngestableFile(row) {
+    const cap = ingestCapBytesFor(row.format);
+    return cap !== null && (row.size_bytes == null || Number(row.size_bytes) <= cap);
+}
 
 async function enqueueIngest(resourceId) {
     const row = await getResourceById(resourceId);
@@ -9,10 +14,12 @@ async function enqueueIngest(resourceId) {
         throw new AppError('Resource not found', 404);
     }
     const mode = computeQueryMode(row);
-    if (mode === 'datastore') {
-        throw new AppError('Resource is already queryable via the upstream datastore', 409);
-    }
-    if (mode === 'file-only') {
+    // Datastore (proxied) resources can be upgraded into local storage so that
+    // per-column substring/range filters work - the upstream datastore only
+    // supports equality. Allow it, but only when the underlying file is one we
+    // can actually load (CSV/XLSX/XLS under the size cap); otherwise it is a
+    // plain download, same as a file-only resource.
+    if (mode === 'file-only' || (mode === 'datastore' && !isIngestableFile(row))) {
         const err = new AppError('Only CSV, XLSX or XLS resources under the size cap can be ingested', 422);
         err.download_url = row.url;
         throw err;

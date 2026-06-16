@@ -42,7 +42,13 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
         if (hasAggParams(group_by, agg, agg_column, bucket)) {
             throw new AppError('Aggregation is only supported for unlocked (ingested) resources', 400);
         }
-        if (parsedFilters.some(f => f.op !== 'eq')) throw new AppError('Only equality filters are supported for datastore resources', 400);
+        if (parsedFilters.some(f => f.op !== 'eq')) {
+            // Signal the client that this resource can be upgraded into local
+            // storage (ingested), where the full filter grammar works.
+            const err = new AppError('Only equality filters are supported for datastore resources', 400);
+            err.hint = 'ingest_for_filters';
+            throw err;
+        }
         if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
         const cacheKey = JSON.stringify([id, q || null, ckanFilters || null, sort || null, lim, off]);
@@ -98,7 +104,13 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
         if (hasAggParams(group_by, agg, agg_column, bucket)) {
             throw new AppError('Aggregation is only supported for unlocked (ingested) resources', 400);
         }
-        if (parsedFilters.some(f => f.op !== 'eq')) throw new AppError('Only equality filters are supported for datastore resources', 400);
+        if (parsedFilters.some(f => f.op !== 'eq')) {
+            // Signal the client that this resource can be upgraded into local
+            // storage (ingested), where the full filter grammar works.
+            const err = new AppError('Only equality filters are supported for datastore resources', 400);
+            err.hint = 'ingest_for_filters';
+            throw err;
+        }
         if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
         const result = await datastoreSearch({ resourceId: id, q, filters: ckanFilters, sort, limit: cap, offset: 0 });

@@ -4,6 +4,7 @@ const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
 const { loadCsvIntoStore } = require('./csvLoad');
 const { convertXlsxToCsv, convertXlsToCsv } = require('./xlsxConvert');
 const { TABLE_NAME_RE } = require('../db/storeQueries');
+const { evictUntilUnderBudget } = require('./evictService');
 
 function tableNameFor(resourceId) {
     return 'r_' + String(resourceId).toLowerCase().replace(/[^0-9a-f]/g, '_');
@@ -15,11 +16,19 @@ async function ingestResource(resource, caps) {
         throw new Error('cannot derive a safe table name');
     }
 
-    const used = Number((await pool.query('SELECT coalesce(sum(byte_size),0)::bigint AS used FROM ingested_resources')).rows[0].used);
+    const usedBytes = async () => Number((await pool.query('SELECT coalesce(sum(byte_size),0)::bigint AS used FROM ingested_resources')).rows[0].used);
+    let used = await usedBytes();
     if (used >= caps.storeBudgetBytes) {
-        const err = new Error('store budget exceeded (' + used + ' bytes used)');
-        err.code = 'BUDGET';
-        throw err;
+        // Free least-recently-used tables to make room rather than refusing the
+        // ingest outright. This keeps on-demand (auto) upgrades smooth instead of
+        // failing between the nightly eviction runs.
+        await evictUntilUnderBudget(pool, { budgetBytes: caps.storeBudgetBytes });
+        used = await usedBytes();
+        if (used >= caps.storeBudgetBytes) {
+            const err = new Error('store budget exceeded (' + used + ' bytes used)');
+            err.code = 'BUDGET';
+            throw err;
+        }
     }
 
     const format = String(resource.format || '').toUpperCase();

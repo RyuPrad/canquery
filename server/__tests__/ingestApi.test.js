@@ -32,10 +32,19 @@ describe('ingest API', () => {
         expect(res.body.data.status).toBe('running');
     });
 
-    it('datastore-active resources are refused with 409', async () => {
-        queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-9', datastore_active: true }));
+    it('datastore-active CSV can be upgraded (ingested) for full filtering and returns 202', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-9', datastore_active: true, format: 'CSV' }));
+        ingestQueries.enqueueJob.mockResolvedValue({ id: 21, resource_id: 'ds-9', status: 'pending', attempts: 0, error: null, created_at: '2026-01-01' });
         const res = await request(app).post('/api/v1/resources/ds-9/ingest');
-        expect(res.status).toBe(409);
+        expect(res.status).toBe(202);
+        expect(ingestQueries.enqueueJob).toHaveBeenCalledWith('ds-9');
+    });
+
+    it('datastore-active resource whose file is not loadable is refused with 422', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-pdf', datastore_active: true, format: 'PDF', url: 'https://example.org/x.pdf' }));
+        const res = await request(app).post('/api/v1/resources/ds-pdf/ingest');
+        expect(res.status).toBe(422);
+        expect(res.body.download_url).toBe('https://example.org/x.pdf');
         expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
     });
 

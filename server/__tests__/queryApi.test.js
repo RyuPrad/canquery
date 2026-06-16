@@ -47,11 +47,13 @@ describe('query API datastore path', () => {
         expect(ckan.datastoreSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: { city: 'Ottawa' } }));
     });
 
-    test('operator filters on a datastore resource are rejected with 400', async () => {
+    test('operator filters on a datastore resource are rejected with 400 and an upgrade hint', async () => {
         queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-3', datastore_active: true }));
         const res = await request(app).get('/api/v1/resources/ds-3/query').query({ filters: JSON.stringify({ amount: { op: 'lt', value: 5 } }) });
         expect(res.status).toBe(400);
         expect(res.body.error).toMatch(/equality/i);
+        // The client keys on this hint to transparently upgrade (ingest) the resource.
+        expect(res.body.hint).toBe('ingest_for_filters');
         expect(ckan.datastoreSearch).not.toHaveBeenCalled();
     });
 

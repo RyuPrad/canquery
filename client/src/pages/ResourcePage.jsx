@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   fetchResource,
@@ -9,6 +9,7 @@ import {
   NotFoundError,
   NotIngestedError,
   FileOnlyError,
+  DatastoreFilterError,
   apiUrl,
 } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
@@ -34,6 +35,11 @@ import {
 } from '../components/Icons.jsx';
 
 const PAGE_SIZE = 50;
+// Auto-upgrade (ingest) a proxied datastore resource only when its file is this
+// size or smaller, so the transparent upgrade stays quick. Larger ones keep the
+// live proxy (equality + full-text search). size_bytes is often unknown
+// upstream, in which case we proceed and rely on the hard ingest cap.
+const AUTO_INGEST_MAX_BYTES = 100 * 1024 * 1024;
 
 function ResourcePage() {
   const { t } = useLang();
@@ -71,6 +77,12 @@ function ResourcePage() {
   const [unlockJobId, setUnlockJobId] = useState(() => readUnlockJob(id));
   const [view, setView] = useState(() => (searchParams.get('view') === 'chart' ? 'chart' : 'table'));
   const [reloadKey, setReloadKey] = useState(0);
+  // Transparent upgrade of a proxied datastore resource into local storage when
+  // the user needs a filter the upstream can't serve:
+  // null | 'preparing' | 'blocked' (too large) | 'unavailable' (not loadable) | 'failed'.
+  const [upgrade, setUpgrade] = useState(null);
+  const resourceRef = useRef(null);
+  const upgradeRequestedRef = useRef(false);
 
   // Resume (or reset) the in-flight unlock when the resource changes - covers
   // both a fresh refresh and client-side navigation between resources.
@@ -78,7 +90,14 @@ function ResourcePage() {
     const stored = readUnlockJob(id);
     setUnlockJobId(stored);
     setUnlockState(stored ? 'queued' : null);
+    setUpgrade(null);
   }, [id]);
+
+  // Keep a ref to the loaded resource so the query effect can size-check it
+  // without taking it as a dependency, and reset the upgrade guard on each new
+  // load cycle (resource change or the reload after an upgrade completes).
+  useEffect(() => { resourceRef.current = resource; }, [resource]);
+  useEffect(() => { upgradeRequestedRef.current = false; }, [id, reloadKey]);
 
   // Stable per-resource callback: an inline arrow here would re-arm the polling
   // effect on every render and turn it into a 0ms fetch loop.
@@ -87,9 +106,11 @@ function ResourcePage() {
     if (job.status === 'done') {
       setUnlockJobId(null);
       setUnlockState(null);
+      setUpgrade(null);
       setReloadKey((k) => k + 1);
     } else {
       setUnlockState('failed');
+      setUpgrade((u) => (u === 'preparing' ? 'failed' : u));
     }
   }, [id]);
   const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone });
@@ -153,13 +174,34 @@ function ResourcePage() {
             mode: env.meta.query_mode,
           });
           setDataError(null);
+          setUpgrade(null);
         }
       })
       .catch((err) => {
-        if (!cancelled) {
-          setData(null);
-          setDataError(err);
+        if (cancelled) return;
+        if (err instanceof DatastoreFilterError) {
+          // The proxied upstream only does equality. Transparently upgrade this
+          // resource into local storage so substring/range filters work, keeping
+          // the rows already on screen visible while the ingest runs.
+          const size = resourceRef.current?.size_bytes;
+          if (typeof size === 'number' && size > AUTO_INGEST_MAX_BYTES) {
+            setUpgrade('blocked');
+            return;
+          }
+          setUpgrade('preparing');
+          if (!upgradeRequestedRef.current) {
+            upgradeRequestedRef.current = true;
+            enqueueIngest(id)
+              .then((env) => {
+                writeUnlockJob(id, env.data.id);
+                setUnlockJobId(env.data.id);
+              })
+              .catch(() => setUpgrade('unavailable'));
+          }
+          return;
         }
+        setData(null);
+        setDataError(err);
       })
       .finally(() => {
         if (!cancelled) setDataLoading(false);
@@ -321,6 +363,22 @@ function ResourcePage() {
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
         <>
+          {upgrade && (
+            <div className="rounded-xl border border-base-content/10 bg-base-200/50 px-4 py-3 text-sm flex items-center gap-2.5 cq-fade">
+              {upgrade === 'preparing' && (
+                <span className="loading loading-spinner loading-xs shrink-0" />
+              )}
+              <span className="text-base-content/70">
+                {upgrade === 'preparing'
+                  ? t('resource.upgrading')
+                  : upgrade === 'blocked'
+                    ? t('resource.upgrade_blocked')
+                    : upgrade === 'unavailable'
+                      ? t('resource.upgrade_unavailable')
+                      : t('resource.upgrade_failed')}
+              </span>
+            </div>
+          )}
           <div className="cq-seg">
             <button
               className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}

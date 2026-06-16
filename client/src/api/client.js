@@ -40,6 +40,11 @@ export class FileOnlyError extends ApiError {
   }
 }
 
+// A datastore (proxied) resource was asked for a filter the upstream can't do
+// (anything beyond equality). The client uses this to transparently upgrade the
+// resource into local storage, where the full filter grammar works.
+export class DatastoreFilterError extends ApiError {}
+
 export async function getJSON(path, params) {
   const res = await fetch(apiUrl(path, params));
   let body;
@@ -60,6 +65,9 @@ export async function getJSON(path, params) {
   }
   if (res.status === 422) {
     throw new FileOnlyError(message, 422, body);
+  }
+  if (res.status === 400 && body?.hint === 'ingest_for_filters') {
+    throw new DatastoreFilterError(message, 400, body);
   }
   throw new ApiError(message, res.status, body);
 }

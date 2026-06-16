@@ -1,4 +1,4 @@
-import { apiUrl, getJSON, NotFoundError, NotIngestedError, FileOnlyError } from './client.js';
+import { apiUrl, getJSON, ApiError, NotFoundError, NotIngestedError, FileOnlyError, DatastoreFilterError } from './client.js';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -32,5 +32,17 @@ describe('api client', () => {
     const err = await getJSON('/x').catch(e => e);
     expect(err).toBeInstanceOf(FileOnlyError);
     expect(err.download_url).toBe('https://e.org/f.pdf');
+  });
+
+  test('a datastore filter rejection (400 + ingest_for_filters hint) is typed for the auto-upgrade', async () => {
+    stubFetch(400, { error: 'Only equality filters are supported for datastore resources', hint: 'ingest_for_filters' });
+    await expect(getJSON('/x')).rejects.toBeInstanceOf(DatastoreFilterError);
+  });
+
+  test('a plain 400 stays a generic ApiError, not a datastore upgrade signal', async () => {
+    stubFetch(400, { error: 'invalid sort' });
+    const err = await getJSON('/x').catch(e => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(DatastoreFilterError);
   });
 });

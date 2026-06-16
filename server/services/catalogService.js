@@ -229,4 +229,4 @@ const opsStatus = async () => {
     return { ok: !anyStale, jobs };
 };
 
-module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, recentlyUnlocked, popularResources, opsStatus };
+module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, ingestCapBytesFor, recentlyUnlocked, popularResources, opsStatus };
