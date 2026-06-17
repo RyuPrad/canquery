@@ -71,6 +71,10 @@ curl 'http://localhost:3100/api/v1/jobs/<jobId>'
 
 curl 'http://localhost:3100/api/v1/organizations?limit=10'
 curl 'http://localhost:3100/api/v1/stats'
+
+# the live Top 100 Downloaded Datasets leaderboard (period + ranked items)
+curl 'http://localhost:3100/api/v1/insights/top-downloads'
+
 curl 'http://localhost:3100/healthz'
 ```
 
@@ -87,7 +91,8 @@ datastore proxy supports equality only (400 otherwise).
 | `scripts/catalog-sync.js` | full harvest: `package_list` → batched `package_show` (chunks of 50, concurrency 2), resumable via `sync_progress`; `--limit N`, `--dry-run` |
 | `scripts/incremental-sync.js` | upserts anything newer than our `metadata_modified` high-water mark |
 | `scripts/ingest-worker.js` | drains `ingest_jobs` (`FOR UPDATE SKIP LOCKED`), streams CSVs into `store.r_*` via `COPY`, ≤2 retries; `--once` for a single drain |
-| `scripts/evict-store.js` | drops least-recently-accessed store tables until under `STORE_BUDGET_GB` |
+| `scripts/evict-store.js` | drops least-recently-accessed store tables until under `STORE_BUDGET_GB` (skips `pinned_resources`, e.g. the Top 100) |
+| `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
 Every script writes a run-log row (`sync_runs` / `ingest_runs`) in a `finally` block
 and exits non-zero on failure.
@@ -102,15 +107,17 @@ to TEXT per column when a later cast fails.
 The SPA (`client/`) is search → dataset → resource explorer, with a
 sortable/filterable data grid and CSV export. Unlocked resources also get an
 auto **Insights** dashboard that profiles the table and renders KPIs + charts
-(donuts, bars, time-series) with zero configuration, and an **`/insights`**
-gallery that surfaces those dashboards grouped by dataset. English/French
-throughout.
+(donuts, bars, time-series) with zero configuration. The **`/insights`** section
+is a live **Top 100 Downloaded Datasets** leaderboard: the most-downloaded
+datasets on open.canada.ca for the latest month, each ingested and visualized,
+shown as a top-3 chart podium over a ranked list with download-history
+sparklines. English/French throughout.
 
 ## Tests & lint
 
 ```bash
-cd server && npm test && npm run lint   # Jest + Supertest (125 tests)
-cd client && npm test && npm run lint   # Vitest (31 tests)
+cd server && npm test && npm run lint   # Jest + Supertest (142 tests)
+cd client && npm test && npm run lint   # Vitest (45 tests)
 ```
 
 Coverage includes the four `/query` modes, filter-grammar injection attempts,
