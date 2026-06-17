@@ -13,3 +13,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Enforce STORE_BUDGET_GB on the store schema
 45 3 * * * root /usr/local/sbin/canquery-run-job.sh evict-store
+
+# Rebuild the Top 100 leaderboard from the latest analytics snapshot
+# (ingests + pins each dataset's representative resource; cheap once warmed)
+15 5 * * * root /usr/local/sbin/canquery-run-job.sh seed-top100

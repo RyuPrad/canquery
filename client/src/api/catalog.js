@@ -40,6 +40,14 @@ export async function fetchRecentlyUnlocked(limit) {
   }
 }
 
+export async function fetchTopDownloads() {
+  try {
+    return await getJSON('/api/v1/insights/top-downloads');
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPopular() {
   try {
     return await getJSON('/api/v1/resources/popular');

@@ -2,12 +2,15 @@ const { TABLE_NAME_RE } = require('../db/storeQueries');
 const { quoteIdent } = require('../utils/filterGrammar');
 
 async function evictUntilUnderBudget(db, { budgetBytes, dryRun = false } = {}) {
-    const { rows } = await db.query('SELECT resource_id, table_name, coalesce(byte_size, 0)::bigint AS byte_size, last_accessed_at FROM ingested_resources ORDER BY last_accessed_at ASC');
+    const { rows } = await db.query('SELECT ir.resource_id, ir.table_name, coalesce(ir.byte_size, 0)::bigint AS byte_size, ir.last_accessed_at, EXISTS (SELECT 1 FROM pinned_resources p WHERE p.resource_id = ir.resource_id) AS pinned FROM ingested_resources ir ORDER BY ir.last_accessed_at ASC');
     let totalBytes = rows.reduce((sum, r) => sum + Number(r.byte_size), 0);
     let dropped = 0;
     let freedBytes = 0;
     for (const row of rows) {
         if (totalBytes <= budgetBytes) break;
+        // Pinned tables (the curated Top 100 + analytics source) still count toward
+        // total usage but are never dropped - skip without decrementing the total.
+        if (row.pinned) continue;
         if (!TABLE_NAME_RE.test(row.table_name)) {
             console.warn('skipping suspicious table name: ' + row.table_name);
             continue;
