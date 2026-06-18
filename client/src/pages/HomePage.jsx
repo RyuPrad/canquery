@@ -196,6 +196,12 @@ export default function HomePage() {
           </div>
         </section>
 
+        {!filtering && featured.length > 0 && (
+          <div className="xl:hidden mt-6 max-w-xl mx-auto">
+            <HeroChartWidget items={featured} reduced={reduced} horizontal />
+          </div>
+        )}
+
         {!filtering && stats && (
           <section className="grid sm:grid-cols-3 gap-3.5 mt-10 max-w-4xl mx-auto">
             <StatCard

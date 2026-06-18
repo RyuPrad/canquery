@@ -22,6 +22,12 @@ describe('HeroChartWidget', () => {
     expect(screen.getByText('b · 2')).toBeInTheDocument();
   });
 
+  test('horizontal layout renders the same content and link', () => {
+    render(<MemoryRouter><HeroChartWidget items={items} horizontal reduced /></MemoryRouter>);
+    expect(screen.getByText('Alpha dataset')).toBeInTheDocument();
+    expect(screen.getByRole('link').getAttribute('href')).toContain('/insights?focus=d1');
+  });
+
   test('cycles to the next item after the interval', () => {
     vi.useFakeTimers();
     try {
