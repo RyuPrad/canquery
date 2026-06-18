@@ -41,7 +41,7 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
   const name = item.name?.[lang] || item.name?.en || item.name?.fr || item.dataset?.title?.en || item.dataset?.name || id;
   const datasetTitle = item.dataset?.title?.[lang] || item.dataset?.title?.en || item.dataset?.title?.fr || item.dataset?.name;
   const datasetId = item.dataset?.id;
-  const to = id ? '/resources/' + id + '?view=chart' : (datasetId ? '/datasets/' + datasetId : '#');
+  const to = datasetId ? '/datasets/' + datasetId + (id ? '?highlight=' + id : '') : (id ? '/resources/' + id : '#');
   const chartHeight = featured ? 300 : 240;
 
   const ref = useRef(null);

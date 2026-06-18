@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { fetchDataset, enqueueIngest } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import useJobPolling from '../hooks/useJobPolling.js';
@@ -63,6 +63,7 @@ function PollBadge({ jobId, onDone, onRetry }) {
 
 export default function DatasetPage() {
   const { idOrName } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { lang: uiLang, t } = useLang();
   const [dataset, setDataset] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -71,6 +72,7 @@ export default function DatasetPage() {
   const [contentLang, setContentLang] = useState(uiLang);
   const [unlockJobs, setUnlockJobs] = useState({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const [highlightId, setHighlightId] = useState(null);
 
   const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
 
@@ -106,6 +108,24 @@ export default function DatasetPage() {
     // dataset is intentionally omitted: it only gates the first-load spinner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idOrName, refreshKey]);
+
+  // Deep-link from an insight card (/datasets/:id?highlight=:resourceId): scroll
+  // the representative resource into view and pulse it so the visitor sees which
+  // one to open, then drop the param so a refresh doesn't re-trigger it.
+  useEffect(() => {
+    const focusId = searchParams.get('highlight');
+    if (!focusId || !dataset) return undefined;
+    const el = document.getElementById('res-' + focusId);
+    if (el) {
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      setHighlightId(focusId);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('highlight');
+    setSearchParams(next, { replace: true });
+    const timer = setTimeout(() => setHighlightId(null), 3400);
+    return () => clearTimeout(timer);
+  }, [dataset, searchParams, setSearchParams]);
 
   if (notFound) {
     return (
@@ -201,7 +221,8 @@ export default function DatasetPage() {
         {dataset.resources.map(resource => (
           <div
             key={resource.id}
-            className="cq-card cq-card-hover p-3.5 sm:p-4 flex flex-row flex-wrap items-center gap-3.5"
+            id={'res-' + resource.id}
+            className={'cq-card cq-card-hover p-3.5 sm:p-4 flex flex-row flex-wrap items-center gap-3.5' + (highlightId === resource.id ? ' cq-focus-ring' : '')}
           >
             <FormatTile format={resource.format} />
             <div className="flex-1 min-w-48">
