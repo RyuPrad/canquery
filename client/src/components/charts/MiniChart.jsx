@@ -49,7 +49,7 @@ function Donut({ points, width, height, drawn, center }) {
   );
 }
 
-function Line({ points, width, height, drawn, endLabel }) {
+function Line({ points, width, height, drawn }) {
   const gid = 'mc-' + useId().replace(/[:]/g, '');
   const vals = points.map((p) => p.value);
   const min = Math.min(...vals);
@@ -80,14 +80,6 @@ function Line({ points, width, height, drawn, endLabel }) {
         style={{ strokeDashoffset: drawn ? 0 : 1, transition: 'stroke-dashoffset 0.85s cubic-bezier(0.4,0,0.2,1)' }}
       />
       <circle cx={lx} cy={ly} r={3.2} fill={c} style={{ opacity: drawn ? 1 : 0, transition: 'opacity 0.3s ease 0.7s' }} />
-      {endLabel ? (
-        <text
-          x={width - 3} y={13} textAnchor="end"
-          style={{ fontSize: 12.5, fontWeight: 700, fontFamily: NUM_FONT, fill: 'var(--color-base-content)', opacity: drawn ? 1 : 0, transition: 'opacity 0.4s ease 0.6s' }}
-        >
-          {endLabel}
-        </text>
-      ) : null}
     </svg>
   );
 }
@@ -123,7 +115,7 @@ function Bars({ points, width, height, drawn }) {
   );
 }
 
-export default function MiniChart({ kind, points, width = 188, height = 116, animate = true, center = '', endLabel = '' }) {
+export default function MiniChart({ kind, points, width = 188, height = 116, animate = true, center = '' }) {
   const [drawn, setDrawn] = useState(!animate);
   useEffect(() => {
     if (!animate) { setDrawn(true); return undefined; }
@@ -136,5 +128,5 @@ export default function MiniChart({ kind, points, width = 188, height = 116, ani
   }
   if (kind === 'donut') return <Donut points={points} width={width} height={height} drawn={drawn} center={center} />;
   if (kind === 'bars') return <Bars points={points} width={width} height={height} drawn={drawn} />;
-  return <Line points={points} width={width} height={height} drawn={drawn} endLabel={endLabel} />;
+  return <Line points={points} width={width} height={height} drawn={drawn} />;
 }

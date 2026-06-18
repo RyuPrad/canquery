@@ -40,9 +40,8 @@ describe('chartSummary', () => {
     expect(s.caption).toBe('Banks · 90%');
   });
 
-  test('line returns the latest value and a period span caption', () => {
+  test('line puts the latest value and period span in the caption', () => {
     const s = chartSummary('line', [{ label: '2015', value: 5 }, { label: '2024', value: 12 }], 'en');
-    expect(s.endLabel).toBe('12');
-    expect(s.caption).toBe('2015 – 2024');
+    expect(s.caption).toBe('12 · 2015 – 2024');
   });
 });

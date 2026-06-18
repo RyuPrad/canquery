@@ -125,16 +125,16 @@ export function cleanRecords(records) {
 // period span) so a teaser shows real figures instead of an abstract shape.
 export function chartSummary(kind, points, lang) {
   const pts = (points || []).filter((p) => p && Number.isFinite(Number(p.value)));
-  if (pts.length === 0) return { center: '', endLabel: '', caption: '' };
+  if (pts.length === 0) return { center: '', caption: '' };
   if (kind === 'line') {
     const last = pts[pts.length - 1];
-    return { center: '', endLabel: fmtNum(Number(last.value), lang), caption: pts[0].label + ' – ' + last.label };
+    return { center: '', caption: fmtNum(Number(last.value), lang) + ' · ' + pts[0].label + ' – ' + last.label };
   }
   const total = pts.reduce((a, p) => a + Number(p.value), 0);
   const top = pts.reduce((m, p) => (Number(p.value) > Number(m.value) ? p : m), pts[0]);
   if (kind === 'bars') {
-    return { center: '', endLabel: '', caption: truncate(top.label, 18) + ' · ' + fmtNum(Number(top.value), lang) };
+    return { center: '', caption: truncate(top.label, 18) + ' · ' + fmtNum(Number(top.value), lang) };
   }
   const share = total > 0 ? Math.round((Number(top.value) / total) * 100) : 0;
-  return { center: fmtNum(total, lang), endLabel: '', caption: truncate(top.label, 20) + ' · ' + share + '%' };
+  return { center: fmtNum(total, lang), caption: truncate(top.label, 20) + ' · ' + share + '%' };
 }

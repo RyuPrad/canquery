@@ -57,7 +57,7 @@ export default function HeroChartWidget({ items, startIndex = 0, reduced = false
       </div>
       <div style={{ opacity: visible ? 1 : 0, transition: `opacity ${FADE_MS}ms ease` }}>
         <div className="h-[116px] flex items-center justify-center">
-          <MiniChart key={idx} kind={item.kind} points={item.points} animate={!reduced} center={summary.center} endLabel={summary.endLabel} />
+          <MiniChart key={idx} kind={item.kind} points={item.points} width={160} animate={!reduced} center={summary.center} />
         </div>
         {summary.caption && (
           <div className="mt-1.5 text-[0.64rem] text-base-content/55 truncate">{summary.caption}</div>
