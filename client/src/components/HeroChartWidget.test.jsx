@@ -17,6 +17,11 @@ describe('HeroChartWidget', () => {
     expect(screen.getByRole('link').getAttribute('href')).toContain('/insights?focus=d1');
   });
 
+  test('shows a stat caption derived from the chart data', () => {
+    renderW({ reduced: true });
+    expect(screen.getByText('b · 2')).toBeInTheDocument();
+  });
+
   test('cycles to the next item after the interval', () => {
     vi.useFakeTimers();
     try {

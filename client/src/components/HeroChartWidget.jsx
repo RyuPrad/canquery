@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import MiniChart from './charts/MiniChart.jsx';
+import { chartSummary } from './charts/theme.js';
 import { SparklesIcon, ArrowRightIcon } from './Icons.jsx';
 
 const CYCLE_MS = 5000;
@@ -38,6 +39,7 @@ export default function HeroChartWidget({ items, startIndex = 0, reduced = false
   const item = items[idx % n];
   const title = item.title?.[lang] || item.title?.en || item.title?.fr || '';
   const to = '/insights?focus=' + encodeURIComponent(item.dataset_id);
+  const summary = chartSummary(item.kind, item.points, lang);
 
   return (
     <Link
@@ -55,9 +57,12 @@ export default function HeroChartWidget({ items, startIndex = 0, reduced = false
       </div>
       <div style={{ opacity: visible ? 1 : 0, transition: `opacity ${FADE_MS}ms ease` }}>
         <div className="h-[116px] flex items-center justify-center">
-          <MiniChart key={idx} kind={item.kind} points={item.points} animate={!reduced} />
+          <MiniChart key={idx} kind={item.kind} points={item.points} animate={!reduced} center={summary.center} endLabel={summary.endLabel} />
         </div>
-        <div className="mt-2 text-[0.72rem] font-medium leading-snug line-clamp-2 min-h-[2.1em] text-base-content/80">
+        {summary.caption && (
+          <div className="mt-1.5 text-[0.64rem] text-base-content/55 truncate">{summary.caption}</div>
+        )}
+        <div className="mt-1 text-[0.72rem] font-medium leading-snug line-clamp-2 min-h-[2.1em] text-base-content/80">
           {title}
         </div>
       </div>

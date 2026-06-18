@@ -5,11 +5,13 @@ import { PALETTE, colorAt } from './theme.js';
 // teasers, so the chart chunk never loads on the most performance-critical page.
 // Each shape draws itself on first paint (donut slices grow, the line traces, the
 // bars rise); `animate=false` (reduced motion) renders the final frame instantly.
+// `center` (donut total) and `endLabel` (line latest value) overlay real numbers.
 
 const TAU = Math.PI * 2;
 const EASE = 'cubic-bezier(0.21,0.6,0.35,1)';
+const NUM_FONT = "'Space Grotesk Variable', ui-sans-serif, sans-serif";
 
-function Donut({ points, width, height, drawn }) {
+function Donut({ points, width, height, drawn, center }) {
   const cx = width / 2;
   const cy = height / 2;
   const r = Math.min(width, height) / 2 - 11;
@@ -35,11 +37,19 @@ function Donut({ points, width, height, drawn }) {
           style={{ transition: `stroke-dasharray 0.7s ${EASE}`, transitionDelay: `${s.key * 90}ms` }}
         />
       ))}
+      {center ? (
+        <text
+          x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+          style={{ fontSize: 16, fontWeight: 700, fontFamily: NUM_FONT, fill: 'var(--color-base-content)', opacity: drawn ? 1 : 0, transition: 'opacity 0.4s ease 0.5s' }}
+        >
+          {center}
+        </text>
+      ) : null}
     </svg>
   );
 }
 
-function Line({ points, width, height, drawn }) {
+function Line({ points, width, height, drawn, endLabel }) {
   const gid = 'mc-' + useId().replace(/[:]/g, '');
   const vals = points.map((p) => p.value);
   const min = Math.min(...vals);
@@ -70,6 +80,14 @@ function Line({ points, width, height, drawn }) {
         style={{ strokeDashoffset: drawn ? 0 : 1, transition: 'stroke-dashoffset 0.85s cubic-bezier(0.4,0,0.2,1)' }}
       />
       <circle cx={lx} cy={ly} r={3.2} fill={c} style={{ opacity: drawn ? 1 : 0, transition: 'opacity 0.3s ease 0.7s' }} />
+      {endLabel ? (
+        <text
+          x={width - 3} y={13} textAnchor="end"
+          style={{ fontSize: 12.5, fontWeight: 700, fontFamily: NUM_FONT, fill: 'var(--color-base-content)', opacity: drawn ? 1 : 0, transition: 'opacity 0.4s ease 0.6s' }}
+        >
+          {endLabel}
+        </text>
+      ) : null}
     </svg>
   );
 }
@@ -105,7 +123,7 @@ function Bars({ points, width, height, drawn }) {
   );
 }
 
-export default function MiniChart({ kind, points, width = 188, height = 116, animate = true }) {
+export default function MiniChart({ kind, points, width = 188, height = 116, animate = true, center = '', endLabel = '' }) {
   const [drawn, setDrawn] = useState(!animate);
   useEffect(() => {
     if (!animate) { setDrawn(true); return undefined; }
@@ -116,7 +134,7 @@ export default function MiniChart({ kind, points, width = 188, height = 116, ani
   if (!points || points.length === 0) {
     return <svg width={width} height={height} aria-hidden="true" />;
   }
-  if (kind === 'donut') return <Donut points={points} width={width} height={height} drawn={drawn} />;
+  if (kind === 'donut') return <Donut points={points} width={width} height={height} drawn={drawn} center={center} />;
   if (kind === 'bars') return <Bars points={points} width={width} height={height} drawn={drawn} />;
-  return <Line points={points} width={width} height={height} drawn={drawn} />;
+  return <Line points={points} width={width} height={height} drawn={drawn} endLabel={endLabel} />;
 }
