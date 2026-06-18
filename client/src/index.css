@@ -678,10 +678,20 @@ a.cq-card:hover,
   animation: cq-pulse 1.6s ease-out infinite;
 }
 
+/* Temporary highlight on a deep-linked insight card (from a hero teaser). */
+.cq-focus-ring {
+  border-radius: 1rem;
+  box-shadow:
+    0 0 0 2px var(--color-primary),
+    0 0 0 7px color-mix(in srgb, var(--color-primary) 22%, transparent);
+  animation: cq-pulse 1.6s ease-out 2;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cq-fade,
   .cq-skel,
-  .cq-pulse {
+  .cq-pulse,
+  .cq-focus-ring {
     animation: none;
   }
   .cq-card,

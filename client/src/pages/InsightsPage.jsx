@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { fetchTopDownloads } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import InsightCard from '../components/InsightCard.jsx';
@@ -33,6 +34,8 @@ export default function InsightsPage() {
   const { t, lang } = useLang();
   const [items, setItems] = useState(null);
   const [period, setPeriod] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [highlightId, setHighlightId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +49,29 @@ export default function InsightsPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Deep-link from a hero teaser (/insights?focus=<dataset>): scroll that card
+  // into view and pulse it briefly, then drop the param so a refresh doesn't
+  // re-trigger it.
+  useEffect(() => {
+    const focusId = searchParams.get('focus');
+    if (!focusId || !items || items.length === 0) return undefined;
+    const el = document.getElementById('ds-' + focusId);
+    if (el) {
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      setHighlightId(focusId);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('focus');
+    setSearchParams(next, { replace: true });
+    const timer = setTimeout(() => setHighlightId(null), 3400);
+    return () => clearTimeout(timer);
+  }, [items, searchParams, setSearchParams]);
+
   const top3 = items ? items.slice(0, 3) : [];
   const rest = items ? items.slice(3) : [];
   const label = periodLabel(period, lang);
   const valuesOf = (it) => (it.history || []).map((h) => h.d);
+  const ringClass = (id) => (highlightId === id ? 'cq-focus-ring' : '');
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8 space-y-8">
@@ -82,22 +104,27 @@ export default function InsightsPage() {
         <div className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
             {top3.map((it, i) => (
-              <InsightCard
-                key={it.dataset_id}
-                item={toCardItem(it)}
-                rank={it.rank}
-                downloads={it.downloads}
-                fallbackValues={valuesOf(it)}
-                featured={i === 0}
-                showDataset={false}
-              />
+              <div key={it.dataset_id} id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
+                <InsightCard
+                  item={toCardItem(it)}
+                  rank={it.rank}
+                  downloads={it.downloads}
+                  fallbackValues={valuesOf(it)}
+                  featured={i === 0}
+                  showDataset={false}
+                />
+              </div>
             ))}
           </div>
 
           {rest.length > 0 && (
             <div className="cq-card p-2 sm:p-3">
               <div className="divide-y divide-base-content/5">
-                {rest.map((it) => <TopDownloadRow key={it.dataset_id} item={it} />)}
+                {rest.map((it) => (
+                  <div key={it.dataset_id} id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
+                    <TopDownloadRow item={it} />
+                  </div>
+                ))}
               </div>
             </div>
           )}

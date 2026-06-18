@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { searchDatasets, fetchOrganizations, fetchStats } from '../api/catalog.js';
+import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -9,6 +9,8 @@ import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import RecentRail from '../components/RecentRail.jsx';
 import PopularRail from '../components/PopularRail.jsx';
+import HeroChartWidget from '../components/HeroChartWidget.jsx';
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { formatRelativeTime } from '../utils/time.js';
 import {
   MapleLeaf,
@@ -67,6 +69,8 @@ export default function HomePage() {
   const keyword = searchParams.get('keyword') || '';
   const [stats, setStats] = useState(null);
   const [orgs, setOrgs] = useState([]);
+  const [featured, setFeatured] = useState([]);
+  const reduced = usePrefersReducedMotion();
 
   const debouncedQuery = useDebouncedValue(query, 250);
 
@@ -104,6 +108,14 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchFeatured().then((env) => {
+      if (!cancelled && env) setFeatured(env.data || []);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const { items, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>
       searchDatasets({
@@ -126,6 +138,22 @@ export default function HomePage() {
         className="absolute inset-x-0 top-0 h-[440px] cq-grid-bg pointer-events-none"
         aria-hidden="true"
       />
+      {!filtering && featured.length > 0 && (
+        <>
+          <HeroChartWidget
+            items={featured}
+            startIndex={0}
+            reduced={reduced}
+            className="hidden xl:block absolute left-3 2xl:left-10 top-[150px] z-10 cq-fade cq-fade-3"
+          />
+          <HeroChartWidget
+            items={featured}
+            startIndex={Math.floor(featured.length / 2)}
+            reduced={reduced}
+            className="hidden xl:block absolute right-3 2xl:right-10 top-[150px] z-10 cq-fade cq-fade-4"
+          />
+        </>
+      )}
       <div className="relative max-w-6xl mx-auto px-4 pb-4">
         <section className="pt-14 pb-2 text-center cq-fade">
           <div className="cq-chip cq-chip-mono mb-5 !px-3 !py-1.5">

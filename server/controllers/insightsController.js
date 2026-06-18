@@ -8,4 +8,10 @@ const getTopDownloads = async (req, res) => {
     res.json(envelope(result.items, { meta: { period: result.period } }));
 };
 
-module.exports = { getTopDownloads: catchAsync(getTopDownloads) };
+const getFeatured = async (req, res) => {
+    const items = await insightsService.featured();
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(envelope(items));
+};
+
+module.exports = { getTopDownloads: catchAsync(getTopDownloads), getFeatured: catchAsync(getFeatured) };

@@ -68,4 +68,16 @@ describe('InsightsPage top-100', () => {
     await screen.findByText(/leaderboard is being prepared/i);
     expect(fetchResourceProfile).not.toHaveBeenCalled();
   });
+
+  test('a ?focus= deep-link highlights the matching dataset card', async () => {
+    const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4)];
+    fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
+    render(<MemoryRouter initialEntries={['/insights?focus=d2']}><InsightsPage /></MemoryRouter>);
+    await screen.findByText('Dataset 2');
+    await waitFor(() => {
+      const el = document.getElementById('ds-d2');
+      expect(el).toBeTruthy();
+      expect(el.className).toContain('cq-focus-ring');
+    });
+  });
 });

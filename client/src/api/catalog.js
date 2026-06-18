@@ -48,6 +48,14 @@ export async function fetchTopDownloads() {
   }
 }
 
+export async function fetchFeatured() {
+  try {
+    return await getJSON('/api/v1/insights/featured');
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPopular() {
   try {
     return await getJSON('/api/v1/resources/popular');

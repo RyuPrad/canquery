@@ -58,4 +58,18 @@ async function prunePins(keepResourceIds, reasons = ['top100', 'top100-source'])
     );
 }
 
-module.exports = { listTopDownloads, replaceTopDownloads, pinResource, prunePins };
+// Top ingested datasets (representative status 'ready') with their store table +
+// columns, for the landing-page featured hero charts. Ordered by leaderboard rank.
+async function listIngestedTop(limit) {
+    const { rows } = await pool.query(`
+        SELECT td.dataset_id, td.rank, td.title_en, td.title_fr, td.resource_id,
+               ir.table_name, ir.columns, ir.row_count
+        FROM top_downloads td
+        JOIN ingested_resources ir ON ir.resource_id = td.resource_id AND ir.status = 'ready'
+        ORDER BY td.rank ASC
+        LIMIT $1
+    `, [limit]);
+    return rows;
+}
+
+module.exports = { listTopDownloads, replaceTopDownloads, pinResource, prunePins, listIngestedTop };
