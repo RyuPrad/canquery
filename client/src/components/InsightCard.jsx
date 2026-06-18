@@ -73,27 +73,25 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
   const hero = useMemo(() => (classified ? pickHero(buildInsights(classified)) : null), [classified]);
   const kpis = useMemo(() => (classified ? buildKpis(classified).slice(0, 3) : []), [classified]);
 
-  // No chartable insight (download-only resource, profile failure, or a table
-  // with nothing to plot): fall back to the download-trend sparkline if we have
-  // one, otherwise a graceful empty state.
-  const fallback = (label) => (
-    (fallbackValues && fallbackValues.length)
-      ? (
-        <div className="space-y-1.5">
-          <div className="text-secondary/70">
-            <Sparkline values={fallbackValues} width={featured ? 360 : 260} height={featured ? 80 : 60} strokeWidth={2} />
-          </div>
-          <span className="text-xs text-base-content/45">{t('insights.download_trend')}</span>
-        </div>
-      )
-      : <ChartEmpty label={label} height={featured ? 200 : 160} />
-  );
+  // A download-only dataset has no table to chart, so we tease it with the
+  // dataset's download-popularity trend. Anything that IS ingested but has no
+  // auto-chart (or failed to profile) shows the same graceful empty state the
+  // resource page does - never the download trend, which would read like data.
+  const emptyChart = (label) => <ChartEmpty label={label} height={featured ? 200 : 160} />;
+  const downloadTrend = (fallbackValues && fallbackValues.length) ? (
+    <div className="space-y-1.5">
+      <div className="text-secondary/70">
+        <Sparkline values={fallbackValues} width={featured ? 360 : 260} height={featured ? 80 : 60} strokeWidth={2} />
+      </div>
+      <span className="text-xs text-base-content/45">{t('insights.download_trend')}</span>
+    </div>
+  ) : null;
 
   let body;
   if (!id) {
-    body = fallback(t('badge.fileonly'));
+    body = downloadTrend || emptyChart(t('badge.fileonly'));
   } else if (error) {
-    body = fallback(t('chart.profile_failed'));
+    body = emptyChart(t('chart.profile_failed'));
   } else if (!classified) {
     body = (
       <div className="space-y-3">
@@ -119,7 +117,7 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
         )}
         {hero
           ? <InsightChart resourceId={id} spec={hero} framed={false} height={chartHeight} />
-          : fallback(t('chart.no_insights'))}
+          : emptyChart(t('chart.no_insights'))}
       </>
     );
   }

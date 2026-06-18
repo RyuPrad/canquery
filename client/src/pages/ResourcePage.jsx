@@ -438,7 +438,7 @@ function ResourcePage() {
               />
             </div>
           )}
-          {data.total > PAGE_SIZE && (
+          {view !== 'chart' && data.total > PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button
                 className="btn btn-sm btn-outline border-base-content/20 rounded-lg"

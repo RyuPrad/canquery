@@ -9,10 +9,10 @@ describe('badges and rows', () => {
     expect(screen.getByText('Queryable')).toBeInTheDocument();
 
     render(<ResourceBadge mode="ingested" />);
-    expect(screen.getByText('Unlocked')).toBeInTheDocument();
+    expect(screen.getByText('Loaded')).toBeInTheDocument();
 
     render(<ResourceBadge mode="ingestable" />);
-    expect(screen.getByText('Unlockable')).toBeInTheDocument();
+    expect(screen.getByText('Loadable')).toBeInTheDocument();
 
     render(<ResourceBadge mode="file-only" />);
     expect(screen.getByText('Download only')).toBeInTheDocument();
