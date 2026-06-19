@@ -14,7 +14,9 @@ import {
 } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import useJobPolling from '../hooks/useJobPolling.js';
+import useElapsed from '../hooks/useElapsed.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
+import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
@@ -122,6 +124,7 @@ function ResourcePage() {
     }
   }, [id]);
   const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone });
+  const loadElapsed = useElapsed(unlockJob?.age_seconds, unlockState === 'queued');
 
   // Pull a proxied (datastore) resource into local storage so the full filter
   // grammar works. Idempotent per visit; used both proactively (mode known) and
@@ -364,7 +367,14 @@ function ResourcePage() {
             </button>
           </div>
           {unlockState === 'queued' && (
-            <p className="text-xs text-base-content/40">{t('resource.will_appear')}</p>
+            <div className="text-xs space-y-1">
+              {unlockJob?.age_seconds != null && (
+                <p className="font-mono tabular-nums text-base-content/60">
+                  {t('resource.elapsed')} {formatDuration(loadElapsed)}
+                </p>
+              )}
+              <p className="text-base-content/40">{t('resource.will_appear')}</p>
+            </div>
           )}
           {unlockState === 'failed' && unlockJob && unlockJob.error && (
             <p className="text-xs text-base-content/40">{unlockJob.error}</p>

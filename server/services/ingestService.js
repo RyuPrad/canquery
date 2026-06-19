@@ -53,7 +53,10 @@ function shapeJob(job) {
         error: job.error || null,
         created_at: job.created_at,
         claimed_at: job.claimed_at || null,
-        finished_at: job.finished_at || null
+        finished_at: job.finished_at || null,
+        // Age computed in Postgres (now() - created_at) so the client timer is
+        // immune to clock skew between the DB, the API and the browser.
+        age_seconds: job.age_seconds != null ? Number(job.age_seconds) : null
     };
 }
 

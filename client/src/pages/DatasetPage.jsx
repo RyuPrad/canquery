@@ -3,6 +3,8 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { fetchDataset, enqueueIngest } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import useJobPolling from '../hooks/useJobPolling.js';
+import useElapsed from '../hooks/useElapsed.js';
+import { formatDuration } from '../utils/time.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
@@ -40,6 +42,8 @@ function FormatTile({ format }) {
 function PollBadge({ jobId, onDone, onRetry }) {
   const { t } = useLang();
   const { job } = useJobPolling(jobId, { onDone });
+  const active = !job || job.status === 'pending' || job.status === 'running';
+  const elapsed = useElapsed(job?.age_seconds, active);
   if (job && job.status === 'failed') {
     return (
       <span className="flex items-center gap-1.5">
@@ -57,6 +61,7 @@ function PollBadge({ jobId, onDone, onRetry }) {
     <span className="cq-badge cq-badge-ingestable">
       <span className="loading loading-spinner loading-xs"></span>
       {label}
+      {job?.age_seconds != null && <span className="font-mono tabular-nums opacity-70 ml-0.5">{formatDuration(elapsed)}</span>}
     </span>
   );
 }

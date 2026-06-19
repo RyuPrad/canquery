@@ -17,3 +17,10 @@ export function formatRelativeTime(iso, lang = 'en') {
   if (days < 30) return rtf.format(-days, 'day');
   return new Date(iso).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA');
 }
+
+// Compact elapsed duration ("0:14", "1:23") for the in-flight load timer.
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const m = Math.floor(s / 60);
+  return m + ':' + String(s % 60).padStart(2, '0');
+}
