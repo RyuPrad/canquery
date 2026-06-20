@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { fetchTopDownloads } from '../api/catalog.js';
+import { fetchTopDownloads, fetchFeatured } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import InsightCard from '../components/InsightCard.jsx';
+import InsightCarousel from '../components/InsightCarousel.jsx';
 import TopDownloadRow from '../components/TopDownloadRow.jsx';
 import { SparklesIcon } from '../components/Icons.jsx';
 
@@ -28,37 +29,42 @@ function periodLabel(period, lang) {
 }
 
 // The Insights section: the live "Top 100 Downloaded Datasets" leaderboard, each
-// dataset pre-ingested and visualized. Top 3 as a featured podium, the rest as a
-// compact list with download-popularity sparklines.
+// dataset pre-ingested and visualized. The datasets that actually produce a chart
+// (per the server-side featured set) cycle through a Steam-style carousel on top;
+// the full ranking sits below as a compact list with download-popularity sparklines.
 export default function InsightsPage() {
   const { t, lang } = useLang();
   const [items, setItems] = useState(null);
   const [period, setPeriod] = useState(null);
+  const [chartableIds, setChartableIds] = useState(() => new Set());
   const [searchParams, setSearchParams] = useSearchParams();
   const [highlightId, setHighlightId] = useState(null);
+  const [focusId, setFocusId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchTopDownloads()
-      .then((env) => {
+    Promise.all([fetchTopDownloads(), fetchFeatured()])
+      .then(([topEnv, featEnv]) => {
         if (cancelled) return;
-        setItems(env?.data || []);
-        setPeriod(env?.meta?.period || null);
+        setItems(topEnv?.data || []);
+        setPeriod(topEnv?.meta?.period || null);
+        setChartableIds(new Set((featEnv?.data || []).map((f) => f.dataset_id)));
       })
       .catch(() => { if (!cancelled) setItems([]); });
     return () => { cancelled = true; };
   }, []);
 
   // Deep-link from a hero teaser (/insights?focus=<dataset>): scroll that card
-  // into view and pulse it briefly, then drop the param so a refresh doesn't
-  // re-trigger it.
+  // into view, page the carousel to it, and pulse it briefly, then drop the param
+  // so a refresh doesn't re-trigger it.
   useEffect(() => {
-    const focusId = searchParams.get('focus');
-    if (!focusId || !items || items.length === 0) return undefined;
-    const el = document.getElementById('ds-' + focusId);
+    const focus = searchParams.get('focus');
+    if (!focus || !items || items.length === 0) return undefined;
+    const el = document.getElementById('ds-' + focus) || document.getElementById('dsrow-' + focus);
     if (el) {
       el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-      setHighlightId(focusId);
+      setHighlightId(focus);
+      setFocusId(focus);
     }
     const next = new URLSearchParams(searchParams);
     next.delete('focus');
@@ -67,11 +73,10 @@ export default function InsightsPage() {
     return () => clearTimeout(timer);
   }, [items, searchParams, setSearchParams]);
 
-  const top3 = items ? items.slice(0, 3) : [];
-  const rest = items ? items.slice(3) : [];
   const label = periodLabel(period, lang);
   const valuesOf = (it) => (it.history || []).map((h) => h.d);
   const ringClass = (id) => (highlightId === id ? 'cq-focus-ring' : '');
+  const featuredItems = items ? items.filter((it) => it.dataset_id && chartableIds.has(it.dataset_id)) : [];
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8 space-y-8">
@@ -101,33 +106,47 @@ export default function InsightsPage() {
           <p className="text-base-content/70">{t('insights.top_empty')}</p>
         </div>
       ) : (
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
-            {top3.map((it, i) => (
-              <div key={it.dataset_id} id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
-                <InsightCard
-                  item={toCardItem(it)}
-                  rank={it.rank}
-                  downloads={it.downloads}
-                  fallbackValues={valuesOf(it)}
-                  featured={i === 0}
-                  showDataset={false}
-                />
+        <div className="space-y-10">
+          {featuredItems.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-base-content/55">
+                <SparklesIcon size={15} className="text-secondary" />
+                {t('insights.featured_heading')}
               </div>
-            ))}
-          </div>
+              <InsightCarousel
+                items={featuredItems}
+                getId={(it) => it.dataset_id}
+                focusId={focusId}
+                ariaLabel={t('insights.featured_heading')}
+                renderSlide={(it) => (
+                  <div id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
+                    <InsightCard
+                      item={toCardItem(it)}
+                      rank={it.rank}
+                      downloads={it.downloads}
+                      fallbackValues={valuesOf(it)}
+                      showDataset={false}
+                    />
+                  </div>
+                )}
+              />
+            </section>
+          )}
 
-          {rest.length > 0 && (
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-base-content/55">
+              {t('insights.ranking_heading')}
+            </div>
             <div className="cq-card p-2 sm:p-3">
               <div className="divide-y divide-base-content/5">
-                {rest.map((it) => (
-                  <div key={it.dataset_id} id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
+                {items.map((it) => (
+                  <div key={it.dataset_id} id={'dsrow-' + it.dataset_id} className={ringClass(it.dataset_id)}>
                     <TopDownloadRow item={it} />
                   </div>
                 ))}
               </div>
             </div>
-          )}
+          </section>
         </div>
       )}
     </div>

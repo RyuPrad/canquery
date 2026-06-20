@@ -45,11 +45,16 @@ function cleanLabel(key, bucket) {
     return s.length > 24 ? s.slice(0, 23) + '…' : s;
 }
 
+// How many top ingested datasets to consider, and how many chart specs to keep.
+// Shared by the landing-hero teasers and the /insights "Featured" carousel.
+const FEATURED_SCAN = 24;
+const FEATURED_LIMIT = 12;
+
 async function computeFeatured() {
-    const candidates = await topDownloadsQueries.listIngestedTop(12);
+    const candidates = await topDownloadsQueries.listIngestedTop(FEATURED_SCAN);
     const out = [];
     for (const c of candidates) {
-        if (out.length >= 6) break;
+        if (out.length >= FEATURED_LIMIT) break;
         try {
             const columns = Array.isArray(c.columns) ? c.columns : [];
             const profile = await profileStoreTable({ tableName: c.table_name, columns });

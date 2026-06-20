@@ -5,10 +5,11 @@ import InsightsPage from './InsightsPage.jsx';
 
 vi.mock('../api/catalog.js', () => ({
   fetchTopDownloads: vi.fn(),
+  fetchFeatured: vi.fn(),
   fetchResourceProfile: vi.fn(),
   queryResource: vi.fn(),
 }));
-import { fetchTopDownloads, fetchResourceProfile, queryResource } from '../api/catalog.js';
+import { fetchTopDownloads, fetchFeatured, fetchResourceProfile, queryResource } from '../api/catalog.js';
 
 const PROFILE = { row_count: 420, columns: [
   { id: 'status', type: 'TEXT', distinct: 3, nulls: 0 },
@@ -30,6 +31,8 @@ const mkItem = (rank, over = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: nothing is chartable, so no carousel renders unless a test opts in.
+  fetchFeatured.mockResolvedValue({ data: [] });
   fetchResourceProfile.mockResolvedValue({ data: PROFILE });
   queryResource.mockResolvedValue({ data: { records: [{ key: 'Approved', value: '200' }, { key: 'Pending', value: '120' }], total: 2 } });
 });
@@ -44,14 +47,18 @@ describe('InsightsPage top-100', () => {
     await screen.findByText(/May 2026/i);
   });
 
-  test('renders the top 3 as podium cards and the rest as compact rows', async () => {
+  test('the carousel charts only the chartable datasets; the full ranking lists them all', async () => {
     const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4), mkItem(5)];
     fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
+    // Only d1 + d2 produce a chart server-side, so only those go in the carousel.
+    fetchFeatured.mockResolvedValue({ data: [{ dataset_id: 'd1' }, { dataset_id: 'd2' }] });
     renderPage();
-    // Podium card #1 profiles its representative resource.
+    // The carousel card for d1 profiles its representative resource...
     await waitFor(() => expect(fetchResourceProfile).toHaveBeenCalledWith('r1'));
-    // Long-tail row #4 renders with a downloads label.
-    await screen.findByText('Dataset 4');
+    // ...but a non-chartable dataset (only a list row) never profiles.
+    expect(fetchResourceProfile).not.toHaveBeenCalledWith('r4');
+    // The full ranking still lists every dataset, including rank 5.
+    await screen.findByText('Dataset 5');
     expect(screen.getAllByText('downloads').length).toBeGreaterThan(0);
   });
 
@@ -69,11 +76,11 @@ describe('InsightsPage top-100', () => {
     expect(fetchResourceProfile).not.toHaveBeenCalled();
   });
 
-  test('a ?focus= deep-link highlights the matching dataset card', async () => {
+  test('a ?focus= deep-link highlights the matching carousel card', async () => {
     const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4)];
     fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
+    fetchFeatured.mockResolvedValue({ data: items.map((it) => ({ dataset_id: it.dataset_id })) });
     render(<MemoryRouter initialEntries={['/insights?focus=d2']}><InsightsPage /></MemoryRouter>);
-    await screen.findByText('Dataset 2');
     await waitFor(() => {
       const el = document.getElementById('ds-d2');
       expect(el).toBeTruthy();
