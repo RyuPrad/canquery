@@ -14,6 +14,12 @@ function perViewFor() {
   return 1;
 }
 
+function chunk(arr, n) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
 // A Steam-style showcase carousel: a row of slides that auto-advances one page at
 // a time, with prev/next arrows and pagination dots. Pauses on hover/focus, holds
 // still for prefers-reduced-motion, and pages to a deep-linked slide (focusId).
@@ -25,7 +31,10 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
   const [page, setPage] = useState(0);
   const [paused, setPaused] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(items.length / perView));
+  // Group slides into pages that are each exactly one container width, so paging
+  // by translateX(-page * 100%) lands cleanly with no peek/clipping at the edges.
+  const pages = chunk(items, perView);
+  const pageCount = Math.max(1, pages.length);
   const multi = pageCount > 1;
 
   useEffect(() => {
@@ -68,16 +77,20 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
       <div className="relative">
         <div className="overflow-hidden">
           <div
-            className={'flex -mx-2.5' + (reduced ? '' : ' transition-transform duration-500 ease-out')}
+            className={'flex' + (reduced ? '' : ' transition-transform duration-500 ease-out')}
             style={{ transform: 'translateX(-' + page * 100 + '%)' }}
           >
-            {items.map((it, i) => (
+            {pages.map((group, gi) => (
               <div
-                key={getId(it) || i}
-                className="shrink-0 px-2.5"
-                style={{ flexBasis: 100 / perView + '%' }}
+                key={gi}
+                className="shrink-0 w-full grid gap-5"
+                style={{ gridTemplateColumns: 'repeat(' + perView + ', minmax(0, 1fr))' }}
               >
-                {renderSlide(it, i)}
+                {group.map((it, i) => (
+                  <div key={getId(it) || i} className="min-w-0">
+                    {renderSlide(it, gi * perView + i)}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
