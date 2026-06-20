@@ -45,6 +45,17 @@ describe('pickRepresentative', () => {
         expect(rep.id).toBe('ok');
     });
 
+    it('skips resources the worker has permanently failed on, falling through to the next', () => {
+        const resources = [
+            { id: 'bad', format: 'CSV', name_en: '2025Q4', size_bytes: 100, last_modified: '2026-01-01' },
+            { id: 'good', format: 'CSV', name_en: '2024Q1', size_bytes: 100, last_modified: '2024-04-01' }
+        ];
+        expect(pickRepresentative(resources, cap).id).toBe('bad'); // latest period wins by default
+        expect(pickRepresentative(resources, cap, undefined, new Set(['bad'])).id).toBe('good');
+        // Excluding the only ingestable file -> download-only.
+        expect(pickRepresentative([resources[0]], cap, undefined, new Set(['bad']))).toBeNull();
+    });
+
     const bilingual = [
         { id: 'en1', format: 'CSV', name_en: '2025', size_bytes: 100, language: 'en' },
         { id: 'fr1', format: 'CSV', name_en: '2025', size_bytes: 100, language: 'fr' },

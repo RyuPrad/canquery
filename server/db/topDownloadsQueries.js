@@ -95,4 +95,21 @@ async function listIngestedTop(limit, lang = 'en') {
     return rows;
 }
 
-module.exports = { listTopDownloads, replaceTopDownloads, pinResource, prunePins, listIngestedTop };
+// Resource ids the worker has given up on: a failed ingest job with no current
+// ready table (malformed CSV, too many columns, oversize, dead URL, ...). The
+// seed excludes these when picking representatives so the daily cron stops
+// re-enqueuing files that can never load.
+async function listFailedResourceIds() {
+    const { rows } = await pool.query(`
+        SELECT DISTINCT j.resource_id
+        FROM ingest_jobs j
+        WHERE j.status = 'failed'
+          AND NOT EXISTS (
+              SELECT 1 FROM ingested_resources ir
+              WHERE ir.resource_id = j.resource_id AND ir.status = 'ready'
+          )
+    `);
+    return rows.map((r) => r.resource_id);
+}
+
+module.exports = { listTopDownloads, replaceTopDownloads, pinResource, prunePins, listIngestedTop, listFailedResourceIds };

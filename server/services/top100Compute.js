@@ -62,8 +62,11 @@ function matchesLang(resource, lang) {
 // tie-broken by most recently modified, then largest. null => download-only.
 // When `lang` ('en'|'fr') is given, only resources in that language are eligible
 // (a bilingual "en, fr" file qualifies for both), so the chart matches the UI.
-function pickRepresentative(resources, capBytesFor, lang) {
+// `failedIds` (a Set of resource ids the worker has given up on) are skipped so
+// the daily seed stops re-enqueuing files that can never load.
+function pickRepresentative(resources, capBytesFor, lang, failedIds) {
     let ingestable = (resources || []).filter(r => {
+        if (failedIds && failedIds.has(r.id)) return false;
         const cap = capBytesFor(r.format);
         return cap !== null && (r.size_bytes == null || Number(r.size_bytes) <= cap);
     });

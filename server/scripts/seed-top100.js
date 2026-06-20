@@ -8,7 +8,7 @@ const { getResourceById, listResourcesForDataset } = require('../db/catalogReadQ
 const { queryStoreTable } = require('../db/storeQueries');
 const { ingestCapBytesFor } = require('../services/catalogService');
 const { enqueueIngest } = require('../services/ingestService');
-const { replaceTopDownloads, pinResource, prunePins } = require('../db/topDownloadsQueries');
+const { replaceTopDownloads, pinResource, prunePins, listFailedResourceIds } = require('../db/topDownloadsQueries');
 const { insertSyncRun } = require('../db/catalogWriteQueries');
 const { computeSnapshot, pickRepresentative } = require('../services/top100Compute');
 
@@ -61,6 +61,11 @@ async function main() {
         const items = [];
         const keepPins = [resourceId];
 
+        // Resources the worker has permanently failed on - skip them when picking
+        // so the daily cron stops re-enqueuing files that can never load.
+        const failedIds = new Set(await listFailedResourceIds());
+        if (failedIds.size) console.log('skipping ' + failedIds.size + ' previously-failed resources');
+
         // Reuse-or-ingest + pin one representative, returning its id (or null if it
         // turns out not to be loadable). Memoised per run so a resource shared by
         // both languages (a bilingual "en, fr" file, or a monolingual fallback) is
@@ -100,10 +105,10 @@ async function main() {
             const resources = await listResourcesForDataset(row.dataset_id);
             // Prefer a same-language file; fall back to a language-blind pick so
             // monolingual / unknown-language datasets still get a representative.
-            const repEn = pickRepresentative(resources, ingestCapBytesFor, 'en')
-                || pickRepresentative(resources, ingestCapBytesFor);
-            const repFr = pickRepresentative(resources, ingestCapBytesFor, 'fr')
-                || pickRepresentative(resources, ingestCapBytesFor);
+            const repEn = pickRepresentative(resources, ingestCapBytesFor, 'en', failedIds)
+                || pickRepresentative(resources, ingestCapBytesFor, null, failedIds);
+            const repFr = pickRepresentative(resources, ingestCapBytesFor, 'fr', failedIds)
+                || pickRepresentative(resources, ingestCapBytesFor, null, failedIds);
             const enId = await resolveRep(repEn);
             const frId = await resolveRep(repFr);
             items.push({
