@@ -41,4 +41,12 @@ describe('GET /api/v1/insights/top-downloads', () => {
         expect(res.body.data).toEqual([]);
         expect(res.body.meta.period).toBeNull();
     });
+
+    it('passes the requested language through to the query (default en)', async () => {
+        topq.listTopDownloads.mockResolvedValue([]);
+        await request(app).get('/api/v1/insights/top-downloads');
+        expect(topq.listTopDownloads).toHaveBeenCalledWith('en');
+        await request(app).get('/api/v1/insights/top-downloads?lang=fr');
+        expect(topq.listTopDownloads).toHaveBeenCalledWith('fr');
+    });
 });

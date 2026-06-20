@@ -48,14 +48,26 @@ function computeSnapshot(rows) {
     };
 }
 
+// Does a resource's `language` text (stored as "en", "fr", or "en, fr") cover the
+// requested code? Unknown/empty language matches nothing, so the seed can fall
+// back to a language-blind pick rather than mislabel an unknown file.
+function matchesLang(resource, lang) {
+    const l = (resource.language || '').toLowerCase();
+    if (!l) return false;
+    return l.split(/[,\s]+/).filter(Boolean).includes(lang);
+}
+
 // Among a dataset's resources, pick the one to ingest + chart: an ingestable file
 // (CSV/XLSX/XLS under cap, per the injected capBytesFor) of the latest period,
 // tie-broken by most recently modified, then largest. null => download-only.
-function pickRepresentative(resources, capBytesFor) {
-    const ingestable = (resources || []).filter(r => {
+// When `lang` ('en'|'fr') is given, only resources in that language are eligible
+// (a bilingual "en, fr" file qualifies for both), so the chart matches the UI.
+function pickRepresentative(resources, capBytesFor, lang) {
+    let ingestable = (resources || []).filter(r => {
         const cap = capBytesFor(r.format);
         return cap !== null && (r.size_bytes == null || Number(r.size_bytes) <= cap);
     });
+    if (lang) ingestable = ingestable.filter(r => matchesLang(r, lang));
     if (ingestable.length === 0) return null;
     ingestable.sort((a, b) => {
         const pa = parsePeriodKey(a.name_en || a.name_fr || '');
@@ -69,4 +81,4 @@ function pickRepresentative(resources, capBytesFor) {
     return ingestable[0];
 }
 
-module.exports = { computeSnapshot, pickRepresentative };
+module.exports = { computeSnapshot, pickRepresentative, matchesLang };

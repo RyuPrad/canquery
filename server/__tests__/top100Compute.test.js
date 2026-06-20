@@ -1,5 +1,5 @@
 const { parsePeriodKey } = require('../utils/periodParse');
-const { pickRepresentative, computeSnapshot } = require('../services/top100Compute');
+const { pickRepresentative, computeSnapshot, matchesLang } = require('../services/top100Compute');
 
 describe('parsePeriodKey', () => {
     it('reads quarters, year-month and bare years; the most recent wins', () => {
@@ -43,6 +43,38 @@ describe('pickRepresentative', () => {
             { id: 'ok', format: 'CSV', name_en: '2024Q1', size_bytes: 100, last_modified: '2024-04-01' }
         ], cap);
         expect(rep.id).toBe('ok');
+    });
+
+    const bilingual = [
+        { id: 'en1', format: 'CSV', name_en: '2025', size_bytes: 100, language: 'en' },
+        { id: 'fr1', format: 'CSV', name_en: '2025', size_bytes: 100, language: 'fr' },
+        { id: 'both', format: 'CSV', name_en: '2024', size_bytes: 100, language: 'en, fr' }
+    ];
+
+    it('restricts to the requested language when one is given', () => {
+        expect(pickRepresentative(bilingual, cap, 'en').id).toBe('en1');
+        expect(pickRepresentative(bilingual, cap, 'fr').id).toBe('fr1');
+    });
+
+    it('returns null when no file matches the language (caller can fall back)', () => {
+        const frOnly = [{ id: 'f', format: 'CSV', name_en: '2025', size_bytes: 100, language: 'fr' }];
+        expect(pickRepresentative(frOnly, cap, 'en')).toBeNull();
+        expect(pickRepresentative(frOnly, cap)).not.toBeNull(); // language-blind fallback still picks it
+    });
+
+    it('treats a bilingual "en, fr" file as eligible for both languages', () => {
+        const onlyBoth = [{ id: 'both', format: 'CSV', name_en: '2025', size_bytes: 100, language: 'en, fr' }];
+        expect(pickRepresentative(onlyBoth, cap, 'en').id).toBe('both');
+        expect(pickRepresentative(onlyBoth, cap, 'fr').id).toBe('both');
+    });
+});
+
+describe('matchesLang', () => {
+    it('parses the language text, including bilingual "en, fr"', () => {
+        expect(matchesLang({ language: 'en' }, 'en')).toBe(true);
+        expect(matchesLang({ language: 'fr' }, 'en')).toBe(false);
+        expect(matchesLang({ language: 'en, fr' }, 'fr')).toBe(true);
+        expect(matchesLang({ language: null }, 'en')).toBe(false);
     });
 });
 

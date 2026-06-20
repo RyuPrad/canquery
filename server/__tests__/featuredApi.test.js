@@ -42,4 +42,10 @@ describe('GET /api/v1/insights/featured', () => {
         expect(res.body.data[0].points[0]).toEqual({ label: 'Approved', value: 60 });
         expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({ groupBy: 'status', agg: 'count' }));
     });
+
+    it('selects French representatives when lang=fr', async () => {
+        topq.listIngestedTop.mockResolvedValue([]);
+        await request(app).get('/api/v1/insights/featured?lang=fr');
+        expect(topq.listIngestedTop).toHaveBeenCalledWith(24, 'fr');
+    });
 });

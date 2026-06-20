@@ -55,6 +55,9 @@ describe('InsightsPage top-100', () => {
     renderPage();
     // The carousel card for d1 profiles its representative resource...
     await waitFor(() => expect(fetchResourceProfile).toHaveBeenCalledWith('r1'));
+    // ...and the leaderboard is fetched in the active UI language (default en).
+    expect(fetchTopDownloads).toHaveBeenCalledWith('en');
+    expect(fetchFeatured).toHaveBeenCalledWith('en');
     // ...but a non-chartable dataset (only a list row) never profiles.
     expect(fetchResourceProfile).not.toHaveBeenCalledWith('r4');
     // The full ranking still lists every dataset, including rank 5.

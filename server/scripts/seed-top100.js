@@ -60,18 +60,24 @@ async function main() {
 
         const items = [];
         const keepPins = [resourceId];
-        for (const row of snap.ranked) {
-            const resources = await listResourcesForDataset(row.dataset_id);
-            const rep = pickRepresentative(resources, ingestCapBytesFor);
-            let repId = null;
-            if (rep && dryRun) {
+
+        // Reuse-or-ingest + pin one representative, returning its id (or null if it
+        // turns out not to be loadable). Memoised per run so a resource shared by
+        // both languages (a bilingual "en, fr" file, or a monolingual fallback) is
+        // only enqueued + pinned once.
+        const resolved = new Map();
+        const resolveRep = async (rep) => {
+            if (!rep) return null;
+            if (resolved.has(rep.id)) return resolved.get(rep.id);
+            let repId;
+            if (dryRun) {
                 repId = rep.id;
-            } else if (rep && rep.ingest_status === 'ready') {
+            } else if (rep.ingest_status === 'ready') {
                 // Already ingested (and pinned from a prior run) - reuse, never re-download.
                 repId = rep.id;
                 keepPins.push(repId);
                 await pinResource(repId, 'top100');
-            } else if (rep) {
+            } else {
                 try {
                     await enqueueIngest(rep.id);
                     repId = rep.id;
@@ -80,12 +86,26 @@ async function main() {
                     ingestedCount += 1;
                 } catch (e) {
                     if (e && e.statusCode === 422) {
-                        repId = null; // not actually loadable -> render as download-only
+                        repId = null; // not actually loadable -> download-only for this language
                     } else {
                         throw e;
                     }
                 }
             }
+            resolved.set(rep.id, repId);
+            return repId;
+        };
+
+        for (const row of snap.ranked) {
+            const resources = await listResourcesForDataset(row.dataset_id);
+            // Prefer a same-language file; fall back to a language-blind pick so
+            // monolingual / unknown-language datasets still get a representative.
+            const repEn = pickRepresentative(resources, ingestCapBytesFor, 'en')
+                || pickRepresentative(resources, ingestCapBytesFor);
+            const repFr = pickRepresentative(resources, ingestCapBytesFor, 'fr')
+                || pickRepresentative(resources, ingestCapBytesFor);
+            const enId = await resolveRep(repEn);
+            const frId = await resolveRep(repFr);
             items.push({
                 dataset_id: row.dataset_id, rank: row.rank,
                 title_en: row.title_en, title_fr: row.title_fr,
@@ -93,7 +113,9 @@ async function main() {
                 downloads: row.downloads,
                 period_year: snap.year, period_month: snap.month,
                 history: snap.historyByDataset.get(row.dataset_id) || [],
-                resource_id: repId
+                resource_id: enId || frId, // primary/default = English-preferred
+                resource_id_en: enId,
+                resource_id_fr: frId
             });
         }
         datasetCount = items.length;

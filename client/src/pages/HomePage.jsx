@@ -110,11 +110,11 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchFeatured().then((env) => {
+    fetchFeatured(lang).then((env) => {
       if (!cancelled && env) setFeatured(env.data || []);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [lang]);
 
   const { items, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>

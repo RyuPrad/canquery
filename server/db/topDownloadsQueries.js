@@ -1,17 +1,33 @@
 const pool = require('./pool');
 
+// Resolve the language-appropriate representative in SQL: prefer the requested
+// language, fall back to the other language, then the legacy primary resource_id
+// (covers the window after migration 004 but before the first bilingual re-seed).
+const CHOSEN_REP = `
+    COALESCE(
+        CASE WHEN $LANG = 'fr' THEN td.resource_id_fr ELSE td.resource_id_en END,
+        CASE WHEN $LANG = 'fr' THEN td.resource_id_en ELSE td.resource_id_fr END,
+        td.resource_id
+    )`;
+
 // The leaderboard for the API, joined live to ingested_resources so each row
 // reflects the representative's current ingest status (a pinned table can still
-// be mid-ingest, or briefly absent right after a re-ingest swap).
-async function listTopDownloads() {
+// be mid-ingest, or briefly absent right after a re-ingest swap). `lang` selects
+// the English or French representative so the charted data matches the UI.
+async function listTopDownloads(lang = 'en') {
     const { rows } = await pool.query(`
-        SELECT td.rank, td.dataset_id, td.title_en, td.title_fr, td.department, td.ministere,
-               td.downloads, td.period_year, td.period_month, td.history, td.resource_id,
+        WITH t AS (
+            SELECT td.*, ${CHOSEN_REP.replace(/\$LANG/g, '$1')} AS chosen_resource_id
+            FROM top_downloads td
+        )
+        SELECT t.rank, t.dataset_id, t.title_en, t.title_fr, t.department, t.ministere,
+               t.downloads, t.period_year, t.period_month, t.history,
+               t.chosen_resource_id AS resource_id,
                ir.status AS ingest_status, ir.row_count AS ingested_row_count
-        FROM top_downloads td
-        LEFT JOIN ingested_resources ir ON ir.resource_id = td.resource_id
-        ORDER BY td.rank ASC
-    `);
+        FROM t
+        LEFT JOIN ingested_resources ir ON ir.resource_id = t.chosen_resource_id
+        ORDER BY t.rank ASC
+    `, [lang]);
     return rows;
 }
 
@@ -26,10 +42,11 @@ async function replaceTopDownloads(items) {
             await client.query(
                 `INSERT INTO top_downloads
                    (dataset_id, rank, title_en, title_fr, department, ministere, downloads,
-                    period_year, period_month, history, resource_id, updated_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())`,
+                    period_year, period_month, history, resource_id, resource_id_en, resource_id_fr, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())`,
                 [it.dataset_id, it.rank, it.title_en, it.title_fr, it.department, it.ministere,
-                 it.downloads, it.period_year, it.period_month, JSON.stringify(it.history || []), it.resource_id]
+                 it.downloads, it.period_year, it.period_month, JSON.stringify(it.history || []),
+                 it.resource_id, it.resource_id_en || null, it.resource_id_fr || null]
             );
         }
         await client.query('COMMIT');
@@ -60,15 +77,21 @@ async function prunePins(keepResourceIds, reasons = ['top100', 'top100-source'])
 
 // Top ingested datasets (representative status 'ready') with their store table +
 // columns, for the landing-page featured hero charts. Ordered by leaderboard rank.
-async function listIngestedTop(limit) {
+// `lang` selects the English or French representative so the teaser matches the UI.
+async function listIngestedTop(limit, lang = 'en') {
     const { rows } = await pool.query(`
-        SELECT td.dataset_id, td.rank, td.title_en, td.title_fr, td.resource_id,
+        WITH t AS (
+            SELECT td.dataset_id, td.rank, td.title_en, td.title_fr,
+                   ${CHOSEN_REP.replace(/\$LANG/g, '$2')} AS chosen_resource_id
+            FROM top_downloads td
+        )
+        SELECT t.dataset_id, t.rank, t.title_en, t.title_fr, t.chosen_resource_id AS resource_id,
                ir.table_name, ir.columns, ir.row_count
-        FROM top_downloads td
-        JOIN ingested_resources ir ON ir.resource_id = td.resource_id AND ir.status = 'ready'
-        ORDER BY td.rank ASC
+        FROM t
+        JOIN ingested_resources ir ON ir.resource_id = t.chosen_resource_id AND ir.status = 'ready'
+        ORDER BY t.rank ASC
         LIMIT $1
-    `, [limit]);
+    `, [limit, lang]);
     return rows;
 }
 

@@ -40,17 +40,17 @@ export async function fetchRecentlyUnlocked(limit) {
   }
 }
 
-export async function fetchTopDownloads() {
+export async function fetchTopDownloads(lang = 'en') {
   try {
-    return await getJSON('/api/v1/insights/top-downloads');
+    return await getJSON('/api/v1/insights/top-downloads?lang=' + encodeURIComponent(lang));
   } catch {
     return null;
   }
 }
 
-export async function fetchFeatured() {
+export async function fetchFeatured(lang = 'en') {
   try {
-    return await getJSON('/api/v1/insights/featured');
+    return await getJSON('/api/v1/insights/featured?lang=' + encodeURIComponent(lang));
   } catch {
     return null;
   }

@@ -41,9 +41,11 @@ export default function InsightsPage() {
   const [highlightId, setHighlightId] = useState(null);
   const [focusId, setFocusId] = useState(null);
 
+  // Charts follow the UI language: refetch when EN/FR toggles so each dataset's
+  // representative (and the chartable set) matches the active language.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchTopDownloads(), fetchFeatured()])
+    Promise.all([fetchTopDownloads(lang), fetchFeatured(lang)])
       .then(([topEnv, featEnv]) => {
         if (cancelled) return;
         setItems(topEnv?.data || []);
@@ -52,7 +54,7 @@ export default function InsightsPage() {
       })
       .catch(() => { if (!cancelled) setItems([]); });
     return () => { cancelled = true; };
-  }, []);
+  }, [lang]);
 
   // Deep-link from a hero teaser (/insights?focus=<dataset>): scroll that card
   // into view, page the carousel to it, and pulse it briefly, then drop the param

@@ -7,8 +7,8 @@ const toNumberOrNull = (v) => (v === null || v === undefined ? null : Number(v))
 
 // The curated Top 100 leaderboard: ranked datasets with their download history
 // and the live ingest status of the representative resource the UI charts.
-const topDownloads = async () => {
-    const rows = await topDownloadsQueries.listTopDownloads();
+const topDownloads = async (lang = 'en') => {
+    const rows = await topDownloadsQueries.listTopDownloads(lang);
     const items = rows.map((r) => ({
         rank: r.rank,
         dataset_id: r.dataset_id,
@@ -50,8 +50,8 @@ function cleanLabel(key, bucket) {
 const FEATURED_SCAN = 24;
 const FEATURED_LIMIT = 12;
 
-async function computeFeatured() {
-    const candidates = await topDownloadsQueries.listIngestedTop(FEATURED_SCAN);
+async function computeFeatured(lang) {
+    const candidates = await topDownloadsQueries.listIngestedTop(FEATURED_SCAN, lang);
     const out = [];
     for (const c of candidates) {
         if (out.length >= FEATURED_LIMIT) break;
@@ -85,6 +85,6 @@ async function computeFeatured() {
     return out;
 }
 
-const featured = async () => featuredCache.get('all', computeFeatured);
+const featured = async (lang = 'en') => featuredCache.get('featured:' + lang, () => computeFeatured(lang));
 
 module.exports = { topDownloads, featured };
