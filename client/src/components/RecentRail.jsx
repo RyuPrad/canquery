@@ -29,7 +29,7 @@ export default function RecentRail() {
         {items.map(item => (
           <Link
             key={item.resource_id}
-            to={'/resources/' + item.resource_id}
+            to={item.dataset?.id ? '/datasets/' + item.dataset.id + '?highlight=' + item.resource_id : '/resources/' + item.resource_id}
             className="cq-card p-3.5 w-60 shrink-0 space-y-1.5"
           >
             <div className="flex items-center justify-between gap-2">
