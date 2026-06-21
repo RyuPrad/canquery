@@ -102,7 +102,7 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
               type="button"
               onClick={() => go(page - 1)}
               aria-label={t('carousel.prev')}
-              className="cq-glass absolute top-1/2 left-0 -translate-y-1/2 sm:-translate-x-1/2 z-10 w-9 h-9 rounded-full inline-flex items-center justify-center text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="cq-glass absolute top-1/2 left-0 -translate-y-1/2 sm:-translate-x-1/2 z-10 w-9 h-9 rounded-full inline-flex items-center justify-center cursor-pointer text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <ArrowLeftIcon size={18} />
             </button>
@@ -110,7 +110,7 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
               type="button"
               onClick={() => go(page + 1)}
               aria-label={t('carousel.next')}
-              className="cq-glass absolute top-1/2 right-0 -translate-y-1/2 sm:translate-x-1/2 z-10 w-9 h-9 rounded-full inline-flex items-center justify-center text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="cq-glass absolute top-1/2 right-0 -translate-y-1/2 sm:translate-x-1/2 z-10 w-9 h-9 rounded-full inline-flex items-center justify-center cursor-pointer text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <ArrowRightIcon size={18} />
             </button>
