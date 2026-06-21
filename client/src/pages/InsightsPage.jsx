@@ -56,15 +56,22 @@ export default function InsightsPage() {
     return () => { cancelled = true; };
   }, [lang]);
 
-  // Deep-link from a hero teaser (/insights?focus=<dataset>): scroll that card
-  // into view, page the carousel to it, and pulse it briefly, then drop the param
-  // so a refresh doesn't re-trigger it.
+  // Deep-link from a hero teaser (/insights?focus=<dataset>): bring the matching
+  // card into view, page the carousel to it, and pulse it briefly, then drop the
+  // param so a refresh doesn't re-trigger it. A featured (chartable) dataset lives
+  // in the carousel, so scroll the whole featured section to the top of the content
+  // (its in-flow position is stable - scrolling a slide inside the carousel's
+  // clipped/transformed track barely moves the page); the carousel pages to the
+  // card. A non-chartable dataset only has a list row, so scroll to that.
   useEffect(() => {
     const focus = searchParams.get('focus');
     if (!focus || !items || items.length === 0) return undefined;
-    const el = document.getElementById('ds-' + focus) || document.getElementById('dsrow-' + focus);
+    const inCarousel = chartableIds.has(focus);
+    const el = inCarousel
+      ? document.getElementById('featured-section')
+      : document.getElementById('dsrow-' + focus);
     if (el) {
-      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      el.scrollIntoView?.({ behavior: 'smooth', block: inCarousel ? 'start' : 'center' });
       setHighlightId(focus);
       setFocusId(focus);
     }
@@ -73,7 +80,7 @@ export default function InsightsPage() {
     setSearchParams(next, { replace: true });
     const timer = setTimeout(() => setHighlightId(null), 3400);
     return () => clearTimeout(timer);
-  }, [items, searchParams, setSearchParams]);
+  }, [items, chartableIds, searchParams, setSearchParams]);
 
   const label = periodLabel(period, lang);
   const valuesOf = (it) => (it.history || []).map((h) => h.d);
@@ -110,7 +117,7 @@ export default function InsightsPage() {
       ) : (
         <div className="space-y-10">
           {featuredItems.length > 0 && (
-            <section className="space-y-4">
+            <section id="featured-section" className="space-y-4 scroll-mt-24">
               <div className="flex items-center gap-2 text-sm font-semibold text-base-content/55">
                 <SparklesIcon size={15} className="text-secondary" />
                 {t('insights.featured_heading')}
