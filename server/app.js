@@ -15,6 +15,8 @@ const statsRouter = require('./routes/stats');
 const jobsRouter = require('./routes/jobs');
 const opsRouter = require('./routes/ops');
 const insightsRouter = require('./routes/insights');
+const seoRouter = require('./routes/seo');
+const spaController = require('./controllers/spaController');
 
 const app = express();
 
@@ -72,6 +74,10 @@ app.use('/api/v1/jobs', jobsRouter);
 app.use('/api/v1/ops', opsRouter);
 app.use('/api/v1/insights', insightsRouter);
 
+// Crawl-facing files (robots.txt + sitemaps) live at the site root and read
+// from Postgres; mounted before the SPA so they win over the static catch-all.
+app.use(seoRouter);
+
 // In production the API also serves the built SPA (client/dist) so the public
 // Caddy block stays a pure reverse_proxy - no extra container mounts on the
 // shared box. API paths fall through to the JSON 404 below.
@@ -79,9 +85,9 @@ const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
     app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(clientDist, { index: false }));
-    app.get(/^\/(?!api\/|healthz).*/, (req, res) => {
-        res.sendFile(path.join(clientDist, 'index.html'));
-    });
+    // Per-route <head> injection (title/description/canonical/OG + JSON-LD) for
+    // SEO; falls back to the untouched template on any error.
+    app.get(/^\/(?!api\/|healthz).*/, spaController.serveSpa(clientDist));
 }
 
 app.use((req, res, next) => {

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="canquery - query Canada's open data">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0e16"/>
+      <stop offset="1" stop-color="#0d1424"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#6aa6ff" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#6aa6ff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="34" height="34" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.6" fill="#5b6b86" fill-opacity="0.16"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="0" y="0" width="1200" height="8" fill="#d52b1e"/>
+
+  <!-- maple mark -->
+  <g transform="translate(96 96)">
+    <rect width="96" height="96" rx="22" fill="#d52b1e"/>
+    <path fill="#ffffff" d="M48 17l5.6 14.6 14.4-6.2-6.2 14.4L76 48l-14.2 5.6 6.2 14.4-14.4-6.2L48 79l-5.6-14.2-14.4 6.2 6.2-14.4L20 48l14.2-5.6-6.2-14.4 14.4 6.2z"/>
+  </g>
+
+  <text x="96" y="300" font-family="'Space Grotesk', 'Segoe UI', system-ui, -apple-system, Arial, sans-serif" font-size="124" font-weight="700" fill="#f5f8ff" letter-spacing="-3">canquery</text>
+
+  <text x="98" y="372" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Arial, sans-serif" font-size="44" font-weight="500" fill="#aebdd6">Query Canada's open data.</text>
+
+  <text x="98" y="430" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Arial, sans-serif" font-size="30" font-weight="400" fill="#7d8ba6">Search every dataset on open.canada.ca, then load CSV and Excel</text>
+  <text x="98" y="470" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Arial, sans-serif" font-size="30" font-weight="400" fill="#7d8ba6">files into live tables you can filter, chart and export.</text>
+
+  <g font-family="'JetBrains Mono', ui-monospace, 'Courier New', monospace" font-size="26" font-weight="500">
+    <rect x="96" y="520" width="306" height="58" rx="12" fill="#141c2e" stroke="#2dd4bf" stroke-opacity="0.35"/>
+    <text x="120" y="557" fill="#2dd4bf">~47,000 datasets</text>
+    <rect x="420" y="520" width="250" height="58" rx="12" fill="#141c2e" stroke="#6aa6ff" stroke-opacity="0.35"/>
+    <text x="444" y="557" fill="#9fc0ff">CSV / XLSX query</text>
+  </g>
+</svg>

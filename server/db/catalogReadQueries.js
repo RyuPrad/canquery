@@ -91,6 +91,21 @@ async function getStats() {
     return result.rows[0];
 }
 
+async function countDatasets() {
+    const result = await pool.query('SELECT count(*)::int AS n FROM datasets');
+    return result.rows[0].n;
+}
+
+// Stable, paginated slice for the XML sitemap (ordered by id so offsets are
+// deterministic across pages). Returns just what a <url> entry needs.
+async function listDatasetSitemap({ limit, offset }) {
+    const result = await pool.query(
+        'SELECT id, name, metadata_modified FROM datasets ORDER BY id LIMIT $1 OFFSET $2',
+        [limit, offset]
+    );
+    return result.rows;
+}
+
 async function pingDb() {
     await pool.query('SELECT 1');
     return true;
@@ -131,6 +146,8 @@ module.exports = {
     getResourceById,
     listOrganizations,
     getStats,
+    countDatasets,
+    listDatasetSitemap,
     pingDb,
     getLastSyncTime,
     listRecentlyIngested,
