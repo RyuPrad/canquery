@@ -45,7 +45,7 @@ const robots = (req, res) => {
 // GET /sitemap.xml - the index: the static hub pages plus one chunk per slice
 // of datasets.
 const sitemapIndex = catchAsync(async (req, res) => {
-    const total = await catalogRead.countDatasets();
+    const total = await catalogRead.countSitemapDatasets();
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const locs = [SITE_URL + '/sitemap-pages.xml'];
     for (let i = 1; i <= pages; i++) locs.push(SITE_URL + '/sitemap-datasets-' + i + '.xml');

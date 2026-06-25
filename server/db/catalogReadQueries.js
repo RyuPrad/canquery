@@ -91,16 +91,33 @@ async function getStats() {
     return result.rows[0];
 }
 
-async function countDatasets() {
-    const result = await pool.query('SELECT count(*)::int AS n FROM datasets');
+// A dataset earns a sitemap entry only when canquery renders something the
+// source does not: at least one resource that is queryable right now (live
+// datastore) or already loaded into our store. The ~30k download-only datasets
+// are mirrors of open.canada.ca, so submitting them would just look thin - we
+// keep the sitemap tight and let the set grow as datasets get loaded.
+const SITEMAP_DATASET_PREDICATE = `EXISTS (
+        SELECT 1 FROM resources r
+        WHERE r.dataset_id = d.id
+          AND (r.datastore_active
+               OR EXISTS (SELECT 1 FROM ingested_resources ir
+                          WHERE ir.resource_id = r.id AND ir.status = 'ready')))`;
+
+async function countSitemapDatasets() {
+    const result = await pool.query(
+        `SELECT count(*)::int AS n FROM datasets d WHERE ${SITEMAP_DATASET_PREDICATE}`
+    );
     return result.rows[0].n;
 }
 
 // Stable, paginated slice for the XML sitemap (ordered by id so offsets are
-// deterministic across pages). Returns just what a <url> entry needs.
+// deterministic across pages). Same quality gate as the count above.
 async function listDatasetSitemap({ limit, offset }) {
     const result = await pool.query(
-        'SELECT id, name, metadata_modified FROM datasets ORDER BY id LIMIT $1 OFFSET $2',
+        `SELECT d.id, d.name, d.metadata_modified
+         FROM datasets d
+         WHERE ${SITEMAP_DATASET_PREDICATE}
+         ORDER BY d.id LIMIT $1 OFFSET $2`,
         [limit, offset]
     );
     return result.rows;
@@ -146,7 +163,7 @@ module.exports = {
     getResourceById,
     listOrganizations,
     getStats,
-    countDatasets,
+    countSitemapDatasets,
     listDatasetSitemap,
     pingDb,
     getLastSyncTime,

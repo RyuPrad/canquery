@@ -5,7 +5,7 @@ jest.mock('../db/catalogReadQueries', () => ({
     getResourceById: jest.fn(),
     listOrganizations: jest.fn(),
     getStats: jest.fn(),
-    countDatasets: jest.fn(),
+    countSitemapDatasets: jest.fn(),
     listDatasetSitemap: jest.fn(),
     pingDb: jest.fn(),
     getLastSyncTime: jest.fn(),
@@ -35,7 +35,7 @@ describe('robots.txt', () => {
 
 describe('sitemap index', () => {
     it('lists the pages sitemap plus one chunk per 25k datasets', async () => {
-        catalogRead.countDatasets.mockResolvedValue(30000);
+        catalogRead.countSitemapDatasets.mockResolvedValue(30000);
         const res = await request(app).get('/sitemap.xml');
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/xml/);
@@ -46,7 +46,7 @@ describe('sitemap index', () => {
     });
 
     it('always emits at least one dataset chunk', async () => {
-        catalogRead.countDatasets.mockResolvedValue(0);
+        catalogRead.countSitemapDatasets.mockResolvedValue(0);
         const res = await request(app).get('/sitemap.xml');
         expect(res.text).toContain('sitemap-datasets-1.xml');
     });
