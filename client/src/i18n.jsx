@@ -2,8 +2,8 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 
 // Every user-facing chrome string lives here. Dataset/resource CONTENT is
-// already bilingual from the catalogue; this covers the interface around it.
-// API docs stay English (developer audience).
+// already bilingual from the catalogue; this covers the interface around it,
+// including the API docs prose (code samples and field names stay literal).
 export const STRINGS = {
   en: {
     'nav.datasets': 'Datasets',
@@ -156,6 +156,26 @@ export const STRINGS = {
     'table.filter_tip': 'Type to match text, or start with >, >=, <, <= or = for numbers (e.g. >2 keeps values above 2).',
     'table.no_rows': 'No rows match your filters.',
     'table.no_rows_hint': 'Clear or adjust the column filters and the search above.',
+    'docs.title': 'API documentation',
+    'docs.intro': 'Anonymous JSON API over the mirrored open.canada.ca catalogue. Every response is wrapped in an envelope with data, pagination.nextCursor and meta (including the Open Government Licence attribution). Rate limit: 120 requests per minute per IP; POST ingest: 5 per hour.',
+    'docs.copy': 'Copy',
+    'docs.copied': 'Copied',
+    'docs.copy_tip': 'Copy to clipboard',
+    'docs.run': 'Run it',
+    'docs.running': 'Running...',
+    'docs.request_failed': 'Request failed: ',
+    'docs.ep_recently_unlocked': 'The most recently unlocked resources - what other visitors just made queryable.',
+    'docs.ep_popular': 'The most queried resources over a recent window. Params: days (1-30, default 7), limit (1-20, default 6).',
+    'docs.ep_query_csv': 'Download the current query (same q, filters and sort parameters) as a CSV file, capped at 10,000 rows.',
+    'docs.ep_datasets': 'Full-text search over the catalogue. Params: q, org, format, keyword, limit, cursor.',
+    'docs.ep_dataset_detail': 'Dataset detail with resources tagged by query_mode: datastore, ingested, ingestable or file-only.',
+    'docs.ep_resource_detail': 'Resource detail including ingestion status and columns.',
+    'docs.ep_query': 'The unified query endpoint. Works identically for upstream-datastore and locally-ingested resources: params q, filters (JSON), sort, limit, offset. filters accepts {"col":"value"} or {"col":{"op":"lt|gt|lte|gte|eq|contains","value":...}}. Unlocked resources also support aggregation: group_by, agg (count|sum|avg|min|max), agg_column (required unless count), bucket (year|month|day, date columns only). Aggregated responses return key/value records; sort accepts "key" or "value". Same params work on /query.csv.',
+    'docs.ep_query_agg': 'Example: count of rows per province, biggest first; or monthly sums over a date column.',
+    'docs.ep_ingest': 'Idempotent enqueue of a CSV, XLSX or XLS ingest (50 MB CSV / 20 MB Excel / 1M rows caps). Returns the job. Rate limited to 5/hour.',
+    'docs.ep_job': 'Poll an ingest job: pending, running, done or failed.',
+    'docs.ep_stats': 'Catalogue totals: datasets, resources, datastore-active, ingested, store bytes.',
+    'docs.ep_ops': 'Background-job health for uptime monitors: last successful run per job (full/incremental sync, eviction, log prune). Returns 503 when any job is stale; jobs that have never run report pending without alarming.',
   },
   fr: {
     'nav.datasets': 'Jeux de données',
@@ -308,6 +328,26 @@ export const STRINGS = {
     'table.filter_tip': 'Tapez du texte à rechercher, ou commencez par >, >=, <, <= ou = pour les nombres (ex. : >2 garde les valeurs supérieures à 2).',
     'table.no_rows': 'Aucune ligne ne correspond à vos filtres.',
     'table.no_rows_hint': 'Effacez ou ajustez les filtres de colonne et la recherche ci-dessus.',
+    'docs.title': 'Documentation de l’API',
+    'docs.intro': 'API JSON anonyme sur le catalogue open.canada.ca mis en miroir. Chaque réponse est enveloppée avec data, pagination.nextCursor et meta (y compris l’attribution de la Licence du gouvernement ouvert). Limite : 120 requêtes par minute par IP ; POST ingest : 5 par heure.',
+    'docs.copy': 'Copier',
+    'docs.copied': 'Copié',
+    'docs.copy_tip': 'Copier dans le presse-papiers',
+    'docs.run': 'Exécuter',
+    'docs.running': 'Exécution...',
+    'docs.request_failed': 'Échec de la requête : ',
+    'docs.ep_recently_unlocked': 'Les ressources les plus récemment rendues interrogeables – ce que d’autres visiteurs viennent de charger.',
+    'docs.ep_popular': 'Les ressources les plus interrogées sur une période récente. Paramètres : days (1-30, défaut 7), limit (1-20, défaut 6).',
+    'docs.ep_query_csv': 'Téléchargez la requête actuelle (mêmes paramètres q, filters et sort) sous forme de fichier CSV, limité à 10 000 lignes.',
+    'docs.ep_datasets': 'Recherche plein texte dans le catalogue. Paramètres : q, org, format, keyword, limit, cursor.',
+    'docs.ep_dataset_detail': 'Détail d’un jeu de données, avec les ressources étiquetées par query_mode : datastore, ingested, ingestable ou file-only.',
+    'docs.ep_resource_detail': 'Détail d’une ressource, y compris l’état de chargement et les colonnes.',
+    'docs.ep_query': 'Le point d’accès de requête unifié. Fonctionne de façon identique pour les ressources du datastore en amont et celles chargées localement : paramètres q, filters (JSON), sort, limit, offset. filters accepte {"col":"value"} ou {"col":{"op":"lt|gt|lte|gte|eq|contains","value":...}}. Les ressources chargées prennent aussi en charge l’agrégation : group_by, agg (count|sum|avg|min|max), agg_column (requis sauf pour count), bucket (year|month|day, colonnes de date seulement). Les réponses agrégées renvoient des enregistrements key/value ; sort accepte « key » ou « value ». Les mêmes paramètres fonctionnent sur /query.csv.',
+    'docs.ep_query_agg': 'Exemple : nombre de lignes par province, du plus grand au plus petit ; ou sommes mensuelles sur une colonne de date.',
+    'docs.ep_ingest': 'Mise en file d’attente idempotente du chargement d’un fichier CSV, XLSX ou XLS (limites : 50 Mo CSV / 20 Mo Excel / 1 M de lignes). Renvoie la tâche. Limité à 5 par heure.',
+    'docs.ep_job': 'Interrogez une tâche de chargement : pending, running, done ou failed.',
+    'docs.ep_stats': 'Totaux du catalogue : jeux de données, ressources, datastore-active, chargés, octets stockés.',
+    'docs.ep_ops': 'État des tâches en arrière-plan pour les moniteurs de disponibilité : dernière exécution réussie par tâche (synchronisation complète/incrémentale, éviction, purge des journaux). Renvoie 503 lorsqu’une tâche est en retard ; les tâches jamais exécutées indiquent « pending » sans déclencher d’alerte.',
   },
 };
 
