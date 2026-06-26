@@ -1,9 +1,74 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
-import { MapleLeaf, ExternalIcon, GithubIcon } from './Icons.jsx';
+import { getJSON } from '../api/client.js';
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
+import { MapleLeaf, ExternalIcon, GithubIcon, StarIcon, ArrowUpRightIcon } from './Icons.jsx';
 
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
 const PROFILE_URL = 'https://github.com/RyuPrad';
+
+// Live GitHub star count, fetched once on mount from our own cached proxy
+// (/api/v1/repo). null while loading or if the upstream was unavailable, in
+// which case the badge falls back to a plain "Star on GitHub" link.
+function StarCount() {
+  const { t } = useLang();
+  const reduced = usePrefersReducedMotion();
+  const [stars, setStars] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getJSON('/api/v1/repo')
+      .then((body) => {
+        if (cancelled) return;
+        setStars(body && body.data ? body.data.stars : null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Loading: a faint dash placeholder so the layout doesn't pop in.
+  if (!loaded) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm text-base-content/30">
+        <StarIcon size={14} />
+        <span className="w-5 inline-block rounded-sm bg-base-content/10 h-3" />
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href={REPO_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="group inline-flex items-center gap-1.5 text-sm transition-colors"
+      title={stars == null ? t('footer.source') : stars + ' ' + t('footer.stars')}
+    >
+      <span className="inline-flex items-center gap-1 rounded-full border border-base-content/12 bg-base-content/5 px-2 py-0.5 font-medium text-base-content/75 group-hover:border-base-content/25 group-hover:text-base-content transition-colors">
+        <StarIcon size={13} className="text-amber-400" />
+        {stars == null ? (
+          <GithubIcon size={13} />
+        ) : (
+          <span>{stars}</span>
+        )}
+      </span>
+      <span className="inline-flex items-center gap-0.5 text-xs text-base-content/45 group-hover:text-base-content/70 transition-colors">
+        {t('footer.star_here')}
+        <ArrowUpRightIcon
+          size={11}
+          className={reduced ? '' : 'animate-pulse'}
+        />
+      </span>
+    </a>
+  );
+}
 
 export default function Footer() {
   const { t } = useLang();
@@ -20,6 +85,7 @@ export default function Footer() {
             </span>
           </div>
           <p className="text-sm text-base-content/55 max-w-xs">{t('footer.tag')}</p>
+          <StarCount />
           <div className="space-y-1.5 pt-1">
             <a
               href={REPO_URL}
