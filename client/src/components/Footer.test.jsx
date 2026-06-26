@@ -69,3 +69,23 @@ describe('Footer GitHub star badge', () => {
     expect(screen.queryByText('28')).toBeNull();
   });
 });
+
+describe('Footer social links', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(envelopeRepo(28)))
+    );
+  });
+
+  test('links to X and Bluesky with accessible labels', async () => {
+    render(<MemoryRouter><Footer /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText('Star here!')).toBeInTheDocument());
+    const x = screen.getByRole('link', { name: 'Follow on X' });
+    const bsky = screen.getByRole('link', { name: 'Follow on Bluesky' });
+    expect(x.getAttribute('href')).toBe('https://x.com/Daffmor');
+    expect(bsky.getAttribute('href')).toBe('https://bsky.app/profile/bsky.best');
+    expect(x.getAttribute('target')).toBe('_blank');
+    expect(bsky.getAttribute('target')).toBe('_blank');
+  });
+});

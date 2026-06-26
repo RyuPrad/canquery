@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { getJSON } from '../api/client.js';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
-import { MapleLeaf, ExternalIcon, GithubIcon, StarIcon, ArrowUpRightIcon } from './Icons.jsx';
+import { MapleLeaf, ExternalIcon, GithubIcon, StarIcon, ArrowUpRightIcon, XLogoIcon, BlueskyIcon } from './Icons.jsx';
 
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
 const PROFILE_URL = 'https://github.com/RyuPrad';
+const X_URL = 'https://x.com/Daffmor';
+const BLUESKY_URL = 'https://bsky.app/profile/bsky.best';
 
 // Live GitHub star count, fetched once on mount from our own cached proxy
 // (/api/v1/repo). null while loading or if the upstream was unavailable, in
@@ -107,6 +109,26 @@ export default function Footer() {
                 @RyuPrad
               </a>
             </p>
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <a
+              href={X_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t('footer.follow_x')}
+              className="inline-flex items-center justify-center text-base-content/55 hover:text-base-content transition-colors"
+            >
+              <XLogoIcon size={17} />
+            </a>
+            <a
+              href={BLUESKY_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t('footer.follow_bluesky')}
+              className="inline-flex items-center justify-center text-base-content/55 hover:text-base-content transition-colors"
+            >
+              <BlueskyIcon size={17} />
+            </a>
           </div>
         </div>
         <div className="space-y-3">
