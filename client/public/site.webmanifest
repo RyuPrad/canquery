@@ -1,0 +1,20 @@
+{
+  "name": "canquery",
+  "short_name": "canquery",
+  "description": "Query Canada's open data.",
+  "icons": [
+    {
+      "src": "/android-chrome-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#d52b1e",
+  "background_color": "#0a0e16",
+  "display": "standalone"
+}
