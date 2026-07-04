@@ -1,5 +1,5 @@
 import { describe, beforeEach, vi, expect, test } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import InsightsPage from './InsightsPage.jsx';
 
@@ -89,5 +89,25 @@ describe('InsightsPage top-100', () => {
       expect(el).toBeTruthy();
       expect(el.className).toContain('cq-focus-ring');
     });
+  });
+
+  // Regression: dropping the ?focus param re-runs the deep-link effect, and a
+  // pulse timer owned by that effect gets cancelled by its cleanup - the ring
+  // then never clears (cq-focus-ring's box-shadow is static, only the pulse
+  // animation ends). The timer lives on highlightId now.
+  test('the deep-link highlight ring clears after the pulse', async () => {
+    const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4)];
+    fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
+    fetchFeatured.mockResolvedValue({ data: items.map((it) => ({ dataset_id: it.dataset_id })) });
+    vi.useFakeTimers();
+    try {
+      render(<MemoryRouter initialEntries={['/insights?focus=d2']}><InsightsPage /></MemoryRouter>);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(document.getElementById('ds-d2').className).toContain('cq-focus-ring');
+      await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
+      expect(document.getElementById('ds-d2').className).not.toContain('cq-focus-ring');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

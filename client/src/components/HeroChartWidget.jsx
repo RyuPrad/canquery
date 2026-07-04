@@ -26,7 +26,9 @@ export default function HeroChartWidget({ items, startIndex = 0, reduced = false
     const tick = () => {
       if (pausedRef.current) { timer = setTimeout(tick, CYCLE_MS); return; }
       setVisible(false);
-      setTimeout(() => {
+      // The fade step must land in `timer` too, or unmounting during the
+      // FADE_MS window escapes the cleanup and the tick chain runs forever.
+      timer = setTimeout(() => {
         setIdx((i) => (i + 1) % n);
         setVisible(true);
         timer = setTimeout(tick, CYCLE_MS);

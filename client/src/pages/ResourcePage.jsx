@@ -123,7 +123,15 @@ function ResourcePage() {
       setUpgrade((u) => (u === 'preparing' ? 'failed' : u));
     }
   }, [id]);
-  const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone });
+  // The polled job no longer exists (stale localStorage id after the queue was
+  // cleaned): drop the persisted state and snap back to the Load button.
+  const onUnlockGone = useCallback(() => {
+    clearUnlockJob(id);
+    setUnlockJobId(null);
+    setUnlockState(null);
+    setUpgrade(null);
+  }, [id]);
+  const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone, onGone: onUnlockGone });
   const loadElapsed = useElapsed(unlockJob?.age_seconds, unlockState === 'queued');
 
   // Pull a proxied (datastore) resource into local storage so the full filter
@@ -165,7 +173,15 @@ function ResourcePage() {
     return () => { cancelled = true; };
   }, [id, reloadKey]);
 
+  // Snap back to the first page when the query changes - but not on the mount
+  // run (every effect runs once on mount), which would wipe a ?page= deep-link
+  // right after the state initializer restored it.
+  const pageResetArmedRef = useRef(false);
   useEffect(() => {
+    if (!pageResetArmedRef.current) {
+      pageResetArmedRef.current = true;
+      return;
+    }
     setPage(0);
   }, [debouncedQ, debouncedFilters, sort]);
 

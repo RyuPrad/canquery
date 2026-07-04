@@ -65,7 +65,7 @@ export default function InsightsPage() {
   // card. A non-chartable dataset only has a list row, so scroll to that.
   useEffect(() => {
     const focus = searchParams.get('focus');
-    if (!focus || !items || items.length === 0) return undefined;
+    if (!focus || !items || items.length === 0) return;
     const inCarousel = chartableIds.has(focus);
     const el = inCarousel
       ? document.getElementById('featured-section')
@@ -78,9 +78,16 @@ export default function InsightsPage() {
     const next = new URLSearchParams(searchParams);
     next.delete('focus');
     setSearchParams(next, { replace: true });
+  }, [items, chartableIds, searchParams, setSearchParams]);
+
+  // The un-highlight timer lives on highlightId, not in the effect above:
+  // dropping the param re-runs that effect, and a cleanup there would cancel
+  // the timer and leave the ring stuck on the card.
+  useEffect(() => {
+    if (!highlightId) return undefined;
     const timer = setTimeout(() => setHighlightId(null), 3400);
     return () => clearTimeout(timer);
-  }, [items, chartableIds, searchParams, setSearchParams]);
+  }, [highlightId]);
 
   const label = periodLabel(period, lang);
   const valuesOf = (it) => (it.history || []).map((h) => h.d);

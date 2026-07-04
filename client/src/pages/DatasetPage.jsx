@@ -39,9 +39,9 @@ function FormatTile({ format }) {
   );
 }
 
-function PollBadge({ jobId, onDone, onRetry }) {
+function PollBadge({ jobId, onDone, onGone, onRetry }) {
   const { t } = useLang();
-  const { job } = useJobPolling(jobId, { onDone });
+  const { job } = useJobPolling(jobId, { onDone, onGone });
   const active = !job || job.status === 'pending' || job.status === 'running';
   const elapsed = useElapsed(job?.age_seconds, active);
   if (job && job.status === 'failed') {
@@ -119,7 +119,7 @@ export default function DatasetPage() {
   // one to open, then drop the param so a refresh doesn't re-trigger it.
   useEffect(() => {
     const focusId = searchParams.get('highlight');
-    if (!focusId || !dataset) return undefined;
+    if (!focusId || !dataset) return;
     const el = document.getElementById('res-' + focusId);
     if (el) {
       el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
@@ -128,9 +128,16 @@ export default function DatasetPage() {
     const next = new URLSearchParams(searchParams);
     next.delete('highlight');
     setSearchParams(next, { replace: true });
+  }, [dataset, searchParams, setSearchParams]);
+
+  // The un-highlight timer lives on highlightId, not in the effect above:
+  // dropping the param re-runs that effect, and a cleanup there would cancel
+  // the timer and leave the ring stuck on the card.
+  useEffect(() => {
+    if (!highlightId) return undefined;
     const timer = setTimeout(() => setHighlightId(null), 3400);
     return () => clearTimeout(timer);
-  }, [dataset, searchParams, setSearchParams]);
+  }, [highlightId]);
 
   if (notFound) {
     return (
@@ -255,6 +262,14 @@ export default function DatasetPage() {
                   <PollBadge
                     jobId={unlockJobs[resource.id]}
                     onDone={() => { clearUnlockJob(resource.id); handleUnlockDone(); }}
+                    onGone={() => {
+                      clearUnlockJob(resource.id);
+                      setUnlockJobs(prev => {
+                        const next = { ...prev };
+                        delete next[resource.id];
+                        return next;
+                      });
+                    }}
                     onRetry={() => {
                       clearUnlockJob(resource.id);
                       setUnlockJobs(prev => {
