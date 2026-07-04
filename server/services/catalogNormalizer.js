@@ -2,8 +2,10 @@ function pickTranslated(obj, fallback) {
     if (!obj) {
         return { en: null, fr: null };
     }
-    const en = obj.en !== undefined ? String(obj.en).trim() : null;
-    const fr = obj.fr !== undefined ? String(obj.fr).trim() : null;
+    // != null covers an explicit null in the payload, which String() would
+    // otherwise coerce into a literal "null" title.
+    const en = obj.en != null ? String(obj.en).trim() : null;
+    const fr = obj.fr != null ? String(obj.fr).trim() : null;
     const resultEn = en !== null && en !== '' ? en : (fallback ? String(fallback).trim() : null);
     const resultFr = fr !== null && fr !== '' ? fr : null;
     return { en: resultEn, fr: resultFr };

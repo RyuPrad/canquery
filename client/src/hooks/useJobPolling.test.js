@@ -52,6 +52,26 @@ describe('useJobPolling', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
+  // Regression: a parent passing inline callbacks (a new identity every
+  // render) used to tear down and re-arm the polling effect, firing an
+  // immediate extra fetch per parent render. Callbacks live in refs now.
+  test('changing callback identity does not restart polling; the latest callback wins', async () => {
+    fetchJob.mockResolvedValueOnce(running).mockResolvedValueOnce(done);
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = renderHook(({ cb }) => useJobPolling(7, { onDone: cb }), {
+      initialProps: { cb: first },
+    });
+    await tickAsync(0);
+    expect(fetchJob).toHaveBeenCalledTimes(1);
+    rerender({ cb: second });
+    await tickAsync(0); // a re-armed effect would fetch again immediately
+    expect(fetchJob).toHaveBeenCalledTimes(1);
+    await tickAsync(2000);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
+  });
+
   // Regression: a stale job id restored from localStorage after the queue was
   // cleaned 404s forever; the page showed an eternal spinner because only a
   // successful poll could clear the persisted state.

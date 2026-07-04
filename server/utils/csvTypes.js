@@ -13,11 +13,11 @@ function sanitizeColumnName(name, index, used) {
     let candidate = n;
     let counter = 0;
     while (used.has(candidate)) {
-        if (counter === 0) {
-            candidate = n + '_' + (index + 1);
-        } else {
-            candidate = n + '_' + (index + 1) + '_' + counter;
-        }
+        const suffix = counter === 0 ? '_' + (index + 1) : '_' + (index + 1) + '_' + counter;
+        // Trim the base so base + suffix stays within Postgres's 63-char
+        // identifier bound - a 60-char base plus "_100" would otherwise fail
+        // quoteIdent and abort the whole ingest over a column name.
+        candidate = n.substring(0, 63 - suffix.length) + suffix;
         counter++;
     }
     used.add(candidate);

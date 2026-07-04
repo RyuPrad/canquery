@@ -191,9 +191,16 @@ const healthz = async () => {
     }
     let upstream;
     try {
+        // The probe resolves null on failure (never throws): the cache only
+        // negative-caches a resolved null, so a down CKAN is re-probed at most
+        // once per negative window instead of on every health check.
         upstream = await upstreamCache.get('ping', async () => {
-            await packageList({ limit: 1 });
-            return true;
+            try {
+                await packageList({ limit: 1 });
+                return true;
+            } catch {
+                return null;
+            }
         });
     } catch {
         upstream = false;

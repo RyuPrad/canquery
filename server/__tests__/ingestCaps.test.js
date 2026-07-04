@@ -155,4 +155,21 @@ describe('ingestion caps', () => {
         expect(out.includes('"')).toBe(false);
         expect(out.length).toBeLessThanOrEqual(63);
     });
+
+    // Regression: a duplicated 60-char header at a high column index used to
+    // get a "_120"-style suffix appended past the 63-char identifier bound,
+    // which failed quoteIdent and aborted the whole ingest.
+    it('sanitizeColumnName keeps dedupe suffixes within 63 chars', () => {
+        const used = new Set();
+        const long = 'x'.repeat(80);
+        const outs = [
+            sanitizeColumnName(long, 0, used),
+            sanitizeColumnName(long, 119, used),
+            sanitizeColumnName(long, 119, used),
+        ];
+        for (const out of outs) {
+            expect(out.length).toBeLessThanOrEqual(63);
+        }
+        expect(new Set(outs).size).toBe(3);
+    });
 });
