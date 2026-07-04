@@ -6,7 +6,7 @@ import InsightsDashboard from './InsightsDashboard.jsx';
 import ChartBuilder from './ChartBuilder.jsx';
 import { SparklesIcon, ChartIcon } from './Icons.jsx';
 
-export default function ChartPanel({ resourceId, q, filters, fields, queryMode }) {
+export default function ChartPanel({ resourceId, q, filters, fields, queryMode, onLoad, loadState }) {
   const { t } = useLang();
   const [tab, setTab] = useState('insights');
   const [profile, setProfile] = useState(null);
@@ -31,7 +31,7 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode }
   // Datastore resources can't be aggregated server-side - go straight to the
   // simple series builder.
   if (!ingested) {
-    return <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} />;
+    return <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} onLoad={onLoad} loadState={loadState} />;
   }
 
   const classified = profile ? classifyColumns(profile) : null;

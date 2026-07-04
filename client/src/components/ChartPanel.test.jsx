@@ -52,6 +52,34 @@ describe('ChartPanel', () => {
     expect(queryResource.mock.calls.every((c) => c[1].group_by === undefined)).toBe(true);
   });
 
+  // A queryable-but-not-loaded (datastore) resource whose live columns are all
+  // text has nothing to plot. Instead of a dead-end message, guide the user to
+  // load it (which types the columns and unlocks the full dashboard).
+  const TEXT_FIELDS = [{ id: '_id', type: 'int' }, { id: 'name', type: 'text' }, { id: 'purpose', type: 'text' }];
+
+  test('a datastore resource with no numeric columns prompts loading, not a dead end', async () => {
+    const onLoad = vi.fn();
+    render(<ChartPanel resourceId="d2" q="" filters={{}} fields={TEXT_FIELDS} queryMode="datastore" onLoad={onLoad} loadState={null} />);
+    expect(screen.queryByText('No numeric columns to chart in this table.')).toBeNull();
+    expect(screen.getByText('Load this resource to chart it')).toBeInTheDocument();
+    const btn = await screen.findByRole('button');
+    expect(btn).toHaveTextContent('Load this resource');
+    fireEvent.click(btn);
+    expect(onLoad).toHaveBeenCalledTimes(1);
+    // The series path never queries when there is nothing numeric to plot.
+    expect(queryResource).not.toHaveBeenCalled();
+  });
+
+  test('the chart load prompt shows a preparing state and disables the button', () => {
+    const onLoad = vi.fn();
+    render(<ChartPanel resourceId="d3" q="" filters={{}} fields={TEXT_FIELDS} queryMode="datastore" onLoad={onLoad} loadState="queued" />);
+    const btn = screen.getByRole('button');
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent('Preparing your charts...');
+    fireEvent.click(btn);
+    expect(onLoad).not.toHaveBeenCalled();
+  });
+
   test('Custom tab aggregates by a sensible default column, not a unique id', async () => {
     render(<ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" />);
     fireEvent.click(screen.getByText('Custom'));

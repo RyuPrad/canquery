@@ -155,6 +155,22 @@ function ResourcePage() {
       .catch(() => setUpgrade('unavailable'));
   }, [id]);
 
+  // Explicit "load this to chart it" from the Chart tab on a proxied datastore
+  // resource. Unlike triggerUpgrade (the transparent filter upgrade) this is a
+  // deliberate click, so it skips the auto-ingest size gate and relies on the
+  // server cap. It reuses the unlock job machinery, so onUnlockDone flips
+  // upgradedRef and reloads onto local storage - the panel then swaps to the
+  // full insights dashboard once the table is ready.
+  const loadForChart = useCallback(() => {
+    setUnlockState('queued');
+    enqueueIngest(id)
+      .then((env) => {
+        writeUnlockJob(id, env.data.id);
+        setUnlockJobId(env.data.id);
+      })
+      .catch(() => setUnlockState('failed'));
+  }, [id]);
+
   const debouncedQ = useDebouncedValue(q, 250);
   const debouncedFilters = useDebouncedValue(columnFilters, 250);
 
@@ -448,7 +464,7 @@ function ResourcePage() {
           </div>
           {view === 'chart' ? (
             <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-              <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} />
+              <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} onLoad={loadForChart} loadState={unlockState} />
             </Suspense>
           ) : (
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
