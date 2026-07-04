@@ -282,7 +282,11 @@ function renderHtml(template, meta) {
     const block = buildManagedTags(meta)
         .map((line) => '    ' + line)
         .join('\n');
-    return template.replace(re, '<!-- seo:start -->\n' + block + '\n    <!-- seo:end -->');
+    // The replacement must be a function: a string replacement interprets
+    // $&, $', $` and $$ as substitution patterns, and dataset text can form
+    // them (escapeHtml turns "$'000" into "$&#39;000", whose "$&" would
+    // re-inject the whole matched block into the page).
+    return template.replace(re, () => '<!-- seo:start -->\n' + block + '\n    <!-- seo:end -->');
 }
 
 module.exports = {

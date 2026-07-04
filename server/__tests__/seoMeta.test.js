@@ -129,6 +129,28 @@ describe('seoMeta - renderHtml injection', () => {
         expect(html).toContain('name="robots" content="noindex');
     });
 
+    // Regression: a string replacement interprets $&, $', $` and $$ as
+    // substitution patterns; escapeHtml turns "$'000" into "$&#39;000", whose
+    // "$&" used to re-inject the whole managed block into the middle of the
+    // title (duplicate <title>/canonical tags on the served page).
+    it('treats $-sequences in dataset text literally, not as replace patterns', () => {
+        const meta = seo.datasetMeta(
+            {
+                id: 'd',
+                name: 'n',
+                title_en: "Grants and Contributions ($'000)",
+                notes_en: 'Amounts in $&thousands, per $`unit, paid in CA$$.',
+            },
+            []
+        );
+        const html = seo.renderHtml(template, meta);
+        expect(html).toContain('<title>Grants and Contributions ($&#39;000) - canquery</title>');
+        expect(html).toContain('Amounts in $&amp;thousands, per $`unit, paid in CA$$.');
+        expect(html.match(/<title>/g)).toHaveLength(1);
+        expect(html.match(/rel="canonical"/g)).toHaveLength(1);
+        expect(html).not.toContain('<title>default</title>');
+    });
+
     it('returns the template untouched when the markers are absent', () => {
         const plain = '<html><head><title>x</title></head></html>';
         expect(seo.renderHtml(plain, seo.homeMeta())).toBe(plain);
