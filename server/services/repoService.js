@@ -8,7 +8,6 @@
 // controller returns data: null so the client shows a static fallback.
 const { createCache } = require('../utils/cache');
 const { fetchWithBackoff } = require('../utils/fetchWithBackoff');
-const AppError = require('../utils/AppError');
 
 const REPO_URL = 'https://api.github.com/repos/RyuPrad/canquery';
 const USER_AGENT = process.env.USER_AGENT || 'canquery/1.0';
@@ -17,17 +16,29 @@ const USER_AGENT = process.env.USER_AGENT || 'canquery/1.0';
 // negative-caches null for 5 min so we don't hammer a struggling API.
 const repoCache = createCache({ name: 'github-repo', ttlMs: 10 * 60 * 1000, negativeTtlMs: 5 * 60 * 1000 });
 
+// Resolves null on any failure (never throws): the cache only negative-caches
+// resolved nulls, and the endpoint's contract is 200 + data: null when GitHub
+// is unreachable. A single attempt (no retries) keeps it to at most one
+// upstream call per cache window, and a rate-limited GitHub (403/429) is not
+// worth retrying anyway.
 async function fetchGitHubRepo() {
-    const response = await fetchWithBackoff(REPO_URL, {
-        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-        timeoutMs: 8000
-    });
-    if (!response.ok) {
-        throw new AppError('GitHub upstream returned ' + response.status, 502);
+    try {
+        const response = await fetchWithBackoff(REPO_URL, {
+            headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
+            timeoutMs: 8000,
+            maxRetries: 0
+        });
+        if (!response.ok) {
+            console.warn('[repo] GitHub upstream returned ' + response.status);
+            return null;
+        }
+        const body = await response.json();
+        const stars = typeof body.stargazers_count === 'number' ? body.stargazers_count : null;
+        return stars == null ? null : { stars };
+    } catch (err) {
+        console.warn('[repo] GitHub fetch failed: ' + err.message);
+        return null;
     }
-    const body = await response.json();
-    const stars = typeof body.stargazers_count === 'number' ? body.stargazers_count : null;
-    return stars == null ? null : { stars };
 }
 
 async function getRepoStats() {
