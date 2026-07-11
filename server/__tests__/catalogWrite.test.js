@@ -1,4 +1,4 @@
-const { dedupeById } = require('../db/catalogWriteQueries');
+const { dedupeById, sweepMissingDatasets } = require('../db/catalogWriteQueries');
 
 describe('dedupeById', () => {
     test('returns an empty array for empty / nullish input', () => {
@@ -35,5 +35,38 @@ describe('dedupeById', () => {
         const ids = out.map(r => r.id);
         expect(new Set(ids).size).toBe(ids.length);
         expect(ids.sort()).toEqual(['dup', 'other']);
+    });
+});
+
+describe('sweepMissingDatasets', () => {
+    test('refuses an empty authoritative catalogue', async () => {
+        const db = { query: jest.fn() };
+        await expect(sweepMissingDatasets(db, [])).rejects.toThrow('empty upstream id set');
+        expect(db.query).not.toHaveBeenCalled();
+    });
+
+    test('refuses a suspiciously large deletion wave', async () => {
+        const db = {
+            query: jest.fn().mockResolvedValueOnce({ rows: [{ total: '1000', missing: '250' }] })
+        };
+
+        await expect(sweepMissingDatasets(db, ['kept'])).rejects.toThrow('250/1000');
+        expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    test('deletes missing resources before their datasets', async () => {
+        const db = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [{ total: '1000', missing: '2' }] })
+                .mockResolvedValueOnce({ rowCount: 7 })
+                .mockResolvedValueOnce({ rowCount: 2 })
+        };
+
+        await expect(sweepMissingDatasets(db, ['a', 'b'])).resolves.toEqual({
+            datasetsDeleted: 2,
+            resourcesDeleted: 7
+        });
+        expect(db.query.mock.calls[1][0]).toContain('DELETE FROM resources');
+        expect(db.query.mock.calls[2][0]).toContain('DELETE FROM datasets');
     });
 });

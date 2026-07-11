@@ -20,18 +20,40 @@ for (let i = 0; i < args.length; i++) {
         dryRun = true;
     } else if (arg === '--limit') {
         if (i + 1 < args.length) {
-            limit = parseInt(args[i + 1], 10);
+            limit = Number(args[i + 1]);
             i++;
         }
     } else if (arg.startsWith('--limit=')) {
-        limit = parseInt(arg.split('=')[1], 10);
+        limit = Number(arg.split('=')[1]);
     }
 }
 
 const pool = require('../db/pool');
 const { packageSearch } = require('../services/ckanClient');
 const { normalizePackage } = require('../services/catalogNormalizer');
-const { upsertOrganizations, upsertDatasets, replaceResources, refreshOrganizationDatasetCounts, insertSyncRun } = require('../db/catalogWriteQueries');
+const {
+    upsertOrganizations,
+    upsertDatasets,
+    replaceResources,
+    refreshOrganizationDatasetCounts,
+    getProgress,
+    setProgress,
+    insertSyncRun
+} = require('../db/catalogWriteQueries');
+const {
+    DEFAULT_MAX_PAGES,
+    DEFAULT_OVERLAP_MS,
+    collectIncrementalPackages,
+    latestTimestamp
+} = require('../services/incrementalSync');
+
+function positiveInteger(value, fallback) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const maxPages = positiveInteger(process.env.INCREMENTAL_SYNC_MAX_PAGES, DEFAULT_MAX_PAGES);
+const overlapSeconds = positiveInteger(process.env.INCREMENTAL_SYNC_OVERLAP_SECONDS, DEFAULT_OVERLAP_MS / 1000);
 
 async function main() {
     const startedAt = new Date();
@@ -41,34 +63,31 @@ async function main() {
     let resourcesUpserted = 0;
 
     try {
-        const hwmResult = await pool.query('SELECT max(metadata_modified) AS hwm FROM datasets');
-        const hwm = hwmResult.rows[0].hwm;
-        console.log('HWM:', hwm);
-
-        const collected = [];
-        for (let page = 0; page < 10; page += 1) {
-            const result = await packageSearch({ sort: 'metadata_modified desc', rows: 100, start: page * 100 });
-            if (!result.results || result.results.length === 0) {
-                break;
-            }
-            let reachedOld = false;
-            for (const pkg of result.results) {
-                if (hwm && pkg.metadata_modified && new Date(pkg.metadata_modified) <= hwm) {
-                    reachedOld = true;
-                    break;
-                }
-                collected.push(pkg);
-                if (limit && collected.length >= limit) {
-                    reachedOld = true;
-                    break;
-                }
-            }
-            if (reachedOld || result.results.length < 100) {
-                break;
-            }
+        if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+            throw new Error('--limit must be a positive integer');
         }
+        const progress = await getProgress(pool, 'incremental-sync');
+        let watermark = progress && progress.watermark;
+        if (!watermark) {
+            // Upgrade path from the old max(metadata_modified)-only sync. This is
+            // only a baseline; after the first complete traversal the independently
+            // persisted checkpoint becomes authoritative.
+            const hwmResult = await pool.query('SELECT max(metadata_modified) AS hwm FROM datasets');
+            watermark = hwmResult.rows[0].hwm;
+        }
+        watermark = latestTimestamp(null, watermark);
+        console.log('watermark:', watermark || '(none)');
 
-        console.log(collected.length + ' modified datasets');
+        const collectedResult = await collectIncrementalPackages({
+            search: packageSearch,
+            watermark,
+            overlapMs: overlapSeconds * 1000,
+            maxPages,
+            limit
+        });
+        const collected = collectedResult.packages;
+
+        console.log(collected.length + ' modified datasets across ' + collectedResult.pagesFetched + ' page(s)');
 
         const orgsById = new Map();
         const datasets = [];
@@ -106,6 +125,38 @@ async function main() {
 
         datasetsUpserted = datasets.length;
         resourcesUpserted = allResources.length;
+
+        if (!dryRun) {
+            if (collectedResult.complete) {
+                await setProgress(pool, 'incremental-sync', {
+                    watermark: collectedResult.nextWatermark || watermark,
+                    completedAt: new Date().toISOString(),
+                    overlapSeconds,
+                    incomplete: null
+                });
+            } else {
+                // Never advance the committed watermark after a truncated read.
+                // The next run repeats the overlap instead of silently skipping
+                // the unvisited tail.
+                await setProgress(pool, 'incremental-sync', {
+                    watermark,
+                    overlapSeconds,
+                    incomplete: {
+                        at: new Date().toISOString(),
+                        reason: collectedResult.reason,
+                        pagesFetched: collectedResult.pagesFetched,
+                        datasetsSeen: collected.length
+                    }
+                });
+            }
+        }
+
+        if (!collectedResult.complete && (!dryRun || collectedResult.reason === 'page-cap')) {
+            throw new Error(
+                'incremental sync incomplete (' + collectedResult.reason + ' after ' +
+                collectedResult.pagesFetched + ' page(s)); watermark was not advanced'
+            );
+        }
         ok = true;
     } catch (err) {
         error = err.message;

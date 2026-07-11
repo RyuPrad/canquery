@@ -1,0 +1,59 @@
+# canquery outbound defense in depth. This applies to new connections created by
+# the unprivileged app user while preserving established reverse-proxy traffic.
+# If PostgreSQL or DNS uses a private address not covered by the narrow allows
+# below, add that exact address/port before the reject rules.
+
+# The unit creates the empty table once. Flush + rebuild is one nftables
+# transaction, so a parse/apply failure leaves the previous working ruleset in
+# place instead of opening a fail-open gap.
+flush table inet canquery_egress
+
+table inet canquery_egress {
+    chain output {
+        type filter hook output priority -5; policy accept;
+
+        ct state established,related accept
+
+        # Local PostgreSQL and loopback resolvers are required by the app.
+        meta skuid "canquery" oifname "lo" tcp dport { 5432, 5433 } accept
+        meta skuid "canquery" ip daddr 127.0.0.0/8 udp dport 53 accept
+        meta skuid "canquery" ip daddr 127.0.0.0/8 tcp dport 53 accept
+        meta skuid "canquery" ip6 daddr ::1 udp dport 53 accept
+        meta skuid "canquery" ip6 daddr ::1 tcp dport 53 accept
+
+        meta skuid "canquery" ip daddr {
+            0.0.0.0/8,
+            10.0.0.0/8,
+            100.64.0.0/10,
+            127.0.0.0/8,
+            169.254.0.0/16,
+            172.16.0.0/12,
+            192.0.0.0/24,
+            192.0.2.0/24,
+            192.88.99.0/24,
+            192.168.0.0/16,
+            198.18.0.0/15,
+            198.51.100.0/24,
+            203.0.113.0/24,
+            224.0.0.0/4,
+            240.0.0.0/4
+        } reject with icmpx type admin-prohibited
+
+        meta skuid "canquery" ip6 daddr {
+            ::/96,
+            ::ffff:0:0/96,
+            64:ff9b::/96,
+            64:ff9b:1::/48,
+            100::/64,
+            2001::/23,
+            2001:db8::/32,
+            2002::/16,
+            3fff::/20,
+            5f00::/16,
+            fc00::/7,
+            fe80::/10,
+            fec0::/10,
+            ff00::/8
+        } reject with icmpx type admin-prohibited
+    }
+}

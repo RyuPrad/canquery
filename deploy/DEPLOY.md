@@ -9,7 +9,7 @@ Placeholders to substitute: `<your-domain>` (the public hostname), `<password>`
 (a generated DB password), `<contact-email>` (a polite contact for the upstream
 User-Agent).
 
-Prerequisites: Node 20+ and PostgreSQL 16 on the target host.
+Prerequisites: Node 20+, PostgreSQL 16, and nftables on the target host.
 
 ## 1. App user + code
 
@@ -37,6 +37,13 @@ CANQUERY_DATABASE_URL=postgres://canquery:<password>@127.0.0.1:5432/canquery
 CKAN_USER_AGENT=canquery/1.0 (<contact-email>)
 CORS_ALLOWED_ORIGINS=https://<your-domain>
 STORE_BUDGET_GB=15
+# Required: an app-readable path on PostgreSQL's data filesystem.
+# A readable mount anchor such as /var/lib is preferable when a Docker volume's
+# data directory itself is 0700. Worker startup and ingests fail closed if this
+# path cannot be checked or its emergency free-space floor would be crossed.
+STORE_DATA_PATH=<readable-path-on-postgres-filesystem>
+STORE_MIN_FREE_GB=2
+TMP_MIN_FREE_MB=512
 ```
 
 Never commit `.env` (it is gitignored). Apply migrations:
@@ -45,12 +52,37 @@ Never commit `.env` (it is gitignored). Apply migrations:
 sudo -u canquery npm run migrate --prefix /home/canquery/canquery/server
 ```
 
-## 3. Firewall (recommended)
+## 3. Firewalls
 
 The API listens on `:3100`. Keep it private - reachable only from loopback (and,
 if your reverse proxy runs in Docker, that bridge network). Bind it to localhost
 and/or add an nftables/ufw rule so `:3100` is not exposed publicly; only the
 reverse proxy should reach it.
+
+Catalogue resources are untrusted outbound input. The worker validates every
+download URL and redirect, resolves every hostname, rejects non-public
+addresses, and pins the validated address for the connection. Install the
+nftables template as a required second layer so a future application regression
+still cannot open new connections to private, loopback, link-local, metadata,
+or special-purpose networks:
+
+```bash
+install -d -m 0755 /etc/canquery
+cp deploy/canquery-egress.nft /etc/canquery/canquery-egress.nft
+cp deploy/canquery-egress-firewall.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now canquery-egress-firewall
+nft list table inet canquery_egress
+```
+
+The template matches Unix user `canquery`, permits established reverse-proxy
+traffic, loopback DNS/PostgreSQL on ports 53 and 5432/5433, then rejects new
+private-network destinations. If the deployment uses a different Unix user,
+change both the systemd `User`/`Group` and nftables `meta skuid` value. If
+PostgreSQL or the resolver lives at another private address, add only that exact
+address and service port before the reject rules. Do not broadly allow the whole
+Docker or RFC1918 subnet. The API and worker units require the firewall unit, and
+firewall reloads replace the rules atomically.
 
 ## 4. systemd units
 
@@ -65,6 +97,19 @@ curl -s http://127.0.0.1:3100/healthz   # expect {"ok":true,...}
 ```
 
 `canquery-api` serves the API + SPA; `canquery-worker` drains the ingest queue.
+The worker unit applies a cgroup memory ceiling and gives an active ingest a
+bounded grace period on SIGTERM. Excel conversion has a second, lower V8 heap
+limit and timeout inside its child process.
+
+For upgrades, run `npm run migrate` before restarting the worker. The worker
+lease/heartbeat code requires migration `005_ingest_job_leases.sql`.
+
+Confirm the configured filesystem anchor is readable by the app user before
+starting the worker:
+
+```bash
+sudo -u canquery stat -f <readable-path-on-postgres-filesystem>
+```
 
 ## 5. First harvest
 
@@ -100,6 +145,11 @@ Schedule (see `deploy/canquery.cron.d`): `catalog-sync` daily, `incremental-sync
 every 30 min, `evict-store` daily. The ingest worker is the systemd service from
 step 4, not cron.
 
+Incremental sync advances its persisted checkpoint only after a complete
+overlap-window traversal. Reaching its safety page cap records an incomplete run
+and does not advance that checkpoint. A successful unlimited full sync also sweeps
+upstream-deleted datasets, with a configurable maximum-delete-fraction guard.
+
 ## 7. Frontend build + reverse proxy
 
 The API serves `client/dist` in production, so just build it next to the server:
@@ -127,6 +177,7 @@ curl -s 'https://<your-domain>/api/v1/datasets?q=housing&limit=3'
 
 ```bash
 systemctl stop canquery-api canquery-worker
+nft delete table inet canquery_egress
 # remove the reverse-proxy block + reload the proxy; remove /etc/cron.d/canquery
 ```
 

@@ -15,6 +15,23 @@ async function enqueueIngest(resourceId) {
         throw new AppError('Resource not found', 404);
     }
     const mode = computeQueryMode(row);
+    // Loaded tables are immutable through the anonymous API. Refreshing one
+    // drops and rebuilds it under DDL locks, so that belongs behind a future
+    // operator-only endpoint rather than another public queue submission.
+    if (mode === 'ingested') {
+        return shapeJob({
+            id: null,
+            resource_id: resourceId,
+            status: 'done',
+            attempts: 0,
+            error: null,
+            created_at: row.ingested_at,
+            finished_at: row.ingested_at,
+            age_seconds: null,
+            row_count: row.ingested_row_count,
+            already_loaded: true
+        });
+    }
     // Datastore (proxied) resources can be upgraded into local storage so that
     // per-column substring/range filters work - the upstream datastore only
     // supports equality. Allow it, but only when the underlying file is one we
@@ -46,17 +63,23 @@ async function getJob(id) {
 
 function shapeJob(job) {
     return {
-        id: Number(job.id),
+        id: job.id == null ? null : Number(job.id),
         resource_id: job.resource_id,
         status: job.status,
         attempts: job.attempts,
-        error: job.error || null,
+        // Worker messages may contain upstream URLs, filesystem paths, SQL or
+        // network details. The UI only needs a safe retryable failure state.
+        error: job.status === 'failed' ? 'Resource ingestion failed' : null,
         created_at: job.created_at,
         claimed_at: job.claimed_at || null,
         finished_at: job.finished_at || null,
         // Age computed in Postgres (now() - created_at) so the client timer is
         // immune to clock skew between the DB, the API and the browser.
-        age_seconds: job.age_seconds != null ? Number(job.age_seconds) : null
+        age_seconds: job.age_seconds != null ? Number(job.age_seconds) : null,
+        ...(job.already_loaded && {
+            already_loaded: true,
+            row_count: job.row_count == null ? null : Number(job.row_count)
+        })
     };
 }
 

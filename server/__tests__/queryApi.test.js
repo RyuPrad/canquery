@@ -63,4 +63,37 @@ describe('query API datastore path', () => {
         expect(res.status).toBe(404);
         expect(res.body.error).toBe('Resource not found');
     });
+
+    test('rejects search text over 200 characters before querying', async () => {
+        const res = await request(app).get('/api/v1/resources/ds-long/query').query({ q: 'x'.repeat(201) });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/200/);
+        expect(queries.getResourceById).not.toHaveBeenCalled();
+        expect(ckan.datastoreSearch).not.toHaveBeenCalled();
+    });
+
+    test('rejects deep offsets before querying', async () => {
+        const res = await request(app).get('/api/v1/resources/ds-deep/query?offset=10001');
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/offset/i);
+        expect(queries.getResourceById).not.toHaveBeenCalled();
+        expect(ckan.datastoreSearch).not.toHaveBeenCalled();
+    });
+
+    test('unexpected database failures are returned generically with a request id', async () => {
+        queries.getResourceById.mockRejectedValue(new Error('password=secret host=internal-db'));
+        const oldNodeEnv = process.env.NODE_ENV;
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        process.env.NODE_ENV = 'production';
+        try {
+            const res = await request(app).get('/api/v1/resources/db-fail/query');
+            expect(res.status).toBe(500);
+            expect(res.body.error).toBe('Internal server error');
+            expect(res.body.request_id).toBe(res.headers['x-request-id']);
+            expect(JSON.stringify(res.body)).not.toContain('password=secret');
+        } finally {
+            process.env.NODE_ENV = oldNodeEnv;
+            errorSpy.mockRestore();
+        }
+    });
 });

@@ -5,6 +5,8 @@
 Description=canquery API (Express, :3100)
 After=network-online.target
 Wants=network-online.target
+Requires=canquery-egress-firewall.service
+After=canquery-egress-firewall.service
 
 [Service]
 Type=simple

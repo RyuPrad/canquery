@@ -10,8 +10,9 @@ const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
 
 const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
 
-// Excel formats get a smaller cap than CSV: they decompress/parse in memory
-// (XLSX sharedStrings load fully into RAM; XLS is read whole).
+// Excel formats get a smaller cap than CSV: conversion is isolated and bounded,
+// but XLSX shared strings/styles and legacy XLS parsing still expand in memory
+// inside that child process.
 const ingestCapBytesFor = (format) => {
     if (format === 'CSV') return maxFileBytes();
     if (format === 'XLSX' || format === 'XLS') return MAX_XLSX_MB * 1024 * 1024;

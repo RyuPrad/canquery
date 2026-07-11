@@ -26,7 +26,7 @@ function buildWhereAndParams({ knownColumns, q, filters }) {
     return { whereSql, params };
 }
 
-async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, limit, offset }) {
+async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, limit, offset, includeTotal = true }) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new AppError('invalid store table name', 500);
     }
@@ -34,10 +34,14 @@ async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, l
 
     const { whereSql, params } = buildWhereAndParams({ knownColumns, q, filters });
 
-    const orderSql = ' ORDER BY ' + (sortSql || '"_id" ASC');
+    const tieBreaker = sortSql && !sortSql.startsWith('"_id" ') ? ', "_id" ASC' : '';
+    const orderSql = ' ORDER BY ' + (sortSql || '"_id" ASC') + tieBreaker;
 
-    const countResult = await pool.query('SELECT count(*)::bigint AS total FROM ' + table + whereSql, params);
-    const total = Number(countResult.rows[0].total);
+    let total = null;
+    if (includeTotal) {
+        const countResult = await pool.query('SELECT count(*)::bigint AS total FROM ' + table + whereSql, params);
+        total = Number(countResult.rows[0].total);
+    }
 
     const limitIdx = params.length + 1;
     const offsetIdx = params.length + 2;
@@ -49,7 +53,7 @@ async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, l
     return { records: pageResult.rows, total };
 }
 
-async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupBy, agg, aggColumn, bucket, sortSql, limit, offset }) {
+async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupBy, agg, aggColumn, bucket, sortSql, limit, offset, includeTotal = true }) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new AppError('invalid store table name', 500);
     }
@@ -66,10 +70,14 @@ async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupB
 
     const { whereSql, params } = buildWhereAndParams({ knownColumns, q, filters });
 
-    const countResult = await pool.query(
-        'SELECT count(*)::int AS total FROM (SELECT 1 FROM ' + table + whereSql + ' GROUP BY ' + keyExpr + ') g',
-        params
-    );
+    let total = null;
+    if (includeTotal) {
+        const countResult = await pool.query(
+            'SELECT count(*)::int AS total FROM (SELECT 1 FROM ' + table + whereSql + ' GROUP BY ' + keyExpr + ') g',
+            params
+        );
+        total = Number(countResult.rows[0].total);
+    }
 
     const orderSql = sortSql ? (sortSql.indexOf('"value"') === 0 ? sortSql + ', "key" ASC' : sortSql) : '"key" ASC';
     const pageResult = await pool.query(
@@ -77,7 +85,7 @@ async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupB
         params.concat([limit, offset])
     );
 
-    return { records: pageResult.rows, total: Number(countResult.rows[0].total) };
+    return { records: pageResult.rows, total };
 }
 
 // One-scan column profile that powers the auto-insights dashboard: per column

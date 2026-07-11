@@ -12,7 +12,7 @@ makes the whole catalogue feel queryable through one endpoint:
 | Tier | When | What happens |
 |---|---|---|
 | 1 - proxy | resource has `datastore_active: true` | upstream `datastore_search` is proxied and cached (5 min TTL) |
-| 2 - ingest | it's a CSV under the caps | `POST /ingest` streams it into our Postgres `store` schema; the same `/query` endpoint then serves it locally - **identical response shape** |
+| 2 - ingest | it's a CSV/XLSX/XLS under the caps | `POST /ingest` streams it into our Postgres `store` schema; the same `/query` endpoint then serves it locally - **identical response shape** |
 | 3 - honest fallback | anything else | metadata + the download link, labeled `file-only` (422 on `/query`) |
 
 The catalogue itself (bilingual titles, notes, keywords, organizations) is mirrored
@@ -65,7 +65,8 @@ curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
 
-# unlock a CSV (idempotent enqueue; 5/hour/IP), then poll
+# load a tabular file (idempotent; 5/hour/IP), then poll a newly-enqueued job.
+# A resource already loaded returns 200 with already_loaded: true and no job id.
 curl -X POST 'http://localhost:3100/api/v1/resources/<id>/ingest'
 curl 'http://localhost:3100/api/v1/jobs/<jobId>'
 
@@ -83,22 +84,30 @@ Filter grammar: `{ "column": value }` or
 Column names are validated against the stored column list; values only ever travel
 as SQL placeholders. Operator filters work on ingested resources; the upstream
 datastore proxy supports equality only (400 otherwise).
+Search text is capped at 200 characters and local query offsets at 10,000;
+expensive profile, aggregation, and export routes have dedicated rate limits.
 
 ## Pipelines
 
 | Script | Purpose |
 |---|---|
 | `scripts/catalog-sync.js` | full harvest: `package_list` → batched `package_show` (chunks of 50, concurrency 2), resumable via `sync_progress`; `--limit N`, `--dry-run` |
-| `scripts/incremental-sync.js` | upserts anything newer than our `metadata_modified` high-water mark |
-| `scripts/ingest-worker.js` | drains `ingest_jobs` (`FOR UPDATE SKIP LOCKED`), streams CSVs into `store.r_*` via `COPY`, ≤2 retries; `--once` for a single drain |
-| `scripts/evict-store.js` | drops least-recently-accessed store tables until under `STORE_BUDGET_GB` (skips `pinned_resources`, e.g. the Top 100) |
+| `scripts/incremental-sync.js` | upserts through a persisted, overlapping `metadata_modified` watermark with deterministic `id` tie ordering; page-cap runs are marked incomplete without advancing it |
+| `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
+| `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
 Every script writes a run-log row (`sync_runs` / `ingest_runs`) in a `finally` block
 and exits non-zero on failure.
 
 Safety rails (env-tunable): `MAX_FILE_MB=50`, `MAX_ROWS=1000000`, `MAX_COLS=120`,
-`STORE_BUDGET_GB=15`. Downloads stream to disk and abort mid-stream past the cap.
+`STORE_BUDGET_GB=15`. Downloads accept only public HTTP(S) destinations, validate
+and DNS-pin every redirect hop, stream to disk, and abort mid-stream past the cap.
+Excel archives are preflighted for expansion bombs and converted in a
+memory/time-limited child process. Ingest reserves capacity, checks the exact
+PostgreSQL relation size before commit, enforces the budget after commit, and can
+fail closed on a real-filesystem free-space floor (`STORE_DATA_PATH` is required
+for the production worker).
 Type inference (1,000-row sample → INTEGER/NUMERIC/DATE/TIMESTAMPTZ/TEXT) falls back
 to TEXT per column when a later cast fails.
 
@@ -116,13 +125,15 @@ sparklines. English/French throughout.
 ## Tests & lint
 
 ```bash
-cd server && npm test && npm run lint   # Jest + Supertest (142 tests)
-cd client && npm test && npm run lint   # Vitest (45 tests)
+cd server && npm test && npm run lint   # Jest + Supertest (276 tests)
+cd client && npm test && npm run lint   # Vitest (82 tests)
 ```
 
 Coverage includes the four `/query` modes, filter-grammar injection attempts,
-mid-stream cap aborts, eviction budget honoring, the stable envelope shape, the
-column-profile endpoint, and the auto-insights column classifier. The server
+SSRF/redirect/DNS-pinning checks, bounded caches, spreadsheet-safe streaming CSV
+exports, Excel archive caps, lease recovery, lossless incremental sync, strict
+eviction budget honoring, the stable envelope shape, the column-profile endpoint,
+and the auto-insights column classifier. The server
 suite mocks the database, so it runs without Postgres (this is what CI runs).
 
 ## Deployment

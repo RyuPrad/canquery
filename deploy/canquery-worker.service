@@ -4,6 +4,8 @@
 Description=canquery ingest worker (drains ingest_jobs)
 After=network-online.target postgresql.service
 Wants=network-online.target
+Requires=canquery-egress-firewall.service
+After=canquery-egress-firewall.service
 
 [Service]
 Type=simple
@@ -14,6 +16,16 @@ ExecStart=/usr/bin/node scripts/ingest-worker.js
 Environment=NODE_ENV=production
 Restart=on-failure
 RestartSec=10
+KillSignal=SIGTERM
+# The worker handles SIGTERM by finishing its active ingest and then releasing
+# its database queue lock. A hard timeout is still finite; the replacement
+# worker immediately requeues a job if this process must be killed.
+TimeoutStopSec=10min
+
+# Excel conversion can inflate compressed workbook data substantially. These
+# defaults protect a shared host; operators can tune them with a systemd drop-in.
+MemoryHigh=768M
+MemoryMax=1G
 
 ProtectSystem=strict
 ProtectHome=read-only

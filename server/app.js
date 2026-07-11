@@ -6,6 +6,7 @@ const express = require('express');
 const helmet = require('helmet');
 const AppError = require('./utils/AppError');
 const errorHandler = require('./middleware/errorHandler');
+const requestId = require('./middleware/requestId');
 const { generalLimiter } = require('./middleware/rateLimits');
 const catalogController = require('./controllers/catalogController');
 const datasetsRouter = require('./routes/datasets');
@@ -23,6 +24,7 @@ const app = express();
 
 app.set('trust proxy', 1);
 app.use(helmet());
+app.use(requestId);
 
 // Build CORS allowlist
 const allowlist = new Set(

@@ -41,6 +41,82 @@ describe('UX batch endpoints', () => {
         expect(lines[2]).toBe('2,"has,comma ""q""",');
     });
 
+    it('query.csv neutralizes formulas in text and headers while preserving numeric negatives', async () => {
+        queries.getResourceById.mockResolvedValue({
+            id: 'ing-9',
+            dataset_id: 'd1',
+            url: 'u',
+            format: 'CSV',
+            size_bytes: null,
+            datastore_active: false,
+            ingest_status: 'ready',
+            table_name: 'r_abc9',
+            ingested_columns: [
+                { id: '=label', type: 'TEXT' },
+                { id: 'amount', type: 'NUMERIC' },
+                { id: 'note', type: 'TEXT' },
+            ],
+        });
+        store.queryStoreTable.mockResolvedValue({
+            records: [
+                { _id: 1, '=label': '=2+2', amount: '-42.5', note: '@SUM(A1:A2)' },
+                { _id: 2, '=label': '+cmd', amount: '=1+1', note: '-10' },
+                { _id: 3, '=label': 'safe', amount: '-1e2', note: ' \v=2+2' },
+                { _id: 4, '=label': 'safe', amount: '-0.5', note: '  =2+2' },
+                { _id: 5, '=label': 'safe', amount: '-2', note: '\u00a0=2+2' },
+            ],
+            total: 2,
+        });
+
+        const res = await request(app).get('/api/v1/resources/ing-9/query.csv');
+
+        expect(res.status).toBe(200);
+        expect(res.headers['content-length']).toBeUndefined();
+        expect(res.text.trim().split('\n')).toEqual([
+            "_id,'=label,amount,note",
+            "1,'=2+2,-42.5,'@SUM(A1:A2)",
+            "2,'+cmd,'=1+1,'-10",
+            "3,safe,-1e2,' \v=2+2",
+            "4,safe,-0.5,'  =2+2",
+            "5,safe,-2,'\u00a0=2+2",
+        ]);
+    });
+
+    it('query.csv fetches local rows in bounded batches without count queries', async () => {
+        queries.getResourceById.mockResolvedValue({
+            id: 'ing-batch',
+            dataset_id: 'd1',
+            url: 'u',
+            format: 'CSV',
+            datastore_active: false,
+            ingest_status: 'ready',
+            table_name: 'r_abcd',
+            ingested_columns: [{ id: 'name', type: 'TEXT' }]
+        });
+        store.queryStoreTable
+            .mockResolvedValueOnce({
+                records: Array.from({ length: 500 }, (_, index) => ({ _id: index + 1, name: 'row-' + index })),
+                total: null
+            })
+            .mockResolvedValueOnce({ records: [{ _id: 501, name: 'last' }], total: null });
+
+        const res = await request(app).get('/api/v1/resources/ing-batch/query.csv');
+
+        expect(res.status).toBe(200);
+        expect(res.text.trim().split('\n')).toHaveLength(502);
+        expect(store.queryStoreTable).toHaveBeenCalledTimes(2);
+        expect(store.queryStoreTable.mock.calls[0][0]).toEqual(expect.objectContaining({
+            limit: 500,
+            offset: 0,
+            includeTotal: false
+        }));
+        expect(store.queryStoreTable.mock.calls[1][0]).toEqual(expect.objectContaining({
+            limit: 500,
+            offset: 500,
+            includeTotal: false
+        }));
+    });
+
     it('query.csv on an unlockable resource is still a 409', async () => {
         queries.getResourceById.mockResolvedValue({ id: 'csv-9', dataset_id: 'd1', url: 'u', format: 'CSV', size_bytes: null, datastore_active: false, ingest_status: null, table_name: null, ingested_columns: null });
         const res = await request(app).get('/api/v1/resources/csv-9/query.csv');

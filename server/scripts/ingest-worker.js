@@ -1,14 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-process.on('unhandledRejection', (err) => {
-    console.error(err);
-    process.exit(1);
-});
-
-process.on('uncaughtException', (err) => {
-    console.error(err);
-    process.exit(1);
-});
+const crypto = require('crypto');
 
 const onceMode = process.argv.includes('--once');
 
@@ -22,39 +14,49 @@ const caps = {
     stallTimeoutMs: Number(process.env.INGEST_STALL_TIMEOUT_MS) || 60000
 };
 
-// How often to look for jobs wedged in status='running' by a worker that was
-// hard-killed mid-job (crash/OOM/deploy). The 1h age threshold stays well above
-// any real ingest and any deploy overlap, so this never reclaims a live job.
-const STALE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
-
 const POLL_MS = Number(process.env.INGEST_POLL_MS) || 3000;
+const HEARTBEAT_MS = Math.max(1000, Number(process.env.INGEST_HEARTBEAT_MS) || 15000);
 const MAX_ATTEMPTS = 3;
 
 const pool = require('../db/pool');
+const longRunningPool = require('../db/longRunningPool');
 const { getResourceById } = require('../db/catalogReadQueries');
-const { ingestResource } = require('../services/ingestPipeline');
+const { ingestResource, validateStorageFilesystems } = require('../services/ingestPipeline');
+const {
+    acquireWorkerLock,
+    releaseWorkerLock,
+    recoverOrphanedJobs,
+    claimJob,
+    heartbeatJob,
+    finishJob,
+    requeueJob
+} = require('../db/ingestWorkerQueries');
 
-async function claimJob() {
-    const result = await pool.query(`UPDATE ingest_jobs SET status = 'running', claimed_at = now(), attempts = attempts + 1 WHERE id = (SELECT id FROM ingest_jobs WHERE status = 'pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, resource_id, attempts`);
-    return result.rows[0] || null;
-}
+let stopRequested = false;
+let wakePoll = null;
 
-async function finishJob(id, status, error) {
-    await pool.query('UPDATE ingest_jobs SET status = $2, error = $3, finished_at = now() WHERE id = $1', [id, status, error]);
-}
-
-async function requeueJob(id, error) {
-    await pool.query(`UPDATE ingest_jobs SET status = 'pending', error = $2 WHERE id = $1`, [id, error]);
-}
-
-// A worker crash mid-job leaves status='running' forever, and the partial unique
-// index on active jobs then blocks re-enqueueing that resource. Requeue anything
-// stuck running longer than any real ingest could take.
-async function requeueStaleRunning() {
-    const result = await pool.query(`UPDATE ingest_jobs SET status = 'pending', error = 'requeued stale running job' WHERE status = 'running' AND claimed_at < now() - interval '1 hour'`);
-    if (result.rowCount > 0) {
-        console.log('requeued ' + result.rowCount + ' stale running job(s)');
+function requestStop(signal) {
+    if (!stopRequested) {
+        stopRequested = true;
+        console.log('ingest-worker received ' + signal + '; stopping after any active job finishes');
     }
+    if (wakePoll) wakePoll();
+}
+
+function waitForPoll() {
+    if (stopRequested) return Promise.resolve();
+    return new Promise(resolve => {
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            wakePoll = null;
+            resolve();
+        };
+        const timer = setTimeout(done, POLL_MS);
+        wakePoll = done;
+    });
 }
 
 async function logRun(run) {
@@ -73,61 +75,139 @@ async function logRun(run) {
     }
 }
 
-async function processJob(job) {
+async function processJob(job, workerId) {
     const startedAt = new Date();
     let ok = false;
     let rowsLoaded = null;
     let bytesLoaded = null;
     let error = null;
+    let heartbeatBusy = false;
+    const heartbeatTimer = setInterval(async () => {
+        if (heartbeatBusy) return;
+        heartbeatBusy = true;
+        try {
+            const owned = await heartbeatJob(pool, job.id, workerId);
+            if (!owned) console.error('[job ' + job.id + '] worker lease was lost');
+        } catch (err) {
+            console.error('[job ' + job.id + '] heartbeat failed: ' + err.message);
+        } finally {
+            heartbeatBusy = false;
+        }
+    }, HEARTBEAT_MS);
+    heartbeatTimer.unref();
+
     try {
         const resource = await getResourceById(job.resource_id);
         if (!resource) throw new Error('resource vanished from catalog');
+        // A crash can happen after the store transaction commits but before the
+        // queue row is marked done. Recovery requeues that row; never rebuild a
+        // table that is already ready just to repair queue bookkeeping.
+        if (resource.ingest_status === 'ready' && resource.table_name) {
+            rowsLoaded = resource.ingested_row_count == null ? null : Number(resource.ingested_row_count);
+            bytesLoaded = resource.ingested_byte_size == null ? null : Number(resource.ingested_byte_size);
+            const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'done', null);
+            if (!finished) throw new Error('worker lease lost while reconciling loaded resource');
+            ok = true;
+            console.log('[job ' + job.id + '] reconciled already-loaded resource ' + job.resource_id);
+            return;
+        }
         console.log('[job ' + job.id + '] ingesting ' + job.resource_id + ' (attempt ' + job.attempts + ')');
         const result = await ingestResource(resource, caps);
         rowsLoaded = result.rowCount;
         bytesLoaded = result.byteSize;
+        const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'done', null);
+        if (!finished) throw new Error('worker lease lost before job completion');
         ok = true;
-        await finishJob(job.id, 'done', null);
         console.log('[job ' + job.id + '] done: ' + result.rowCount + ' rows, ' + result.byteSize + ' bytes in ' + result.tableName);
     } catch (err) {
         error = err.message;
         console.error('[job ' + job.id + '] failed: ' + err.message);
         if (job.attempts >= MAX_ATTEMPTS) {
-            await finishJob(job.id, 'failed', err.message);
+            const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'failed', err.message);
+            if (!finished) console.error('[job ' + job.id + '] could not record failure: worker lease lost');
         } else {
-            await requeueJob(job.id, err.message);
+            const requeued = await requeueJob(pool, job.id, workerId, err.message);
+            if (!requeued) console.error('[job ' + job.id + '] could not requeue: worker lease lost');
         }
     } finally {
+        clearInterval(heartbeatTimer);
         await logRun({ resourceId: job.resource_id, startedAt, finishedAt: new Date(), ok, rowsLoaded, bytesLoaded, error });
     }
 }
 
 async function main() {
-    console.log('ingest-worker started' + (onceMode ? ' (once mode)' : ''));
-    await requeueStaleRunning();
-    let lastStaleSweepAt = Date.now();
-    while (true) {
-        // Re-run the sweep periodically, not only at startup: a job orphaned by a
-        // hard kill is otherwise stuck until the next restart that happens to land
-        // more than an hour after the job was claimed.
-        if (!onceMode && Date.now() - lastStaleSweepAt >= STALE_SWEEP_INTERVAL_MS) {
-            await requeueStaleRunning();
-            lastStaleSweepAt = Date.now();
-        }
-        const job = await claimJob();
-        if (job) {
-            await processJob(job);
-            if (onceMode) break;
-        } else {
+    const workerId = crypto.randomUUID();
+    let lockClient = null;
+    let lockHeld = false;
+    try {
+        await validateStorageFilesystems(caps);
+        lockClient = await pool.connect();
+        lockClient.on('error', (err) => {
+            console.error('ingest-worker lock connection failed:', err.message);
+            process.exit(1);
+        });
+        lockHeld = await acquireWorkerLock(lockClient);
+        if (!lockHeld) {
+            const message = 'another ingest worker already owns the queue lock';
             if (onceMode) {
-                console.log('no pending jobs');
-                break;
+                console.log(message + '; nothing to do in once mode');
+                return;
             }
-            await new Promise(r => setTimeout(r, POLL_MS));
+            // A daemon that exits successfully is not restarted by
+            // Restart=on-failure, leaving the queue unserved after the other
+            // worker goes away. Fail so systemd retries until ownership is free.
+            throw new Error(message);
         }
+
+        console.log('ingest-worker started as ' + workerId + (onceMode ? ' (once mode)' : ''));
+        const recovered = await recoverOrphanedJobs(pool);
+        if (recovered.rowCount > 0) {
+            console.log('requeued ' + recovered.rowCount + ' orphaned running job(s)');
+        }
+
+        while (!stopRequested) {
+            const job = await claimJob(pool, workerId);
+            if (job) {
+                await processJob(job, workerId);
+                if (onceMode) break;
+            } else {
+                if (onceMode) {
+                    console.log('no pending jobs');
+                    break;
+                }
+                await waitForPoll();
+            }
+        }
+    } finally {
+        if (lockHeld && lockClient) {
+            try {
+                await releaseWorkerLock(lockClient);
+            } catch (err) {
+                console.error('failed to release worker lock:', err.message);
+            }
+        }
+        if (lockClient) lockClient.release();
+        // ingestPipeline owns the timeout-free pool used for COPY/DDL. End both
+        // pools so --once and graceful service stops do not leave idle sockets.
+        await Promise.all([pool.end(), longRunningPool.end()]);
     }
-    await pool.end();
-    process.exit(0);
 }
 
-main();
+if (require.main === module) {
+    process.once('SIGTERM', () => requestStop('SIGTERM'));
+    process.once('SIGINT', () => requestStop('SIGINT'));
+    process.on('unhandledRejection', (err) => {
+        console.error(err);
+        process.exit(1);
+    });
+    process.on('uncaughtException', (err) => {
+        console.error(err);
+        process.exit(1);
+    });
+    main().catch(err => {
+        console.error('ingest-worker failed:', err);
+        process.exitCode = 1;
+    });
+}
+
+module.exports = { main, processJob, requestStop, waitForPoll };

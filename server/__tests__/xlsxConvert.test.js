@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const ExcelJS = require('exceljs');
-const { convertXlsxToCsv } = require('../services/xlsxConvert');
+const { convertXlsxToCsv, inspectXlsxArchive } = require('../services/xlsxConvert');
 
 let counter = 0;
 const fixturePaths = [];
@@ -217,5 +217,29 @@ describe('convertXlsxToCsv', () => {
         }
         expect(thrown).toBeDefined();
         expect(thrown.message).toContain('empty XLSX worksheet');
+    });
+
+    it('preflights the ZIP directory before conversion', async () => {
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        fixturePaths.push(fixturePath);
+        const wb = new ExcelJS.Workbook();
+        wb.addWorksheet('Sheet1').addRow(['hello']);
+        await wb.xlsx.writeFile(fixturePath);
+
+        const stats = await inspectXlsxArchive(fixturePath);
+        expect(stats.entries).toBeGreaterThan(0);
+        expect(stats.totalUncompressed).toBeGreaterThan(0);
+    });
+
+    it('rejects an XLSX whose declared expansion exceeds the archive cap', async () => {
+        const fixturePath = path.join(os.tmpdir(), 'canquery-xlsx-fixture-' + Date.now() + '-' + (counter++) + '.xlsx');
+        fixturePaths.push(fixturePath);
+        const wb = new ExcelJS.Workbook();
+        wb.addWorksheet('Sheet1').addRow(['hello']);
+        await wb.xlsx.writeFile(fixturePath);
+
+        await expect(inspectXlsxArchive(fixturePath, {
+            maxUncompressedBytes: 1
+        })).rejects.toMatchObject({ code: 'XLSX_ZIP_BOMB' });
     });
 });

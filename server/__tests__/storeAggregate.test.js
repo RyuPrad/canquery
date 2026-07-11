@@ -1,6 +1,6 @@
 jest.mock('../db/pool', () => ({ query: jest.fn() }));
 const pool = require('../db/pool');
-const { aggregateStoreTable } = require('../db/storeQueries');
+const { aggregateStoreTable, queryStoreTable } = require('../db/storeQueries');
 
 describe('aggregateStoreTable', () => {
     beforeEach(() => {
@@ -186,5 +186,25 @@ describe('aggregateStoreTable', () => {
             })
         ).rejects.toMatchObject({ statusCode: 400 });
         expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('skips full counts for batched export pages and adds a stable row tiebreaker', async () => {
+        pool.query.mockReset().mockResolvedValue({ rows: [{ _id: 1, province: 'ON' }] });
+
+        const result = await queryStoreTable({
+            tableName: 'r_abc',
+            knownColumns: ['province'],
+            q: undefined,
+            filters: [],
+            sortSql: '"province" ASC',
+            limit: 500,
+            offset: 0,
+            includeTotal: false
+        });
+
+        expect(pool.query).toHaveBeenCalledTimes(1);
+        expect(pool.query.mock.calls[0][0]).not.toContain('count(*)');
+        expect(pool.query.mock.calls[0][0]).toContain('ORDER BY "province" ASC, "_id" ASC');
+        expect(result.total).toBeNull();
     });
 });

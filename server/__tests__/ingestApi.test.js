@@ -4,7 +4,13 @@ jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), touchLastAc
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 jest.mock('../db/ingestQueries', () => ({ enqueueJob: jest.fn(), getJobById: jest.fn() }));
 // The real ingest limiter (5/hour) would 429 the later requests in this suite.
-jest.mock('../middleware/rateLimits', () => ({ generalLimiter: (req, res, next) => next(), ingestLimiter: (req, res, next) => next() }));
+jest.mock('../middleware/rateLimits', () => ({
+    generalLimiter: (req, res, next) => next(),
+    ingestLimiter: (req, res, next) => next(),
+    profileLimiter: (req, res, next) => next(),
+    exportLimiter: (req, res, next) => next(),
+    aggregationLimiter: (req, res, next) => next()
+}));
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
 const ingestQueries = require('../db/ingestQueries');
@@ -30,6 +36,48 @@ describe('ingest API', () => {
         expect(res.status).toBe(202);
         expect(res.body.data.id).toBe(3);
         expect(res.body.data.status).toBe('running');
+    });
+
+    it('does not enqueue or refresh a resource that is already loaded', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({
+            id: 'loaded-1',
+            ingest_status: 'ready',
+            table_name: 'r_loaded_1',
+            ingested_at: '2026-07-01T00:00:00Z',
+            ingested_row_count: '42'
+        }));
+
+        const res = await request(app).post('/api/v1/resources/loaded-1/ingest');
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toEqual(expect.objectContaining({
+            id: null,
+            resource_id: 'loaded-1',
+            status: 'done',
+            already_loaded: true,
+            row_count: 42
+        }));
+        expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
+    });
+
+    it('returns loaded state if ingestion finishes during the atomic enqueue', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'race-1' }));
+        ingestQueries.enqueueJob.mockResolvedValue({
+            id: null,
+            resource_id: 'race-1',
+            status: 'done',
+            attempts: 0,
+            error: null,
+            created_at: '2026-07-01T00:00:00Z',
+            finished_at: '2026-07-01T00:00:00Z',
+            already_loaded: true,
+            row_count: '9'
+        });
+
+        const res = await request(app).post('/api/v1/resources/race-1/ingest');
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toEqual(expect.objectContaining({ already_loaded: true, row_count: 9 }));
     });
 
     it('datastore-active CSV can be upgraded (ingested) for full filtering and returns 202', async () => {
@@ -76,6 +124,24 @@ describe('ingest API', () => {
         const res = await request(app).get('/api/v1/jobs/7');
         expect(res.status).toBe(200);
         expect(res.body.data.status).toBe('done');
+    });
+
+    it('never exposes raw worker failures through job polling', async () => {
+        ingestQueries.getJobById.mockResolvedValue({
+            id: 8,
+            resource_id: 'csv-secret',
+            status: 'failed',
+            attempts: 3,
+            error: 'connect ECONNREFUSED 172.18.0.2:5432 /var/tmp/private.csv',
+            created_at: '2026-01-01'
+        });
+
+        const res = await request(app).get('/api/v1/jobs/8');
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.error).toBe('Resource ingestion failed');
+        expect(JSON.stringify(res.body)).not.toContain('172.18.0.2');
+        expect(JSON.stringify(res.body)).not.toContain('/var/tmp');
     });
 
     it('unknown job is 404 and bad id is 400', async () => {

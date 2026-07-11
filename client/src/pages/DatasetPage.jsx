@@ -66,8 +66,7 @@ function PollBadge({ jobId, onDone, onGone, onRetry }) {
   );
 }
 
-export default function DatasetPage() {
-  const { idOrName } = useParams();
+function DatasetExplorer({ idOrName }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { lang: uiLang, t } = useLang();
   const [dataset, setDataset] = useState(null);
@@ -285,8 +284,20 @@ export default function DatasetPage() {
                     onClick={async () => {
                       try {
                         const env = await enqueueIngest(resource.id);
-                        setUnlockJobs(prev => ({ ...prev, [resource.id]: env.data.id }));
-                        writeUnlockJob(resource.id, env.data.id);
+                        const job = env?.data;
+                        if (job?.already_loaded) {
+                          clearUnlockJob(resource.id);
+                          setUnlockJobs(prev => {
+                            const next = { ...prev };
+                            delete next[resource.id];
+                            return next;
+                          });
+                          handleUnlockDone();
+                          return;
+                        }
+                        if (job?.id == null) throw new Error('Ingest did not return a job id');
+                        setUnlockJobs(prev => ({ ...prev, [resource.id]: job.id }));
+                        writeUnlockJob(resource.id, job.id);
                       } catch (err) {
                         setError(err);
                       }
@@ -312,4 +323,12 @@ export default function DatasetPage() {
       </div>
     </div>
   );
+}
+
+// React Router preserves the route element when only :idOrName changes. Key
+// the stateful page so dataset content, errors, in-flight loads and language
+// selection from the previous dataset cannot leak into the next one.
+export default function DatasetPage() {
+  const { idOrName } = useParams();
+  return <DatasetExplorer key={idOrName} idOrName={idOrName} />;
 }

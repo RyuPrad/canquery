@@ -37,15 +37,16 @@ import {
 } from '../components/Icons.jsx';
 
 const PAGE_SIZE = 50;
+const MAX_QUERY_OFFSET = 10000;
+const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
 // Auto-upgrade (ingest) a proxied datastore resource only when its file is this
 // size or smaller, so the transparent upgrade stays quick. Larger ones keep the
 // live proxy (equality + full-text search). size_bytes is often unknown
 // upstream, in which case we proceed and rely on the hard ingest cap.
 const AUTO_INGEST_MAX_BYTES = 100 * 1024 * 1024;
 
-function ResourcePage() {
+function ResourceExplorer({ id }) {
   const { t } = useLang();
-  const { id } = useParams();
 
   const [resource, setResource] = useState(null);
   const [resourceError, setResourceError] = useState(null);
@@ -66,7 +67,7 @@ function ResourcePage() {
   const [sort, setSort] = useState(searchParams.get('sort') || null);
   const [page, setPage] = useState(() => {
     const n = Number(searchParams.get('page'));
-    return Number.isInteger(n) && n > 0 ? n : 0;
+    return Number.isInteger(n) && n > 0 ? Math.min(n, MAX_PAGE_INDEX) : 0;
   });
 
   const [data, setData] = useState(null);
@@ -131,6 +132,20 @@ function ResourcePage() {
     setUnlockState(null);
     setUpgrade(null);
   }, [id]);
+  // POST /ingest can race with a completed load, or be called after another
+  // visitor already loaded the resource. In that case the API returns the
+  // loaded state with no job id: refresh immediately and never persist/poll
+  // the null id. Missing ids without that explicit state fail closed.
+  const handleEnqueueResult = useCallback((env) => {
+    const job = env?.data;
+    if (job?.already_loaded) {
+      onUnlockDone(job);
+      return;
+    }
+    if (job?.id == null) throw new Error('Ingest did not return a job id');
+    writeUnlockJob(id, job.id);
+    setUnlockJobId(job.id);
+  }, [id, onUnlockDone]);
   const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone, onGone: onUnlockGone });
   const loadElapsed = useElapsed(unlockJob?.age_seconds, unlockState === 'queued');
 
@@ -148,12 +163,9 @@ function ResourcePage() {
     upgradeRequestedRef.current = true;
     setUpgrade('preparing');
     enqueueIngest(id)
-      .then((env) => {
-        writeUnlockJob(id, env.data.id);
-        setUnlockJobId(env.data.id);
-      })
+      .then(handleEnqueueResult)
       .catch(() => setUpgrade('unavailable'));
-  }, [id]);
+  }, [id, handleEnqueueResult]);
 
   // Explicit "load this to chart it" from the Chart tab on a proxied datastore
   // resource. Unlike triggerUpgrade (the transparent filter upgrade) this is a
@@ -164,12 +176,9 @@ function ResourcePage() {
   const loadForChart = useCallback(() => {
     setUnlockState('queued');
     enqueueIngest(id)
-      .then((env) => {
-        writeUnlockJob(id, env.data.id);
-        setUnlockJobId(env.data.id);
-      })
+      .then(handleEnqueueResult)
       .catch(() => setUnlockState('failed'));
-  }, [id]);
+  }, [id, handleEnqueueResult]);
 
   const debouncedQ = useDebouncedValue(q, 250);
   const debouncedFilters = useDebouncedValue(columnFilters, 250);
@@ -281,8 +290,7 @@ function ResourcePage() {
     try {
       setUnlockState('queued');
       const env = await enqueueIngest(id);
-      setUnlockJobId(env.data.id);
-      writeUnlockJob(id, env.data.id);
+      handleEnqueueResult(env);
     } catch {
       setUnlockState('failed');
     }
@@ -299,7 +307,9 @@ function ResourcePage() {
     );
   }
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const totalPages = data
+    ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(data.total / PAGE_SIZE)))
+    : 1;
   const unlockWorking = unlockState === 'queued';
 
   return (
@@ -495,7 +505,7 @@ function ResourcePage() {
               </span>
               <button
                 className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
-                disabled={(page + 1) * PAGE_SIZE >= data.total}
+                disabled={page >= MAX_PAGE_INDEX || (page + 1) * PAGE_SIZE >= data.total}
                 onClick={() => setPage(page + 1)}
                 aria-label={t('resource.next')}
               >
@@ -509,6 +519,14 @@ function ResourcePage() {
       )}
     </div>
   );
+}
+
+// React Router reuses the route element when only :id changes. Key the
+// stateful explorer so filters, sorting, pagination, loaded rows and mutable
+// refs from one resource can never carry into the next resource.
+function ResourcePage() {
+  const { id } = useParams();
+  return <ResourceExplorer key={id} id={id} />;
 }
 
 export default ResourcePage;

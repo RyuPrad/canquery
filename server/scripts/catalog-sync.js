@@ -18,6 +18,7 @@ const {
     upsertDatasets,
     replaceResources,
     refreshOrganizationDatasetCounts,
+    sweepMissingDatasets,
     getProgress,
     setProgress,
     insertSyncRun
@@ -32,8 +33,15 @@ function getArgValue(name) {
     return null;
 }
 const limitRaw = getArgValue('--limit');
-const limit = limitRaw ? Number(limitRaw) : null;
+const limit = limitRaw === null ? null : Number(limitRaw);
 const dryRun = args.includes('--dry-run');
+
+function deleteFraction(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : 0.1;
+}
+
+const maxDeleteFraction = deleteFraction(process.env.FULL_SYNC_MAX_DELETE_FRACTION);
 
 async function main() {
     const startedAt = new Date();
@@ -43,8 +51,17 @@ async function main() {
     let resourcesUpserted = 0;
 
     try {
+        if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+            throw new Error('--limit must be a positive integer');
+        }
         const ids = await packageList(limit ? { limit } : {});
+        if (!Array.isArray(ids)) {
+            throw new Error('package_list returned an invalid payload');
+        }
         console.log(ids.length);
+        if (ids.length === 0) {
+            throw new Error('package_list returned no dataset ids');
+        }
 
         const progress = await getProgress(pool, 'catalog-sync');
         let startOffset = 0;
@@ -108,7 +125,30 @@ async function main() {
         }
 
         if (!dryRun) {
-            await refreshOrganizationDatasetCounts(pool);
+            if (!limit) {
+                const client = await pool.connect();
+                try {
+                    await client.query('BEGIN');
+                    const swept = await sweepMissingDatasets(client, ids, { maxDeleteFraction });
+                    await refreshOrganizationDatasetCounts(client);
+                    await client.query('COMMIT');
+                    if (swept.datasetsDeleted > 0) {
+                        console.log(
+                            'removed ' + swept.datasetsDeleted + ' deleted dataset(s) and ' +
+                            swept.resourcesDeleted + ' resource(s)'
+                        );
+                    }
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    throw err;
+                } finally {
+                    client.release();
+                }
+            } else {
+                // A limited warm-up is not authoritative and must never delete
+                // catalogue rows that simply fell outside the requested prefix.
+                await refreshOrganizationDatasetCounts(pool);
+            }
             await setProgress(pool, 'catalog-sync', { offset: 0 });
         }
 

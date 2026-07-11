@@ -1,0 +1,16 @@
+# /etc/systemd/system/canquery-egress-firewall.service
+[Unit]
+Description=canquery outbound private-network firewall
+After=network-pre.target
+Before=canquery-api.service canquery-worker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/nft add table inet canquery_egress
+ExecStart=/usr/sbin/nft -f /etc/canquery/canquery-egress.nft
+ExecReload=/usr/sbin/nft -f /etc/canquery/canquery-egress.nft
+ExecStop=-/usr/sbin/nft delete table inet canquery_egress
+
+[Install]
+WantedBy=multi-user.target

@@ -170,6 +170,56 @@ function refreshOrganizationDatasetCounts(db) {
     return db.query(sql);
 }
 
+// package_list is the authoritative set during a complete, unlimited full sync.
+// Remove catalogue rows that disappeared upstream, but refuse a suspiciously
+// large sweep (often a truncated/broken package_list response) unless the
+// operator deliberately raises the configured fraction.
+async function sweepMissingDatasets(db, upstreamIdsRaw, options = {}) {
+    const upstreamIds = Array.from(new Set((upstreamIdsRaw || []).filter(Boolean)));
+    if (upstreamIds.length === 0) {
+        throw new Error('refusing catalogue sweep with an empty upstream id set');
+    }
+
+    const maxDeleteFraction = Number.isFinite(options.maxDeleteFraction)
+        ? options.maxDeleteFraction
+        : 0.1;
+    if (maxDeleteFraction <= 0 || maxDeleteFraction > 1) {
+        throw new TypeError('maxDeleteFraction must be greater than 0 and at most 1');
+    }
+
+    const countResult = await db.query(`
+        SELECT count(*)::bigint AS total,
+               count(*) FILTER (WHERE NOT (id = ANY($1::text[])))::bigint AS missing
+        FROM datasets
+    `, [upstreamIds]);
+    const total = Number(countResult.rows[0].total) || 0;
+    const missing = Number(countResult.rows[0].missing) || 0;
+
+    // Small development catalogues can legitimately lose one of a handful of
+    // rows. On a real harvest, require an operator decision before deleting more
+    // than the safety fraction in one run.
+    if (total >= 100 && missing / total > maxDeleteFraction) {
+        throw new Error(
+            'refusing catalogue sweep of ' + missing + '/' + total +
+            ' datasets (limit ' + (maxDeleteFraction * 100) + '%)'
+        );
+    }
+    if (missing === 0) return { datasetsDeleted: 0, resourcesDeleted: 0 };
+
+    const resourcesResult = await db.query(
+        'DELETE FROM resources WHERE NOT (dataset_id = ANY($1::text[]))',
+        [upstreamIds]
+    );
+    const datasetsResult = await db.query(
+        'DELETE FROM datasets WHERE NOT (id = ANY($1::text[]))',
+        [upstreamIds]
+    );
+    return {
+        datasetsDeleted: datasetsResult.rowCount,
+        resourcesDeleted: resourcesResult.rowCount
+    };
+}
+
 function getProgress(db, key) {
     const sql = 'SELECT value FROM sync_progress WHERE key = $1';
     return db.query(sql, [key]).then(result => {
@@ -210,6 +260,7 @@ module.exports = {
     upsertDatasets,
     replaceResources,
     refreshOrganizationDatasetCounts,
+    sweepMissingDatasets,
     getProgress,
     setProgress,
     insertSyncRun
