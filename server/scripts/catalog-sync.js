@@ -16,6 +16,7 @@ const { normalizePackage } = require('../services/catalogNormalizer');
 const {
     upsertOrganizations,
     upsertDatasets,
+    upsertDatasetSources,
     replaceResources,
     refreshOrganizationDatasetCounts,
     sweepMissingDatasets,
@@ -108,6 +109,13 @@ async function main() {
                     await client.query('BEGIN');
                     await upsertOrganizations(client, Array.from(orgsById.values()));
                     await upsertDatasets(client, datasets);
+                    await upsertDatasetSources(client, datasets.map(dataset => ({
+                        sourceId: 'open-canada',
+                        externalId: dataset.id,
+                        datasetId: dataset.id,
+                        landingUrl: 'https://open.canada.ca/data/en/dataset/' + dataset.id,
+                        isAuthoritative: true
+                    })));
                     await replaceResources(client, datasetIds, allResources);
                     await client.query('COMMIT');
                 } catch (err) {
@@ -129,7 +137,7 @@ async function main() {
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
-                    const swept = await sweepMissingDatasets(client, ids, { maxDeleteFraction });
+                    const swept = await sweepMissingDatasets(client, ids, { maxDeleteFraction, sourceId: 'open-canada' });
                     await refreshOrganizationDatasetCounts(client);
                     await client.query('COMMIT');
                     if (swept.datasetsDeleted > 0) {
@@ -158,7 +166,7 @@ async function main() {
         console.error('catalog-sync failed:', err);
     } finally {
         try {
-            await insertSyncRun(pool, { kind: 'full', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
+            await insertSyncRun(pool, { kind: 'full', sourceId: 'open-canada', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
         } catch (logErr) {
             console.error('run log failed:', logErr.message);
         }

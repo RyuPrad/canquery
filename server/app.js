@@ -17,13 +17,21 @@ const repoRouter = require('./routes/repo');
 const jobsRouter = require('./routes/jobs');
 const opsRouter = require('./routes/ops');
 const insightsRouter = require('./routes/insights');
+const placesRouter = require('./routes/places');
+const sourcesRouter = require('./routes/sources');
 const seoRouter = require('./routes/seo');
 const spaController = require('./controllers/spaController');
 
 const app = express();
 
 app.set('trust proxy', 1);
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            'img-src': ["'self'", 'data:', 'https://maps-cartes.services.geo.ca']
+        }
+    }
+}));
 app.use(requestId);
 
 // Build CORS allowlist
@@ -77,6 +85,8 @@ app.use('/api/v1/repo', repoRouter);
 app.use('/api/v1/jobs', jobsRouter);
 app.use('/api/v1/ops', opsRouter);
 app.use('/api/v1/insights', insightsRouter);
+app.use('/api/v1/places', placesRouter);
+app.use('/api/v1/sources', sourcesRouter);
 
 // Crawl-facing files (robots.txt + sitemaps) live at the site root and read
 // from Postgres; mounted before the SPA so they win over the static catch-all.

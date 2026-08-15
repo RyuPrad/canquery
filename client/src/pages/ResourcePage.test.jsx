@@ -10,6 +10,9 @@ vi.mock('../api/catalog.js', () => ({
   enqueueIngest: vi.fn(),
   fetchJob: vi.fn(),
 }));
+vi.mock('../components/MapPanel.jsx', () => ({
+  default: ({ resourceId }) => <div>live-map-{resourceId}</div>,
+}));
 import { enqueueIngest, fetchJob, fetchResource, queryResource } from '../api/catalog.js';
 
 function resourceEnvelope(id) {
@@ -45,6 +48,23 @@ beforeEach(() => {
 });
 
 describe('ResourcePage navigation', () => {
+  test('opens a live map without querying or loading the table first', async () => {
+    fetchResource.mockResolvedValue({
+      ...resourceEnvelope('a'),
+      data: { ...resourceEnvelope('a').data, query_mode: 'ingestable', map: { available: true, extent: [-79, 43, -78, 44] } },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/resources/a?view=map']}>
+        <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('live-map-a')).toBeInTheDocument();
+    expect(queryResource).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText('Full-text search in this table...')).not.toBeInTheDocument();
+  });
+
   test('deep page links are clamped to the server offset ceiling', async () => {
     render(
       <MemoryRouter initialEntries={['/resources/a?page=999']}>

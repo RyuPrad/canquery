@@ -52,8 +52,10 @@ describe('Catalog API', () => {
         expect(res.body).toHaveProperty('pagination');
         expect(res.body.pagination).toHaveProperty('nextCursor', null);
         expect(res.body.meta.source).toBe('canquery');
-        expect(res.body.meta.upstream).toBe('open.canada.ca');
-        expect(typeof res.body.meta.license).toBe('string');
+        // Collection responses can span publishers, so licence/upstream are
+        // represented per item rather than falsely labelling the whole page.
+        expect(res.body.meta.upstream).toBeNull();
+        expect(res.body.meta.license).toBeNull();
         expect(res.body.data[0].title.en).toBe('Title 1');
         expect(res.body.data[0].organization.name).toBe('org');
         expect(res.body.data[0].queryable_count).toBe(1);
@@ -67,6 +69,9 @@ describe('Catalog API', () => {
             org: 'statcan',
             format: 'csv',
             keyword: 'health',
+            place: undefined,
+            source: undefined,
+            mappable: null,
             limit: 101,
             offset: 0
         });

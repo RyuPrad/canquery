@@ -1,5 +1,5 @@
 const { getResourceById } = require('../db/catalogReadQueries');
-const { computeQueryMode } = require('./catalogService');
+const { computeQueryMode, shapeProvenance } = require('./catalogService');
 const { datastoreSearch } = require('./ckanClient');
 const { parseFilters, validateSort, validateAggregation } = require('../utils/filterGrammar');
 const { queryStoreTable, aggregateStoreTable, touchLastAccessed, profileStoreTable } = require('../db/storeQueries');
@@ -51,6 +51,7 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
 
     const row = await getResourceById(id);
     if (!row) throw new AppError('Resource not found', 404);
+    const provenance = shapeProvenance(row.provenance_sources);
 
     const mode = computeQueryMode(row);
     const parsedFilters = parseFilters(filters);
@@ -72,7 +73,7 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
         const result = await proxyCache.get(cacheKey, () => datastoreSearch({ resourceId: id, q: queryText, filters: ckanFilters, sort, limit: lim, offset: off }));
         if (!result) throw new AppError('Upstream datastore unavailable', 502);
         logQueryHit(id, 'datastore').catch(() => {});
-        return { query_mode: 'datastore', fields: result.fields, records: result.records, total: result.total };
+        return { query_mode: 'datastore', fields: result.fields, records: result.records, total: result.total, provenance };
     }
 
     if (mode === 'ingested') {
@@ -88,14 +89,14 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
             const { records, total } = await aggregateStoreTable({ tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
             touchLastAccessed(id).catch(() => {});
             logQueryHit(id, 'ingested').catch(() => {});
-            return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket } };
+            return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket }, provenance };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records, total } = await queryStoreTable({ tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
         touchLastAccessed(id).catch(() => {});
         logQueryHit(id, 'ingested').catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);
-        return { query_mode: 'ingested', fields, records, total };
+        return { query_mode: 'ingested', fields, records, total, provenance };
     }
 
     if (mode === 'ingestable') {
@@ -118,6 +119,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
     const queryText = validateQueryText(q);
     const row = await getResourceById(id);
     if (!row) throw new AppError('Resource not found', 404);
+    const provenance = shapeProvenance(row.provenance_sources);
 
     const mode = computeQueryMode(row);
     const parsedFilters = parseFilters(filters);
@@ -138,7 +140,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
         const result = await datastoreSearch({ resourceId: id, q: queryText, filters: ckanFilters, sort, limit: cap, offset: 0 });
         if (!result) throw new AppError('Upstream datastore unavailable', 502);
         logQueryHit(id, 'datastore').catch(() => {});
-        return { fields: result.fields, records: result.records };
+        return { fields: result.fields, records: result.records, provenance };
     }
 
     if (mode === 'ingested') {
@@ -176,7 +178,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
                     offset += page.records.length;
                 }
             })();
-            return { fields: aggSpec.fields, records };
+            return { fields: aggSpec.fields, records, provenance };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         touchLastAccessed(id).catch(() => {});
@@ -201,7 +203,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
                 offset += page.records.length;
             }
         })();
-        return { fields, records };
+        return { fields, records, provenance };
     }
 
     if (mode === 'ingestable') {
@@ -218,6 +220,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
 async function profileResource(id) {
     const row = await getResourceById(id);
     if (!row) throw new AppError('Resource not found', 404);
+    const provenance = shapeProvenance(row.provenance_sources);
 
     const mode = computeQueryMode(row);
 
@@ -225,7 +228,7 @@ async function profileResource(id) {
         const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
         const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
         const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }));
-        return { query_mode: 'ingested', row_count: profile.rowCount, columns: profile.columns };
+        return { query_mode: 'ingested', row_count: profile.rowCount, columns: profile.columns, provenance };
     }
 
     if (mode === 'datastore') {

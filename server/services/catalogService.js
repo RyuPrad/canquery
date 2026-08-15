@@ -4,6 +4,7 @@ const { packageList } = require('./ckanClient');
 const AppError = require('../utils/AppError');
 const { createCache } = require('../utils/cache');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
+const { sources: configuredSources } = require('../config/catalogSources');
 
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
 const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
@@ -35,6 +36,62 @@ const parseCursor = (cursor) => {
 
 const toNumberOrNull = (v) => v === null || v === undefined ? null : Number(v);
 
+const shapeSource = (source) => ({
+    id: source.id,
+    kind: source.kind,
+    name: { en: source.name_en, fr: source.name_fr },
+    homepage_url: source.homepage_url,
+    landing_url: source.landing_url || null,
+    upstream: source.upstream_host,
+    authoritative: source.authoritative === true,
+    license: source.license_url ? {
+        title: { en: source.license_title_en, fr: source.license_title_fr },
+        url: source.license_url,
+        attribution: { en: source.attribution_en, fr: source.attribution_fr }
+    } : null
+});
+
+const shapeProvenance = (raw) => {
+    const sources = Array.from(new Map(
+        (Array.isArray(raw) ? raw : []).map(source => {
+            const shaped = shapeSource(source);
+            return [shaped.id, shaped];
+        })
+    ).values());
+    const primary = sources.find(source => source.authoritative && source.license) || sources.find(source => source.license) || null;
+    return { sources, primary_license: primary ? primary.license : null };
+};
+
+const shapePlaces = (raw) => {
+    const places = new Map();
+    for (const place of Array.isArray(raw) ? raw : []) {
+        const shaped = {
+            id: place.id,
+            slug: place.slug,
+            kind: place.kind,
+            name: { en: place.name_en, fr: place.name_fr },
+            relationship: place.relationship,
+            includes_descendants: place.includes_descendants === true
+        };
+        const current = places.get(shaped.id);
+        if (!current || (current.relationship !== 'direct' && shaped.relationship === 'direct')) {
+            places.set(shaped.id, shaped);
+        }
+    }
+    return Array.from(places.values());
+};
+
+const shapePlaceMatch = (row) => row.matched_place_id ? {
+    tier: Number(row.place_depth) === 0 ? 'exact' : 'parent',
+    depth: Number(row.place_depth),
+    relationship: row.place_relationship,
+    place: {
+        id: row.matched_place_id,
+        slug: row.matched_place_slug,
+        name: { en: row.matched_place_name_en, fr: row.matched_place_name_fr }
+    }
+} : null;
+
 const computeQueryMode = (row) => {
     if (row.ingest_status === 'ready') return 'ingested';
     if (row.datastore_active) return 'datastore';
@@ -54,15 +111,33 @@ const shapeResource = (row) => ({
     language: row.language,
     last_modified: row.last_modified,
     query_mode: computeQueryMode(row),
+    map: row.map_provider ? {
+        available: true,
+        provider: row.map_provider,
+        geometry_type: row.map_geometry_type,
+        extent: row.map_extent || null,
+        fields: Array.isArray(row.map_fields) ? row.map_fields : []
+    } : null,
     ingestion: row.ingest_status
         ? { status: row.ingest_status, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at }
         : null
 });
 
-const searchDatasets = async ({ q, org, format, keyword, limit, cursor }) => {
+const parseBooleanFilter = (value, name) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (value === true || value === 'true' || value === '1') return true;
+    throw new AppError('Invalid ' + name, 400);
+};
+
+const searchDatasets = async ({ q, org, format, keyword, place, source, mappable, limit, cursor }) => {
     const lim = clampLimit(limit, 20, 100);
     const offset = parseCursor(cursor);
-    const rows = await catalogReadQueries.searchDatasets({ q, org, format, keyword, limit: lim + 1, offset });
+    const rows = await catalogReadQueries.searchDatasets({
+        q, org, format, keyword, place, source,
+        mappable: parseBooleanFilter(mappable, 'mappable'),
+        limit: lim + 1,
+        offset
+    });
     const hasMore = rows.length > lim;
     const page = rows.slice(0, lim);
     const items = page.map((r) => ({
@@ -74,7 +149,11 @@ const searchDatasets = async ({ q, org, format, keyword, limit, cursor }) => {
             : null,
         metadata_modified: r.metadata_modified,
         resource_count: r.resource_count,
-        queryable_count: r.queryable_count
+        queryable_count: r.queryable_count,
+        mappable_count: r.mappable_count || 0,
+        places: shapePlaces(r.places),
+        place_match: shapePlaceMatch(r),
+        provenance: shapeProvenance(r.provenance_sources)
     }));
     return { items, nextCursor: hasMore ? String(offset + lim) : null };
 };
@@ -93,6 +172,8 @@ const getDataset = async (idOrName) => {
         organization: row.org_name
             ? { name: row.org_name, title: { en: row.org_title_en, fr: row.org_title_fr } }
             : null,
+        places: shapePlaces(row.places),
+        provenance: shapeProvenance(row.provenance_sources),
         resources: resources.map(shapeResource)
     };
 };
@@ -102,6 +183,8 @@ const getResource = async (id) => {
     if (!row) throw new AppError('Resource not found', 404);
     const shaped = shapeResource(row);
     shaped.dataset = { id: row.dataset_id, name: row.dataset_name, title: { en: row.dataset_title_en, fr: row.dataset_title_fr } };
+    shaped.places = shapePlaces(row.places);
+    shaped.provenance = shapeProvenance(row.provenance_sources);
     if (row.ingest_status) {
         shaped.ingestion.byte_size = toNumberOrNull(row.ingested_byte_size);
         shaped.ingestion.columns = row.ingested_columns;
@@ -110,17 +193,22 @@ const getResource = async (id) => {
     return shaped;
 };
 
-const listOrganizations = async ({ limit, cursor }) => {
+const listOrganizations = async ({ source, place, limit, cursor }) => {
     const lim = clampLimit(limit, 50, 100);
     const offset = parseCursor(cursor);
-    const rows = await catalogReadQueries.listOrganizations({ limit: lim + 1, offset });
+    const rows = await catalogReadQueries.listOrganizations({ source, place, limit: lim + 1, offset });
     const hasMore = rows.length > lim;
     const page = rows.slice(0, lim);
     const items = page.map((r) => ({
         id: r.id,
         name: r.name,
         title: { en: r.title_en, fr: r.title_fr },
-        dataset_count: r.dataset_count
+        dataset_count: r.dataset_count,
+        place: r.place_id ? {
+            id: r.place_id,
+            slug: r.place_slug,
+            name: { en: r.place_name_en, fr: r.place_name_fr }
+        } : null
     }));
     return { items, nextCursor: hasMore ? String(offset + lim) : null };
 };
@@ -132,16 +220,90 @@ const getStats = async () => {
         datasets: row.datasets,
         resources: row.resources,
         datastore_active_resources: row.datastore_active_resources,
+        mappable_resources: row.mappable_resources || 0,
         ingested_resources: row.ingested_resources,
         store_bytes: Number(row.store_bytes),
         organizations: row.organizations,
+        places: row.places || 0,
         last_synced_at: lastSyncedAt
     };
 };
 
-const recentlyUnlocked = async (limit) => {
+const listSources = async ({ place } = {}) => {
+    const rows = await catalogReadQueries.listSources({ place });
+    return rows.map(row => ({
+        id: row.id,
+        kind: row.kind,
+        name: { en: row.name_en, fr: row.name_fr },
+        homepage_url: row.homepage_url,
+        catalog_url: row.catalog_url,
+        upstream: row.upstream_host,
+        dataset_count: Number(row.dataset_count) || 0,
+        last_synced_at: row.last_synced_at
+    }));
+};
+
+const listPlaces = async ({ q, kind, parent, limit, cursor }) => {
+    const lim = clampLimit(limit, 50, 100);
+    const offset = parseCursor(cursor);
+    if (kind && !['country', 'province', 'territory', 'region', 'municipality'].includes(kind)) {
+        throw new AppError('Invalid place kind', 400);
+    }
+    const rows = await catalogReadQueries.listPlaces({ q, kind, parent, limit: lim + 1, offset });
+    const hasMore = rows.length > lim;
+    return {
+        items: rows.slice(0, lim).map(row => ({
+            id: row.id,
+            slug: row.slug,
+            kind: row.kind,
+            name: { en: row.name_en, fr: row.name_fr },
+            type: { en: row.type_en, fr: row.type_fr },
+            parent: row.parent_id ? {
+                id: row.parent_id,
+                slug: row.parent_slug,
+                name: { en: row.parent_name_en, fr: row.parent_name_fr }
+            } : null,
+            location: row.latitude == null ? null : {
+                latitude: Number(row.latitude),
+                longitude: Number(row.longitude),
+                zoom: row.default_zoom == null ? null : Number(row.default_zoom)
+            },
+            dataset_count: Number(row.dataset_count) || 0,
+            mappable_resource_count: Number(row.mappable_resource_count) || 0
+        })),
+        nextCursor: hasMore ? String(offset + lim) : null
+    };
+};
+
+const getPlace = async (idOrSlug) => {
+    const row = await catalogReadQueries.getPlaceByIdOrSlug(idOrSlug);
+    if (!row) throw new AppError('Place not found', 404);
+    const ancestors = (row.ancestors || []).map(place => ({
+        id: place.id,
+        slug: place.slug,
+        kind: place.kind,
+        name: { en: place.name_en, fr: place.name_fr }
+    }));
+    return {
+        id: row.id,
+        slug: row.slug,
+        kind: row.kind,
+        name: { en: row.name_en, fr: row.name_fr },
+        type: { en: row.type_en, fr: row.type_fr },
+        parent_id: row.parent_id,
+        location: row.latitude == null ? null : {
+            latitude: Number(row.latitude), longitude: Number(row.longitude),
+            zoom: row.default_zoom == null ? null : Number(row.default_zoom)
+        },
+        ancestors,
+        dataset_count: Number(row.dataset_count) || 0,
+        mappable_dataset_count: Number(row.mappable_dataset_count) || 0
+    };
+};
+
+const recentlyUnlocked = async (limit, place) => {
     const lim = clampLimit(limit, 6, 20);
-    const rows = await catalogReadQueries.listRecentlyIngested(lim);
+    const rows = await catalogReadQueries.listRecentlyIngested(lim, place || null);
     return rows.map((r) => ({
         resource_id: r.resource_id,
         ingested_at: r.ingested_at,
@@ -163,10 +325,10 @@ const clampDays = (days, def, max) => {
     return Math.min(n, max);
 };
 
-const popularResources = async ({ days, limit }) => {
+const popularResources = async ({ days, limit, place }) => {
     const d = clampDays(days, 7, 30);
     const lim = clampLimit(limit, 6, 20);
-    const rows = await queryLogQueries.listPopularResources({ days: d, limit: lim });
+    const rows = await queryLogQueries.listPopularResources({ days: d, limit: lim, place: place || null });
     return rows.map((r) => ({
         resource_id: r.resource_id,
         hits: Number(r.hits),
@@ -212,10 +374,15 @@ const healthz = async () => {
 
 const opsStatus = async () => {
     const JOB_MAX_AGE_HOURS = { full: 48, incremental: 2, 'query-log-prune': 48, evict: 48 };
+    for (const source of configuredSources.filter(item => item.enabled !== false)) {
+        JOB_MAX_AGE_HOURS['source:' + source.id] = Math.max(24, Number(source.syncIntervalHours) * 2 || 48);
+    }
     const health = await catalogReadQueries.getJobHealth();
     const lastOkByJob = {};
     for (const row of health.syncRows) {
-        lastOkByJob[row.kind] = row.last_ok_at;
+        const name = row.kind === 'municipal' && row.source_id ? 'source:' + row.source_id : row.kind;
+        lastOkByJob[name] = row.last_ok_at;
+        if (name.startsWith('source:')) JOB_MAX_AGE_HOURS[name] = 48;
     }
     lastOkByJob.evict = health.evictLastOkAt;
     const jobs = {};
@@ -238,4 +405,21 @@ const opsStatus = async () => {
     return { ok: !anyStale, jobs };
 };
 
-module.exports = { searchDatasets, getDataset, getResource, listOrganizations, getStats, healthz, computeQueryMode, ingestCapBytesFor, recentlyUnlocked, popularResources, opsStatus };
+module.exports = {
+    searchDatasets,
+    getDataset,
+    getResource,
+    listOrganizations,
+    listSources,
+    listPlaces,
+    getPlace,
+    getStats,
+    healthz,
+    computeQueryMode,
+    ingestCapBytesFor,
+    recentlyUnlocked,
+    popularResources,
+    opsStatus,
+    shapeProvenance,
+    shapePlaces
+};

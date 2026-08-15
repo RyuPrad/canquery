@@ -19,6 +19,9 @@
         "dev": "node --watch server.js",
         "test": "jest --runInBand",
         "migrate": "node scripts/migrate.js",
+        "sync:places": "node scripts/sync-places.js",
+        "sync:source": "node scripts/sync-source.js",
+        "sync:municipal": "node scripts/sync-municipal-sources.js",
         "lint": "eslint ."
     },
     "dependencies": {

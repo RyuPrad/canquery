@@ -34,6 +34,7 @@ const { normalizePackage } = require('../services/catalogNormalizer');
 const {
     upsertOrganizations,
     upsertDatasets,
+    upsertDatasetSources,
     replaceResources,
     refreshOrganizationDatasetCounts,
     getProgress,
@@ -72,7 +73,12 @@ async function main() {
             // Upgrade path from the old max(metadata_modified)-only sync. This is
             // only a baseline; after the first complete traversal the independently
             // persisted checkpoint becomes authoritative.
-            const hwmResult = await pool.query('SELECT max(metadata_modified) AS hwm FROM datasets');
+            const hwmResult = await pool.query(`
+                SELECT max(d.metadata_modified) AS hwm
+                FROM datasets d
+                JOIN dataset_sources ds ON ds.dataset_id = d.id
+                WHERE ds.source_id = 'open-canada'
+            `);
             watermark = hwmResult.rows[0].hwm;
         }
         watermark = latestTimestamp(null, watermark);
@@ -111,6 +117,13 @@ async function main() {
                     await client.query('BEGIN');
                     await upsertOrganizations(client, Array.from(orgsById.values()));
                     await upsertDatasets(client, datasets);
+                    await upsertDatasetSources(client, datasets.map(dataset => ({
+                        sourceId: 'open-canada',
+                        externalId: dataset.id,
+                        datasetId: dataset.id,
+                        landingUrl: 'https://open.canada.ca/data/en/dataset/' + dataset.id,
+                        isAuthoritative: true
+                    })));
                     await replaceResources(client, datasetIds, allResources);
                     await client.query('COMMIT');
                 } catch (err) {
@@ -163,7 +176,7 @@ async function main() {
         console.error('incremental-sync failed:', err);
     } finally {
         try {
-            await insertSyncRun(pool, { kind: 'incremental', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
+            await insertSyncRun(pool, { kind: 'incremental', sourceId: 'open-canada', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
         } catch (logErr) {
             console.error('run log failed:', logErr.message);
         }

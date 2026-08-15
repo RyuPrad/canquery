@@ -114,6 +114,20 @@ export default function DocsPage() {
         />
         <Endpoint
           method="GET"
+          path="/api/v1/places"
+          desc={t('docs.ep_places')}
+          example={'curl "' + BASE + '/api/v1/places?q=Oshawa&limit=10"'}
+          runPath="/api/v1/places?q=Oshawa&limit=10"
+        />
+        <Endpoint
+          method="GET"
+          path="/api/v1/sources"
+          desc={t('docs.ep_sources')}
+          example={'curl "' + BASE + '/api/v1/sources?place=oshawa-on"'}
+          runPath="/api/v1/sources?place=oshawa-on"
+        />
+        <Endpoint
+          method="GET"
           path="/api/v1/datasets/:idOrName"
           desc={t('docs.ep_dataset_detail')}
           example={'curl "' + BASE + '/api/v1/datasets/some-dataset-id"'}
@@ -129,6 +143,12 @@ export default function DocsPage() {
           path="/api/v1/resources/:id/query"
           desc={t('docs.ep_query')}
           example={'curl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?filters={"year":{"op":"gte","value":2020}}&limit=10"'}
+        />
+        <Endpoint
+          method="GET"
+          path="/api/v1/resources/:id/map"
+          desc={t('docs.ep_map')}
+          example={'curl "' + BASE + '/api/v1/resources/RESOURCE_ID/map?bbox=-79.0,43.8,-78.7,44.0&zoom=11&limit=1000"'}
         />
         <Endpoint
           method="GET"

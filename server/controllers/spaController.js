@@ -28,6 +28,11 @@ async function resolveMeta(reqPath, deps = catalogRead) {
         if (!resource) return seoMeta.notFoundMeta(reqPath);
         return seoMeta.resourceMeta(resource);
     }
+    if (route.type === 'place') {
+        const place = await deps.getPlaceByIdOrSlug(route.id);
+        if (!place) return seoMeta.notFoundMeta(reqPath);
+        return seoMeta.placeMeta(place);
+    }
     return seoMeta.staticMeta(route.type, reqPath);
 }
 

@@ -58,6 +58,9 @@ describe('sweepMissingDatasets', () => {
         const db = {
             query: jest.fn()
                 .mockResolvedValueOnce({ rows: [{ total: '1000', missing: '2' }] })
+                .mockResolvedValueOnce({ rows: [{ dataset_id: 'gone-a' }, { dataset_id: 'gone-b' }] })
+                .mockResolvedValueOnce({ rowCount: 2 })
+                .mockResolvedValueOnce({ rows: [{ id: 'gone-a' }, { id: 'gone-b' }] })
                 .mockResolvedValueOnce({ rowCount: 7 })
                 .mockResolvedValueOnce({ rowCount: 2 })
         };
@@ -66,7 +69,9 @@ describe('sweepMissingDatasets', () => {
             datasetsDeleted: 2,
             resourcesDeleted: 7
         });
-        expect(db.query.mock.calls[1][0]).toContain('DELETE FROM resources');
-        expect(db.query.mock.calls[2][0]).toContain('DELETE FROM datasets');
+        expect(db.query.mock.calls[1][0]).toContain('DELETE FROM dataset_sources');
+        expect(db.query.mock.calls[2][0]).toContain('DELETE FROM dataset_places');
+        expect(db.query.mock.calls[4][0]).toContain('DELETE FROM resources');
+        expect(db.query.mock.calls[5][0]).toContain('DELETE FROM datasets');
     });
 });

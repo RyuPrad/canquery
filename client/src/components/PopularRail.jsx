@@ -5,17 +5,17 @@ import { formatRelativeTime } from '../utils/time.js';
 import { useLang } from '../i18n.jsx';
 import { ZapIcon } from './Icons.jsx';
 
-export default function PopularRail() {
+export default function PopularRail({ place }) {
   const { t, lang } = useLang();
   const [items, setItems] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
-    fetchPopular().then(env => {
+    fetchPopular(place).then(env => {
       if (!cancelled && env) setItems(env.data || []);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [place]);
 
   if (items.length === 0) return null;
 

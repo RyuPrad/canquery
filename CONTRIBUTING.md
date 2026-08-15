@@ -53,7 +53,8 @@ Use the GitHub issue templates. For anything security-related, please follow
 
 ## A note on the data
 
-canquery mirrors and caches data from [open.canada.ca](https://open.canada.ca/data/),
-which is provided under the Open Government Licence – Canada. Problems with the
-**underlying datasets** themselves belong upstream with the publishing department,
-not here - this project only makes them queryable.
+canquery indexes multiple government source portals. Every adapter must preserve
+the publisher, upstream landing page, and verified licence; never apply one
+publisher's default licence to another publisher. Problems with an **underlying
+dataset** belong with its source organization - canquery only makes supported
+resources easier to discover, map, and query.

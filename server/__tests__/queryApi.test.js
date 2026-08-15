@@ -12,13 +12,22 @@ function makeRow(overrides) { return Object.assign({ id: 'r-x', dataset_id: 'd1'
 
 describe('query API datastore path', () => {
     test('datastore mode proxies upstream and wraps in the envelope', async () => {
-        queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-1', datastore_active: true }));
+        queries.getResourceById.mockResolvedValue(makeRow({
+            id: 'ds-1', datastore_active: true,
+            provenance_sources: [{
+                id: 'oshawa-hub', kind: 'arcgis-hub', name_en: 'Oshawa Hub',
+                upstream_host: 'example.test', authoritative: true,
+                license_title_en: 'Oshawa licence', license_url: 'https://example.test/licence'
+            }]
+        }));
         ckan.datastoreSearch.mockResolvedValue({ fields: [{ id: '_id', type: 'int' }], records: [{ _id: 1 }], total: 42 });
         const res = await request(app).get('/api/v1/resources/ds-1/query?limit=2');
         expect(res.status).toBe(200);
         expect(res.body.data.total).toBe(42);
         expect(res.body.meta.query_mode).toBe('datastore');
         expect(res.body.meta.source).toBe('canquery');
+        expect(res.body.meta.sources).toEqual(['oshawa-hub']);
+        expect(res.body.meta.provenance.primary_license.url).toBe('https://example.test/licence');
         expect(ckan.datastoreSearch).toHaveBeenCalledWith({ resourceId: 'ds-1', q: undefined, filters: undefined, sort: undefined, limit: 2, offset: 0 });
     });
 

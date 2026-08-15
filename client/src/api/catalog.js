@@ -1,7 +1,7 @@
 import { getJSON, postJSON } from './client.js';
 
-export function searchDatasets({ q, org, format, keyword, limit, cursor } = {}) {
-  return getJSON('/api/v1/datasets', { q, org, format, keyword, limit, cursor });
+export function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, cursor } = {}) {
+  return getJSON('/api/v1/datasets', { q, org, format, keyword, place, source, mappable, limit, cursor });
 }
 
 export function fetchDataset(idOrName) {
@@ -28,13 +28,33 @@ export function fetchJob(id) {
   return getJSON('/api/v1/jobs/' + encodeURIComponent(id));
 }
 
-export function fetchOrganizations({ limit, cursor } = {}) {
-  return getJSON('/api/v1/organizations', { limit, cursor });
+export function fetchOrganizations({ place, source, limit, cursor } = {}) {
+  return getJSON('/api/v1/organizations', { place, source, limit, cursor });
 }
 
-export async function fetchRecentlyUnlocked(limit) {
+export function fetchPlaces({ q, kind, parent, limit, cursor } = {}) {
+  return getJSON('/api/v1/places', { q, kind, parent, limit, cursor });
+}
+
+export function fetchPlace(idOrSlug) {
+  return getJSON('/api/v1/places/' + encodeURIComponent(idOrSlug));
+}
+
+export function fetchSources({ place } = {}) {
+  return getJSON('/api/v1/sources', { place });
+}
+
+export function fetchResourceMap(id, { bbox, zoom, limit, signal } = {}) {
+  return getJSON(
+    '/api/v1/resources/' + encodeURIComponent(id) + '/map',
+    { bbox, zoom, limit },
+    { signal }
+  );
+}
+
+export async function fetchRecentlyUnlocked(limit, place) {
   try {
-    return await getJSON('/api/v1/resources/recently-unlocked', { limit });
+    return await getJSON('/api/v1/resources/recently-unlocked', { limit, place });
   } catch {
     return null;
   }
@@ -56,9 +76,9 @@ export async function fetchFeatured(lang = 'en') {
   }
 }
 
-export async function fetchPopular() {
+export async function fetchPopular(place) {
   try {
-    return await getJSON('/api/v1/resources/popular');
+    return await getJSON('/api/v1/resources/popular', { place });
   } catch {
     return null;
   }

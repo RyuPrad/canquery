@@ -22,8 +22,10 @@ import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
 // chunk so the rest of the app stays lean.
 const ChartPanel = lazy(() => import('../components/ChartPanel.jsx'));
+const MapPanel = lazy(() => import('../components/MapPanel.jsx'));
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
+import Provenance from '../components/Provenance.jsx';
 import { useLang } from '../i18n.jsx';
 import {
   ArrowLeftIcon,
@@ -34,6 +36,7 @@ import {
   TableIcon,
   LineChartIcon,
   FileIcon,
+  MapIcon,
 } from '../components/Icons.jsx';
 
 const PAGE_SIZE = 50;
@@ -78,7 +81,10 @@ function ResourceExplorer({ id }) {
   // indicator across a refresh instead of snapping back to the Unlock button.
   const [unlockState, setUnlockState] = useState(() => (readUnlockJob(id) ? 'queued' : null));
   const [unlockJobId, setUnlockJobId] = useState(() => readUnlockJob(id));
-  const [view, setView] = useState(() => (searchParams.get('view') === 'chart' ? 'chart' : 'table'));
+  const [view, setView] = useState(() => {
+    const requested = searchParams.get('view');
+    return requested === 'chart' || requested === 'map' ? requested : 'table';
+  });
   const [reloadKey, setReloadKey] = useState(0);
   // Transparent upgrade of a proxied datastore resource into local storage when
   // the user needs a filter the upstream can't serve:
@@ -102,6 +108,9 @@ function ResourceExplorer({ id }) {
   // resource id changes (not on the post-upgrade reload), so a given resource is
   // upgraded at most once per visit and the reload query is allowed through.
   useEffect(() => { resourceRef.current = resource; }, [resource]);
+  useEffect(() => {
+    if (resource && view === 'map' && !resource.map) setView('table');
+  }, [resource, view]);
   useEffect(() => {
     upgradeRequestedRef.current = false;
     upgradedRef.current = false;
@@ -221,12 +230,16 @@ function ResourceExplorer({ id }) {
     if (Object.keys(activeCf).length) next.cf = JSON.stringify(activeCf);
     if (sort) next.sort = sort;
     if (page > 0) next.page = String(page);
-    if (view === 'chart') next.view = 'chart';
+    if (view !== 'table') next.view = view;
     setSearchParams(next, { replace: true });
   }, [debouncedQ, debouncedFilters, sort, page, view, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
+    if (view === 'map') {
+      setDataLoading(false);
+      return () => { cancelled = true; };
+    }
     setDataLoading(true);
 
     const filters = buildColumnFilters(debouncedFilters);
@@ -277,7 +290,7 @@ function ResourceExplorer({ id }) {
       });
 
     return () => { cancelled = true; };
-  }, [id, debouncedQ, debouncedFilters, sort, page, reloadKey, triggerUpgrade]);
+  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, triggerUpgrade]);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
@@ -341,10 +354,11 @@ function ResourceExplorer({ id }) {
               {t('resource.raw')}
             </a>
           </div>
+          <Provenance provenance={resource.provenance} compact />
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2.5 items-center">
+      {view !== 'map' && <div className="flex flex-wrap gap-2.5 items-center">
         <div className="cq-search cq-search-sm w-full sm:w-80">
           <SearchIcon size={14} className="opacity-40 shrink-0" />
           <input
@@ -369,9 +383,43 @@ function ResourceExplorer({ id }) {
             {t('resource.download_filtered')}
           </a>
         )}
-      </div>
+      </div>}
 
-      {dataLoading && !data ? (
+      {resource && (
+        <div className="cq-seg w-fit">
+          <button
+            className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}
+            onClick={() => setView('table')}
+          >
+            <TableIcon size={13} />
+            {t('resource.table')}
+          </button>
+          <button
+            className={'cq-seg-btn' + (view === 'chart' ? ' cq-seg-active' : '')}
+            onClick={() => setView('chart')}
+          >
+            <LineChartIcon size={13} />
+            {t('resource.chart')}
+          </button>
+          {resource.map && (
+            <button
+              className={'cq-seg-btn' + (view === 'map' ? ' cq-seg-active' : '')}
+              onClick={() => setView('map')}
+            >
+              <MapIcon size={13} />
+              {t('places.map')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {view === 'map' ? (
+        resource?.map ? (
+          <Suspense fallback={<div className="cq-skel h-[560px] rounded-xl" />}>
+            <MapPanel resourceId={id} map={resource.map} />
+          </Suspense>
+        ) : <LoadingSpinner label={t('map.loading')} />
+      ) : dataLoading && !data ? (
         <div className="space-y-3">
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
@@ -456,22 +504,6 @@ function ResourceExplorer({ id }) {
               </span>
             </div>
           )}
-          <div className="cq-seg">
-            <button
-              className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}
-              onClick={() => setView('table')}
-            >
-              <TableIcon size={13} />
-              {t('resource.table')}
-            </button>
-            <button
-              className={'cq-seg-btn' + (view === 'chart' ? ' cq-seg-active' : '')}
-              onClick={() => setView('chart')}
-            >
-              <LineChartIcon size={13} />
-              {t('resource.chart')}
-            </button>
-          </div>
           {view === 'chart' ? (
             <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
               <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} onLoad={loadForChart} loadState={unlockState} />

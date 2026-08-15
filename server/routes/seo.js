@@ -8,6 +8,7 @@ const router = express.Router();
 router.get('/robots.txt', sitemap.robots);
 router.get('/sitemap.xml', sitemap.sitemapIndex);
 router.get('/sitemap-pages.xml', sitemap.sitemapPages);
+router.get('/sitemap-places.xml', sitemap.sitemapPlaces);
 router.get('/sitemap-datasets-:n.xml', sitemap.sitemapDatasets);
 
 module.exports = router;

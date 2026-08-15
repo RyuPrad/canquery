@@ -296,6 +296,24 @@ export function GlobeIcon(props) {
   );
 }
 
+export function MapPinIcon(props) {
+  return (
+    <I {...props}>
+      <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </I>
+  );
+}
+
+export function MapIcon(props) {
+  return (
+    <I {...props}>
+      <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z" />
+      <path d="M9 3v15M15 6v15" />
+    </I>
+  );
+}
+
 export function FileIcon(props) {
   return (
     <I {...props}>

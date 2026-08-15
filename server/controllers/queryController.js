@@ -5,6 +5,17 @@ const { envelope } = require('../utils/envelope');
 const NUMERIC_TYPE_RE = /^(smallint|integer|bigint|int[248]?|numeric|decimal|real|float[48]?|double( precision)?|money)$/i;
 const NEGATIVE_NUMBER_RE = /^-(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i;
 
+function provenanceMeta(provenance) {
+    const sources = provenance && Array.isArray(provenance.sources) ? provenance.sources : [];
+    const primary = sources.find(source => source.authoritative) || sources[0] || null;
+    return {
+        provenance: provenance || { sources: [], primary_license: null },
+        sources: sources.map(source => source.id),
+        upstream: primary ? primary.upstream : null,
+        license: provenance && provenance.primary_license ? provenance.primary_license.title.en : null
+    };
+}
+
 function hasSpreadsheetFormulaPrefix(value) {
     const trimmed = value.trimStart();
     const leading = value.slice(0, value.length - trimmed.length);
@@ -23,7 +34,11 @@ async function queryResource(req, res) {
     res.set('Cache-Control', 'public, max-age=60');
     res.json(envelope(
         { fields: result.fields, records: result.records, total: result.total },
-        { meta: Object.assign({ query_mode: result.query_mode }, result.aggregation ? { aggregation: result.aggregation } : {}) }
+        { meta: Object.assign(
+            { query_mode: result.query_mode },
+            provenanceMeta(result.provenance),
+            result.aggregation ? { aggregation: result.aggregation } : {}
+        ) }
     ));
 }
 
@@ -74,17 +89,22 @@ async function profileResource(req, res) {
     res.set('Cache-Control', 'public, max-age=300');
     res.json(envelope(
         { row_count: result.row_count, columns: result.columns },
-        { meta: { query_mode: result.query_mode } }
+        { meta: { query_mode: result.query_mode, ...provenanceMeta(result.provenance) } }
     ));
 }
 
 async function exportResourceCsv(req, res) {
     const { q, filters, sort, group_by, agg, agg_column, bucket } = req.query;
-    const { fields, records } = await queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket });
+    const { fields, records, provenance } = await queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket });
     const safeFilenameId = String(req.params.id).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'attachment; filename="resource-' + safeFilenameId + '.csv"');
     res.set('Cache-Control', 'public, max-age=60');
+    const sourceIds = (provenance && provenance.sources || []).map(source => source.id);
+    if (sourceIds.length) res.set('X-CanQuery-Sources', sourceIds.join(','));
+    if (provenance && provenance.primary_license && provenance.primary_license.url) {
+        res.set('Link', '<' + provenance.primary_license.url + '>; rel="license"');
+    }
 
     // Write one line at a time and respect socket backpressure. Local store
     // exports arrive as bounded database batches; datastore proxy results are

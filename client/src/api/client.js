@@ -45,8 +45,8 @@ export class FileOnlyError extends ApiError {
 // resource into local storage, where the full filter grammar works.
 export class DatastoreFilterError extends ApiError {}
 
-export async function getJSON(path, params) {
-  const res = await fetch(apiUrl(path, params));
+export async function getJSON(path, params, options = {}) {
+  const res = await fetch(apiUrl(path, params), { signal: options.signal });
   let body;
   try {
     body = await res.json();

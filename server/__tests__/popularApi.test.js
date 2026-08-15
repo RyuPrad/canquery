@@ -35,14 +35,14 @@ describe('popular resources API', () => {
         const res = await request(app).get('/api/v1/resources/popular');
         expect(res.status).toBe(200);
         expect(res.headers['cache-control']).toBe('public, max-age=300');
-        expect(queryLog.listPopularResources).toHaveBeenCalledWith({ days: 7, limit: 6 });
+        expect(queryLog.listPopularResources).toHaveBeenCalledWith({ days: 7, limit: 6, place: null });
     });
 
     it('clamps days to 30 and limit to 20', async () => {
         queryLog.listPopularResources.mockResolvedValue([]);
         const res = await request(app).get('/api/v1/resources/popular?days=999&limit=999');
         expect(res.status).toBe(200);
-        expect(queryLog.listPopularResources).toHaveBeenCalledWith({ days: 30, limit: 20 });
+        expect(queryLog.listPopularResources).toHaveBeenCalledWith({ days: 30, limit: 20, place: null });
     });
 
     it('garbage days is a 400', async () => {

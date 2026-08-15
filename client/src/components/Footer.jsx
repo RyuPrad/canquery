@@ -137,6 +137,11 @@ export default function Footer() {
           </div>
           <ul className="space-y-2 text-sm">
             <li>
+              <Link to="/places" className="text-base-content/65 hover:text-base-content transition-colors">
+                {t('nav.places')}
+              </Link>
+            </li>
+            <li>
               <Link to="/" className="text-base-content/65 hover:text-base-content transition-colors">
                 {t('nav.datasets')}
               </Link>
@@ -168,18 +173,7 @@ export default function Footer() {
           <div className="text-xs font-semibold uppercase tracking-widest text-base-content/40">
             {t('footer.about')}
           </div>
-          <p className="text-sm text-base-content/55">
-            {t('footer.licence_pre')}{' '}
-            <a
-              href="https://open.canada.ca/en/open-government-licence-canada"
-              target="_blank"
-              rel="noreferrer"
-              className="link link-hover text-base-content/75"
-            >
-              {t('footer.licence_link')}
-            </a>
-            .
-          </p>
+          <p className="text-sm text-base-content/55">{t('footer.licence_by_source')}</p>
           <p className="text-sm text-base-content/55">{t('footer.independent')}</p>
           <p className="text-xs text-base-content/35">{t('footer.mirrored')}</p>
         </div>

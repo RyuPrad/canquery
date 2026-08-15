@@ -7,6 +7,8 @@ describe('seoMeta - route classification', () => {
         expect(seo.classifyRoute('/resources/abc-123')).toEqual({ type: 'resource', id: 'abc-123' });
         expect(seo.classifyRoute('/insights')).toEqual({ type: 'insights' });
         expect(seo.classifyRoute('/organizations')).toEqual({ type: 'organizations' });
+        expect(seo.classifyRoute('/places')).toEqual({ type: 'places' });
+        expect(seo.classifyRoute('/places/oshawa-on')).toEqual({ type: 'place', id: 'oshawa-on' });
         expect(seo.classifyRoute('/docs')).toEqual({ type: 'docs' });
     });
 
@@ -81,6 +83,24 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         expect(meta.title).toBe('Qualite de l eau - canquery');
     });
 
+    it('uses the authoritative municipal source for licence, publisher and sameAs', () => {
+        const municipal = {
+            ...dataset,
+            provenance_sources: [{
+                id: 'oshawa-hub', authoritative: true,
+                name_en: 'City of Oshawa Open Data Hub',
+                landing_url: 'https://city-oshawa.opendata.arcgis.com/datasets/roads',
+                license_url: 'https://map.oshawa.ca/licence.pdf'
+            }],
+            places: [{ name_en: 'Oshawa', name_fr: 'Oshawa' }]
+        };
+        const ld = seo.buildDatasetJsonLd(municipal, []);
+        expect(ld.license).toBe('https://map.oshawa.ca/licence.pdf');
+        expect(ld.sameAs).toBe('https://city-oshawa.opendata.arcgis.com/datasets/roads');
+        expect(ld.publisher.name).toBe('City of Oshawa Open Data Hub');
+        expect(ld.spatialCoverage).toEqual(['Oshawa']);
+    });
+
     it('synthesizes a description when notes are empty', () => {
         const meta = seo.datasetMeta({ ...dataset, notes_en: null, notes_fr: null }, []);
         expect(meta.description).toContain('Water Quality');
@@ -97,6 +117,16 @@ describe('seoMeta - site + static meta', () => {
         const website = meta.jsonLd.find((o) => o['@type'] === 'WebSite');
         expect(website.potentialAction['@type']).toBe('SearchAction');
         expect(website.potentialAction.target.urlTemplate).toContain('{search_term_string}');
+    });
+
+    it('builds indexable metadata for place pages', () => {
+        const meta = seo.placeMeta({
+            id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa',
+            type_en: 'City', latitude: 43.897, longitude: -78.866
+        });
+        expect(meta.canonical).toBe('https://canquery.com/places/oshawa-on');
+        expect(meta.jsonLd[0]['@type']).toBe('AdministrativeArea');
+        expect(meta.jsonLd[0].geo.latitude).toBeCloseTo(43.897);
     });
 
     it('static sections get a title and a clean canonical', () => {

@@ -1,6 +1,6 @@
 # canquery
 
-One consistent query API + web UI over the whole of Canada's open data portal.
+One consistent query API + web UI across Canadian federal and local open data.
 
 **Live:** https://canquery.com
 
@@ -15,8 +15,11 @@ makes the whole catalogue feel queryable through one endpoint:
 | 2 - ingest | it's a CSV/XLSX/XLS under the caps | `POST /ingest` streams it into our Postgres `store` schema; the same `/query` endpoint then serves it locally - **identical response shape** |
 | 3 - honest fallback | anything else | metadata + the download link, labeled `file-only` (422 on `/query`) |
 
-The catalogue itself (bilingual titles, notes, keywords, organizations) is mirrored
-into Postgres by sync scripts and searched with a generated tsvector (English + French).
+The catalogue combines the federal CKAN portal with source adapters for local
+publishers. Dataset provenance and licensing stay attached per source. A
+versioned Statistics Canada SGC hierarchy powers place-first discovery, and
+spatial ArcGIS leaf layers can be explored through a bounded live map before
+their CSV snapshot is loaded.
 
 ## Layout
 
@@ -41,6 +44,9 @@ cp .env.example .env          # fill in CANQUERY_DATABASE_URL etc.
 npm install
 npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
+npm run sync:places                       # Statistics Canada SGC hierarchy
+npm run sync:source -- --source=oshawa-hub --dry-run
+npm run sync:municipal                    # sync every enabled local source
 npm run dev                   # API on :3100
 
 # 3. Client (separate terminal)
@@ -51,12 +57,17 @@ npm run dev                   # Vite on :5173, proxies /api → :3100
 
 ## API (`/api/v1`, anonymous)
 
-Every response: `{ data, pagination: { nextCursor }, meta }` - `meta` always carries
-the Open Government Licence – Canada attribution and `upstream: 'open.canada.ca'`.
+Every response uses `{ data, pagination: { nextCursor }, meta }`. Catalogue,
+query, profile and map responses expose source-specific provenance and licensing;
+mixed collection responses never claim one publisher's licence for every item.
 
 ```bash
 # search the mirrored catalogue (tsvector, EN+FR)
-curl 'http://localhost:3100/api/v1/datasets?q=housing&format=CSV&limit=5'
+curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV&limit=5'
+
+# browse active places and source portals
+curl 'http://localhost:3100/api/v1/places?q=Oshawa'
+curl 'http://localhost:3100/api/v1/sources?place=oshawa-on'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -64,6 +75,9 @@ curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
 # the unified query endpoint (same shape for proxied and ingested data)
 curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
+
+# bounded live GeoJSON for an ArcGIS spatial resource
+curl 'http://localhost:3100/api/v1/resources/<id>/map?bbox=-79,43.8,-78.7,44&zoom=11&limit=1000'
 
 # load a tabular file (idempotent; 5/hour/IP), then poll a newly-enqueued job.
 # A resource already loaded returns 200 with already_loaded: true and no job id.
@@ -93,6 +107,9 @@ expensive profile, aggregation, and export routes have dedicated rate limits.
 |---|---|
 | `scripts/catalog-sync.js` | full harvest: `package_list` → batched `package_show` (chunks of 50, concurrency 2), resumable via `sync_progress`; `--limit N`, `--dry-run` |
 | `scripts/incremental-sync.js` | upserts through a persisted, overlapping `metadata_modified` watermark with deterministic `id` tie ordering; page-cap runs are marked incomplete without advancing it |
+| `scripts/sync-places.js` | imports the EN/FR Statistics Canada SGC hierarchy with stable internal place ids |
+| `scripts/sync-source.js` | validates or syncs one configured source adapter; `--source`, `--limit`, `--dry-run` |
+| `scripts/sync-municipal-sources.js` | refreshes every enabled non-federal source independently so one failure cannot suppress the others |
 | `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
 | `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
@@ -113,8 +130,13 @@ to TEXT per column when a later cast fails.
 
 ## Web UI
 
-The SPA (`client/`) is search → dataset → resource explorer, with a
-sortable/filterable data grid and CSV export. Unlocked resources also get an
+The SPA (`client/`) starts with a search plus an optional remembered place
+(All Canada remains the default). Place pages combine directly local datasets
+with records whose parent jurisdiction explicitly covers that place. Source
+filters remain secondary, and every dataset/resource shows its publisher and
+licence. The resource explorer has a sortable/filterable table, CSV export, and
+a lazy Map tab for spatial resources; the map follows its own viewport and does
+not imply that table filters are spatial filters. Unlocked resources also get an
 auto **Insights** dashboard that profiles the table and renders KPIs + charts
 (donuts, bars, time-series) with zero configuration. The **`/insights`** section
 is a live **Top 100 Downloaded Datasets** leaderboard: the most-downloaded
@@ -125,11 +147,12 @@ sparklines. English/French throughout.
 ## Tests & lint
 
 ```bash
-cd server && npm test && npm run lint   # Jest + Supertest (276 tests)
-cd client && npm test && npm run lint   # Vitest (82 tests)
+cd server && npm test && npm run lint
+cd client && npm test && npm run lint && npm run build
 ```
 
-Coverage includes the four `/query` modes, filter-grammar injection attempts,
+Coverage includes source adapters, place hierarchy and APIs, bounded map
+queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
 SSRF/redirect/DNS-pinning checks, bounded caches, spreadsheet-safe streaming CSV
 exports, Excel archive caps, lease recovery, lossless incremental sync, strict
 eviction budget honoring, the stable envelope shape, the column-profile endpoint,
@@ -151,9 +174,11 @@ privately.
 
 ## License & attribution
 
-Code: **MIT** - see [LICENSE](LICENSE). Data: contains information licensed under
-the [Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).
-This project is independent and not affiliated with the Government of Canada.
+Code: **MIT** - see [LICENSE](LICENSE). Data remains under each publisher's
+licence; canquery exposes that licence and attribution on the corresponding
+dataset/resource. Federal records use the
+[Open Government Licence - Canada](https://open.canada.ca/en/open-government-licence-canada).
+This project is independent and is not affiliated with any government publisher.
 
 Built by [@RyuPrad](https://github.com/RyuPrad) ·
 [github.com/RyuPrad/canquery](https://github.com/RyuPrad/canquery)

@@ -30,6 +30,9 @@ export default function Navbar() {
           <NavLink to="/organizations" className={navClass}>
             {t('nav.organizations')}
           </NavLink>
+          <NavLink to="/places" className={navClass}>
+            {t('nav.places')}
+          </NavLink>
           <NavLink to="/docs" className={navClass}>
             {t('nav.docs')}
           </NavLink>

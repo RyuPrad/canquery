@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
-import { BuildingIcon, CalendarIcon, ArrowRightIcon } from './Icons.jsx';
+import { BuildingIcon, CalendarIcon, ArrowRightIcon, MapPinIcon, MapIcon } from './Icons.jsx';
 
 export default function DatasetRow({ dataset }) {
-  const { t } = useLang();
-  const title = dataset.title?.en || dataset.title?.fr || dataset.name;
-  const orgTitle = dataset.organization?.title?.en || dataset.organization?.title?.fr;
+  const { t, lang } = useLang();
+  const title = dataset.title?.[lang] || dataset.title?.en || dataset.title?.fr || dataset.name;
+  const orgTitle = dataset.organization?.title?.[lang] || dataset.organization?.title?.en || dataset.organization?.title?.fr;
+  const place = dataset.place_match?.place || dataset.places?.[0];
+  const source = dataset.provenance?.sources?.[0];
   const modifiedDate = dataset.metadata_modified
     ? new Date(dataset.metadata_modified).toLocaleDateString()
     : null;
@@ -33,6 +35,14 @@ export default function DatasetRow({ dataset }) {
                 {modifiedDate}
               </span>
             )}
+            {place && (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPinIcon size={12} />
+                {place.name?.[lang] || place.name?.en}
+                {dataset.place_match?.tier === 'parent' && <span className="opacity-60">{t('places.parent_match')}</span>}
+              </span>
+            )}
+            {source && <span className="truncate">{source.name?.[lang] || source.name?.en || source.id}</span>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -42,6 +52,12 @@ export default function DatasetRow({ dataset }) {
           {dataset.queryable_count > 0 && (
             <span className="cq-chip cq-chip-red">
               {dataset.queryable_count} {t('row.queryable')}
+            </span>
+          )}
+          {dataset.mappable_count > 0 && (
+            <span className="cq-chip cq-chip-teal">
+              <MapIcon size={11} />
+              {t('places.map')}
             </span>
           )}
           <ArrowRightIcon

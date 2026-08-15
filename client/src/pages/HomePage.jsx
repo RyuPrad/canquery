@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured } from '../api/catalog.js';
+import { Link, useSearchParams } from 'react-router-dom';
+import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchPlaces, fetchSources } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -12,6 +12,8 @@ import PopularRail from '../components/PopularRail.jsx';
 import HeroChartWidget from '../components/HeroChartWidget.jsx';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { formatRelativeTime } from '../utils/time.js';
+import { readPlace, writePlace } from '../utils/placeStore.js';
+import PlaceSelect from '../components/PlaceSelect.jsx';
 import {
   MapleLeaf,
   SearchIcon,
@@ -20,6 +22,7 @@ import {
   DatabaseIcon,
   ZapIcon,
   XIcon,
+  MapIcon,
 } from '../components/Icons.jsx';
 
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
@@ -66,10 +69,15 @@ export default function HomePage() {
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [org, setOrg] = useState(searchParams.get('org') || '');
   const [format, setFormat] = useState(searchParams.get('format') || '');
+  const [place, setPlace] = useState(() => searchParams.get('place') || readPlace());
+  const [source, setSource] = useState(searchParams.get('source') || '');
+  const [mappable, setMappable] = useState(searchParams.get('mappable') === 'true');
   const keyword = searchParams.get('keyword') || '';
   const [stats, setStats] = useState(null);
   const [orgs, setOrgs] = useState([]);
   const [featured, setFeatured] = useState([]);
+  const [places, setPlaces] = useState([]);
+  const [sources, setSources] = useState([]);
   const reduced = usePrefersReducedMotion();
 
   const debouncedQuery = useDebouncedValue(query, 250);
@@ -80,9 +88,19 @@ export default function HomePage() {
     if (debouncedQuery) next.q = debouncedQuery;
     if (org) next.org = org;
     if (format) next.format = format;
+    if (place) next.place = place;
+    if (source) next.source = source;
+    if (mappable) next.mappable = 'true';
     if (keyword) next.keyword = keyword;
     setSearchParams(next, { replace: true });
-  }, [debouncedQuery, org, format, keyword, setSearchParams]);
+  }, [debouncedQuery, org, format, place, source, mappable, keyword, setSearchParams]);
+
+  const changePlace = (next) => {
+    setPlace(next);
+    setOrg('');
+    setSource('');
+    writePlace(next);
+  };
 
   const clearKeyword = () => {
     const next = new URLSearchParams(searchParams);
@@ -100,13 +118,29 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchOrganizations({ limit: 50 })
+    fetchOrganizations({ place: place || undefined, source: source || undefined, limit: 50 })
       .then((env) => {
         if (!cancelled) setOrgs(env.data || []);
       })
       .catch(() => {});
     return () => { cancelled = true; };
+  }, [place, source]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlaces({ limit: 100 })
+      .then(env => { if (!cancelled) setPlaces(env.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSources({ place: place || undefined })
+      .then(env => { if (!cancelled) setSources(env.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [place]);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,13 +157,16 @@ export default function HomePage() {
         org: org || undefined,
         format: format || undefined,
         keyword: keyword || undefined,
+        place: place || undefined,
+        source: source || undefined,
+        mappable: mappable || undefined,
         limit: 20,
         cursor,
       }),
-    [debouncedQuery, org, format, keyword]
+    [debouncedQuery, org, format, keyword, place, source, mappable]
   );
 
-  const filtering = Boolean(debouncedQuery || org || format || keyword);
+  const filtering = Boolean(debouncedQuery || org || format || keyword || place || source || mappable);
   const synced = stats?.last_synced_at ? formatRelativeTime(stats.last_synced_at, lang) : null;
 
   return (
@@ -172,9 +209,14 @@ export default function HomePage() {
             {t('home.subtitle')}
           </p>
 
-          <div className="max-w-2xl mx-auto mt-8">
+          <div className="max-w-4xl mx-auto mt-8 grid sm:grid-cols-[minmax(0,1fr)_17rem] gap-2.5">
             <SearchBar value={query} onChange={setQuery} />
+            <PlaceSelect value={place} onChange={changePlace} places={places} />
           </div>
+
+          <Link to="/places" className="inline-flex mt-3 text-xs link link-hover text-base-content/45">
+            {t('places.browse')}
+          </Link>
 
           <div className="flex flex-wrap gap-2 items-center justify-center mt-4">
             <span className="text-xs text-base-content/35">{t('home.try')}</span>
@@ -273,8 +315,27 @@ export default function HomePage() {
               {f}
             </button>
           ))}
+          <button
+            className={'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
+            onClick={() => setMappable(value => !value)}
+            aria-pressed={mappable}
+          >
+            <MapIcon size={12} />
+            {t('places.has_map')}
+          </button>
           <select
-            className="select select-sm sm:ml-auto w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
+            className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
+            value={source}
+            onChange={(event) => { setSource(event.target.value); setOrg(''); }}
+            aria-label={t('source.choose')}
+          >
+            <option value="">{t('source.all')}</option>
+            {sources.map(item => (
+              <option key={item.id} value={item.id}>{item.name?.[lang] || item.name?.en || item.id}</option>
+            ))}
+          </select>
+          <select
+            className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
             value={org}
             onChange={(e) => setOrg(e.target.value)}
           >
@@ -289,8 +350,8 @@ export default function HomePage() {
 
         {!filtering && (
           <>
-            <PopularRail />
-            <RecentRail />
+            <PopularRail place={place || undefined} />
+            <RecentRail place={place || undefined} />
           </>
         )}
 

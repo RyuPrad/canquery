@@ -9,6 +9,7 @@ jest.mock('../middleware/rateLimits', () => ({
     ingestLimiter: (req, res, next) => next(),
     profileLimiter: (req, res, next) => next(),
     exportLimiter: (req, res, next) => next(),
+    mapLimiter: (req, res, next) => next(),
     aggregationLimiter: (req, res, next) => next()
 }));
 const request = require('supertest');

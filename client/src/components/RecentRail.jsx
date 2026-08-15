@@ -5,17 +5,17 @@ import { formatRelativeTime } from '../utils/time.js';
 import { useLang } from '../i18n.jsx';
 import { SparklesIcon } from './Icons.jsx';
 
-export default function RecentRail() {
+export default function RecentRail({ place }) {
   const { t, lang } = useLang();
   const [items, setItems] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
-    fetchRecentlyUnlocked().then(env => {
+    fetchRecentlyUnlocked(undefined, place).then(env => {
       if (!cancelled && env) setItems(env.data || []);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [place]);
 
   if (items.length === 0) return null;
 

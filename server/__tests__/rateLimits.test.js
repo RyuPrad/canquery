@@ -1,6 +1,6 @@
 const express = require('express');
 const request = require('supertest');
-const { profileLimiter, exportLimiter, aggregationLimiter } = require('../middleware/rateLimits');
+const { profileLimiter, exportLimiter, mapLimiter, aggregationLimiter } = require('../middleware/rateLimits');
 
 function appFor(path, limiter) {
     const app = express();
@@ -23,6 +23,14 @@ describe('expensive endpoint rate limits', () => {
             expect((await request(app).get('/export')).status).toBe(200);
         }
         expect((await request(app).get('/export')).status).toBe(429);
+    });
+
+    it('bounds live map viewport requests', async () => {
+        const app = appFor('/map', mapLimiter);
+        for (let i = 0; i < 60; i++) {
+            expect((await request(app).get('/map')).status).toBe(200);
+        }
+        expect((await request(app).get('/map')).status).toBe(429);
     });
 
     it('limits aggregation but lets ordinary pagination bypass that bucket', async () => {

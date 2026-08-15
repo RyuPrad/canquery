@@ -9,7 +9,7 @@ const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/
 const SITE_NAME = 'canquery';
 const DEFAULT_TITLE = "canquery - query Canada's open data";
 const DEFAULT_DESC =
-    'Search every dataset on open.canada.ca, load CSV and Excel files into live tables, then filter, chart and export them. No signup.';
+    'Search Canadian open data by place, load CSV and Excel files into live tables, and explore spatial data on a map. No signup.';
 const DEFAULT_IMAGE = SITE_URL + '/og-image.svg';
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
 
@@ -64,6 +64,9 @@ function classifyRoute(pathname) {
     if (m) return { type: 'dataset', id: decodeURIComponent(m[1]) };
     m = p.match(/^\/resources\/([^/]+)\/?$/);
     if (m) return { type: 'resource', id: decodeURIComponent(m[1]) };
+    m = p.match(/^\/places\/([^/]+)\/?$/);
+    if (m) return { type: 'place', id: decodeURIComponent(m[1]) };
+    if (/^\/places\/?$/.test(p)) return { type: 'places' };
     if (/^\/insights\/?$/.test(p)) return { type: 'insights' };
     if (/^\/organizations\/?$/.test(p)) return { type: 'organizations' };
     if (/^\/docs\/?$/.test(p)) return { type: 'docs' };
@@ -81,13 +84,18 @@ const STATIC_META = {
     organizations: {
         title: 'Organizations - canquery',
         description:
-            'Browse the Canadian federal departments and agencies publishing open data, ranked by how many datasets they have.',
+            'Browse governments and public organizations publishing Canadian open data, ranked by how many datasets they have.',
         path: '/organizations',
+    },
+    places: {
+        title: 'Places - canquery',
+        description: 'Browse queryable and mappable open data for Canadian provinces, regions, and municipalities.',
+        path: '/places',
     },
     docs: {
         title: 'API documentation - canquery',
         description:
-            'Anonymous JSON API over the mirrored open.canada.ca catalogue: search datasets, load CSV and Excel files, then query them live.',
+            'Anonymous JSON API over Canadian federal and local open data: search by place, map spatial layers, load tables and query them live.',
         path: '/docs',
     },
 };
@@ -125,6 +133,14 @@ function buildOrganizationJsonLd() {
 // schema.org/Dataset - the markup that makes a page eligible for Google
 // Dataset Search. `dataset` is a row from getDatasetByIdOrName; `resources`
 // is the listResourcesForDataset rows (optional; used for distributions).
+function sourceForDataset(dataset) {
+    const sources = Array.isArray(dataset.provenance_sources) ? dataset.provenance_sources : [];
+    return sources.find(source => source.authoritative && source.license_url) ||
+        sources.find(source => source.license_url) ||
+        sources.find(source => source.authoritative) ||
+        sources[0] || null;
+}
+
 function buildDatasetJsonLd(dataset, resources) {
     const name = pick(dataset.title_en, dataset.title_fr) || 'Dataset';
     const slug = dataset.name || dataset.id;
@@ -138,9 +154,14 @@ function buildDatasetJsonLd(dataset, resources) {
         url,
         identifier: dataset.id,
         isAccessibleForFree: true,
-        license: 'https://open.canada.ca/en/open-government-licence-canada',
-        sameAs: 'https://open.canada.ca/data/en/dataset/' + dataset.id,
     };
+    const source = sourceForDataset(dataset);
+    ld.license = source && source.license_url
+        ? source.license_url
+        : 'https://open.canada.ca/en/open-government-licence-canada';
+    ld.sameAs = source && source.landing_url
+        ? source.landing_url
+        : 'https://open.canada.ca/data/en/dataset/' + dataset.id;
     const keywords = []
         .concat(dataset.keywords_en || [], dataset.keywords_fr || [])
         .map(collapse)
@@ -153,8 +174,13 @@ function buildDatasetJsonLd(dataset, resources) {
     const org = pick(dataset.org_title_en, dataset.org_title_fr);
     if (org) {
         ld.creator = { '@type': 'GovernmentOrganization', name: org };
-        ld.publisher = { '@type': 'Organization', name: 'Government of Canada' };
     }
+    const publisher = source ? pick(source.name_en, source.name_fr) : 'Government of Canada';
+    if (publisher) ld.publisher = { '@type': 'Organization', name: publisher };
+    const places = (Array.isArray(dataset.places) ? dataset.places : [])
+        .map(place => pick(place.name_en, place.name_fr))
+        .filter(Boolean);
+    if (places.length) ld.spatialCoverage = Array.from(new Set(places));
     const distribution = (resources || [])
         .filter((r) => r && r.url)
         .slice(0, 25)
@@ -237,6 +263,35 @@ function resourceMeta(resource) {
     };
 }
 
+function placeMeta(place) {
+    const name = pick(place.name_en, place.name_fr) || 'Place';
+    const type = pick(place.type_en, place.type_fr);
+    const description = 'Explore queryable and mappable open data' +
+        (type ? ' for the ' + type.toLowerCase() : ' for') + ' of ' + name + ' on canquery.';
+    const slug = place.slug || place.id;
+    const ld = {
+        '@context': 'https://schema.org',
+        '@type': 'AdministrativeArea',
+        name,
+        url: SITE_URL + '/places/' + encodeURIComponent(slug),
+        identifier: place.id
+    };
+    if (place.latitude != null && place.longitude != null) {
+        ld.geo = {
+            '@type': 'GeoCoordinates',
+            latitude: Number(place.latitude),
+            longitude: Number(place.longitude)
+        };
+    }
+    return {
+        title: name + ' open data - canquery',
+        description,
+        canonical: SITE_URL + '/places/' + encodeURIComponent(slug),
+        ogType: 'website',
+        jsonLd: [ld]
+    };
+}
+
 function notFoundMeta(pathname) {
     return {
         title: 'Not found - canquery',
@@ -306,6 +361,7 @@ module.exports = {
     staticMeta,
     datasetMeta,
     resourceMeta,
+    placeMeta,
     notFoundMeta,
     buildManagedTags,
     renderHtml,

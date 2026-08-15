@@ -47,7 +47,7 @@ const robots = (req, res) => {
 const sitemapIndex = catchAsync(async (req, res) => {
     const total = await catalogRead.countSitemapDatasets();
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    const locs = [SITE_URL + '/sitemap-pages.xml'];
+    const locs = [SITE_URL + '/sitemap-pages.xml', SITE_URL + '/sitemap-places.xml'];
     for (let i = 1; i <= pages; i++) locs.push(SITE_URL + '/sitemap-datasets-' + i + '.xml');
     const body =
         '<?xml version="1.0" encoding="UTF-8"?>\n' +
@@ -68,10 +68,24 @@ const sitemapPages = (req, res) => {
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0' },
             { loc: SITE_URL + '/insights', changefreq: 'daily', priority: '0.9' },
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7' },
+            { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8' },
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
         ])
     );
 };
+
+// GET /sitemap-places.xml - place pages backed by at least one dataset.
+const sitemapPlaces = catchAsync(async (req, res) => {
+    const rows = await catalogRead.listPlaceSitemap();
+    const entries = rows.map(place => ({
+        loc: SITE_URL + '/places/' + encodeURIComponent(place.slug),
+        lastmod: place.metadata_modified ? new Date(place.metadata_modified).toISOString() : null,
+        changefreq: 'weekly'
+    }));
+    res.type('application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(urlset(entries));
+});
 
 // GET /sitemap-datasets-:n.xml - one chunk of dataset URLs.
 const sitemapDatasets = catchAsync(async (req, res, next) => {
@@ -92,4 +106,4 @@ const sitemapDatasets = catchAsync(async (req, res, next) => {
     res.send(urlset(entries));
 });
 
-module.exports = { robots, sitemapIndex, sitemapPages, sitemapDatasets };
+module.exports = { robots, sitemapIndex, sitemapPages, sitemapPlaces, sitemapDatasets };

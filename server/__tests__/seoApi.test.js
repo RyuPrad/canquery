@@ -7,6 +7,8 @@ jest.mock('../db/catalogReadQueries', () => ({
     getStats: jest.fn(),
     countSitemapDatasets: jest.fn(),
     listDatasetSitemap: jest.fn(),
+    listPlaceSitemap: jest.fn(),
+    getPlaceByIdOrSlug: jest.fn(),
     pingDb: jest.fn(),
     getLastSyncTime: jest.fn(),
     listRecentlyIngested: jest.fn(),
@@ -40,6 +42,7 @@ describe('sitemap index', () => {
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/xml/);
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-pages.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-places.xml</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-2.xml</loc>');
         expect(res.text).not.toContain('sitemap-datasets-3.xml');
@@ -88,6 +91,18 @@ describe('dataset sitemap chunk', () => {
     });
 });
 
+describe('place sitemap', () => {
+    it('emits only place rows supplied by the active-dataset query', async () => {
+        catalogRead.listPlaceSitemap.mockResolvedValue([
+            { slug: 'oshawa-on', metadata_modified: '2026-08-01T00:00:00Z' }
+        ]);
+        const res = await request(app).get('/sitemap-places.xml');
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('<loc>https://canquery.com/places/oshawa-on</loc>');
+        expect(res.text).toContain('<lastmod>2026-08-01T00:00:00.000Z</lastmod>');
+    });
+});
+
 describe('resolveMeta routing', () => {
     it('resolves a dataset via the DB and includes Dataset JSON-LD', async () => {
         const deps = {
@@ -121,6 +136,18 @@ describe('resolveMeta routing', () => {
         const meta = await resolveMeta('/resources/r1', deps);
         expect(meta.title).toContain('File');
         expect(meta.canonical).toBe('https://canquery.com/resources/r1');
+    });
+
+    it('resolves a place page from its stable slug', async () => {
+        const deps = {
+            getPlaceByIdOrSlug: jest.fn().mockResolvedValue({
+                id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa', type_en: 'City'
+            })
+        };
+        const meta = await resolveMeta('/places/oshawa-on', deps);
+        expect(deps.getPlaceByIdOrSlug).toHaveBeenCalledWith('oshawa-on');
+        expect(meta.title).toContain('Oshawa');
+        expect(meta.noindex).not.toBe(true);
     });
 
     it('uses static home meta without touching the DB', async () => {

@@ -7,6 +7,8 @@ import DatasetPage from './pages/DatasetPage'
 import ResourcePage from './pages/ResourcePage'
 import OrganizationsPage from './pages/OrganizationsPage'
 import DocsPage from './pages/DocsPage'
+import PlacesPage from './pages/PlacesPage'
+import PlacePage from './pages/PlacePage'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
 
@@ -48,6 +50,8 @@ export default function App() {
             <Route path="/datasets/:idOrName" element={<DatasetPage />} />
             <Route path="/resources/:id" element={<ResourcePage />} />
             <Route path="/organizations" element={<OrganizationsPage />} />
+            <Route path="/places" element={<PlacesPage />} />
+            <Route path="/places/:slug" element={<PlacePage />} />
             <Route path="/docs" element={<DocsPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

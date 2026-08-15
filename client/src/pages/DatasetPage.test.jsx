@@ -46,6 +46,23 @@ beforeEach(() => {
 });
 
 describe('DatasetPage ingestion', () => {
+  test('offers the map before a spatial snapshot has been loaded', async () => {
+    const env = datasetEnvelope('ingestable');
+    env.data.resources[0].map = { available: true, geometry_type: 'point' };
+    fetchDataset.mockReset();
+    fetchDataset.mockResolvedValue(env);
+
+    render(
+      <MemoryRouter initialEntries={['/datasets/dataset-a']}>
+        <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+      </MemoryRouter>
+    );
+
+    const mapLink = await screen.findByRole('link', { name: 'Map' });
+    expect(mapLink).toHaveAttribute('href', '/resources/resource-a?view=map');
+    expect(screen.getByRole('button', { name: 'Load' })).toBeInTheDocument();
+  });
+
   test('an already-loaded response refreshes the dataset without storing or polling a null job', async () => {
     enqueueIngest.mockResolvedValue({
       data: { id: null, resource_id: 'resource-a', status: 'done', already_loaded: true, row_count: 20 },

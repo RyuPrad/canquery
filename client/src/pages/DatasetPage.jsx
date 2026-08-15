@@ -8,6 +8,7 @@ import { formatDuration } from '../utils/time.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import Provenance from '../components/Provenance.jsx';
 import { useLang } from '../i18n.jsx';
 import {
   ArrowLeftIcon,
@@ -16,6 +17,8 @@ import {
   CalendarIcon,
   DownloadIcon,
   UnlockIcon,
+  MapIcon,
+  MapPinIcon,
 } from '../components/Icons.jsx';
 
 const FMT_STYLES = {
@@ -205,6 +208,12 @@ function DatasetExplorer({ idOrName }) {
             {t('common.updated')} {new Date(dataset.metadata_modified).toLocaleDateString()}
           </span>
         )}
+        {(dataset.places || []).map(place => (
+          <Link key={place.id} to={'/places/' + place.slug} className="inline-flex items-center gap-1.5 hover:text-base-content">
+            <MapPinIcon size={14} />
+            {place.name?.[contentLang] || place.name?.en}
+          </Link>
+        ))}
       </div>
 
       <p className="max-w-3xl whitespace-pre-wrap text-[0.95rem] leading-relaxed text-base-content/75">
@@ -223,6 +232,8 @@ function DatasetExplorer({ idOrName }) {
           </Link>
         ))}
       </div>
+
+      <Provenance provenance={dataset.provenance} />
 
       <h2 className="text-lg font-semibold font-display pt-6 flex items-center gap-2.5">
         {t('dataset.resources')}
@@ -254,6 +265,15 @@ function DatasetExplorer({ idOrName }) {
                 >
                   {t('common.explore')}
                   <ArrowRightIcon size={11} />
+                </Link>
+              )}
+              {resource.map && (
+                <Link
+                  to={'/resources/' + resource.id + '?view=map'}
+                  className="btn btn-xs btn-outline rounded-lg gap-1 border-base-content/20"
+                >
+                  <MapIcon size={11} />
+                  {t('places.map')}
                 </Link>
               )}
               {resource.query_mode === 'ingestable' && (

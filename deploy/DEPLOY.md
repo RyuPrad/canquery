@@ -111,7 +111,7 @@ starting the worker:
 sudo -u canquery stat -f <readable-path-on-postgres-filesystem>
 ```
 
-## 5. First harvest
+## 5. First harvest and place index
 
 Dev-sized runs use `--limit`. The full catalogue harvest (~50k datasets, hours,
 polite concurrency 2) should be run once under the app user (a tmux/screen
@@ -120,7 +120,17 @@ session is handy):
 ```bash
 sudo -u canquery node /home/canquery/canquery/server/scripts/catalog-sync.js --limit 500   # warm-up
 sudo -u canquery node /home/canquery/canquery/server/scripts/catalog-sync.js               # full run (resumable)
+
+# Import the versioned Statistics Canada SGC hierarchy, then validate and sync
+# every enabled municipal/source adapter.
+sudo -u canquery npm run sync:places --prefix /home/canquery/canquery/server
+sudo -u canquery npm run sync:municipal --prefix /home/canquery/canquery/server
 ```
+
+Use `npm run sync:source -- --source=<source-id> --dry-run` before enabling a new
+source. A source run only publishes records with a supported CSV/XLSX snapshot
+and a verified publisher licence. Spatial ArcGIS leaf layers also receive a
+bounded live-map endpoint; unsupported/group layers remain honest exclusions.
 
 ## 6. Cron jobs
 
@@ -142,8 +152,10 @@ cp deploy/canquery.cron.d /etc/cron.d/canquery
 ```
 
 Schedule (see `deploy/canquery.cron.d`): `catalog-sync` daily, `incremental-sync`
-every 30 min, `evict-store` daily. The ingest worker is the systemd service from
-step 4, not cron.
+every 30 min, municipal sources daily, `evict-store` daily, and the Top 100 seed
+daily. The versioned SGC place import runs during deployment (and again when its
+configured vintage changes). The ingest worker is the systemd service from step
+4, not cron.
 
 Incremental sync advances its persisted checkpoint only after a complete
 overlap-window traversal. Reaching its safety page cap records an incomplete run
@@ -170,7 +182,9 @@ Then point your reverse proxy at the API. A Caddy example is in
 curl -s https://<your-domain>/healthz
 curl -s 'https://<your-domain>/api/v1/stats'
 curl -s 'https://<your-domain>/api/v1/datasets?q=housing&limit=3'
-# UI: open https://<your-domain> - search, open a dataset, explore a resource, view Insights
+curl -s 'https://<your-domain>/api/v1/places?q=Oshawa'
+curl -s 'https://<your-domain>/api/v1/sources?place=oshawa-on'
+# UI: search by place, open a mapped dataset, pan/zoom the live Map tab, then load its table snapshot
 ```
 
 ## 9. Rollback

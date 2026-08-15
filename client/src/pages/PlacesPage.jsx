@@ -1,0 +1,81 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { fetchPlaces } from '../api/catalog.js';
+import { useLang } from '../i18n.jsx';
+import { MapPinIcon, ArrowRightIcon, MapIcon, SearchIcon } from '../components/Icons.jsx';
+import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import useDebouncedValue from '../hooks/useDebouncedValue.js';
+
+export default function PlacesPage() {
+  const { lang, t } = useLang();
+  const [places, setPlaces] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 250);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchPlaces({ q: debouncedQuery || undefined, limit: 100 })
+      .then(env => {
+        if (!cancelled) {
+          setPlaces(env.data || []);
+          setError(null);
+        }
+      })
+      .catch(err => { if (!cancelled) setError(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [debouncedQuery]);
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
+      <div className="max-w-3xl">
+        <span className="cq-chip cq-chip-mono"><MapPinIcon size={11} />{t('places.local_data')}</span>
+        <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight mt-4">{t('places.title')}</h1>
+        <p className="text-base-content/60 mt-3 leading-relaxed">{t('places.subtitle')}</p>
+      </div>
+      <div className="cq-search cq-search-sm max-w-lg mt-7">
+        <SearchIcon size={14} className="opacity-40 shrink-0" />
+        <input
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder={t('places.search_placeholder')}
+          aria-label={t('places.search_placeholder')}
+        />
+      </div>
+      {loading ? <LoadingSpinner label={t('places.loading')} /> : error ? (
+        <div className="alert alert-error mt-6">{error.message}</div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-8">
+          {!debouncedQuery && <Link to="/" className="cq-card cq-card-hover p-5 group">
+            <div className="flex items-start justify-between gap-3">
+              <span className="w-10 h-10 rounded-xl bg-primary/15 cq-fg-red flex items-center justify-center"><MapPinIcon size={18} /></span>
+              <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />
+            </div>
+            <h2 className="font-display font-semibold text-lg mt-4">{t('places.all_canada')}</h2>
+            <p className="text-sm text-base-content/45 mt-1">{t('places.all_canada_desc')}</p>
+          </Link>}
+          {places.map(place => (
+            <Link key={place.id} to={'/places/' + place.slug} className="cq-card cq-card-hover p-5 group">
+              <div className="flex items-start justify-between gap-3">
+                <span className="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center"><MapPinIcon size={18} /></span>
+                <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />
+              </div>
+              <h2 className="font-display font-semibold text-lg mt-4">{place.name?.[lang] || place.name?.en}</h2>
+              <p className="text-xs uppercase tracking-wider text-base-content/40 mt-1">{place.type?.[lang] || place.type?.en || place.kind}</p>
+              <div className="flex flex-wrap gap-2 mt-4">
+                <span className="cq-chip cq-chip-mono">{place.dataset_count} {t('places.datasets')}</span>
+                {place.mappable_resource_count > 0 && <span className="cq-chip"><MapIcon size={10} />{place.mappable_resource_count} {t('places.maps')}</span>}
+              </div>
+            </Link>
+          ))}
+          {places.length === 0 && debouncedQuery && (
+            <p className="sm:col-span-2 lg:col-span-3 text-center py-12 text-base-content/50">{t('places.not_found')}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
