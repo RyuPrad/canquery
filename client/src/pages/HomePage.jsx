@@ -128,7 +128,7 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchPlaces({ limit: 100 })
+    fetchPlaces({ featured: true, limit: 100 })
       .then(env => { if (!cancelled) setPlaces(env.data || []); })
       .catch(() => {});
     return () => { cancelled = true; };

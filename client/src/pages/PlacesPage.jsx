@@ -17,7 +17,11 @@ export default function PlacesPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchPlaces({ q: debouncedQuery || undefined, limit: 100 })
+    fetchPlaces({
+      q: debouncedQuery || undefined,
+      featured: debouncedQuery ? undefined : true,
+      limit: 100
+    })
       .then(env => {
         if (!cancelled) {
           setPlaces(env.data || []);
@@ -28,6 +32,27 @@ export default function PlacesPage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [debouncedQuery]);
+
+  const placeCard = (place) => (
+    <Link key={place.id} to={'/places/' + place.slug} className="cq-card cq-card-hover p-5 group">
+      <div className="flex items-start justify-between gap-3">
+        <span className="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center"><MapPinIcon size={18} /></span>
+        <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />
+      </div>
+      <h2 className="font-display font-semibold text-lg mt-4">{place.name?.[lang] || place.name?.en}</h2>
+      <p className="text-xs uppercase tracking-wider text-base-content/40 mt-1">{place.type?.[lang] || place.type?.en || place.kind}</p>
+      <div className="flex flex-wrap gap-2 mt-4">
+        <span className="cq-chip cq-chip-mono">{place.dataset_count} {t('places.datasets')}</span>
+        {place.direct_dataset_count === 0 && place.dataset_count > 0 && (
+          <span className="cq-chip" title={t('places.regional_only_desc')}>{t('places.regional_only')}</span>
+        )}
+        {place.mappable_resource_count > 0 && <span className="cq-chip"><MapIcon size={10} />{place.mappable_resource_count} {t('places.maps')}</span>}
+      </div>
+    </Link>
+  );
+  const regions = places.filter(place => place.kind === 'region');
+  const municipalities = places.filter(place => place.kind === 'municipality');
+  const otherPlaces = places.filter(place => !['region', 'municipality'].includes(place.kind));
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
@@ -48,31 +73,33 @@ export default function PlacesPage() {
       {loading ? <LoadingSpinner label={t('places.loading')} /> : error ? (
         <div className="alert alert-error mt-6">{error.message}</div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-8">
-          {!debouncedQuery && <Link to="/" className="cq-card cq-card-hover p-5 group">
+        <div className="mt-8 space-y-9">
+          {!debouncedQuery && <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"><Link to="/" className="cq-card cq-card-hover p-5 group">
             <div className="flex items-start justify-between gap-3">
               <span className="w-10 h-10 rounded-xl bg-primary/15 cq-fg-red flex items-center justify-center"><MapPinIcon size={18} /></span>
               <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />
             </div>
             <h2 className="font-display font-semibold text-lg mt-4">{t('places.all_canada')}</h2>
             <p className="text-sm text-base-content/45 mt-1">{t('places.all_canada_desc')}</p>
-          </Link>}
-          {places.map(place => (
-            <Link key={place.id} to={'/places/' + place.slug} className="cq-card cq-card-hover p-5 group">
-              <div className="flex items-start justify-between gap-3">
-                <span className="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center"><MapPinIcon size={18} /></span>
-                <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />
-              </div>
-              <h2 className="font-display font-semibold text-lg mt-4">{place.name?.[lang] || place.name?.en}</h2>
-              <p className="text-xs uppercase tracking-wider text-base-content/40 mt-1">{place.type?.[lang] || place.type?.en || place.kind}</p>
-              <div className="flex flex-wrap gap-2 mt-4">
-                <span className="cq-chip cq-chip-mono">{place.dataset_count} {t('places.datasets')}</span>
-                {place.mappable_resource_count > 0 && <span className="cq-chip"><MapIcon size={10} />{place.mappable_resource_count} {t('places.maps')}</span>}
-              </div>
-            </Link>
-          ))}
+          </Link></div>}
+          {!debouncedQuery && regions.length > 0 && <section>
+            <h2 className="font-display font-semibold text-xl mb-3">{t('places.featured_region')}</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{regions.map(placeCard)}</div>
+          </section>}
+          {!debouncedQuery && municipalities.length > 0 && <section>
+            <h2 className="font-display font-semibold text-xl mb-3">{t('places.durham_municipalities')}</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{municipalities.map(placeCard)}</div>
+          </section>}
+          {debouncedQuery && places.length > 0 && <section>
+            <h2 className="font-display font-semibold text-xl mb-3">{t('places.search_results')}</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{places.map(placeCard)}</div>
+          </section>}
+          {!debouncedQuery && otherPlaces.length > 0 && <section>
+            <h2 className="font-display font-semibold text-xl mb-3">{t('places.other_places')}</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{otherPlaces.map(placeCard)}</div>
+          </section>}
           {places.length === 0 && debouncedQuery && (
-            <p className="sm:col-span-2 lg:col-span-3 text-center py-12 text-base-content/50">{t('places.not_found')}</p>
+            <p className="text-center py-12 text-base-content/50">{t('places.not_found')}</p>
           )}
         </div>
       )}

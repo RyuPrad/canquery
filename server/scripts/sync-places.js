@@ -10,6 +10,27 @@ const PROVINCES = {
     '46': 'mb', '47': 'sk', '48': 'ab', '59': 'bc', '60': 'yt', '61': 'nt', '62': 'nu'
 };
 const TERRITORIES = new Set(['60', '61', '62']);
+const FEATURED_PLACE_IDS = new Set([
+    'ca-on-durham',
+    'sgc-csd-3518005',
+    'sgc-csd-3518039',
+    'sgc-csd-3518017',
+    'ca-on-oshawa',
+    'sgc-csd-3518001',
+    'sgc-csd-3518020',
+    'sgc-csd-3518029',
+    'sgc-csd-3518009'
+]);
+const DURHAM_TYPES = {
+    '3518005': ['Town', 'Ville'],
+    '3518039': ['Township', 'Canton'],
+    '3518017': ['Municipality', 'Municipalité'],
+    '3518013': ['City', 'Ville'],
+    '3518001': ['City', 'Ville'],
+    '3518020': ['Township', 'Canton'],
+    '3518029': ['Township', 'Canton'],
+    '3518009': ['Town', 'Ville']
+};
 
 function slugify(value) {
     return String(value || '')
@@ -27,7 +48,7 @@ function normalize(enRows, frRows) {
     const usedSlugs = new Set(['canada']);
     const places = [{
         id: 'ca', slug: 'canada', kind: 'country', nameEn: 'Canada', nameFr: 'Canada',
-        typeEn: 'Country', typeFr: 'Pays', parentId: null
+        typeEn: 'Country', typeFr: 'Pays', parentId: null, featured: false
     }];
     const identifiers = [{ placeId: 'ca', scheme: 'sgc', vintage: '2021', value: '01' }];
     for (const row of enRows) {
@@ -72,9 +93,17 @@ function normalize(enRows, frRows) {
         let slug = baseSlug;
         if (code === '3518') slug = 'durham-on';
         if (code === '3518013') slug = 'oshawa-on';
+        if (code === '3518') {
+            typeEn = 'Regional municipality';
+            typeFr = 'Municipalité régionale';
+        }
+        if (DURHAM_TYPES[code]) [typeEn, typeFr] = DURHAM_TYPES[code];
         if (usedSlugs.has(slug)) slug += '-' + code;
         usedSlugs.add(slug);
-        places.push({ id, slug, kind, nameEn, nameFr, typeEn, typeFr, parentId });
+        places.push({
+            id, slug, kind, nameEn, nameFr, typeEn, typeFr, parentId,
+            featured: FEATURED_PLACE_IDS.has(id)
+        });
         identifiers.push({ placeId: id, scheme, vintage: '2021', value: code });
     }
     return { places, identifiers };
@@ -91,12 +120,12 @@ async function upsert({ places, identifiers }, dryRun) {
             const chunk = orderedPlaces.slice(index, index + 250);
             const values = [];
             const tuples = chunk.map((place, i) => {
-                const p = i * 9 + 1;
-                values.push(place.id, place.slug, place.kind, place.nameEn, place.nameFr, place.typeEn, place.typeFr, place.parentId, true);
-                return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7},$${p + 8})`;
+                const p = i * 10 + 1;
+                values.push(place.id, place.slug, place.kind, place.nameEn, place.nameFr, place.typeEn, place.typeFr, place.parentId, true, place.featured === true);
+                return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7},$${p + 8},$${p + 9})`;
             });
             await client.query(`
-                INSERT INTO places (id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id, enabled)
+                INSERT INTO places (id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id, enabled, featured)
                 VALUES ${tuples.join(',')}
                 ON CONFLICT (id) DO UPDATE SET
                     name_en = EXCLUDED.name_en,
@@ -104,6 +133,7 @@ async function upsert({ places, identifiers }, dryRun) {
                     type_en = EXCLUDED.type_en,
                     type_fr = EXCLUDED.type_fr,
                     parent_id = EXCLUDED.parent_id,
+                    featured = EXCLUDED.featured,
                     updated_at = now()
             `, values);
         }

@@ -13,6 +13,11 @@ function collapse(value) {
     return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
 }
 
+function isPlaceholder(value) {
+    const text = collapse(value);
+    return !text || /^\{\{[^}]+\}\}$/.test(text) || /^\$\{[^}]+\}$/.test(text);
+}
+
 function timestamp(value) {
     if (value === null || value === undefined || value === '') return null;
     const numeric = typeof value === 'number' || /^\d{11,}$/.test(String(value))
@@ -109,34 +114,68 @@ function extentFrom(metadata, record) {
     return null;
 }
 
-function publisherName(record, item) {
-    return collapse(record.publisher && record.publisher.name) || collapse(item && item.orgId) || collapse(item && item.owner) || 'Government publisher';
+function patternMatches(pattern, value) {
+    if (!pattern) return true;
+    if (pattern instanceof RegExp) {
+        pattern.lastIndex = 0;
+        return pattern.test(value);
+    }
+    return String(value).toLowerCase().includes(String(pattern).toLowerCase());
 }
 
-function ruleMatches(rule, namespace, publisher) {
+function canonicalPublisher(value, source) {
+    const publisher = collapse(value) || 'Government publisher';
+    const alias = (source.publisherAliases || []).find(rule => patternMatches(rule.publisher, publisher));
+    return alias ? alias.name : publisher;
+}
+
+function publisherName(record, item, source) {
+    const supplied = collapse(record.publisher && record.publisher.name);
+    const fallback = collapse(item && item.owner) || collapse(item && item.orgId);
+    return canonicalPublisher(isPlaceholder(supplied) ? fallback : supplied, source);
+}
+
+function ruleMatches(rule, namespace, publisher, licenseEvidence = '') {
     if (rule.namespace && rule.namespace !== namespace) return false;
-    if (rule.publisher && !rule.publisher.test(publisher)) return false;
+    if (rule.publisher && !patternMatches(rule.publisher, publisher)) return false;
+    if (rule.licensePattern && !patternMatches(rule.licensePattern, licenseEvidence)) return false;
     return true;
 }
 
-function matchRule(rules, namespace, publisher) {
-    return (rules || []).find(rule => ruleMatches(rule, namespace, publisher)) || null;
+function matchRule(rules, namespace, publisher, licenseEvidence = '') {
+    return (rules || []).find(rule => ruleMatches(rule, namespace, publisher, licenseEvidence)) || null;
+}
+
+function resolveLicense(value, source, namespace, publisher) {
+    const evidence = array(value).map(entry => collapse(entry) + ' ' + htmlToText(entry)).join(' ').trim();
+    if ((source.restrictedLicensePatterns || []).some(pattern => patternMatches(pattern, evidence))) {
+        return { status: 'restricted-license', license: null };
+    }
+    const rule = matchRule(source.licenseRules, namespace, publisher, evidence);
+    if (rule) return { status: 'recognized', license: rule.license };
+    if (source.licenseMode !== 'record-explicit') {
+        const raw = collapse(htmlToText(value));
+        if (source.allowUnrecognizedLicenseUrl && /^https?:\/\//i.test(raw)) {
+            return {
+                status: 'recognized',
+                license: { titleEn: 'Licence supplied by the publisher', titleFr: 'Licence fournie par l’éditeur', url: raw }
+            };
+        }
+    }
+    return { status: 'unlicensed', license: null };
 }
 
 function knownLicense(value, source, namespace, publisher) {
-    const raw = collapse(htmlToText(value));
-    const lower = raw.toLowerCase();
-    let rule = null;
-    if (lower.includes('oshawa')) rule = (source.licenseRules || []).find(item => item.namespace === 'oshawa');
-    else if (lower.includes('durham')) rule = (source.licenseRules || []).find(item => item.namespace === 'durhamregion');
-    else if (lower.includes('20586dab57ce40fd9b102d97c144302c') || lower.includes('cloca')) rule = (source.licenseRules || []).find(item => item.namespace === 'camaps');
-    else if (lower.includes('ontario')) rule = (source.licenseRules || []).find(item => String(item.publisher).includes('ontario'));
-    rule = rule || matchRule(source.licenseRules, namespace, publisher);
-    if (rule) return rule.license;
-    if (/^https?:\/\//i.test(raw)) {
-        return { titleEn: 'Licence supplied by the publisher', titleFr: 'Licence fournie par l’éditeur', url: raw };
-    }
-    return null;
+    return resolveLicense(value, source, namespace, publisher).license;
+}
+
+function authoritativePublisher(source, publisher) {
+    if (!Array.isArray(source.authoritativePublishers)) return true;
+    return source.authoritativePublishers.some(rule => patternMatches(rule.publisher, publisher));
+}
+
+function slugKey(value) {
+    return collapse(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100);
 }
 
 function selectedFields(metadata) {
@@ -186,6 +225,19 @@ async function enrichRecord(record, source, options = {}) {
     if (!identity) return { status: 'excluded', reason: 'missing-item-id' };
     const itemUrl = 'https://www.arcgis.com/sharing/rest/content/items/' + identity.itemId + '?f=json';
     const item = await (options.fetchJson || fetchPublicJson)(itemUrl, options.http);
+    const namespace = namespaceFor(record);
+    const suppliedPublisher = collapse(record.publisher && record.publisher.name);
+    const publisher = publisherName(record, item, source);
+    const licenseResult = resolveLicense(
+        [record.license, record.rights, item.licenseInfo].filter(value => value != null),
+        source,
+        namespace,
+        publisher
+    );
+    if (!licenseResult.license || !licenseResult.license.url) {
+        return { status: 'excluded', reason: licenseResult.status, externalId: canonicalKey(identity) };
+    }
+    const licence = licenseResult.license;
     const geo = distribution(record, 'ArcGIS GeoServices REST API');
     const serviceUrl = collapse(geo && geo.accessURL);
     let metadata = null;
@@ -200,17 +252,12 @@ async function enrichRecord(record, source, options = {}) {
         return { status: 'excluded', reason: 'xlsx-too-large', externalId: canonicalKey(identity) };
     }
 
-    const namespace = namespaceFor(record);
-    const publisher = publisherName(record, item);
-    const licence = knownLicense(record.license || item.licenseInfo, source, namespace, publisher);
-    if (!licence || !licence.url) return { status: 'excluded', reason: 'unlicensed', externalId: canonicalKey(identity) };
     const placeRule = matchRule(source.placeRules, namespace, publisher);
     const ids = idsFor(identity);
     const title = collapse(record.title) || collapse(metadata && metadata.name) || collapse(item.title) || ids.datasetId;
     const description = htmlToText(record.description || item.description || item.snippet || '');
     const keywords = Array.from(new Set(array(record.keyword).concat(array(item.tags)).map(collapse).filter(Boolean)));
-    const orgKey = collapse(item.owner) || publisher.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const orgId = 'arcgis-owner-' + orgKey.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').slice(0, 100);
+    const orgId = 'arcgis-publisher-' + (slugKey(publisher) || 'government-publisher');
     const geometryType = GEO_TYPES[metadata && metadata.geometryType] || null;
     const resourceUrl = serviceUrl
         ? 'https://hub.arcgis.com/api/download/v1/items/' + identity.itemId + '/csv?layers=' + identity.layerId
@@ -249,8 +296,13 @@ async function enrichRecord(record, source, options = {}) {
             licenseUrl: licence.url,
             attributionEn: licence.attributionEn || null,
             attributionFr: licence.attributionFr || null,
-            isAuthoritative: true,
-            raw: { identifier: record.identifier, namespace, publisher }
+            isAuthoritative: authoritativePublisher(source, publisher),
+            raw: {
+                identifier: record.identifier,
+                namespace,
+                publisher,
+                supplied_publisher: isPlaceholder(suppliedPublisher) ? null : suppliedPublisher
+            }
         },
         resource: {
             id: ids.resourceId,
@@ -305,5 +357,10 @@ module.exports = {
     selectedFields,
     serviceIsLeaf,
     knownLicense,
+    resolveLicense,
+    publisherName,
+    canonicalPublisher,
+    authoritativePublisher,
+    isPlaceholder,
     timestamp
 };

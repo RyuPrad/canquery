@@ -19,7 +19,7 @@ beforeEach(() => {
       { id: 'ca', slug: 'canada', name: { en: 'Canada', fr: 'Canada' } },
       { id: 'ca-on-oshawa', slug: 'oshawa-on', name: { en: 'Oshawa', fr: 'Oshawa' } },
     ],
-    dataset_count: 12, mappable_dataset_count: 8,
+    dataset_count: 12, direct_dataset_count: 2, mappable_dataset_count: 8, children: [],
   } });
   fetchSources.mockResolvedValue({ data: [{
     id: 'oshawa-hub', name: { en: 'Oshawa Hub', fr: null }, homepage_url: 'https://example.test'
@@ -42,5 +42,28 @@ describe('PlacePage', () => {
     expect(screen.getByText('Oshawa Hub')).toBeInTheDocument();
     expect(await screen.findByText('Road network')).toBeInTheDocument();
     expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ place: 'oshawa-on', limit: 20 }));
+  });
+
+  test('explains inherited coverage and lists a region’s featured municipalities', async () => {
+    fetchPlace.mockResolvedValueOnce({ data: {
+      id: 'ca-on-durham', slug: 'durham-on', kind: 'region',
+      name: { en: 'Durham', fr: 'Durham' }, type: { en: 'Regional municipality', fr: 'Municipalité régionale' },
+      ancestors: [{ id: 'ca-on-durham', slug: 'durham-on', name: { en: 'Durham' } }],
+      dataset_count: 350, direct_dataset_count: 350, mappable_dataset_count: 300,
+      children: [{
+        id: 'sgc-csd-3518017', slug: 'clarington-on', kind: 'municipality',
+        name: { en: 'Clarington', fr: 'Clarington' }, dataset_count: 350,
+        direct_dataset_count: 0
+      }]
+    } });
+    render(
+      <MemoryRouter initialEntries={['/places/durham-on']}>
+        <Routes><Route path="/places/:slug" element={<PlacePage />} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Durham' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
+    expect(screen.getByText('Regional coverage')).toBeInTheDocument();
   });
 });

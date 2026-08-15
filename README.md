@@ -19,7 +19,11 @@ The catalogue combines the federal CKAN portal with source adapters for local
 publishers. Dataset provenance and licensing stay attached per source. A
 versioned Statistics Canada SGC hierarchy powers place-first discovery, and
 spatial ArcGIS leaf layers can be explored through a bounded live map before
-their CSV snapshot is loaded.
+their CSV snapshot is loaded. The featured local directory covers Durham Region
+and all eight lower-tier municipalities, with direct feeds from Durham, Ajax,
+Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
+Clarington is represented through Durham’s regional coverage only: its current
+public web-map terms are personal/non-commercial, so no direct adapter is enabled.
 
 ## Layout
 
@@ -45,7 +49,7 @@ npm install
 npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
-npm run sync:source -- --source=oshawa-hub --dry-run
+npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
 npm run dev                   # API on :3100
 
@@ -65,9 +69,12 @@ mixed collection responses never claim one publisher's licence for every item.
 # search the mirrored catalogue (tsvector, EN+FR)
 curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV&limit=5'
 
-# browse active places and source portals
+# browse the featured Durham directory (or search every SGC place with q)
+curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'
-curl 'http://localhost:3100/api/v1/sources?place=oshawa-on'
+
+# place-filtered sources are authoritative; counts expose total + authoritative
+curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -131,10 +138,14 @@ to TEXT per column when a later cast fails.
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
-(All Canada remains the default). Place pages combine directly local datasets
-with records whose parent jurisdiction explicitly covers that place. Source
-filters remain secondary, and every dataset/resource shows its publisher and
-licence. The resource explorer has a sortable/filterable table, CSV export, and
+(All Canada remains the default). Its grouped selector features Durham Region
+and Ajax, Brock, Clarington, Oshawa, Pickering, Scugog, Uxbridge and Whitby;
+search on `/places` still reaches the complete Canadian SGC hierarchy. Place
+pages combine directly local datasets with records whose parent jurisdiction
+explicitly covers that place, and label regional-only coverage instead of
+implying a municipal feed exists. Source filters remain secondary, and every
+dataset/resource shows its publisher and licence. The resource explorer has a
+sortable/filterable table, CSV export, and
 a lazy Map tab for spatial resources; the map follows its own viewport and does
 not imply that table filters are spatial filters. Unlocked resources also get an
 auto **Insights** dashboard that profiles the table and renders KPIs + charts

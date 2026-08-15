@@ -76,6 +76,7 @@ const listPlaces = async (req, res) => {
         q: cleanStr(req.query.q),
         kind: cleanStr(req.query.kind),
         parent: cleanStr(req.query.parent),
+        featured: req.query.featured,
         limit: req.query.limit,
         cursor: req.query.cursor
     });

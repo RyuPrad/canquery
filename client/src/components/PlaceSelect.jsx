@@ -1,14 +1,16 @@
 import { MapPinIcon } from './Icons.jsx';
 import { useLang } from '../i18n.jsx';
 
-const KIND_ORDER = { municipality: 0, region: 1, province: 2, territory: 2, country: 3 };
-
 export default function PlaceSelect({ value, onChange, places, loading = false, className = '' }) {
   const { lang, t } = useLang();
-  const options = [...(places || [])].sort((a, b) =>
-    (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) ||
+  const sorted = (rows) => [...rows].sort((a, b) =>
     (a.name?.[lang] || a.name?.en || '').localeCompare(b.name?.[lang] || b.name?.en || '')
   );
+  const groups = [
+    { key: 'region', label: t('places.featured_region'), rows: sorted((places || []).filter(place => place.kind === 'region')) },
+    { key: 'municipality', label: t('places.durham_municipalities'), rows: sorted((places || []).filter(place => place.kind === 'municipality')) },
+    { key: 'other', label: t('places.other_places'), rows: sorted((places || []).filter(place => !['region', 'municipality'].includes(place.kind))) },
+  ].filter(group => group.rows.length > 0);
   return (
     <label className={'cq-place-select ' + className}>
       <MapPinIcon size={15} className="shrink-0 text-secondary" />
@@ -20,10 +22,14 @@ export default function PlaceSelect({ value, onChange, places, loading = false, 
         aria-label={t('places.choose')}
       >
         <option value="">{t('places.all_canada')}</option>
-        {options.map(place => (
-          <option key={place.id} value={place.slug}>
-            {place.name?.[lang] || place.name?.en || place.slug} ({place.dataset_count})
-          </option>
+        {groups.map(group => (
+          <optgroup key={group.key} label={group.label}>
+            {group.rows.map(place => (
+              <option key={place.id} value={place.slug}>
+                {place.name?.[lang] || place.name?.en || place.slug} ({place.dataset_count})
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
     </label>

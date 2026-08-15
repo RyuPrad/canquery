@@ -239,38 +239,50 @@ const listSources = async ({ place } = {}) => {
         catalog_url: row.catalog_url,
         upstream: row.upstream_host,
         dataset_count: Number(row.dataset_count) || 0,
+        authoritative_dataset_count: Number(row.authoritative_dataset_count) || 0,
         last_synced_at: row.last_synced_at
     }));
 };
 
-const listPlaces = async ({ q, kind, parent, limit, cursor }) => {
+const shapePlaceRow = (row) => ({
+    id: row.id,
+    slug: row.slug,
+    kind: row.kind,
+    name: { en: row.name_en, fr: row.name_fr },
+    type: { en: row.type_en, fr: row.type_fr },
+    featured: row.featured === true,
+    parent: row.parent_id ? {
+        id: row.parent_id,
+        slug: row.parent_slug,
+        name: { en: row.parent_name_en, fr: row.parent_name_fr }
+    } : null,
+    location: row.latitude == null ? null : {
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+        zoom: row.default_zoom == null ? null : Number(row.default_zoom)
+    },
+    dataset_count: Number(row.dataset_count) || 0,
+    direct_dataset_count: Number(row.direct_dataset_count) || 0,
+    mappable_resource_count: Number(row.mappable_resource_count) || 0
+});
+
+const listPlaces = async ({ q, kind, parent, featured, limit, cursor }) => {
     const lim = clampLimit(limit, 50, 100);
     const offset = parseCursor(cursor);
     if (kind && !['country', 'province', 'territory', 'region', 'municipality'].includes(kind)) {
         throw new AppError('Invalid place kind', 400);
     }
-    const rows = await catalogReadQueries.listPlaces({ q, kind, parent, limit: lim + 1, offset });
+    const rows = await catalogReadQueries.listPlaces({
+        q,
+        kind,
+        parent,
+        featured: parseBooleanFilter(featured, 'featured'),
+        limit: lim + 1,
+        offset
+    });
     const hasMore = rows.length > lim;
     return {
-        items: rows.slice(0, lim).map(row => ({
-            id: row.id,
-            slug: row.slug,
-            kind: row.kind,
-            name: { en: row.name_en, fr: row.name_fr },
-            type: { en: row.type_en, fr: row.type_fr },
-            parent: row.parent_id ? {
-                id: row.parent_id,
-                slug: row.parent_slug,
-                name: { en: row.parent_name_en, fr: row.parent_name_fr }
-            } : null,
-            location: row.latitude == null ? null : {
-                latitude: Number(row.latitude),
-                longitude: Number(row.longitude),
-                zoom: row.default_zoom == null ? null : Number(row.default_zoom)
-            },
-            dataset_count: Number(row.dataset_count) || 0,
-            mappable_resource_count: Number(row.mappable_resource_count) || 0
-        })),
+        items: rows.slice(0, lim).map(shapePlaceRow),
         nextCursor: hasMore ? String(offset + lim) : null
     };
 };
@@ -290,13 +302,16 @@ const getPlace = async (idOrSlug) => {
         kind: row.kind,
         name: { en: row.name_en, fr: row.name_fr },
         type: { en: row.type_en, fr: row.type_fr },
+        featured: row.featured === true,
         parent_id: row.parent_id,
         location: row.latitude == null ? null : {
             latitude: Number(row.latitude), longitude: Number(row.longitude),
             zoom: row.default_zoom == null ? null : Number(row.default_zoom)
         },
         ancestors,
+        children: (row.children || []).map(shapePlaceRow),
         dataset_count: Number(row.dataset_count) || 0,
+        direct_dataset_count: Number(row.direct_dataset_count) || 0,
         mappable_dataset_count: Number(row.mappable_dataset_count) || 0
     };
 };

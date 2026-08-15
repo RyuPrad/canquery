@@ -88,6 +88,34 @@ export default function PlacePage() {
         </div>
       </div>
 
+      {place.direct_dataset_count === 0 && place.dataset_count > 0 && (
+        <div className="mt-5 rounded-xl border border-secondary/20 bg-secondary/5 px-4 py-3 text-sm text-base-content/65">
+          <strong className="text-base-content">{t('places.regional_only')}:</strong> {t('places.regional_only_desc')}
+        </div>
+      )}
+
+      {(place.children || []).length > 0 && (
+        <section className="mt-8">
+          <h2 className="font-display font-semibold text-xl">{t('places.durham_municipalities')}</h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+            {place.children.map(child => (
+              <Link key={child.id} to={'/places/' + child.slug} className="cq-card cq-card-hover p-4 group">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-display font-semibold">{child.name?.[lang] || child.name?.en}</h3>
+                    <p className="text-xs text-base-content/40 mt-1">{child.dataset_count} {t('places.datasets')}</p>
+                  </div>
+                  <ArrowRightIcon size={13} className="opacity-35 group-hover:opacity-70" />
+                </div>
+                {child.direct_dataset_count === 0 && child.dataset_count > 0 && (
+                  <span className="cq-chip mt-3">{t('places.regional_only')}</span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {sources.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mt-5 text-xs text-base-content/45">
           <span>{t('source.from')}</span>

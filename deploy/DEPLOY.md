@@ -182,8 +182,9 @@ Then point your reverse proxy at the API. A Caddy example is in
 curl -s https://<your-domain>/healthz
 curl -s 'https://<your-domain>/api/v1/stats'
 curl -s 'https://<your-domain>/api/v1/datasets?q=housing&limit=3'
+curl -s 'https://<your-domain>/api/v1/places?featured=true'
 curl -s 'https://<your-domain>/api/v1/places?q=Oshawa'
-curl -s 'https://<your-domain>/api/v1/sources?place=oshawa-on'
+curl -s 'https://<your-domain>/api/v1/sources?place=clarington-on'
 # UI: search by place, open a mapped dataset, pan/zoom the live Map tab, then load its table snapshot
 ```
 

@@ -217,60 +217,105 @@ async function listOrganizations({ source, place, limit, offset }) {
 async function listSources({ place } = {}) {
     const result = await pool.query(`WITH RECURSIVE selected_place AS (
         SELECT p.id, p.parent_id, 0 AS depth FROM places p
-        WHERE $1::text IS NOT NULL AND (p.id = $1 OR p.slug = $1)
+        WHERE $1::text IS NOT NULL AND (p.id = $1 OR p.slug = $1 OR EXISTS (
+            SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $1
+        ))
         UNION ALL
         SELECT p.id, p.parent_id, selected_place.depth + 1
         FROM places p JOIN selected_place ON selected_place.parent_id = p.id
+    ), applicable_datasets AS (
+        SELECT DISTINCT dp.dataset_id
+        FROM dataset_places dp
+        JOIN selected_place sp ON sp.id = dp.place_id
+        WHERE sp.depth = 0 OR dp.includes_descendants
+    ), source_counts AS (
+        SELECT ds.source_id,
+               count(DISTINCT ds.dataset_id) FILTER (
+                   WHERE $1::text IS NULL OR ad.dataset_id IS NOT NULL
+               )::int AS dataset_count,
+               count(DISTINCT ds.dataset_id) FILTER (
+                   WHERE ds.is_authoritative AND ($1::text IS NULL OR ad.dataset_id IS NOT NULL)
+               )::int AS authoritative_dataset_count
+        FROM dataset_sources ds
+        LEFT JOIN applicable_datasets ad ON ad.dataset_id = ds.dataset_id
+        GROUP BY ds.source_id
     )
         SELECT cs.id, cs.kind, cs.name_en, cs.name_fr, cs.homepage_url, cs.catalog_url,
                cs.upstream_host,
-               count(DISTINCT ds.dataset_id)::int AS dataset_count,
+               coalesce(sc.dataset_count, 0)::int AS dataset_count,
+               coalesce(sc.authoritative_dataset_count, 0)::int AS authoritative_dataset_count,
                (SELECT max(sr.finished_at) FROM sync_runs sr
                 WHERE sr.source_id = cs.id AND sr.ok) AS last_synced_at
         FROM catalog_sources cs
-        LEFT JOIN dataset_sources ds ON ds.source_id = cs.id
-        WHERE cs.enabled AND ($1::text IS NULL OR EXISTS (
-            SELECT 1 FROM dataset_places dp
-            JOIN selected_place sp ON sp.id = dp.place_id
-            WHERE dp.dataset_id = ds.dataset_id AND (sp.depth = 0 OR dp.includes_descendants)
-        ))
-        GROUP BY cs.id
-        ORDER BY dataset_count DESC, cs.name_en
+        LEFT JOIN source_counts sc ON sc.source_id = cs.id
+        WHERE cs.enabled
+          AND ($1::text IS NULL OR coalesce(sc.authoritative_dataset_count, 0) > 0)
+        ORDER BY authoritative_dataset_count DESC, dataset_count DESC, cs.name_en
     `, [place || null]);
     return result.rows;
 }
 
-async function listPlaces({ q, kind, parent, limit, offset }) {
-    const result = await pool.query(`
-        SELECT p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr,
-               p.parent_id, p.latitude, p.longitude, p.default_zoom,
-               parent_place.slug AS parent_slug,
-               parent_place.name_en AS parent_name_en, parent_place.name_fr AS parent_name_fr,
-               count(DISTINCT dp.dataset_id)::int AS dataset_count,
-               count(DISTINCT rm.resource_id)::int AS mappable_resource_count
+async function listPlaces({ q, kind, parent, featured, limit, offset }) {
+    const result = await pool.query(`WITH RECURSIVE candidate_places AS (
+        SELECT p.*
         FROM places p
         LEFT JOIN places parent_place ON parent_place.id = p.parent_id
-        LEFT JOIN dataset_places dp ON dp.place_id = p.id
-        LEFT JOIN resources r ON r.dataset_id = dp.dataset_id
-        LEFT JOIN resource_maps rm ON rm.resource_id = r.id
         WHERE p.enabled
           AND ($1::text IS NULL OR p.name_en ILIKE '%' || $1 || '%' OR p.name_fr ILIKE '%' || $1 || '%' OR p.slug ILIKE '%' || $1 || '%' OR EXISTS (
               SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug ILIKE '%' || $1 || '%'
           ))
-          AND ($1::text IS NOT NULL OR dp.dataset_id IS NOT NULL)
           AND ($2::text IS NULL OR p.kind = $2)
           AND ($3::text IS NULL OR p.parent_id = $3 OR parent_place.slug = $3)
-        GROUP BY p.id, parent_place.id
-        ORDER BY (count(DISTINCT dp.dataset_id) > 0) DESC, p.kind, p.name_en
-        LIMIT $4 OFFSET $5
-    `, [q || null, kind || null, parent || null, limit, offset]);
+          AND ($4::boolean IS NULL OR p.featured = $4)
+          AND ($1::text IS NOT NULL OR $4::boolean IS TRUE OR EXISTS (
+              SELECT 1 FROM dataset_places dp WHERE dp.place_id = p.id
+          ))
+    ), ancestry AS (
+        SELECT p.id AS selected_id, p.id AS ancestor_id, 0 AS depth
+        FROM candidate_places p
+        UNION ALL
+        SELECT ancestry.selected_id, parent.id, ancestry.depth + 1
+        FROM ancestry
+        JOIN places current_place ON current_place.id = ancestry.ancestor_id
+        JOIN places parent ON parent.id = current_place.parent_id
+    ), applicable_datasets AS (
+        SELECT DISTINCT ancestry.selected_id, dp.dataset_id
+        FROM ancestry
+        JOIN dataset_places dp ON dp.place_id = ancestry.ancestor_id
+        WHERE ancestry.depth = 0 OR dp.includes_descendants
+    ), direct_datasets AS (
+        SELECT DISTINCT dp.place_id AS selected_id, dp.dataset_id
+        FROM dataset_places dp
+        JOIN candidate_places p ON p.id = dp.place_id
+        WHERE dp.relationship = 'direct'
+    )
+        SELECT p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr,
+               p.parent_id, p.latitude, p.longitude, p.default_zoom, p.featured,
+               parent_place.slug AS parent_slug,
+               parent_place.name_en AS parent_name_en, parent_place.name_fr AS parent_name_fr,
+               (SELECT count(*)::int FROM applicable_datasets ad
+                WHERE ad.selected_id = p.id) AS dataset_count,
+               (SELECT count(*)::int FROM direct_datasets dd
+                WHERE dd.selected_id = p.id) AS direct_dataset_count,
+               (SELECT count(DISTINCT rm.resource_id)::int
+                FROM applicable_datasets ad
+                JOIN resources r ON r.dataset_id = ad.dataset_id
+                JOIN resource_maps rm ON rm.resource_id = r.id
+                WHERE ad.selected_id = p.id) AS mappable_resource_count
+        FROM candidate_places p
+        LEFT JOIN places parent_place ON parent_place.id = p.parent_id
+        ORDER BY CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
+                     WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END,
+                 p.name_en
+        LIMIT $5 OFFSET $6
+    `, [q || null, kind || null, parent || null, featured, limit, offset]);
     return result.rows;
 }
 
 async function getPlaceByIdOrSlug(idOrSlug) {
     const placeResult = await pool.query(`
         SELECT p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr,
-               p.parent_id, p.latitude, p.longitude, p.default_zoom
+               p.parent_id, p.latitude, p.longitude, p.default_zoom, p.featured
         FROM places p
         WHERE p.id = $1 OR p.slug = $1 OR EXISTS (
             SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $1
@@ -296,12 +341,19 @@ async function getPlaceByIdOrSlug(idOrSlug) {
         JOIN ancestry a ON a.id = dp.place_id
         WHERE a.depth = 0 OR dp.includes_descendants
     ) SELECT count(*)::int AS dataset_count,
+             (SELECT count(DISTINCT dp.dataset_id)::int
+              FROM dataset_places dp
+              WHERE dp.place_id = $1 AND dp.relationship = 'direct') AS direct_dataset_count,
              count(*) FILTER (WHERE EXISTS (
                  SELECT 1 FROM resources r JOIN resource_maps rm ON rm.resource_id = r.id
                  WHERE r.dataset_id = relevant.dataset_id
              ))::int AS mappable_dataset_count
       FROM relevant`, [place.id]);
-    return { ...place, ancestors: ancestorsResult.rows, ...countResult.rows[0] };
+    const children = place.kind === 'region' ? await listPlaces({
+        q: null, kind: 'municipality', parent: place.id,
+        featured: true, limit: 100, offset: 0
+    }) : [];
+    return { ...place, ancestors: ancestorsResult.rows, children, ...countResult.rows[0] };
 }
 
 async function getStats() {
@@ -343,11 +395,27 @@ async function listDatasetSitemap({ limit, offset }) {
 }
 
 async function listPlaceSitemap() {
-    const result = await pool.query(`
+    const result = await pool.query(`WITH RECURSIVE featured_ancestry AS (
+        SELECT p.id AS selected_id, p.id AS ancestor_id, 0 AS depth
+        FROM places p WHERE p.enabled AND p.featured
+        UNION ALL
+        SELECT ancestry.selected_id, parent.id, ancestry.depth + 1
+        FROM featured_ancestry ancestry
+        JOIN places current_place ON current_place.id = ancestry.ancestor_id
+        JOIN places parent ON parent.id = current_place.parent_id
+    ), place_datasets AS (
+        SELECT dp.place_id, dp.dataset_id FROM dataset_places dp
+        UNION
+        SELECT ancestry.selected_id, dp.dataset_id
+        FROM featured_ancestry ancestry
+        JOIN dataset_places dp ON dp.place_id = ancestry.ancestor_id
+        WHERE ancestry.depth = 0 OR dp.includes_descendants
+    )
         SELECT p.slug, max(d.metadata_modified) AS metadata_modified
         FROM places p
-        JOIN dataset_places dp ON dp.place_id = p.id
-        JOIN datasets d ON d.id = dp.dataset_id
+        JOIN place_datasets pd ON pd.place_id = p.id
+        JOIN datasets d ON d.id = pd.dataset_id
+        WHERE p.enabled
         GROUP BY p.id ORDER BY p.slug
     `);
     return result.rows;
