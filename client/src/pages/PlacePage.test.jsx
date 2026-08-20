@@ -64,6 +64,7 @@ describe('PlacePage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Durham' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
-    expect(screen.getByText('Regional coverage')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Municipalities in this region' })).toBeInTheDocument();
+    expect(screen.getByText('Broader-area coverage')).toBeInTheDocument();
   });
 });

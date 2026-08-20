@@ -1,0 +1,34 @@
+# /etc/systemd/system/canquery-map-worker.service
+# Single-concurrency PostGIS map-index worker.
+[Unit]
+Description=canquery local map index worker (drains map_index_jobs)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=canquery-egress-firewall.service
+After=canquery-egress-firewall.service
+
+[Service]
+Type=simple
+User=canquery
+Group=canquery
+WorkingDirectory=/home/canquery/canquery/server
+ExecStart=/usr/bin/node scripts/map-worker.js
+Environment=NODE_ENV=production
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=20min
+
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=1G
+MemoryMax=1536M
+
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/canquery/canquery/server /tmp
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

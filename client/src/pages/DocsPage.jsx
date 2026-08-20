@@ -116,15 +116,15 @@ export default function DocsPage() {
           method="GET"
           path="/api/v1/places"
           desc={t('docs.ep_places')}
-          example={'curl "' + BASE + '/api/v1/places?q=Oshawa&limit=10"'}
-          runPath="/api/v1/places?q=Oshawa&limit=10"
+          example={'curl "' + BASE + '/api/v1/places?q=Toronto&limit=10"'}
+          runPath="/api/v1/places?q=Toronto&limit=10"
         />
         <Endpoint
           method="GET"
           path="/api/v1/sources"
           desc={t('docs.ep_sources')}
-          example={'curl "' + BASE + '/api/v1/sources?place=oshawa-on"'}
-          runPath="/api/v1/sources?place=oshawa-on"
+          example={'curl "' + BASE + '/api/v1/sources?place=toronto-on"'}
+          runPath="/api/v1/sources?place=toronto-on"
         />
         <Endpoint
           method="GET"

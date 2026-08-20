@@ -6,10 +6,22 @@ export default function PlaceSelect({ value, onChange, places, loading = false, 
   const sorted = (rows) => [...rows].sort((a, b) =>
     (a.name?.[lang] || a.name?.en || '').localeCompare(b.name?.[lang] || b.name?.en || '')
   );
+  const rows = places || [];
+  const regions = sorted(rows.filter(place => place.kind === 'region'));
+  const regionIds = new Set(regions.map(place => place.id));
+  const municipalityGroups = regions.map(region => ({
+    key: 'municipalities-' + region.id,
+    label: t('places.municipalities_in') + ' ' + (region.name?.[lang] || region.name?.en),
+    rows: sorted(rows.filter(place => place.kind === 'municipality' && regionIds.has(place.parent?.id) && place.parent.id === region.id))
+  }));
   const groups = [
-    { key: 'region', label: t('places.featured_region'), rows: sorted((places || []).filter(place => place.kind === 'region')) },
-    { key: 'municipality', label: t('places.durham_municipalities'), rows: sorted((places || []).filter(place => place.kind === 'municipality')) },
-    { key: 'other', label: t('places.other_places'), rows: sorted((places || []).filter(place => !['region', 'municipality'].includes(place.kind))) },
+    { key: 'region', label: t('places.featured_region'), rows: regions },
+    ...municipalityGroups,
+    {
+      key: 'city', label: t('places.featured_cities'),
+      rows: sorted(rows.filter(place => place.kind === 'municipality' && !regionIds.has(place.parent?.id)))
+    },
+    { key: 'other', label: t('places.other_places'), rows: sorted(rows.filter(place => !['region', 'municipality'].includes(place.kind))) },
   ].filter(group => group.rows.length > 0);
   return (
     <label className={'cq-place-select ' + className}>

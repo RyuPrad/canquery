@@ -17,7 +17,14 @@ beforeEach(() => {
     {
       id: 'sgc-csd-3518017', slug: 'clarington-on', kind: 'municipality',
       name: { en: 'Clarington' }, type: { en: 'Municipality' },
+      parent: { id: 'ca-on-durham', name: { en: 'Durham' } },
       dataset_count: 350, direct_dataset_count: 0, mappable_resource_count: 300
+    },
+    {
+      id: 'sgc-cd-3520', slug: 'toronto-on', kind: 'municipality',
+      name: { en: 'Toronto' }, type: { en: 'City' },
+      parent: { id: 'ca-on', name: { en: 'Ontario' } },
+      dataset_count: 556, direct_dataset_count: 556, mappable_resource_count: 187
     }
   ] });
 });
@@ -26,10 +33,12 @@ describe('PlacesPage', () => {
   test('loads the curated directory and labels inherited regional coverage', async () => {
     render(<MemoryRouter><PlacesPage /></MemoryRouter>);
 
-    expect(await screen.findByRole('heading', { name: 'Featured region' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Durham municipalities' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Featured regions' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Municipalities in Durham' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Featured cities' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
-    expect(screen.getByText('Regional coverage')).toBeInTheDocument();
+    expect(screen.getByText('Broader-area coverage')).toBeInTheDocument();
     await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith({
       q: undefined, featured: true, limit: 100
     }));

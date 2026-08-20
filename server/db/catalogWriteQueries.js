@@ -231,23 +231,19 @@ async function upsertCatalogSource(db, source) {
     ]);
 }
 
-function replaceResources(db, datasetIds, resources) {
+async function replaceResources(db, datasetIds, resources) {
     if (!datasetIds || datasetIds.length === 0) {
-        return Promise.resolve();
+        return;
     }
-    const deleteSql = 'DELETE FROM resources WHERE dataset_id = ANY($1)';
-    return db.query(deleteSql, [datasetIds]).then(() => {
-        const resourceRows = dedupeById(resources);
-        if (resourceRows.length === 0) {
-            return Promise.resolve();
-        }
+    const resourceRows = dedupeById(resources);
+    if (resourceRows.length > 0) {
         const chunkSize = 500;
         const chunks = [];
         for (let i = 0; i < resourceRows.length; i += chunkSize) {
             chunks.push(resourceRows.slice(i, i + chunkSize));
         }
 
-        return Promise.all(chunks.map(chunk => {
+        for (const chunk of chunks) {
             const placeholders = [];
             const values = [];
             let paramIndex = 1;
@@ -284,9 +280,16 @@ function replaceResources(db, datasetIds, resources) {
                     last_modified = EXCLUDED.last_modified,
                     raw = EXCLUDED.raw
             `;
-            return db.query(sql, values);
-        }));
-    });
+            await db.query(sql, values);
+        }
+    }
+    // Sweep only rows that disappeared. Unchanged resource ids retain their FK
+    // dependants (ingest metadata, map features and queue state) across syncs.
+    await db.query(`
+        DELETE FROM resources
+        WHERE dataset_id = ANY($1::text[])
+          AND NOT (id = ANY($2::text[]))
+    `, [datasetIds, resourceRows.map(row => row.id)]);
 }
 
 function refreshOrganizationDatasetCounts(db) {

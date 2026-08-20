@@ -1,7 +1,9 @@
 const arcgisHub = require('./arcgisHubAdapter');
+const ckanSource = require('./ckanSourceAdapter');
 
 const adapters = new Map([
-    ['arcgis-hub', arcgisHub]
+    ['arcgis-hub', arcgisHub],
+    ['ckan', ckanSource]
 ]);
 
 function getSourceAdapter(kind) {

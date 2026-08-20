@@ -12,6 +12,7 @@ const {
     sweepMissingDatasets,
     insertSyncRun
 } = require('../db/catalogWriteQueries');
+const { upsertMapCandidates, sweepMapCandidates } = require('../db/mapIndexQueries');
 
 function uniqueBy(rows, key) {
     return Array.from(new Map(rows.map(row => [row[key], row])).values());
@@ -73,7 +74,7 @@ async function syncMunicipalSource(source, {
             if (!results[index] || results[index].status !== 'failed') continue;
             const identity = adapter.identityFor(records[index]);
             if (identity) failedExternalIds.push(adapter.canonicalKey(identity));
-            log.warn('ArcGIS record failed: ' + (results[index].error && results[index].error.message));
+            log.warn(source.id + ' record failed: ' + (results[index].error && results[index].error.message));
         }
         const keepExternalIds = Array.from(new Set(included.map(row => row.externalId).concat(failedExternalIds)));
         if (included.length === 0) throw new Error('ArcGIS Hub produced no eligible records');
@@ -85,10 +86,15 @@ async function syncMunicipalSource(source, {
             included: included.length,
             excluded: excluded.length,
             failed: failed.length,
-            mappable: included.filter(item => item.map).length,
+            mappable: included.reduce((count, item) => count +
+                (item.maps || (item.map ? [item.map] : [])).length +
+                (item.mapCandidates || []).length, 0),
             formats: included.reduce((counts, item) => {
-                const format = item.resource && item.resource.format;
-                if (format) counts[format] = (counts[format] || 0) + 1;
+                const resources = item.resources || (item.resource ? [item.resource] : []);
+                for (const resource of resources) {
+                    const format = resource && resource.format;
+                    if (format) counts[format] = (counts[format] || 0) + 1;
+                }
                 return counts;
             }, {}),
             places: included.flatMap(item => item.places || []).reduce((counts, item) => {
@@ -111,18 +117,26 @@ async function syncMunicipalSource(source, {
             const organizations = uniqueBy(included.map(row => row.organization), 'id');
             const datasets = uniqueBy(included.map(row => row.dataset), 'id');
             const sources = uniqueBy(included.map(row => row.source), 'externalId');
-            const resources = uniqueBy(included.map(row => row.resource), 'id');
+            const resources = uniqueBy(included.flatMap(row => row.resources || (row.resource ? [row.resource] : [])), 'id');
             const datasetIds = datasets.map(row => row.id);
-            const resourceIds = resources.map(row => row.id);
             const places = included.flatMap(row => row.places);
-            const maps = included.map(row => row.map).filter(Boolean);
+            const maps = included.flatMap(row => row.maps || (row.map ? [row.map] : []));
+            const managedMapResourceIds = included
+                .filter(row => row.manageMaps !== false)
+                .flatMap(row => (row.resources || (row.resource ? [row.resource] : [])).map(resource => resource.id));
+            const mapCandidates = included.flatMap(row => row.mapCandidates || []);
+            const candidateDatasetIds = included
+                .filter(row => row.manageMapCandidates === true)
+                .map(row => row.dataset.id);
 
             await upsertOrganizations(client, organizations);
             await upsertDatasets(client, datasets);
             await upsertDatasetSources(client, sources);
             await replaceResources(client, datasetIds, resources);
             await replaceDatasetPlaces(client, source.id, datasetIds, places);
-            await replaceResourceMaps(client, resourceIds, maps);
+            await replaceResourceMaps(client, managedMapResourceIds, maps);
+            await upsertMapCandidates(client, mapCandidates);
+            await sweepMapCandidates(client, candidateDatasetIds, mapCandidates.map(candidate => candidate.resourceId));
             if (limit == null) {
                 summary.sweep = await sweepMissingDatasets(client, keepExternalIds, {
                     sourceId: source.id,
@@ -146,13 +160,13 @@ async function syncMunicipalSource(source, {
         if (!dryRun) {
             try {
                 await insertSyncRun(pool, {
-                    kind: 'municipal',
+                    kind: 'source',
                     sourceId: source.id,
                     startedAt,
                     finishedAt: new Date(),
                     ok,
                     datasetsUpserted: summary ? summary.included : 0,
-                    resourcesUpserted: summary ? summary.included : 0,
+                    resourcesUpserted: summary ? Object.values(summary.formats).reduce((a, b) => a + b, 0) : 0,
                     error: errorMessage
                 });
             } catch (runError) {

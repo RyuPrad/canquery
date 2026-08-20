@@ -33,4 +33,23 @@ describe('generic municipal source orchestration', () => {
         const result = await mapConcurrent([3, 2, 1], 2, async value => value * 2);
         expect(result).toEqual([6, 4, 2]);
     });
+
+    test('counts all resources and local-map candidates from a multi-resource record', async () => {
+        const sourceAdapter = {
+            discover: async () => ['one'],
+            enrichRecord: async () => ({ status: 'included', value: {
+                externalId: 'one',
+                resources: [{ id: 'a', format: 'CSV' }, { id: 'b', format: 'PDF' }],
+                mapCandidates: [{ resourceId: 'a' }],
+                places: []
+            } }),
+            identityFor: value => value,
+            canonicalKey: value => value
+        };
+        const summary = await syncMunicipalSource({ id: 'test', kind: 'test' }, {
+            dryRun: true, sourceAdapter, log: { warn: jest.fn(), error: jest.fn() }
+        });
+        expect(summary.formats).toEqual({ CSV: 1, PDF: 1 });
+        expect(summary.mappable).toBe(1);
+    });
 });

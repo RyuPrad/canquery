@@ -116,7 +116,8 @@ const shapeResource = (row) => ({
         provider: row.map_provider,
         geometry_type: row.map_geometry_type,
         extent: row.map_extent || null,
-        fields: Array.isArray(row.map_fields) ? row.map_fields : []
+        fields: Array.isArray(row.map_fields) ? row.map_fields : [],
+        indexed_at: row.map_indexed_at || null
     } : null,
     ingestion: row.ingest_status
         ? { status: row.ingest_status, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at }
@@ -395,7 +396,7 @@ const opsStatus = async () => {
     const health = await catalogReadQueries.getJobHealth();
     const lastOkByJob = {};
     for (const row of health.syncRows) {
-        const name = row.kind === 'municipal' && row.source_id ? 'source:' + row.source_id : row.kind;
+        const name = ['municipal', 'source'].includes(row.kind) && row.source_id ? 'source:' + row.source_id : row.kind;
         lastOkByJob[name] = row.last_ok_at;
         if (name.startsWith('source:')) JOB_MAX_AGE_HOURS[name] = 48;
     }
@@ -416,8 +417,23 @@ const opsStatus = async () => {
             }
         }
     }
+    const rawMaps = health.mapQueue || {};
+    const oldestPendingMs = rawMaps.oldest_pending_at ? now - new Date(rawMaps.oldest_pending_at).getTime() : 0;
+    const oldestRunningMs = rawMaps.oldest_running_at ? now - new Date(rawMaps.oldest_running_at).getTime() : 0;
+    const mapStale = oldestPendingMs > 48 * 3600 * 1000 || oldestRunningMs > 10 * 60 * 1000;
+    const maps = {
+        pending: Number(rawMaps.pending) || 0,
+        running: Number(rawMaps.running) || 0,
+        ready: Number(rawMaps.ready) || 0,
+        skipped: Number(rawMaps.skipped) || 0,
+        failed: Number(rawMaps.failed) || 0,
+        oldest_pending_at: rawMaps.oldest_pending_at || null,
+        oldest_running_at: rawMaps.oldest_running_at || null,
+        last_indexed_at: rawMaps.last_indexed_at || null,
+        status: mapStale ? 'stale' : Number(rawMaps.failed) > 0 ? 'degraded' : 'ok'
+    };
     const anyStale = Object.values(jobs).some(j => j.status === 'stale');
-    return { ok: !anyStale, jobs };
+    return { ok: !anyStale && !mapStale && maps.failed === 0, jobs, maps };
 };
 
 module.exports = {

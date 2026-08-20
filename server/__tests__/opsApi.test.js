@@ -57,4 +57,21 @@ describe('ops API', () => {
         expect(res.body.data.jobs.evict.status).toBe('pending');
         expect(res.body.data.ok).toBe(true);
     });
+
+    it('reports expected map skips but alarms on a stale map lease', async () => {
+        const now = new Date();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [], evictLastOkAt: null,
+            mapQueue: {
+                pending: 0, running: 1, ready: 180, skipped: 7, failed: 0,
+                oldest_running_at: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
+                last_indexed_at: now.toISOString()
+            }
+        });
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(503);
+        expect(res.body.data.maps).toEqual(expect.objectContaining({
+            ready: 180, skipped: 7, status: 'stale'
+        }));
+    });
 });

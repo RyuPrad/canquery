@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { fetchDataset, enqueueIngest } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
@@ -31,6 +31,7 @@ const FMT_STYLES = {
   XML: { color: '#c4b5fd', background: 'rgba(167,139,250,0.13)' },
 };
 const FMT_FALLBACK = { color: '#9aa7bd', background: 'rgba(154,167,189,0.12)' };
+const INITIAL_RESOURCE_COUNT = 12;
 
 function FormatTile({ format }) {
   const style = FMT_STYLES[format] || FMT_FALLBACK;
@@ -80,6 +81,8 @@ function DatasetExplorer({ idOrName }) {
   const [unlockJobs, setUnlockJobs] = useState({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [highlightId, setHighlightId] = useState(null);
+  const [showAllResources, setShowAllResources] = useState(false);
+  const handledHighlightRef = useRef(null);
 
   const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
 
@@ -122,15 +125,22 @@ function DatasetExplorer({ idOrName }) {
   useEffect(() => {
     const focusId = searchParams.get('highlight');
     if (!focusId || !dataset) return;
+    if (handledHighlightRef.current === focusId) return;
+    const resourceIndex = (dataset.resources || []).findIndex(resource => resource.id === focusId);
+    if (resourceIndex >= INITIAL_RESOURCE_COUNT && !showAllResources) {
+      setShowAllResources(true);
+      return;
+    }
     const el = document.getElementById('res-' + focusId);
     if (el) {
       el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
       setHighlightId(focusId);
+      handledHighlightRef.current = focusId;
     }
     const next = new URLSearchParams(searchParams);
     next.delete('highlight');
     setSearchParams(next, { replace: true });
-  }, [dataset, searchParams, setSearchParams]);
+  }, [dataset, searchParams, setSearchParams, showAllResources]);
 
   // The un-highlight timer lives on highlightId, not in the effect above:
   // dropping the param re-runs that effect, and a cleanup there would cancel
@@ -164,6 +174,9 @@ function DatasetExplorer({ idOrName }) {
 
   const handleUnlockDone = () => setRefreshKey(k => k + 1);
   const queryable = (mode) => mode === 'datastore' || mode === 'ingested';
+  const visibleResources = showAllResources
+    ? dataset.resources
+    : dataset.resources.slice(0, INITIAL_RESOURCE_COUNT);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 cq-fade">
@@ -240,7 +253,7 @@ function DatasetExplorer({ idOrName }) {
         <span className="cq-chip cq-chip-mono">{dataset.resources.length}</span>
       </h2>
       <div className="space-y-2.5">
-        {dataset.resources.map(resource => (
+        {visibleResources.map(resource => (
           <div
             key={resource.id}
             id={'res-' + resource.id}
@@ -341,6 +354,18 @@ function DatasetExplorer({ idOrName }) {
           </div>
         ))}
       </div>
+      {dataset.resources.length > INITIAL_RESOURCE_COUNT && (
+        <div className="text-center pt-1">
+          <button
+            className="btn btn-sm btn-outline rounded-full border-base-content/20 px-6"
+            onClick={() => setShowAllResources(value => !value)}
+            aria-expanded={showAllResources}
+          >
+            {showAllResources ? t('dataset.show_fewer_resources') : t('dataset.show_all_resources')}
+            <span className="cq-chip cq-chip-mono ml-1">{dataset.resources.length}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-const { dedupeById, sweepMissingDatasets } = require('../db/catalogWriteQueries');
+const { dedupeById, replaceResources, sweepMissingDatasets } = require('../db/catalogWriteQueries');
 
 describe('dedupeById', () => {
     test('returns an empty array for empty / nullish input', () => {
@@ -35,6 +35,21 @@ describe('dedupeById', () => {
         const ids = out.map(r => r.id);
         expect(new Set(ids).size).toBe(ids.length);
         expect(ids.sort()).toEqual(['dup', 'other']);
+    });
+});
+
+describe('resource refresh', () => {
+    test('upserts before sweeping so unchanged dependent rows survive', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }) };
+        await replaceResources(db, ['dataset-a'], [{
+            id: 'resource-a', datasetId: 'dataset-a', nameEn: 'A', nameFr: null,
+            format: 'CSV', url: 'https://example.test/a.csv', sizeBytes: null,
+            datastoreActive: true, language: 'en', lastModified: null, raw: {}
+        }]);
+        expect(db.query.mock.calls[0][0]).toContain('INSERT INTO resources');
+        expect(db.query.mock.calls.at(-1)[0]).toContain('NOT (id = ANY');
+        expect(db.query.mock.calls.at(-1)[1]).toEqual([['dataset-a'], ['resource-a']]);
+        expect(db.query.mock.calls.some(call => /^\s*DELETE FROM resources\s+WHERE dataset_id/.test(call[0]))).toBe(true);
     });
 });
 

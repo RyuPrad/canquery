@@ -4,7 +4,7 @@ const AppError = require('../utils/AppError');
 const BASE = process.env.CKAN_BASE_URL || 'https://open.canada.ca/data/api/3/action';
 const USER_AGENT = process.env.CKAN_USER_AGENT || 'canquery/1.0';
 
-async function ckanAction(action, params) {
+async function ckanAction(action, params, { baseUrl = BASE } = {}) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params || {})) {
         if (value === null || value === undefined) {
@@ -16,7 +16,7 @@ async function ckanAction(action, params) {
         }
         searchParams.set(key, val);
     }
-    const url = BASE + '/' + action + '?' + searchParams;
+    const url = String(baseUrl).replace(/\/+$/, '') + '/' + action + '?' + searchParams;
     const response = await fetchWithBackoff(url, {
         headers: {
             'User-Agent': USER_AGENT,
@@ -34,24 +34,24 @@ async function ckanAction(action, params) {
     return body.result;
 }
 
-async function packageSearch({ q, fq, rows, start, sort } = {}) {
-    return ckanAction('package_search', { q, fq, rows, start, sort });
+async function packageSearch({ q, fq, rows, start, sort, baseUrl } = {}) {
+    return ckanAction('package_search', { q, fq, rows, start, sort }, { baseUrl });
 }
 
-async function packageShow(id) {
-    return ckanAction('package_show', { id });
+async function packageShow(id, { baseUrl } = {}) {
+    return ckanAction('package_show', { id }, { baseUrl });
 }
 
-async function packageList({ limit, offset } = {}) {
-    return ckanAction('package_list', { limit, offset });
+async function packageList({ limit, offset, baseUrl } = {}) {
+    return ckanAction('package_list', { limit, offset }, { baseUrl });
 }
 
-async function organizationList({ limit, offset, allFields } = {}) {
-    return ckanAction('organization_list', { limit, offset, all_fields: allFields });
+async function organizationList({ limit, offset, allFields, baseUrl } = {}) {
+    return ckanAction('organization_list', { limit, offset, all_fields: allFields }, { baseUrl });
 }
 
-async function datastoreSearch({ resourceId, q, filters, limit, offset, sort } = {}) {
-    return ckanAction('datastore_search', { resource_id: resourceId, q, filters, limit, offset, sort });
+async function datastoreSearch({ resourceId, q, filters, limit, offset, sort, baseUrl } = {}) {
+    return ckanAction('datastore_search', { resource_id: resourceId, q, filters, limit, offset, sort }, { baseUrl });
 }
 
-module.exports = { packageSearch, packageShow, packageList, organizationList, datastoreSearch };
+module.exports = { ckanAction, packageSearch, packageShow, packageList, organizationList, datastoreSearch };
