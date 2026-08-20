@@ -7,7 +7,7 @@ const { from: copyFrom } = require('pg-copy-streams');
 const metadataPool = require('../db/pool');
 const indexPool = require('../db/longRunningPool');
 const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
-const { escapeCsvValue } = require('./csvLoad');
+const { escapeCsvValue, csvParseOptions } = require('./csvLoad');
 const { assertDiskHeadroom } = require('./ingestPipeline');
 
 const GB = 1024 * 1024 * 1024;
@@ -234,7 +234,7 @@ async function indexMapResource(resource, job, workerId, capsRaw = {}, options =
             const transform = stagingTransform({ caps, onMetadata: value => { metadata = value; } });
             await pipeline(
                 fs.createReadStream(filePath, { encoding }),
-                parse({ columns: true, bom: true, delimiter, relax_column_count: true, skip_empty_lines: true }),
+                parse(csvParseOptions({ columns: true, delimiter })),
                 transform,
                 client.query(copyFrom('COPY map_stage (feature_id, geom_json, properties) FROM STDIN WITH (FORMAT csv)'))
             );

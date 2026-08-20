@@ -6,6 +6,21 @@ const { pipeline } = require('node:stream/promises');
 const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader } = require('../utils/csvTypes');
 const { quoteIdent } = require('../utils/filterGrammar');
 
+// Some CKAN exports use CRLF for the header and LF for later records. Let the
+// parser accept every conventional record delimiter explicitly; otherwise it
+// locks onto CRLF and rejects a correctly quoted field followed by a lone LF.
+const CSV_RECORD_DELIMITERS = ['\r\n', '\n', '\r'];
+
+function csvParseOptions(options = {}) {
+    return {
+        bom: true,
+        relax_column_count: true,
+        skip_empty_lines: true,
+        record_delimiter: CSV_RECORD_DELIMITERS,
+        ...options
+    };
+}
+
 function escapeCsvValue(v) {
     if (v === null || v === undefined) return '';
     return '"' + String(v).replace(/"/g, '""') + '"';
@@ -16,7 +31,7 @@ async function readSample(filePath, { delimiter, encoding }) {
         const records = [];
         let settled = false;
         const readStream = fs.createReadStream(filePath, { encoding });
-        const parser = parse({ bom: true, delimiter, relax_column_count: true, skip_empty_lines: true });
+        const parser = parse(csvParseOptions({ delimiter }));
 
         const finish = () => {
             const headerIndex = detectHeaderIndex(records);
@@ -100,7 +115,7 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
 
     await pipeline(
         fs.createReadStream(filePath, { encoding }),
-        parse({ bom: true, delimiter, relax_column_count: true, skip_empty_lines: true }),
+        parse(csvParseOptions({ delimiter })),
         toCsv,
         client.query(copyFrom(copySql))
     );
@@ -122,4 +137,4 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     return { rowCount, columns };
 }
 
-module.exports = { loadCsvIntoStore, escapeCsvValue };
+module.exports = { loadCsvIntoStore, escapeCsvValue, csvParseOptions, CSV_RECORD_DELIMITERS };

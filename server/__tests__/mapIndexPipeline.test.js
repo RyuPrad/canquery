@@ -1,4 +1,6 @@
 const { once } = require('node:events');
+const { parse } = require('csv-parse');
+const { csvParseOptions } = require('../services/csvLoad');
 const {
     MapSkipError,
     geometryVertexCount,
@@ -47,5 +49,27 @@ describe('bounded local-map conversion', () => {
 
         expect(() => validateCandidate({ expectedRows: 11 }, { maxRows: 10, maxVertices: 100 }))
             .toThrow(MapSkipError);
+    });
+
+    test('accepts CKAN exports that mix CRLF headers with LF records', async () => {
+        const csv = '_id,Name,Description,geometry\r\n' +
+            '1,Park,"first line\nsecond line","{""type"":""Point"",""coordinates"":[-79.38,43.65]}"\n' +
+            '2,Trail,short,"{""type"":""LineString"",""coordinates"":[[-79.4,43.6],[-79.3,43.7]]}"\n';
+        let metadata;
+        const parser = parse(csvParseOptions({ columns: true, delimiter: ',' }));
+        const transform = stagingTransform({
+            caps: { maxRows: 10, maxVertices: 10 },
+            onMetadata: value => { metadata = value; }
+        });
+        transform.on('data', () => {});
+        const ended = once(transform, 'end');
+        parser.pipe(transform);
+        parser.end(csv);
+        await ended;
+
+        expect(transform.result()).toEqual(expect.objectContaining({
+            rowCount: 2, featureCount: 2, vertexCount: 3
+        }));
+        expect(metadata.geometryColumn).toBe('geometry');
     });
 });

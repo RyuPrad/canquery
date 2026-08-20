@@ -15,10 +15,10 @@ function dedupeById(rows) {
     return Array.from(byId.values());
 }
 
-function upsertOrganizations(db, orgsRaw) {
+async function upsertOrganizations(db, orgsRaw) {
     const orgs = dedupeById(orgsRaw);
     if (orgs.length === 0) {
-        return Promise.resolve();
+        return;
     }
     const chunkSize = 500;
     const chunks = [];
@@ -26,7 +26,7 @@ function upsertOrganizations(db, orgsRaw) {
         chunks.push(orgs.slice(i, i + chunkSize));
     }
 
-    return Promise.all(chunks.map(chunk => {
+    for (const chunk of chunks) {
         const placeholders = [];
         const values = [];
         let paramIndex = 1;
@@ -45,14 +45,14 @@ function upsertOrganizations(db, orgsRaw) {
                 title_fr = EXCLUDED.title_fr,
                 place_id = EXCLUDED.place_id
         `;
-        return db.query(sql, values);
-    }));
+        await db.query(sql, values);
+    }
 }
 
-function upsertDatasets(db, datasetsRaw) {
+async function upsertDatasets(db, datasetsRaw) {
     const datasets = dedupeById(datasetsRaw);
     if (datasets.length === 0) {
-        return Promise.resolve();
+        return;
     }
     const chunkSize = 500;
     const chunks = [];
@@ -60,7 +60,7 @@ function upsertDatasets(db, datasetsRaw) {
         chunks.push(datasets.slice(i, i + chunkSize));
     }
 
-    return Promise.all(chunks.map(chunk => {
+    for (const chunk of chunks) {
         const placeholders = [];
         const values = [];
         let paramIndex = 1;
@@ -97,16 +97,16 @@ function upsertDatasets(db, datasetsRaw) {
                 metadata_modified = EXCLUDED.metadata_modified,
                 raw = EXCLUDED.raw
         `;
-        return db.query(sql, values);
-    }));
+        await db.query(sql, values);
+    }
 }
 
-function upsertDatasetSources(db, rowsRaw) {
+async function upsertDatasetSources(db, rowsRaw) {
     const rows = Array.from(new Map((rowsRaw || []).map(row => [row.sourceId + '\0' + row.externalId, row])).values());
-    if (rows.length === 0) return Promise.resolve();
+    if (rows.length === 0) return;
     const chunks = [];
     for (let i = 0; i < rows.length; i += 250) chunks.push(rows.slice(i, i + 250));
-    return Promise.all(chunks.map(chunk => {
+    for (const chunk of chunks) {
         const values = [];
         const tuples = chunk.map((row, index) => {
             const p = index * 12 + 1;
@@ -118,7 +118,7 @@ function upsertDatasetSources(db, rowsRaw) {
             );
             return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7},$${p + 8},$${p + 9},$${p + 10},$${p + 11})`;
         });
-        return db.query(`
+        await db.query(`
             INSERT INTO dataset_sources (
                 source_id, external_id, dataset_id, landing_url,
                 license_title_en, license_title_fr, license_url,
@@ -136,7 +136,7 @@ function upsertDatasetSources(db, rowsRaw) {
                 raw = EXCLUDED.raw,
                 last_seen_at = EXCLUDED.last_seen_at
         `, values);
-    }));
+    }
 }
 
 async function replaceDatasetPlaces(db, sourceId, datasetIds, linksRaw) {
