@@ -9,7 +9,7 @@ Placeholders to substitute: `<your-domain>` (the public hostname), `<password>`
 (a generated DB password), `<contact-email>` (a polite contact for the upstream
 User-Agent).
 
-Prerequisites: Node 20+, PostgreSQL 16, and nftables on the target host.
+Prerequisites: Node 20+, PostgreSQL 16 with PostGIS 3, and nftables on the target host.
 
 ## 1. App user + code
 
@@ -26,6 +26,7 @@ mkdir -p /home/canquery/logs && chown canquery:canquery /home/canquery/logs
 # as a postgres superuser:
 psql -c "CREATE ROLE canquery LOGIN PASSWORD '<password>'"
 psql -c "CREATE DATABASE canquery OWNER canquery"
+psql -d canquery -c "CREATE EXTENSION postgis"
 ```
 
 Create `/home/canquery/canquery/server/.env` from `.env.example`:
@@ -44,6 +45,9 @@ STORE_BUDGET_GB=15
 STORE_DATA_PATH=<readable-path-on-postgres-filesystem>
 STORE_MIN_FREE_GB=2
 TMP_MIN_FREE_MB=512
+MAP_STORE_BUDGET_GB=20
+MAP_MIN_FREE_GB=30
+MAP_STORE_DATA_PATH=<readable-path-on-postgres-filesystem>
 ```
 
 Never commit `.env` (it is gitignored). Apply migrations:
@@ -90,13 +94,14 @@ The repo ships templates in `deploy/`. They assume the app lives at
 `/home/canquery/canquery` and runs as user `canquery`; adjust if yours differs.
 
 ```bash
-cp deploy/canquery-api.service deploy/canquery-worker.service /etc/systemd/system/
+cp deploy/canquery-api.service deploy/canquery-worker.service deploy/canquery-map-worker.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now canquery-api canquery-worker
+systemctl enable --now canquery-api canquery-worker canquery-map-worker
 curl -s http://127.0.0.1:3100/healthz   # expect {"ok":true,...}
 ```
 
-`canquery-api` serves the API + SPA; `canquery-worker` drains the ingest queue.
+`canquery-api` serves the API + SPA; `canquery-worker` drains the ingest queue;
+`canquery-map-worker` builds bounded local PostGIS map indexes one at a time.
 The worker unit applies a cgroup memory ceiling and gives an active ingest a
 bounded grace period on SIGTERM. Excel conversion has a second, lower V8 heap
 limit and timeout inside its child process.
@@ -125,12 +130,14 @@ sudo -u canquery node /home/canquery/canquery/server/scripts/catalog-sync.js    
 # every enabled municipal/source adapter.
 sudo -u canquery npm run sync:places --prefix /home/canquery/canquery/server
 sudo -u canquery npm run sync:municipal --prefix /home/canquery/canquery/server
+sudo -u canquery npm run maps:drain --prefix /home/canquery/canquery/server
 ```
 
 Use `npm run sync:source -- --source=<source-id> --dry-run` before enabling a new
-source. A source run only publishes records with a supported CSV/XLSX snapshot
-and a verified publisher licence. Spatial ArcGIS leaf layers also receive a
-bounded live-map endpoint; unsupported/group layers remain honest exclusions.
+source. Adapters retain publisher-specific licences and only publish resources
+they can identify safely. Spatial ArcGIS leaf layers use bounded upstream
+viewports; configured CKAN GeoJSON DataStore resources are queued for a bounded
+local PostGIS index.
 
 ## 6. Cron jobs
 
@@ -155,14 +162,29 @@ Schedule (see `deploy/canquery.cron.d`): `catalog-sync` daily, `incremental-sync
 every 30 min, municipal sources daily, `evict-store` daily, and the Top 100 seed
 daily. The versioned SGC place import runs during deployment (and again when its
 configured vintage changes). The ingest worker is the systemd service from step
-4, not cron.
+4, not cron. The map worker is also a systemd service; `maps:drain` is useful for
+an initial source launch or controlled rebuild.
 
 Incremental sync advances its persisted checkpoint only after a complete
 overlap-window traversal. Reaching its safety page cap records an incomplete run
 and does not advance that checkpoint. A successful unlimited full sync also sweeps
 upstream-deleted datasets, with a configurable maximum-delete-fraction guard.
 
-## 7. Frontend build + reverse proxy
+## 7. Database backups
+
+The local map feature cache is reproducible. To keep logical dumps compact,
+exclude only its data while retaining its schema, queue, and map metadata:
+
+```bash
+pg_dump --format=custom --exclude-table-data=map_store.features canquery > canquery.dump
+```
+
+A restore destination needs the PostGIS package installed before migrations or
+restore. At startup the map worker queues any metadata row whose feature data is
+absent. This does not replace an encrypted, tested off-server backup for the
+catalogue and user-loaded tables.
+
+## 8. Frontend build + reverse proxy
 
 The API serves `client/dist` in production, so just build it next to the server:
 
@@ -176,7 +198,7 @@ Then point your reverse proxy at the API. A Caddy example is in
 `deploy/caddy-snippet.txt`; the equivalent in nginx is a simple `proxy_pass` to
 `127.0.0.1:3100`. Terminate TLS at the proxy (e.g. Let's Encrypt).
 
-## 8. Smoke test
+## 9. Smoke test
 
 ```bash
 curl -s https://<your-domain>/healthz
@@ -184,14 +206,15 @@ curl -s 'https://<your-domain>/api/v1/stats'
 curl -s 'https://<your-domain>/api/v1/datasets?q=housing&limit=3'
 curl -s 'https://<your-domain>/api/v1/places?featured=true'
 curl -s 'https://<your-domain>/api/v1/places?q=Oshawa'
+curl -s 'https://<your-domain>/api/v1/places?q=Toronto'
 curl -s 'https://<your-domain>/api/v1/sources?place=clarington-on'
 # UI: search by place, open a mapped dataset, pan/zoom the live Map tab, then load its table snapshot
 ```
 
-## 9. Rollback
+## 10. Rollback
 
 ```bash
-systemctl stop canquery-api canquery-worker
+systemctl stop canquery-api canquery-worker canquery-map-worker
 nft delete table inet canquery_egress
 # remove the reverse-proxy block + reload the proxy; remove /etc/cron.d/canquery
 ```

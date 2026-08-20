@@ -18,8 +18,10 @@ makes the whole catalogue feel queryable through one endpoint:
 The catalogue combines the federal CKAN portal with source adapters for local
 publishers. Dataset provenance and licensing stay attached per source. A
 versioned Statistics Canada SGC hierarchy powers place-first discovery, and
-spatial ArcGIS leaf layers can be explored through a bounded live map before
-their CSV snapshot is loaded. The featured local directory covers Durham Region
+spatial resources can be explored through bounded maps before their CSV snapshot
+is loaded. Toronto's official CKAN catalogue is included as one canonical city,
+with its GeoJSON DataStore layers rebuilt into a local PostGIS viewport index.
+The featured local directory also covers Durham Region
 and all eight lower-tier municipalities, with direct feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
 Clarington is represented through Durham’s regional coverage only: its current
@@ -35,12 +37,13 @@ deploy/   systemd units, cron drop-in, Caddy snippet, DEPLOY.md guide
 
 ## Local setup
 
-Prereqs: Node 20+, PostgreSQL 16.
+Prereqs: Node 20+, PostgreSQL 16, PostGIS 3.
 
 ```bash
 # 1. Database
 sudo -u postgres psql -c "CREATE ROLE canquery LOGIN PASSWORD 'canquery_dev'" \
                       -c "CREATE DATABASE canquery OWNER canquery"
+sudo -u postgres psql -d canquery -c "CREATE EXTENSION postgis"
 
 # 2. Server
 cd server
@@ -51,6 +54,7 @@ node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
 npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
+npm run maps:drain                        # build all queued local map indexes
 npm run dev                   # API on :3100
 
 # 3. Client (separate terminal)
@@ -69,7 +73,7 @@ mixed collection responses never claim one publisher's licence for every item.
 # search the mirrored catalogue (tsvector, EN+FR)
 curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV&limit=5'
 
-# browse the featured Durham directory (or search every SGC place with q)
+# browse featured regions/cities (or search every SGC place with q)
 curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'
 
@@ -83,7 +87,7 @@ curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
 
-# bounded live GeoJSON for an ArcGIS spatial resource
+# bounded GeoJSON for an upstream ArcGIS or locally indexed CKAN resource
 curl 'http://localhost:3100/api/v1/resources/<id>/map?bbox=-79,43.8,-78.7,44&zoom=11&limit=1000'
 
 # load a tabular file (idempotent; 5/hour/IP), then poll a newly-enqueued job.
@@ -118,6 +122,7 @@ expensive profile, aggregation, and export routes have dedicated rate limits.
 | `scripts/sync-source.js` | validates or syncs one configured source adapter; `--source`, `--limit`, `--dry-run` |
 | `scripts/sync-municipal-sources.js` | refreshes every enabled non-federal source independently so one failure cannot suppress the others |
 | `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
+| `scripts/map-worker.js` | exclusively owns the versioned map queue, streams official CKAN CSV dumps into PostGIS under row/vertex/file/disk budgets, and self-heals excluded map data after restore; `--once` or `--drain` |
 | `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
@@ -135,11 +140,16 @@ for the production worker).
 Type inference (1,000-row sample → INTEGER/NUMERIC/DATE/TIMESTAMPTZ/TEXT) falls back
 to TEXT per column when a later cast fails.
 
+Local maps have separate defaults: 1,000,000 rows and 10,000,000 vertices per
+resource, a 1 GB download cap, a 20 GB logical map-store budget, and a 30 GB
+filesystem free-space floor. `map_store.features` is a reproducible cache and may
+be excluded from backups; the queue reindexes missing feature data after restore.
+
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
-(All Canada remains the default). Its grouped selector features Durham Region
-and Ajax, Brock, Clarington, Oshawa, Pickering, Scugog, Uxbridge and Whitby;
+(All Canada remains the default). Its grouped selector shows featured regions,
+their municipalities, and standalone featured cities such as Toronto;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of

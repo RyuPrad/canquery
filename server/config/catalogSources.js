@@ -54,6 +54,14 @@ const ONTARIO_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ontario.'
 };
 
+const TORONTO_LICENSE = {
+    titleEn: 'Open Government Licence – Toronto',
+    titleFr: 'Licence du gouvernement ouvert – Toronto',
+    url: 'https://open.toronto.ca/open-data-licence/',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Toronto.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Toronto.'
+};
+
 const DURHAM_PUBLISHER = /(regional municipality of durham|region of durham)/i;
 const ONTARIO_PUBLISHER = /(ontario|ministry of natural resources|aviation, forest fire)/i;
 const CONSERVATION_PUBLISHER = /(conservation ontario|central lake ontario)/i;
@@ -76,6 +84,23 @@ const regionalRules = {
 // the Durham portal runs last, so a shared ArcGIS item keeps the authoritative
 // regional copy of its catalogue metadata while retaining every provenance row.
 const sources = [{
+    id: 'toronto-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Toronto Open Data',
+    nameFr: 'Données ouvertes de la Ville de Toronto',
+    homepageUrl: 'https://open.toronto.ca/',
+    catalogUrl: 'https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action',
+    upstreamHost: 'ckan0.cf.opendata.inter.prod-toronto.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    placeId: 'sgc-cd-3520',
+    defaultLicenseTitleEn: TORONTO_LICENSE.titleEn,
+    defaultLicenseTitleFr: TORONTO_LICENSE.titleFr,
+    defaultLicenseUrl: TORONTO_LICENSE.url,
+    defaultAttributionEn: TORONTO_LICENSE.attributionEn,
+    defaultAttributionFr: TORONTO_LICENSE.attributionFr
+}, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Oshawa Open Data Hub',
@@ -235,5 +260,6 @@ module.exports = {
     PICKERING_LICENSE,
     WHITBY_LICENSE,
     CLOCA_LICENSE,
-    ONTARIO_LICENSE
+    ONTARIO_LICENSE,
+    TORONTO_LICENSE
 };

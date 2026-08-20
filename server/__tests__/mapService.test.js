@@ -27,6 +27,35 @@ describe('bounded ArcGIS map service', () => {
         expect(() => mapService.parseBbox('not,a,bbox')).toThrow(/bbox/);
     });
 
+    test('serves a local PostGIS viewport with the same GeoJSON shape', async () => {
+        const local = {
+            ...row('local-map'), provider: 'canquery', source_version: 'v1',
+            indexed_at: '2026-08-20T12:00:00Z',
+            fields: [{ name: 'Street name', alias: 'Street name', type: 'text' }]
+        };
+        const queryLocalMap = jest.fn().mockResolvedValue([{
+            feature_id: '7',
+            geometry: { type: 'Point', coordinates: [-79.38, 43.65] },
+            properties: { 'Street name': 'Queen' }
+        }]);
+        const result = await mapService.queryMap('local-map', {
+            bbox: '-79.5,43.5,-79.2,43.8', zoom: '12', limit: '50'
+        }, {
+            getResourceMapById: async () => local,
+            queryLocalMap,
+            db: {}
+        });
+        expect(queryLocalMap).toHaveBeenCalledWith({}, expect.objectContaining({
+            resourceId: 'local-map', bbox: [-79.5, 43.5, -79.2, 43.8], limit: 50
+        }));
+        expect(result.data.features[0]).toEqual(expect.objectContaining({
+            id: '7', properties: { 'Street name': 'Queen' }
+        }));
+        expect(result.map).toEqual(expect.objectContaining({
+            provider: 'canquery', indexed_at: '2026-08-20T12:00:00Z'
+        }));
+    });
+
     test('queries only the viewport and allowlisted fields, then sanitizes the response', async () => {
         let requestedUrl;
         const result = await mapService.queryMap('map-one', {

@@ -57,4 +57,23 @@ describe('Statistics Canada SGC place normalization', () => {
         expect(parsed[0].Code).toBe('35');
         expect(slugify('Montréal')).toBe('montreal');
     });
+
+    test('merges Toronto census-division and subdivision identities into one city', () => {
+        const en = [
+            { Level: '2', Code: '35', 'Class title': 'Ontario' },
+            { Level: '3', Code: '3520', 'Class title': 'Toronto' },
+            { Level: '4', Code: '3520005', 'Class title': 'Toronto' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+        const toronto = result.places.filter(place => place.nameEn === 'Toronto');
+        expect(toronto).toEqual([expect.objectContaining({
+            id: 'sgc-cd-3520', slug: 'toronto-on', kind: 'municipality',
+            parentId: 'ca-on', typeEn: 'City', featured: true
+        })]);
+        expect(result.identifiers.filter(item => item.placeId === 'sgc-cd-3520')).toEqual([
+            expect.objectContaining({ scheme: 'sgc-cd', value: '3520' }),
+            expect.objectContaining({ scheme: 'sgc-csd', value: '3520005' })
+        ]);
+    });
 });

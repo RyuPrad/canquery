@@ -52,6 +52,8 @@ export default function PlacesPage() {
   );
   const regions = places.filter(place => place.kind === 'region');
   const municipalities = places.filter(place => place.kind === 'municipality');
+  const regionIds = new Set(regions.map(place => place.id));
+  const standaloneCities = municipalities.filter(place => !regionIds.has(place.parent?.id));
   const otherPlaces = places.filter(place => !['region', 'municipality'].includes(place.kind));
 
   return (
@@ -84,11 +86,24 @@ export default function PlacesPage() {
           </Link></div>}
           {!debouncedQuery && regions.length > 0 && <section>
             <h2 className="font-display font-semibold text-xl mb-3">{t('places.featured_region')}</h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{regions.map(placeCard)}</div>
+            <div className="space-y-6">
+              {regions.map(region => {
+                const children = municipalities.filter(place => place.parent?.id === region.id);
+                return <div key={region.id}>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{placeCard(region)}</div>
+                  {children.length > 0 && <div className="mt-4">
+                    <h3 className="font-display font-medium text-sm text-base-content/55 mb-2">
+                      {t('places.municipalities_in')} {region.name?.[lang] || region.name?.en}
+                    </h3>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{children.map(placeCard)}</div>
+                  </div>}
+                </div>;
+              })}
+            </div>
           </section>}
-          {!debouncedQuery && municipalities.length > 0 && <section>
-            <h2 className="font-display font-semibold text-xl mb-3">{t('places.durham_municipalities')}</h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{municipalities.map(placeCard)}</div>
+          {!debouncedQuery && standaloneCities.length > 0 && <section>
+            <h2 className="font-display font-semibold text-xl mb-3">{t('places.featured_cities')}</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{standaloneCities.map(placeCard)}</div>
           </section>}
           {debouncedQuery && places.length > 0 && <section>
             <h2 className="font-display font-semibold text-xl mb-3">{t('places.search_results')}</h2>

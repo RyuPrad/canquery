@@ -3,9 +3,10 @@ const { fetchPublicJson } = require('./publicJson');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 const { shapeProvenance } = require('./catalogService');
+const mapIndexQueries = require('../db/mapIndexQueries');
 
 const mapCache = createCache({
-    name: 'arcgis-map',
+    name: 'resource-map',
     ttlMs: 60_000,
     negativeTtlMs: 15_000,
     maxEntries: 250,
@@ -39,7 +40,9 @@ function parseInteger(value, { name, fallback, min, max }) {
 function safeFields(row) {
     const fields = Array.isArray(row.fields) ? row.fields : [];
     return fields
-        .filter(field => field && /^[A-Za-z_][A-Za-z0-9_]*$/.test(field.name || ''))
+        .filter(field => field && (row.provider === 'canquery'
+            ? typeof field.name === 'string' && field.name.length > 0 && field.name.length <= 200
+            : /^[A-Za-z_][A-Za-z0-9_]*$/.test(field.name || '')))
         .slice(0, 20)
         .map(field => ({ name: field.name, alias: String(field.alias || field.name).slice(0, 200), type: field.type || 'text' }));
 }
@@ -93,22 +96,53 @@ async function queryMap(resourceId, { bbox, zoom, limit }, options = {}) {
     const bounds = parseBbox(bbox);
     const mapZoom = parseInteger(zoom, { name: 'zoom', fallback: 11, min: 0, max: 22 });
     const requestedLimit = parseInteger(limit, { name: 'limit', fallback: 1000, min: 1, max: 1000 });
-    const row = await (options.getResourceMapById || catalogReadQueries.getResourceMapById)(resourceId);
-    if (!row) throw new AppError('Resource has no live map layer', 422);
+    const rawRow = await (options.getResourceMapById || catalogReadQueries.getResourceMapById)(resourceId);
+    if (!rawRow) throw new AppError('Resource has no live map layer', 422);
+    const provider = rawRow.provider || 'arcgis';
+    const row = { ...rawRow, provider };
     const fields = safeFields(row);
     const normalizedBounds = bounds.map(value => Number(value.toFixed(5)));
-    const { url, effectiveLimit } = buildArcgisUrl(row, normalizedBounds, mapZoom, requestedLimit, fields);
-    const key = JSON.stringify([resourceId, normalizedBounds, mapZoom, effectiveLimit]);
+    const effectiveLimit = Math.min(requestedLimit, Number(row.max_record_count) || requestedLimit);
+    const key = JSON.stringify([
+        resourceId, provider, row.source_version || row.indexed_at || row.updated_at || null,
+        normalizedBounds, mapZoom, effectiveLimit
+    ]);
     let result;
     try {
         result = await mapCache.get(key, async () => {
             try {
+                if (provider === 'canquery') {
+                    const rows = await (options.queryLocalMap || mapIndexQueries.queryLocalMap)(
+                        options.db || require('../db/pool'),
+                        {
+                            resourceId,
+                            bbox: normalizedBounds,
+                            tolerance: simplificationForZoom(mapZoom),
+                            limit: effectiveLimit
+                        }
+                    );
+                    const exceeded = rows.length > effectiveLimit;
+                    const collection = {
+                        type: 'FeatureCollection',
+                        features: rows.slice(0, effectiveLimit).map(feature => ({
+                            type: 'Feature', id: feature.feature_id,
+                            geometry: feature.geometry,
+                            properties: feature.properties || {}
+                        }))
+                    };
+                    if (Buffer.byteLength(JSON.stringify(collection)) > 8 * 1024 * 1024) {
+                        throw new AppError('Map viewport contains too much geometry; zoom in', 413);
+                    }
+                    return { collection, exceeded };
+                }
+                if (provider !== 'arcgis') throw new AppError('Unsupported map provider', 502);
                 if (activeFetches >= MAX_ACTIVE_FETCHES) {
                     throw new AppError('Map service is busy; try again shortly', 503);
                 }
                 activeFetches += 1;
                 let payload;
                 try {
+                    const { url } = buildArcgisUrl(row, normalizedBounds, mapZoom, effectiveLimit, fields);
                     payload = await (options.fetchJson || fetchPublicJson)(url, {
                         timeoutMs: 15_000,
                         maxBytes: 8 * 1024 * 1024,
@@ -118,7 +152,11 @@ async function queryMap(resourceId, { bbox, zoom, limit }, options = {}) {
                     activeFetches -= 1;
                 }
                 if (payload && payload.error) return null;
-                return cleanFeatureCollection(payload, fields, effectiveLimit);
+                const cleaned = cleanFeatureCollection(payload, fields, effectiveLimit);
+                if (Buffer.byteLength(JSON.stringify(cleaned.collection)) > 8 * 1024 * 1024) {
+                    throw new AppError('Map viewport contains too much geometry; zoom in', 413);
+                }
+                return cleaned;
             } catch (error) {
                 if (error instanceof AppError) throw error;
                 if (error && error.code === 'UPSTREAM_JSON_CAP') throw new AppError('Map viewport contains too much geometry; zoom in', 413);
@@ -135,11 +173,13 @@ async function queryMap(resourceId, { bbox, zoom, limit }, options = {}) {
         data: result.collection,
         map: {
             live: true,
+            provider,
             geometry_type: row.geometry_type,
             extent: row.extent || null,
             fields,
             returned,
-            truncated: result.exceeded || returned >= effectiveLimit
+            truncated: result.exceeded || returned >= effectiveLimit,
+            indexed_at: row.indexed_at || null
         },
         provenance: shapeProvenance(row.provenance_sources)
     };

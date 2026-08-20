@@ -7,6 +7,7 @@ const { logQueryHit } = require('../db/queryLogQueries');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
+const { getSource } = require('../config/catalogSources');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000, maxEntries: 1000 });
 // Ingested data is immutable until a re-ingest replaces it, so a profile can be
@@ -21,6 +22,20 @@ const MAX_QUERY_OFFSET = (() => {
 })();
 
 const hasAggParams = (group_by, agg, agg_column, bucket) => [group_by, agg, agg_column, bucket].some(v => v !== undefined && v !== null && v !== '');
+
+function datastoreTarget(row) {
+    const raw = row && row.raw && typeof row.raw === 'object' ? row.raw : {};
+    const sourceId = raw.source_id || 'open-canada';
+    const configured = sourceId === 'open-canada' ? null : getSource(sourceId);
+    if (sourceId !== 'open-canada' && (!configured || configured.kind !== 'ckan')) {
+        throw new AppError('Resource catalogue source is not available', 502);
+    }
+    return {
+        sourceId,
+        resourceId: raw.upstream_resource_id || row.id,
+        baseUrl: configured ? configured.catalogUrl : undefined
+    };
+}
 
 function clampLimit(limit) {
     if (limit === undefined || limit === null) return 20;
@@ -69,8 +84,12 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
         }
         if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
-        const cacheKey = JSON.stringify([id, queryText || null, ckanFilters || null, sort || null, lim, off]);
-        const result = await proxyCache.get(cacheKey, () => datastoreSearch({ resourceId: id, q: queryText, filters: ckanFilters, sort, limit: lim, offset: off }));
+        const target = datastoreTarget(row);
+        const cacheKey = JSON.stringify([target.sourceId, target.resourceId, queryText || null, ckanFilters || null, sort || null, lim, off]);
+        const result = await proxyCache.get(cacheKey, () => datastoreSearch({
+            resourceId: target.resourceId, baseUrl: target.baseUrl,
+            q: queryText, filters: ckanFilters, sort, limit: lim, offset: off
+        }));
         if (!result) throw new AppError('Upstream datastore unavailable', 502);
         logQueryHit(id, 'datastore').catch(() => {});
         return { query_mode: 'datastore', fields: result.fields, records: result.records, total: result.total, provenance };
@@ -137,7 +156,11 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
         }
         if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
         const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
-        const result = await datastoreSearch({ resourceId: id, q: queryText, filters: ckanFilters, sort, limit: cap, offset: 0 });
+        const target = datastoreTarget(row);
+        const result = await datastoreSearch({
+            resourceId: target.resourceId, baseUrl: target.baseUrl,
+            q: queryText, filters: ckanFilters, sort, limit: cap, offset: 0
+        });
         if (!result) throw new AppError('Upstream datastore unavailable', 502);
         logQueryHit(id, 'datastore').catch(() => {});
         return { fields: result.fields, records: result.records, provenance };
@@ -248,4 +271,4 @@ async function profileResource(id) {
     throw err;
 }
 
-module.exports = { queryResource, queryResourceForExport, profileResource };
+module.exports = { queryResource, queryResourceForExport, profileResource, datastoreTarget };

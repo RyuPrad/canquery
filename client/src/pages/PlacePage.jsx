@@ -96,7 +96,7 @@ export default function PlacePage() {
 
       {(place.children || []).length > 0 && (
         <section className="mt-8">
-          <h2 className="font-display font-semibold text-xl">{t('places.durham_municipalities')}</h2>
+          <h2 className="font-display font-semibold text-xl">{t('places.region_municipalities')}</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
             {place.children.map(child => (
               <Link key={child.id} to={'/places/' + child.slug} className="cq-card cq-card-hover p-4 group">

@@ -39,6 +39,23 @@ describe('query API datastore path', () => {
         expect(queryLog.logQueryHit).toHaveBeenCalledWith('ds-log', 'datastore');
     });
 
+    test('routes a namespaced Toronto resource to its trusted upstream id and action base', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({
+            id: 'ckan-toronto-open-data-resource-local', datastore_active: true,
+            raw: {
+                provider: 'ckan', source_id: 'toronto-open-data',
+                upstream_resource_id: 'toronto-upstream-id'
+            }
+        }));
+        ckan.datastoreSearch.mockResolvedValue({ fields: [], records: [], total: 0 });
+        const res = await request(app).get('/api/v1/resources/ckan-toronto-open-data-resource-local/query');
+        expect(res.status).toBe(200);
+        expect(ckan.datastoreSearch).toHaveBeenCalledWith(expect.objectContaining({
+            resourceId: 'toronto-upstream-id',
+            baseUrl: 'https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action'
+        }));
+    });
+
     test('datastore proxy responses are cached', async () => {
         queries.getResourceById.mockResolvedValue(makeRow({ id: 'ds-cache', datastore_active: true }));
         ckan.datastoreSearch.mockResolvedValue({ fields: [], records: [], total: 0 });

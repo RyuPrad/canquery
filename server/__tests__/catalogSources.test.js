@@ -3,8 +3,15 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs municipal mirrors before the authoritative Durham portal', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub'
+            'toronto-open-data', 'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub'
         ]);
+    });
+
+    test('configures Toronto as an authoritative CKAN city source', () => {
+        expect(getSource('toronto-open-data')).toEqual(expect.objectContaining({
+            kind: 'ckan', placeId: 'sgc-cd-3520',
+            defaultLicenseUrl: 'https://open.toronto.ca/open-data-licence/'
+        }));
     });
 
     test('covers each direct feed without inventing a Clarington source', () => {

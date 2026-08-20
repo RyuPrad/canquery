@@ -46,6 +46,29 @@ beforeEach(() => {
 });
 
 describe('DatasetPage ingestion', () => {
+  test('collapses long resource lists and expands a hidden deep-link target before focusing it', async () => {
+    const env = datasetEnvelope('datastore');
+    env.data.resources = Array.from({ length: 15 }, (_, index) => ({
+      ...env.data.resources[0],
+      id: 'resource-' + (index + 1),
+      name: { en: 'Resource ' + (index + 1), fr: null },
+    }));
+    fetchDataset.mockReset();
+    fetchDataset.mockResolvedValue(env);
+
+    render(
+      <MemoryRouter initialEntries={['/datasets/dataset-a?highlight=resource-15']}>
+        <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Resource 15')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Show fewer resources/i })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /Show fewer resources/i }));
+    expect(screen.queryByText('Resource 15')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Show all resources/i })).toHaveAttribute('aria-expanded', 'false');
+  });
+
   test('offers the map before a spatial snapshot has been loaded', async () => {
     const env = datasetEnvelope('ingestable');
     env.data.resources[0].map = { available: true, geometry_type: 'point' };

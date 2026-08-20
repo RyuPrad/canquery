@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/**']
   pull_request:
     branches: [main]
 
@@ -41,3 +41,37 @@ jobs:
       - run: npm run lint
       - run: npm test # vitest
       - run: npm run build
+
+  spatial:
+    name: spatial (PostGIS migrations + viewport)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5
+        env:
+          POSTGRES_USER: canquery
+          POSTGRES_PASSWORD: canquery_test
+          POSTGRES_DB: canquery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U canquery -d canquery"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      CANQUERY_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
+      SPATIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run migrate
+      - run: npx jest __tests__/spatialIntegration.test.js --runInBand

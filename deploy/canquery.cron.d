@@ -11,7 +11,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Incremental upserts from package_search high-water mark
 */30 * * * * root /usr/local/sbin/canquery-run-job.sh incremental-sync
 
-# Refresh enabled municipal/source catalogues (ArcGIS Hub today)
+# Refresh every enabled non-federal source (ArcGIS Hub and CKAN)
 30 6 * * * root /usr/local/sbin/canquery-run-job.sh sync-municipal-sources
 
 # Enforce STORE_BUDGET_GB on the store schema

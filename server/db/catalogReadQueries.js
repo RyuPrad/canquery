@@ -126,23 +126,31 @@ async function getDatasetByIdOrName(idOrName) {
 
 async function listResourcesForDataset(datasetId) {
     const result = await pool.query(`
-        SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes,
+        SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
                ir.status AS ingest_status, ir.row_count AS ingested_row_count, ir.ingested_at,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
-               rm.extent AS map_extent, rm.fields AS map_fields
+               rm.extent AS map_extent, rm.fields AS map_fields,
+               rm.indexed_at AS map_indexed_at
         FROM resources r
         LEFT JOIN ingested_resources ir ON ir.resource_id = r.id
         LEFT JOIN resource_maps rm ON rm.resource_id = r.id
         WHERE r.dataset_id = $1
-        ORDER BY r.id
+        ORDER BY CASE
+                    WHEN ir.status = 'ready' THEN 0
+                    WHEN r.datastore_active THEN 1
+                    WHEN rm.resource_id IS NOT NULL THEN 2
+                    WHEN r.format IN ('CSV','XLSX','XLS') THEN 3
+                    ELSE 4
+                 END,
+                 r.name_en NULLS LAST, r.id
     `, [datasetId]);
     return result.rows;
 }
 
 async function getResourceById(id) {
     const result = await pool.query(`
-        SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes,
+        SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
                d.name AS dataset_name, d.title_en AS dataset_title_en, d.title_fr AS dataset_title_fr,
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
@@ -150,6 +158,7 @@ async function getResourceById(id) {
                ir.ingested_at, ir.last_accessed_at,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
+               rm.indexed_at AS map_indexed_at,
                ${PROVENANCE_SELECT},
                ${PLACES_SELECT}
         FROM resources r
@@ -165,7 +174,8 @@ async function getResourceMapById(id) {
     const result = await pool.query(`
         SELECT r.id, r.dataset_id, rm.provider, rm.service_url, rm.geometry_type,
                rm.extent, rm.object_id_field, rm.display_field, rm.fields,
-               rm.max_record_count,
+               rm.max_record_count, rm.feature_count, rm.byte_size,
+               rm.indexed_at, rm.source_version, rm.updated_at,
                ${PROVENANCE_SELECT}
         FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
@@ -465,7 +475,22 @@ async function getJobHealth() {
         FROM sync_runs WHERE ok GROUP BY kind, source_id
     `);
     const evictResult = await pool.query("SELECT max(finished_at) AS last_ok_at FROM ingest_runs WHERE ok AND error LIKE 'evict:%'");
-    return { syncRows: syncResult.rows, evictLastOkAt: evictResult.rows[0] ? evictResult.rows[0].last_ok_at : null };
+    const mapResult = await pool.query(`
+        SELECT count(*) FILTER (WHERE status = 'pending')::int AS pending,
+               count(*) FILTER (WHERE status = 'running')::int AS running,
+               count(*) FILTER (WHERE status = 'ready')::int AS ready,
+               count(*) FILTER (WHERE status = 'skipped')::int AS skipped,
+               count(*) FILTER (WHERE status = 'failed')::int AS failed,
+               min(updated_at) FILTER (WHERE status = 'pending') AS oldest_pending_at,
+               min(heartbeat_at) FILTER (WHERE status = 'running') AS oldest_running_at,
+               max(finished_at) FILTER (WHERE status = 'ready') AS last_indexed_at
+        FROM map_index_jobs
+    `);
+    return {
+        syncRows: syncResult.rows,
+        evictLastOkAt: evictResult.rows[0] ? evictResult.rows[0].last_ok_at : null,
+        mapQueue: mapResult.rows[0]
+    };
 }
 
 module.exports = {
