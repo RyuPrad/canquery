@@ -5,6 +5,7 @@ import { classifyColumns } from './charts/classify.js';
 import InsightsDashboard from './InsightsDashboard.jsx';
 import ChartBuilder from './ChartBuilder.jsx';
 import { SparklesIcon, ChartIcon } from './Icons.jsx';
+import { track } from '../utils/analytics.js';
 
 export default function ChartPanel({ resourceId, q, filters, fields, queryMode, onLoad, loadState }) {
   const { t } = useLang();
@@ -41,14 +42,14 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode, 
       <div className="cq-seg w-fit">
         <button
           className={'cq-seg-btn' + (tab === 'insights' ? ' cq-seg-active' : '')}
-          onClick={() => setTab('insights')}
+          onClick={() => { track('chart_config', { resource_id: resourceId, setting: 'tab', value: 'insights' }); setTab('insights'); }}
         >
           <SparklesIcon size={13} />
           {t('chart.insights')}
         </button>
         <button
           className={'cq-seg-btn' + (tab === 'custom' ? ' cq-seg-active' : '')}
-          onClick={() => setTab('custom')}
+          onClick={() => { track('chart_config', { resource_id: resourceId, setting: 'tab', value: 'custom' }); setTab('custom'); }}
         >
           <ChartIcon size={13} />
           {t('chart.custom')}

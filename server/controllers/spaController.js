@@ -6,11 +6,21 @@ const catalogRead = require('../db/catalogReadQueries');
 // The built index.html is immutable for the life of the process (a deploy
 // restarts the API), so read it once and reuse.
 let templateCache = null;
+const ANALYTICS_MARKER = '<!-- analytics:config -->';
+const WEBSITE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function loadTemplate(distDir) {
     if (templateCache == null) {
         templateCache = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8');
     }
     return templateCache;
+}
+
+function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID) {
+    if (!template.includes(ANALYTICS_MARKER)) return template;
+    const tag = WEBSITE_ID_RE.test(websiteId || '')
+        ? '<meta name="canquery-analytics-site" content="' + websiteId + '" />'
+        : '';
+    return template.replace(ANALYTICS_MARKER, () => tag);
 }
 
 // Map a request path to a resolved meta object, fetching dataset/resource rows
@@ -49,6 +59,7 @@ function serveSpa(distDir) {
         } catch {
             // SEO is best-effort: on any failure serve the untouched template.
         }
+        html = injectAnalytics(html);
         res.set('Content-Type', 'text/html; charset=utf-8');
         // HTML is revalidated each load so a new deploy (and its hashed asset
         // refs) propagates immediately; the hashed assets themselves cache for a year.
@@ -57,4 +68,4 @@ function serveSpa(distDir) {
     };
 }
 
-module.exports = { serveSpa, resolveMeta, loadTemplate };
+module.exports = { serveSpa, resolveMeta, loadTemplate, injectAnalytics };

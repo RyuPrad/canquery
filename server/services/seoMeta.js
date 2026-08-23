@@ -70,6 +70,7 @@ function classifyRoute(pathname) {
     if (/^\/insights\/?$/.test(p)) return { type: 'insights' };
     if (/^\/organizations\/?$/.test(p)) return { type: 'organizations' };
     if (/^\/docs\/?$/.test(p)) return { type: 'docs' };
+    if (/^\/privacy\/?$/.test(p)) return { type: 'privacy' };
     return { type: 'other' };
 }
 
@@ -97,6 +98,12 @@ const STATIC_META = {
         description:
             'Anonymous JSON API over Canadian federal and local open data: search by place, map spatial layers, load tables and query them live.',
         path: '/docs',
+    },
+    privacy: {
+        title: 'Privacy and analytics - canquery',
+        description:
+            'How canquery uses anonymous, self-hosted product analytics, honors browser privacy signals, and protects visitor data.',
+        path: '/privacy',
     },
 };
 

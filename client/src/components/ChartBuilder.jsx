@@ -7,6 +7,7 @@ import {
 } from './charts/Visuals.jsx';
 import { humanize, cleanRecords } from './charts/theme.js';
 import { UnlockIcon } from './Icons.jsx';
+import { track } from '../utils/analytics.js';
 
 const selectClass = 'select select-sm bg-base-200 border-base-content/10 rounded-lg font-mono text-xs';
 const NUM_RE = /int|numeric|float|double|money|real|decimal/i;
@@ -132,11 +133,17 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
     <ChartCard title={title} subtitle={subtitle}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
         <Label>{t('chart.x')}</Label>
-        <select className={selectClass} value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+        <select className={selectClass} value={groupBy} onChange={(e) => {
+          track('chart_config', { resource_id: resourceId, setting: 'group_by', value: e.target.value });
+          setGroupBy(e.target.value);
+        }}>
           {cols.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
         </select>
         <Label>{t('chart.fn')}</Label>
-        <select className={selectClass} value={agg} onChange={(e) => setAgg(e.target.value)}>
+        <select className={selectClass} value={agg} onChange={(e) => {
+          track('chart_config', { resource_id: resourceId, setting: 'aggregation', value: e.target.value });
+          setAgg(e.target.value);
+        }}>
           <option value="count">count</option>
           <option value="sum" disabled={numericCols.length === 0}>sum</option>
           <option value="avg" disabled={numericCols.length === 0}>avg</option>
@@ -146,7 +153,10 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
         {wantsAggCol && (
           <>
             <Label>{t('chart.value_col')}</Label>
-            <select className={selectClass} value={aggCol} onChange={(e) => setAggCol(e.target.value)}>
+            <select className={selectClass} value={aggCol} onChange={(e) => {
+              track('chart_config', { resource_id: resourceId, setting: 'value_column', value: e.target.value });
+              setAggCol(e.target.value);
+            }}>
               {aggColOptions.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
             </select>
           </>
@@ -154,7 +164,10 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
         {isDate && (
           <>
             <Label>{t('chart.bucket')}</Label>
-            <select className={selectClass} value={bucket} onChange={(e) => setBucket(e.target.value)}>
+            <select className={selectClass} value={bucket} onChange={(e) => {
+              track('chart_config', { resource_id: resourceId, setting: 'bucket', value: e.target.value });
+              setBucket(e.target.value);
+            }}>
               <option value="year">year</option>
               <option value="month">month</option>
               <option value="day">day</option>
@@ -164,7 +177,10 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
         <div className="ml-auto">
           <TypeToggle
             value={chartType}
-            onChange={setChartType}
+            onChange={(value) => {
+              track('chart_config', { resource_id: resourceId, setting: 'chart_type', value });
+              setChartType(value);
+            }}
             options={[
               { value: 'bars', label: t('chart.type_bars') },
               { value: 'donut', label: t('chart.type_donut') },
@@ -259,17 +275,26 @@ function SeriesBuilder({ resourceId, q, filters, fields, onLoad, loadState }) {
     <ChartCard title={humanize(yField)} subtitle={t('chart.by') + ' ' + humanize(xField)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
         <Label>{t('chart.x')}</Label>
-        <select className={selectClass} value={xField} onChange={(e) => setXField(e.target.value)}>
+        <select className={selectClass} value={xField} onChange={(e) => {
+          track('chart_config', { resource_id: resourceId, setting: 'x_axis', value: e.target.value });
+          setXField(e.target.value);
+        }}>
           {cols.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
         </select>
         <Label>{t('chart.y')}</Label>
-        <select className={selectClass} value={yField} onChange={(e) => setYField(e.target.value)}>
+        <select className={selectClass} value={yField} onChange={(e) => {
+          track('chart_config', { resource_id: resourceId, setting: 'y_axis', value: e.target.value });
+          setYField(e.target.value);
+        }}>
           {numericCols.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
         </select>
         <div className="ml-auto">
           <TypeToggle
             value={chartType}
-            onChange={setChartType}
+            onChange={(value) => {
+              track('chart_config', { resource_id: resourceId, setting: 'chart_type', value });
+              setChartType(value);
+            }}
             options={[
               { value: 'line', label: t('chart.type_line') },
               { value: 'area', label: t('chart.type_area') },

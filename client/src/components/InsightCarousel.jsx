@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLang } from '../i18n.jsx';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { ArrowLeftIcon, ArrowRightIcon } from './Icons.jsx';
+import { track } from '../utils/analytics.js';
 
 const AUTO_MS = 6000;
 
@@ -61,7 +62,11 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
     return () => clearInterval(id);
   }, [paused, reduced, multi, pageCount]);
 
-  const go = useCallback((p) => setPage(((p % pageCount) + pageCount) % pageCount), [pageCount]);
+  const go = useCallback((p, source = 'control') => {
+    const next = ((p % pageCount) + pageCount) % pageCount;
+    track('carousel_navigate', { page: next + 1, pages: pageCount, source });
+    setPage(next);
+  }, [pageCount]);
 
   return (
     <div
@@ -100,7 +105,7 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
           <>
             <button
               type="button"
-              onClick={() => go(page - 1)}
+              onClick={() => go(page - 1, 'previous')}
               aria-label={t('carousel.prev')}
               className="cq-glass absolute top-1/2 left-0 -translate-y-1/2 sm:-translate-x-1/2 z-10 w-9 h-9 rounded-full inline-flex items-center justify-center cursor-pointer text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
@@ -108,7 +113,7 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
             </button>
             <button
               type="button"
-              onClick={() => go(page + 1)}
+              onClick={() => go(page + 1, 'next')}
               aria-label={t('carousel.next')}
               className="cq-glass absolute top-1/2 right-0 -translate-y-1/2 sm:translate-x-1/2 z-10 w-9 h-9 rounded-full inline-flex items-center justify-center cursor-pointer text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
@@ -124,7 +129,7 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
             <button
               key={i}
               type="button"
-              onClick={() => go(i)}
+              onClick={() => go(i, 'dot')}
               aria-label={t('carousel.goto') + ' ' + (i + 1)}
               aria-current={i === page ? 'true' : undefined}
               className={'h-1.5 rounded-full transition-all ' + (i === page ? 'w-5 bg-primary' : 'w-1.5 bg-base-content/25 hover:bg-base-content/40')}

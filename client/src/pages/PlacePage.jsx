@@ -5,6 +5,7 @@ import { NotFoundError } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import { writePlace } from '../utils/placeStore.js';
+import { track } from '../utils/analytics.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
@@ -21,6 +22,10 @@ export default function PlacePage() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(null);
   const debouncedQuery = useDebouncedValue(query, 250);
+
+  useEffect(() => {
+    if (debouncedQuery) track('place_search', { query: debouncedQuery, place: slug, language: lang });
+  }, [debouncedQuery, slug, lang]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +87,10 @@ export default function PlacePage() {
             to={'/?place=' + encodeURIComponent(place.slug)}
             className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
             onClick={() => writePlace(place.slug)}
+            data-analytics-event="place_open"
+            data-analytics-place-id={place.id}
+            data-analytics-place-slug={place.slug}
+            data-analytics-source="search_here"
           >
             <MapPinIcon size={13} />{t('places.search_here')}
           </Link>
@@ -99,7 +108,15 @@ export default function PlacePage() {
           <h2 className="font-display font-semibold text-xl">{t('places.region_municipalities')}</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
             {place.children.map(child => (
-              <Link key={child.id} to={'/places/' + child.slug} className="cq-card cq-card-hover p-4 group">
+              <Link
+                key={child.id}
+                to={'/places/' + child.slug}
+                className="cq-card cq-card-hover p-4 group"
+                data-analytics-event="place_open"
+                data-analytics-place-id={child.id}
+                data-analytics-place-slug={child.slug}
+                data-analytics-source="child_place"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h3 className="font-display font-semibold">{child.name?.[lang] || child.name?.en}</h3>
@@ -120,7 +137,16 @@ export default function PlacePage() {
         <div className="flex flex-wrap items-center gap-2 mt-5 text-xs text-base-content/45">
           <span>{t('source.from')}</span>
           {sources.map(source => (
-            <a key={source.id} className="cq-chip" href={source.homepage_url} target="_blank" rel="noreferrer">
+            <a
+              key={source.id}
+              className="cq-chip"
+              href={source.homepage_url}
+              target="_blank"
+              rel="noreferrer"
+              data-analytics-event="place_source_open"
+              data-analytics-place-id={place.id}
+              data-analytics-source-id={source.id}
+            >
               {source.name?.[lang] || source.name?.en}
             </a>
           ))}
@@ -131,7 +157,10 @@ export default function PlacePage() {
         <SearchBar value={query} onChange={setQuery} />
         <button
           className={'cq-pill justify-center inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
-          onClick={() => setMappable(value => !value)}
+          onClick={() => setMappable(value => {
+            track('catalog_filter', { filter: 'mappable', value: !value, place: slug });
+            return !value;
+          })}
           aria-pressed={mappable}
         >
           <MapIcon size={13} />{t('places.has_map')}
@@ -143,7 +172,7 @@ export default function PlacePage() {
             items.length === 0 ? <div className="text-center py-14 text-base-content/50">{t('places.no_datasets')}</div> :
               items.map(dataset => <DatasetRow key={dataset.id} dataset={dataset} />)}
       </section>
-      {hasMore && <div className="text-center mt-6"><button className="btn btn-outline btn-sm rounded-full px-7" onClick={loadMore} disabled={loadingMore}>{loadingMore ? t('home.loading') : t('home.load_more')}</button></div>}
+      {hasMore && <div className="text-center mt-6"><button className="btn btn-outline btn-sm rounded-full px-7" onClick={() => { track('catalog_filter', { action: 'load_more', place: slug }); loadMore(); }} disabled={loadingMore}>{loadingMore ? t('home.loading') : t('home.load_more')}</button></div>}
     </div>
   );
 }

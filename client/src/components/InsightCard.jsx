@@ -128,7 +128,14 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
         <div className="flex items-start gap-3 min-w-0">
           {rank !== null && <RankBadge rank={rank} />}
           <div className="min-w-0">
-            <Link to={to} className="font-display font-semibold tracking-tight hover:text-primary transition-colors block truncate">
+            <Link
+              to={to}
+              className="font-display font-semibold tracking-tight hover:text-primary transition-colors block truncate"
+              data-analytics-event="dataset_open"
+              data-analytics-dataset-id={datasetId || ''}
+              data-analytics-resource-id={id || ''}
+              data-analytics-source="insight_card"
+            >
               {name}
             </Link>
             {downloads !== null ? (
@@ -151,7 +158,14 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
             {item.row_count.toLocaleString()} {t('rails.rows')}
           </span>
         ) : <span />}
-        <Link to={to} className="inline-flex items-center gap-1 text-sm cq-fg-red hover:text-primary transition-colors">
+        <Link
+          to={to}
+          className="inline-flex items-center gap-1 text-sm cq-fg-red hover:text-primary transition-colors"
+          data-analytics-event="dataset_open"
+          data-analytics-dataset-id={datasetId || ''}
+          data-analytics-resource-id={id || ''}
+          data-analytics-source="insight_card_cta"
+        >
           {t('insights.open')} <ArrowRightIcon size={14} />
         </Link>
       </div>

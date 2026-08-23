@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import usePaginatedCollection from '../hooks/usePaginatedCollection';
 import { fetchOrganizations } from '../api/catalog';
 import { useLang } from '../i18n.jsx';
 import { SearchIcon } from '../components/Icons.jsx';
+import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import { track } from '../utils/analytics.js';
 
 function OrgCard({ org, t }) {
   const title = org.title.en || org.name;
@@ -13,6 +15,10 @@ function OrgCard({ org, t }) {
       to={'/?org=' + encodeURIComponent(org.name)}
       title={'See every dataset from ' + title}
       className="cq-card p-4 flex items-center gap-3.5 group"
+      data-analytics-event="catalog_filter"
+      data-analytics-filter="organization"
+      data-analytics-value={org.name}
+      data-analytics-source="organization_card"
     >
       <span className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center font-display font-bold text-base shrink-0">
         {title.charAt(0).toUpperCase()}
@@ -33,10 +39,15 @@ function OrgCard({ org, t }) {
 export default function OrganizationsPage() {
   const { t } = useLang();
   const [filter, setFilter] = useState('');
+  const debouncedFilter = useDebouncedValue(filter, 250);
   const { items, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) => fetchOrganizations({ limit: 100, cursor }),
     []
   );
+
+  useEffect(() => {
+    if (debouncedFilter) track('catalog_filter', { filter: 'organization_search', value: debouncedFilter });
+  }, [debouncedFilter]);
 
   const visible = items.filter(o =>
     !filter || (o.title.en || o.name).toLowerCase().includes(filter.toLowerCase())
@@ -74,7 +85,7 @@ export default function OrganizationsPage() {
             <div className="text-center mt-6">
               <button
                 className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
-                onClick={loadMore}
+                onClick={() => { track('catalog_filter', { action: 'load_more', source: 'organizations' }); loadMore(); }}
                 disabled={loadingMore}
               >
                 {loadingMore ? t('home.loading') : t('home.load_more')}

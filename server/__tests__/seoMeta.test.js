@@ -10,6 +10,7 @@ describe('seoMeta - route classification', () => {
         expect(seo.classifyRoute('/places')).toEqual({ type: 'places' });
         expect(seo.classifyRoute('/places/oshawa-on')).toEqual({ type: 'place', id: 'oshawa-on' });
         expect(seo.classifyRoute('/docs')).toEqual({ type: 'docs' });
+        expect(seo.classifyRoute('/privacy')).toEqual({ type: 'privacy' });
     });
 
     it('ignores query strings and trailing slashes', () => {
@@ -133,6 +134,7 @@ describe('seoMeta - site + static meta', () => {
         expect(seo.staticMeta('docs').canonical).toBe('https://canquery.com/docs');
         expect(seo.staticMeta('docs').title).toContain('API documentation');
         expect(seo.staticMeta('insights').title).toContain('Top 100');
+        expect(seo.staticMeta('privacy').canonical).toBe('https://canquery.com/privacy');
     });
 
     it('unknown routes are marked noindex', () => {

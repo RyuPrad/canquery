@@ -13,6 +13,7 @@ import HeroChartWidget from '../components/HeroChartWidget.jsx';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { formatRelativeTime } from '../utils/time.js';
 import { readPlace, writePlace } from '../utils/placeStore.js';
+import { track } from '../utils/analytics.js';
 import PlaceSelect from '../components/PlaceSelect.jsx';
 import {
   MapleLeaf,
@@ -82,6 +83,20 @@ export default function HomePage() {
 
   const debouncedQuery = useDebouncedValue(query, 250);
 
+  useEffect(() => {
+    if (!debouncedQuery) return;
+    track('catalog_search', {
+      query: debouncedQuery,
+      organization: org,
+      format,
+      place,
+      source,
+      keyword,
+      mappable,
+      language: lang,
+    });
+  }, [debouncedQuery, org, format, place, source, keyword, mappable, lang]);
+
   // Keep the URL shareable: reflect the active search in the query string.
   useEffect(() => {
     const next = {};
@@ -96,6 +111,7 @@ export default function HomePage() {
   }, [debouncedQuery, org, format, place, source, mappable, keyword, setSearchParams]);
 
   const changePlace = (next) => {
+    track('catalog_filter', { filter: 'place', value: next });
     setPlace(next);
     setOrg('');
     setSource('');
@@ -103,6 +119,7 @@ export default function HomePage() {
   };
 
   const clearKeyword = () => {
+    track('catalog_filter', { filter: 'keyword', value: '', action: 'clear' });
     const next = new URLSearchParams(searchParams);
     next.delete('keyword');
     setSearchParams(next, { replace: true });
@@ -221,7 +238,10 @@ export default function HomePage() {
           <div className="flex flex-wrap gap-2 items-center justify-center mt-4">
             <span className="text-xs text-base-content/35">{t('home.try')}</span>
             {EXAMPLES.map((ex) => (
-              <button key={ex} className="cq-pill !text-xs" onClick={() => setQuery(ex)}>
+              <button key={ex} className="cq-pill !text-xs" onClick={() => {
+                track('catalog_search', { query: ex, source: 'example' });
+                setQuery(ex);
+              }}>
                 {ex}
               </button>
             ))}
@@ -302,7 +322,7 @@ export default function HomePage() {
         <div className="flex flex-wrap gap-2 items-center mt-10">
           <button
             className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
-            onClick={() => setFormat('')}
+            onClick={() => { track('catalog_filter', { filter: 'format', value: '' }); setFormat(''); }}
           >
             {t('home.all_formats')}
           </button>
@@ -310,14 +330,17 @@ export default function HomePage() {
             <button
               key={f}
               className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
-              onClick={() => setFormat(f)}
+              onClick={() => { track('catalog_filter', { filter: 'format', value: f }); setFormat(f); }}
             >
               {f}
             </button>
           ))}
           <button
             className={'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
-            onClick={() => setMappable(value => !value)}
+            onClick={() => setMappable(value => {
+              track('catalog_filter', { filter: 'mappable', value: !value });
+              return !value;
+            })}
             aria-pressed={mappable}
           >
             <MapIcon size={12} />
@@ -326,7 +349,11 @@ export default function HomePage() {
           <select
             className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
             value={source}
-            onChange={(event) => { setSource(event.target.value); setOrg(''); }}
+            onChange={(event) => {
+              track('catalog_filter', { filter: 'source', value: event.target.value });
+              setSource(event.target.value);
+              setOrg('');
+            }}
             aria-label={t('source.choose')}
           >
             <option value="">{t('source.all')}</option>
@@ -337,7 +364,10 @@ export default function HomePage() {
           <select
             className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
             value={org}
-            onChange={(e) => setOrg(e.target.value)}
+            onChange={(e) => {
+              track('catalog_filter', { filter: 'organization', value: e.target.value });
+              setOrg(e.target.value);
+            }}
           >
             <option value="">{t('home.all_organizations')}</option>
             {orgs.map((o) => (
@@ -380,7 +410,7 @@ export default function HomePage() {
           <div className="text-center mt-6">
             <button
               className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
-              onClick={loadMore}
+              onClick={() => { track('catalog_filter', { action: 'load_more' }); loadMore(); }}
               disabled={loadingMore}
             >
               {loadingMore ? t('home.loading') : t('home.load_more')}

@@ -19,6 +19,10 @@ export default function TopDownloadRow({ item }) {
     <Link
       to={to}
       className="group flex items-center gap-3 sm:gap-4 px-2.5 sm:px-3 py-2.5 rounded-xl hover:bg-base-content/5 transition-colors"
+      data-analytics-event="dataset_open"
+      data-analytics-dataset-id={item.dataset_id}
+      data-analytics-resource-id={item.resource_id || ''}
+      data-analytics-source="top_downloads"
     >
       <span className="w-7 shrink-0 text-right font-mono text-sm text-base-content/40 tabular-nums">{item.rank}</span>
       <span className="flex-1 min-w-0">

@@ -21,7 +21,7 @@ jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.r
 const request = require('supertest');
 const catalogRead = require('../db/catalogReadQueries');
 const app = require('../app');
-const { resolveMeta } = require('../controllers/spaController');
+const { resolveMeta, injectAnalytics } = require('../controllers/spaController');
 
 beforeEach(() => { jest.clearAllMocks(); });
 
@@ -61,6 +61,21 @@ describe('pages sitemap', () => {
         expect(res.status).toBe(200);
         expect(res.text).toContain('<loc>https://canquery.com/</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/insights</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/privacy</loc>');
+    });
+});
+
+describe('analytics configuration injection', () => {
+    const template = '<head><!-- analytics:config --></head>';
+
+    it('injects only a valid website id into the static bootstrap marker', () => {
+        const id = '123e4567-e89b-42d3-a456-426614174000';
+        expect(injectAnalytics(template, id)).toContain('content="' + id + '"');
+        expect(injectAnalytics(template, '" /><script>bad</script>')).toBe('<head></head>');
+    });
+
+    it('removes the marker when analytics is not configured', () => {
+        expect(injectAnalytics(template, '')).toBe('<head></head>');
     });
 });
 
