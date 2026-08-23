@@ -165,6 +165,33 @@ configured vintage changes). The ingest worker is the systemd service from step
 4, not cron. The map worker is also a systemd service; `maps:drain` is useful for
 an initial source launch or controlled rebuild.
 
+The two Search Console entries are intentionally commented out in the generic
+cron template. Before enabling them, create a Google Desktop OAuth client owned
+by the site operator, enable the Search Console API, and set the OAuth app to a
+durable publishing status. External apps left in Testing receive seven-day
+refresh tokens, which are not suitable for unattended cron jobs. Run the
+authorization flow on an operator workstation so its loopback callback can open
+in the same browser session, then copy only the resulting mode-0600 credential
+file to the server path configured by `GSC_OAUTH_PATH`:
+
+```bash
+# On the operator workstation:
+cd server
+node scripts/authorize-search-console.js \
+  --client-secret /private/path/desktop-oauth-client.json \
+  --output /private/path/canquery-gsc-oauth.json
+
+# Securely copy that output to GSC_OAUTH_PATH on the server, then run there:
+sudo -u canquery npm run gsc:sync --prefix /home/canquery/canquery/server -- --days=90
+sudo -u canquery npm run gsc:report --prefix /home/canquery/canquery/server
+```
+
+The client requests only `webmasters.readonly`. The first sync imports 90
+finalized Pacific-time days; later runs replace a seven-day overlap. Serve the
+file configured by `GSC_REPORT_PATH` only through an authenticated, noindex
+operator route. Once the initial import and protected report are verified,
+uncomment the 06:15 UTC sync and 06:30 UTC report entries.
+
 Incremental sync advances its persisted checkpoint only after a complete
 overlap-window traversal. Reaching its safety page cap records an incomplete run
 and does not advance that checkpoint. A successful unlimited full sync also sweeps
