@@ -33,7 +33,9 @@ describe('analytics bootstrap privacy signals', () => {
     expect(tracker.dataset.performance).toBe('true');
     expect(doc.querySelector('script[src="/heatmaps.js"]')).toBeNull();
     tracker.dispatchEvent(new Event('load'));
-    expect(doc.querySelector('script[src="/heatmaps.js"]')).not.toBeNull();
+    const recorder = doc.querySelector('script[src="/heatmaps.js"]');
+    expect(recorder).not.toBeNull();
+    expect(recorder.dataset.websiteId).toBe(ID);
   });
 
   test('does nothing without a valid server-injected website id', () => {

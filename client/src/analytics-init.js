@@ -24,6 +24,7 @@ export function startAnalytics(doc = globalThis.document, nav = globalThis.navig
     const recorder = doc.createElement('script');
     recorder.async = true;
     recorder.src = '/heatmaps.js';
+    recorder.setAttribute('data-website-id', websiteId);
     doc.head.append(recorder);
   }, { once: true });
   doc.head.append(tracker);
