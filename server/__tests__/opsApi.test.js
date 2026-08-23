@@ -58,6 +58,24 @@ describe('ops API', () => {
         expect(res.body.data.ok).toBe(true);
     });
 
+    it('keeps the newest source success across legacy and current run kinds', async () => {
+        const now = new Date();
+        const legacy = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [
+                { kind: 'source', source_id: 'oshawa-hub', last_ok_at: now.toISOString() },
+                { kind: 'municipal', source_id: 'oshawa-hub', last_ok_at: legacy }
+            ],
+            evictLastOkAt: null
+        });
+
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(200);
+        expect(res.body.data.jobs['source:oshawa-hub']).toEqual({
+            last_ok_at: now.toISOString(), status: 'ok'
+        });
+    });
+
     it('reports expected map skips but alarms on a stale map lease', async () => {
         const now = new Date();
         catalogReadQueries.getJobHealth.mockResolvedValue({

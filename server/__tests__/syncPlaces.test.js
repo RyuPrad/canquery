@@ -52,6 +52,44 @@ describe('Statistics Canada SGC place normalization', () => {
         }
     });
 
+    test('features Peel and all three lower-tier municipalities with curated viewports', () => {
+        const rows = [
+            ['3521', 'Peel'],
+            ['3521005', 'Mississauga'],
+            ['3521010', 'Brampton'],
+            ['3521024', 'Caledon']
+        ];
+        const en = [
+            { Level: '2', Code: '35', 'Class title': 'Ontario' },
+            ...rows.map(([Code, name]) => ({
+                Level: Code.length === 4 ? '3' : '4', Code, 'Class title': name
+            }))
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+        const peel = result.places.find(place => place.id === 'sgc-cd-3521');
+        const mississauga = result.places.find(place => place.id === 'sgc-csd-3521005');
+        const brampton = result.places.find(place => place.id === 'sgc-csd-3521010');
+        const caledon = result.places.find(place => place.id === 'sgc-csd-3521024');
+
+        expect(peel).toEqual(expect.objectContaining({
+            slug: 'peel-on', kind: 'region', parentId: 'ca-on', featured: true,
+            typeEn: 'Regional municipality', latitude: 43.75, longitude: -79.78, defaultZoom: 9
+        }));
+        expect(mississauga).toEqual(expect.objectContaining({
+            slug: 'mississauga-on', parentId: 'sgc-cd-3521', featured: true,
+            typeEn: 'City', defaultZoom: 10
+        }));
+        expect(brampton).toEqual(expect.objectContaining({
+            slug: 'brampton-on', parentId: 'sgc-cd-3521', featured: true,
+            typeEn: 'City', defaultZoom: 10
+        }));
+        expect(caledon).toEqual(expect.objectContaining({
+            slug: 'caledon-on', parentId: 'sgc-cd-3521', featured: true,
+            typeEn: 'Town', defaultZoom: 9
+        }));
+    });
+
     test('decodes CSV buffers and produces URL-safe accents', () => {
         const parsed = rowsFrom(Buffer.from('Level,Code,Class title\n2,35,Ontario\n'), 'utf-8');
         expect(parsed[0].Code).toBe('35');

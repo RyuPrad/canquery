@@ -397,7 +397,14 @@ const opsStatus = async () => {
     const lastOkByJob = {};
     for (const row of health.syncRows) {
         const name = ['municipal', 'source'].includes(row.kind) && row.source_id ? 'source:' + row.source_id : row.kind;
-        lastOkByJob[name] = row.last_ok_at;
+        // `municipal` was renamed to `source`. Both kinds can exist for the
+        // same source in production history, so keep the newest row instead of
+        // depending on PostgreSQL's unspecified GROUP BY result order.
+        const current = lastOkByJob[name];
+        if (current == null || (row.last_ok_at != null &&
+            new Date(row.last_ok_at).getTime() > new Date(current).getTime())) {
+            lastOkByJob[name] = row.last_ok_at;
+        }
         if (name.startsWith('source:')) JOB_MAX_AGE_HOURS[name] = 48;
     }
     lastOkByJob.evict = health.evictLastOkAt;

@@ -20,9 +20,13 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-csd-3518001',
     'sgc-csd-3518020',
     'sgc-csd-3518029',
-    'sgc-csd-3518009'
+    'sgc-csd-3518009',
+    'sgc-cd-3521',
+    'sgc-csd-3521005',
+    'sgc-csd-3521010',
+    'sgc-csd-3521024'
 ]);
-const DURHAM_TYPES = {
+const MUNICIPAL_TYPES = {
     '3518005': ['Town', 'Ville'],
     '3518039': ['Township', 'Canton'],
     '3518017': ['Municipality', 'Municipalité'],
@@ -30,7 +34,19 @@ const DURHAM_TYPES = {
     '3518001': ['City', 'Ville'],
     '3518020': ['Township', 'Canton'],
     '3518029': ['Township', 'Canton'],
-    '3518009': ['Town', 'Ville']
+    '3518009': ['Town', 'Ville'],
+    '3521005': ['City', 'Ville'],
+    '3521010': ['City', 'Ville'],
+    '3521024': ['Town', 'Ville']
+};
+const PLACE_VIEWPORTS = {
+    '3518': [44.0569, -78.8570, 9],
+    '3518013': [43.8971, -78.8658, 11],
+    '3520': [43.6532, -79.3832, 10],
+    '3521': [43.7500, -79.7800, 9],
+    '3521005': [43.5890, -79.6440, 10],
+    '3521010': [43.7315, -79.7624, 10],
+    '3521024': [43.8668, -79.8670, 9]
 };
 
 function slugify(value) {
@@ -106,15 +122,20 @@ function normalize(enRows, frRows) {
             typeEn = 'Regional municipality';
             typeFr = 'Municipalité régionale';
         }
-        if (DURHAM_TYPES[code]) [typeEn, typeFr] = DURHAM_TYPES[code];
+        if (code === '3521') {
+            typeEn = 'Regional municipality';
+            typeFr = 'Municipalité régionale';
+        }
+        if (MUNICIPAL_TYPES[code]) [typeEn, typeFr] = MUNICIPAL_TYPES[code];
         if (usedSlugs.has(slug)) slug += '-' + code;
         usedSlugs.add(slug);
+        const viewport = PLACE_VIEWPORTS[code] || [];
         places.push({
             id, slug, kind, nameEn, nameFr, typeEn, typeFr, parentId,
             featured: FEATURED_PLACE_IDS.has(id),
-            latitude: code === '3520' ? 43.6532 : null,
-            longitude: code === '3520' ? -79.3832 : null,
-            defaultZoom: code === '3520' ? 10 : null
+            latitude: viewport[0] ?? null,
+            longitude: viewport[1] ?? null,
+            defaultZoom: viewport[2] ?? null
         });
         identifiers.push({ placeId: id, scheme, vintage: '2021', value: code });
     }

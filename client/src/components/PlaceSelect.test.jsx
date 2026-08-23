@@ -9,6 +9,8 @@ describe('PlaceSelect', () => {
       { id: 'ca-on', slug: 'ontario', kind: 'province', name: { en: 'Ontario' }, dataset_count: 5 },
       { id: 'ca-on-durham', slug: 'durham-on', kind: 'region', name: { en: 'Durham' }, dataset_count: 12 },
       { id: 'ca-on-oshawa', slug: 'oshawa-on', kind: 'municipality', name: { en: 'Oshawa' }, parent: { id: 'ca-on-durham' }, dataset_count: 10 },
+      { id: 'sgc-cd-3521', slug: 'peel-on', kind: 'region', name: { en: 'Peel' }, dataset_count: 901 },
+      { id: 'sgc-csd-3521005', slug: 'mississauga-on', kind: 'municipality', name: { en: 'Mississauga' }, parent: { id: 'sgc-cd-3521' }, dataset_count: 429 },
       { id: 'sgc-cd-3520', slug: 'toronto-on', kind: 'municipality', name: { en: 'Toronto' }, parent: { id: 'ca-on' }, dataset_count: 556 },
     ]} />);
     const select = screen.getByRole('combobox', { name: 'Choose a place' });
@@ -16,7 +18,7 @@ describe('PlaceSelect', () => {
     fireEvent.change(select, { target: { value: 'oshawa-on' } });
     expect(onChange).toHaveBeenCalledWith('oshawa-on');
     expect([...container.querySelectorAll('optgroup')].map(group => group.label)).toEqual([
-      'Featured regions', 'Municipalities in Durham', 'Featured cities', 'Other places'
+      'Featured regions', 'Municipalities in Durham', 'Municipalities in Peel', 'Featured cities', 'Other places'
     ]);
   });
 });

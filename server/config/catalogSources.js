@@ -62,6 +62,38 @@ const TORONTO_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Toronto.'
 };
 
+const MISSISSAUGA_LICENSE = {
+    titleEn: 'City of Mississauga Open Data Terms of Use',
+    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
+    url: 'https://www.mississauga.ca/file/COM/CityOfMississaugaTermsOfUse.pdf',
+    attributionEn: 'Contains information made available under the City of Mississauga Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Mississauga.'
+};
+
+const CC_BY_4_LICENSE = {
+    titleEn: 'Creative Commons Attribution 4.0 International',
+    titleFr: 'Creative Commons Attribution 4.0 International',
+    url: 'https://creativecommons.org/licenses/by/4.0/',
+    attributionEn: 'Licensed under Creative Commons Attribution 4.0 International.',
+    attributionFr: 'Sous licence Creative Commons Attribution 4.0 International.'
+};
+
+const STATCAN_LICENSE = {
+    titleEn: 'Statistics Canada Open Licence',
+    titleFr: 'Licence ouverte de Statistique Canada',
+    url: 'https://www.statcan.gc.ca/en/reference/licence',
+    attributionEn: 'Contains information licensed under the Statistics Canada Open Licence.',
+    attributionFr: 'Contient des renseignements visés par la Licence ouverte de Statistique Canada.'
+};
+
+const PEEL_LICENSE = {
+    titleEn: 'Open Data Licence for The Regional Municipality of Peel v1.0',
+    titleFr: 'Licence de données ouvertes de la municipalité régionale de Peel v1.0',
+    url: 'https://data.peelregion.ca/pages/license',
+    attributionEn: 'Contains information made available under the Open Data Licence for The Regional Municipality of Peel.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la municipalité régionale de Peel.'
+};
+
 const DURHAM_PUBLISHER = /(regional municipality of durham|region of durham)/i;
 const ONTARIO_PUBLISHER = /(ontario|ministry of natural resources|aviation, forest fire)/i;
 const CONSERVATION_PUBLISHER = /(conservation ontario|central lake ontario)/i;
@@ -80,9 +112,9 @@ const regionalRules = {
     ]
 };
 
-// Daily sync order is intentional. Municipal/syndicating portals run first and
-// the Durham portal runs last, so a shared ArcGIS item keeps the authoritative
-// regional copy of its catalogue metadata while retaining every provenance row.
+// Daily sync order is intentional. Within each regional cluster, municipal
+// portals run before the regional portal so a future shared ArcGIS item keeps
+// the authoritative regional metadata while retaining every provenance row.
 const sources = [{
     id: 'toronto-open-data',
     kind: 'ckan',
@@ -245,6 +277,93 @@ const sources = [{
         },
         { publisher: ONTARIO_PUBLISHER, placeId: 'ca-on', relationship: 'coverage', includesDescendants: true }
     ]
+}, {
+    id: 'mississauga-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'Mississauga Open Data',
+    nameFr: 'Données ouvertes de Mississauga',
+    homepageUrl: 'https://data.mississauga.ca/',
+    catalogUrl: 'https://data.mississauga.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'data.mississauga.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    publisherAliases: [
+        { publisher: /^city of mississauga$/i, name: 'City of Mississauga' }
+    ],
+    authoritativePublishers: [{ publisher: /^city of mississauga$/i }],
+    // The portal-wide terms apply to City datasets even when an ArcGIS item
+    // omits its per-record licence. More specific third-party terms win first.
+    licenseRules: [
+        { licensePattern: /statcan\.gc\.ca|statistics canada open licen[cs]e/i, license: STATCAN_LICENSE },
+        { publisher: /^city of mississauga$/i, license: MISSISSAUGA_LICENSE }
+    ],
+    placeRules: [{
+        publisher: /^city of mississauga$/i,
+        placeId: 'sgc-csd-3521005',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'brampton-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'Brampton GeoHub',
+    nameFr: 'Géoportail de Brampton',
+    homepageUrl: 'https://geohub.brampton.ca/',
+    catalogUrl: 'https://geohub.brampton.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'geohub.brampton.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    licenseMode: 'record-explicit',
+    restrictedLicensePatterns: [/non.?commercial/i, /elections\.on\.ca/i],
+    publisherAliases: [
+        { publisher: /^city of brampton$/i, name: 'City of Brampton' }
+    ],
+    authoritativePublishers: [{ publisher: /^city of brampton$/i }],
+    licenseRules: [
+        { licensePattern: /statcan\.gc\.ca|statistics canada open licen[cs]e/i, license: STATCAN_LICENSE },
+        {
+            licensePattern: /creativecommons\.org\/licenses\/by\/4\.0|creative commons attribution|creative commons by-law/i,
+            license: CC_BY_4_LICENSE
+        }
+    ],
+    placeRules: [{
+        publisher: /^city of brampton$/i,
+        placeId: 'sgc-csd-3521010',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'peel-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'Peel Region Data Portal',
+    nameFr: 'Portail de données de la région de Peel',
+    homepageUrl: 'https://data.peelregion.ca/',
+    catalogUrl: 'https://data.peelregion.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'data.peelregion.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    licenseMode: 'record-explicit',
+    restrictedLicensePatterns: [/peelregion\.ca\/privacy\/terms-of-use/i],
+    publisherAliases: [
+        { publisher: /regional municipality of peel|region of peel/i, name: 'Regional Municipality of Peel' }
+    ],
+    authoritativePublishers: [{ publisher: /^regional municipality of peel$/i }],
+    licenseRules: [
+        { licensePattern: /statcan\.gc\.ca|statistics canada open licen[cs]e/i, license: STATCAN_LICENSE },
+        {
+            licensePattern: /data\.peelregion\.ca\/pages\/license|open data licence for the regional municipality of peel/i,
+            license: PEEL_LICENSE
+        },
+        { licensePattern: /ontario\.ca\/page\/open-government-licence/i, license: ONTARIO_LICENSE }
+    ],
+    placeRules: [{
+        placeId: 'sgc-cd-3521',
+        relationship: 'direct',
+        includesDescendants: true
+    }]
 }];
 
 function getSource(id) {
@@ -261,5 +380,9 @@ module.exports = {
     WHITBY_LICENSE,
     CLOCA_LICENSE,
     ONTARIO_LICENSE,
-    TORONTO_LICENSE
+    TORONTO_LICENSE,
+    MISSISSAUGA_LICENSE,
+    CC_BY_4_LICENSE,
+    STATCAN_LICENSE,
+    PEEL_LICENSE
 };
