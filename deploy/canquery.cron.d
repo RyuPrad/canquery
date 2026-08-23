@@ -20,3 +20,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Rebuild the Top 100 leaderboard from the latest analytics snapshot
 # (ingests + pins each dataset's representative resource; cheap once warmed)
 15 5 * * * root /usr/local/sbin/canquery-run-job.sh seed-top100
+
+# Optional private Search Console reporting. Configure GSC_OAUTH_PATH,
+# GSC_SITE_URL, and GSC_REPORT_PATH, complete a durable OAuth grant, run the
+# first 90-day import, then uncomment both entries.
+# 15 6 * * * root /usr/local/sbin/canquery-run-job.sh sync-search-console
+# 30 6 * * * root /usr/local/sbin/canquery-run-job.sh build-search-growth-report
