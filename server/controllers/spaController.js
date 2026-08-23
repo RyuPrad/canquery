@@ -7,7 +7,7 @@ const catalogRead = require('../db/catalogReadQueries');
 // restarts the API), so read it once and reuse.
 let templateCache = null;
 const ANALYTICS_MARKER = '<!-- analytics:config -->';
-const WEBSITE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const WEBSITE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function loadTemplate(distDir) {
     if (templateCache == null) {
         templateCache = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8');
