@@ -66,7 +66,14 @@ export default function HeroChartWidget({ items, startIndex = 0, reduced = false
 
   if (horizontal) {
     return (
-      <Link to={to} {...pause} className={'cq-glass rounded-2xl border border-base-content/10 shadow-lg p-3.5 w-full flex items-center gap-4 no-underline transition-shadow hover:shadow-xl ' + className}>
+      <Link
+        to={to}
+        {...pause}
+        className={'cq-glass rounded-2xl border border-base-content/10 shadow-lg p-3.5 w-full flex items-center gap-4 no-underline transition-shadow hover:shadow-xl ' + className}
+        data-analytics-event="dataset_open"
+        data-analytics-dataset-id={item.dataset_id}
+        data-analytics-source="hero_insight"
+      >
         <div className="shrink-0" style={fade}>
           <MiniChart key={idx} kind={item.kind} points={item.points} width={116} height={96} animate={!reduced} center={summary.center} />
         </div>
@@ -83,7 +90,14 @@ export default function HeroChartWidget({ items, startIndex = 0, reduced = false
   }
 
   return (
-    <Link to={to} {...pause} className={'cq-glass rounded-2xl border border-base-content/10 shadow-xl p-3.5 w-[192px] block no-underline transition-shadow hover:shadow-2xl ' + className}>
+    <Link
+      to={to}
+      {...pause}
+      className={'cq-glass rounded-2xl border border-base-content/10 shadow-xl p-3.5 w-[192px] block no-underline transition-shadow hover:shadow-2xl ' + className}
+      data-analytics-event="dataset_open"
+      data-analytics-dataset-id={item.dataset_id}
+      data-analytics-source="hero_insight"
+    >
       <div className="mb-2">{label}</div>
       <div style={fade}>
         <div className="h-[116px] flex items-center justify-center">

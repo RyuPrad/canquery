@@ -18,6 +18,7 @@ import useElapsed from '../hooks/useElapsed.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
+import { track } from '../utils/analytics.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
 // chunk so the rest of the app stays lean.
@@ -119,6 +120,7 @@ function ResourceExplorer({ id }) {
   // Stable per-resource callback: an inline arrow here would re-arm the polling
   // effect on every render and turn it into a 0ms fetch loop.
   const onUnlockDone = useCallback((job) => {
+    track('resource_load', { resource_id: id, status: job.status === 'done' ? 'done' : 'failed', source: 'resource_page' });
     clearUnlockJob(id);
     if (job.status === 'done') {
       // The resource is now ingested; let the reload query run against local
@@ -136,6 +138,7 @@ function ResourceExplorer({ id }) {
   // The polled job no longer exists (stale localStorage id after the queue was
   // cleaned): drop the persisted state and snap back to the Load button.
   const onUnlockGone = useCallback(() => {
+    track('resource_load', { resource_id: id, status: 'gone', source: 'resource_page' });
     clearUnlockJob(id);
     setUnlockJobId(null);
     setUnlockState(null);
@@ -148,12 +151,14 @@ function ResourceExplorer({ id }) {
   const handleEnqueueResult = useCallback((env) => {
     const job = env?.data;
     if (job?.already_loaded) {
+      track('resource_load', { resource_id: id, status: 'already_loaded', source: 'resource_page' });
       onUnlockDone(job);
       return;
     }
     if (job?.id == null) throw new Error('Ingest did not return a job id');
     writeUnlockJob(id, job.id);
     setUnlockJobId(job.id);
+    track('resource_load', { resource_id: id, status: 'queued', source: 'resource_page' });
   }, [id, onUnlockDone]);
   const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone, onGone: onUnlockGone });
   const loadElapsed = useElapsed(unlockJob?.age_seconds, unlockState === 'queued');
@@ -167,13 +172,18 @@ function ResourceExplorer({ id }) {
     if (typeof size === 'number' && size > AUTO_INGEST_MAX_BYTES) {
       upgradeRequestedRef.current = true;
       setUpgrade('blocked');
+      track('resource_load', { resource_id: id, status: 'blocked', source: 'filter_upgrade' });
       return;
     }
     upgradeRequestedRef.current = true;
     setUpgrade('preparing');
+    track('resource_load', { resource_id: id, status: 'requested', source: 'filter_upgrade' });
     enqueueIngest(id)
       .then(handleEnqueueResult)
-      .catch(() => setUpgrade('unavailable'));
+      .catch(() => {
+        track('resource_load', { resource_id: id, status: 'unavailable', source: 'filter_upgrade' });
+        setUpgrade('unavailable');
+      });
   }, [id, handleEnqueueResult]);
 
   // Explicit "load this to chart it" from the Chart tab on a proxied datastore
@@ -183,10 +193,14 @@ function ResourceExplorer({ id }) {
   // upgradedRef and reloads onto local storage - the panel then swaps to the
   // full insights dashboard once the table is ready.
   const loadForChart = useCallback(() => {
+    track('resource_load', { resource_id: id, status: 'requested', source: 'chart_prompt' });
     setUnlockState('queued');
     enqueueIngest(id)
       .then(handleEnqueueResult)
-      .catch(() => setUnlockState('failed'));
+      .catch(() => {
+        track('resource_load', { resource_id: id, status: 'failed', source: 'chart_prompt' });
+        setUnlockState('failed');
+      });
   }, [id, handleEnqueueResult]);
 
   const debouncedQ = useDebouncedValue(q, 250);
@@ -196,7 +210,16 @@ function ResourceExplorer({ id }) {
     let cancelled = false;
     fetchResource(id)
       .then((env) => {
-        if (!cancelled) setResource(env.data);
+        if (!cancelled) {
+          setResource(env.data);
+          track('resource_open', {
+            resource_id: env.data.id,
+            dataset_id: env.data.dataset?.id || '',
+            format: env.data.format || '',
+            query_mode: env.data.query_mode || '',
+            source: 'page',
+          });
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -206,6 +229,13 @@ function ResourceExplorer({ id }) {
       });
     return () => { cancelled = true; };
   }, [id, reloadKey]);
+
+  useEffect(() => {
+    const active = Object.fromEntries(Object.entries(debouncedFilters).filter(([, value]) => value));
+    if (Object.keys(active).length) {
+      track('resource_filter', { resource_id: id, filters: JSON.stringify(active) });
+    }
+  }, [id, debouncedFilters]);
 
   // Snap back to the first page when the query changes - but not on the mount
   // run (every effect runs once on mount), which would wipe a ?page= deep-link
@@ -271,6 +301,16 @@ function ResourceExplorer({ id }) {
           });
           setDataError(null);
           setUpgrade(null);
+          track('resource_query', {
+            resource_id: id,
+            query: debouncedQ || '',
+            filters: JSON.stringify(debouncedFilters),
+            sort: sort || '',
+            page: page + 1,
+            query_mode: env.meta.query_mode || '',
+            total: Number(env.data.total) || 0,
+            status: 'success',
+          });
         }
       })
       .catch((err) => {
@@ -282,6 +322,14 @@ function ResourceExplorer({ id }) {
           triggerUpgrade();
           return;
         }
+        track('resource_query', {
+          resource_id: id,
+          query: debouncedQ || '',
+          filters: JSON.stringify(debouncedFilters),
+          sort: sort || '',
+          page: page + 1,
+          status: err instanceof NotIngestedError ? 'not_loaded' : err instanceof FileOnlyError ? 'file_only' : 'failed',
+        });
         setData(null);
         setDataError(err);
       })
@@ -300,11 +348,13 @@ function ResourceExplorer({ id }) {
   });
 
   const handleUnlock = async () => {
+    track('resource_load', { resource_id: id, status: 'requested', source: 'resource_page' });
     try {
       setUnlockState('queued');
       const env = await enqueueIngest(id);
       handleEnqueueResult(env);
     } catch {
+      track('resource_load', { resource_id: id, status: 'failed', source: 'resource_page' });
       setUnlockState('failed');
     }
   };
@@ -349,6 +399,10 @@ function ResourceExplorer({ id }) {
               target="_blank"
               rel="noreferrer"
               className="cq-nav-link !text-xs opacity-70"
+              data-analytics-event="resource_download"
+              data-analytics-resource-id={id}
+              data-analytics-format={resource.format || ''}
+              data-analytics-source="resource_header"
             >
               <DownloadIcon size={13} />
               {t('resource.raw')}
@@ -378,6 +432,11 @@ function ResourceExplorer({ id }) {
             href={exportHref}
             download
             title={t('resource.export_tip')}
+            data-analytics-event="resource_export"
+            data-analytics-resource-id={id}
+            data-analytics-query={debouncedQ || ''}
+            data-analytics-filters={JSON.stringify(exportFilters)}
+            data-analytics-sort={sort || ''}
           >
             <DownloadIcon size={13} />
             {t('resource.download_filtered')}
@@ -389,14 +448,14 @@ function ResourceExplorer({ id }) {
         <div className="cq-seg w-fit">
           <button
             className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}
-            onClick={() => setView('table')}
+            onClick={() => { track('resource_view', { resource_id: id, view: 'table' }); setView('table'); }}
           >
             <TableIcon size={13} />
             {t('resource.table')}
           </button>
           <button
             className={'cq-seg-btn' + (view === 'chart' ? ' cq-seg-active' : '')}
-            onClick={() => setView('chart')}
+            onClick={() => { track('resource_view', { resource_id: id, view: 'chart' }); setView('chart'); }}
           >
             <LineChartIcon size={13} />
             {t('resource.chart')}
@@ -404,7 +463,7 @@ function ResourceExplorer({ id }) {
           {resource.map && (
             <button
               className={'cq-seg-btn' + (view === 'map' ? ' cq-seg-active' : '')}
-              onClick={() => setView('map')}
+              onClick={() => { track('resource_view', { resource_id: id, view: 'map' }); setView('map'); }}
             >
               <MapIcon size={13} />
               {t('places.map')}
@@ -479,6 +538,9 @@ function ResourceExplorer({ id }) {
           <a
             href={dataError.download_url}
             className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
+            data-analytics-event="resource_download"
+            data-analytics-resource-id={id}
+            data-analytics-source="file_only"
           >
             <DownloadIcon size={13} />
             {t('resource.download_here')}
@@ -514,7 +576,10 @@ function ResourceExplorer({ id }) {
                 fields={data.fields}
                 records={data.records}
                 sort={sort}
-                onSortChange={setSort}
+                onSortChange={(next) => {
+                  track('resource_sort', { resource_id: id, sort: next || '' });
+                  setSort(next);
+                }}
                 columnFilters={columnFilters}
                 onColumnFilterChange={(id, text) =>
                   setColumnFilters((prev) => ({ ...prev, [id]: text }))
@@ -527,7 +592,10 @@ function ResourceExplorer({ id }) {
               <button
                 className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
                 disabled={page === 0}
-                onClick={() => setPage(page - 1)}
+                onClick={() => {
+                  track('resource_page', { resource_id: id, page: page, direction: 'previous' });
+                  setPage(page - 1);
+                }}
                 aria-label={t('resource.prev')}
               >
                 <ArrowLeftIcon size={14} />
@@ -538,7 +606,10 @@ function ResourceExplorer({ id }) {
               <button
                 className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
                 disabled={page >= MAX_PAGE_INDEX || (page + 1) * PAGE_SIZE >= data.total}
-                onClick={() => setPage(page + 1)}
+                onClick={() => {
+                  track('resource_page', { resource_id: id, page: page + 2, direction: 'next' });
+                  setPage(page + 1);
+                }}
                 aria-label={t('resource.next')}
               >
                 <ArrowRightIcon size={14} />

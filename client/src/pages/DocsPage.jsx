@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import { CopyIcon, CheckIcon, PlayIcon } from '../components/Icons.jsx';
 import { useLang } from '../i18n.jsx';
+import { track } from '../utils/analytics.js';
 
-function CopyButton({ text }) {
+function CopyButton({ text, endpoint }) {
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
+      track('docs_action', { action: 'copy', endpoint, status: 'success' });
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
+      track('docs_action', { action: 'copy', endpoint, status: 'failed' });
       // Clipboard unavailable (insecure context) - silently ignore.
     }
   };
@@ -31,12 +34,15 @@ function Endpoint({ method, path, desc, example, runPath }) {
   const [result, setResult] = useState(null);
   const [running, setRunning] = useState(false);
   const run = async () => {
+    track('docs_action', { action: 'run', endpoint: path, status: 'requested' });
     setRunning(true);
     try {
       const res = await fetch(runPath);
       const body = await res.json();
       setResult(JSON.stringify(body, null, 2));
+      track('docs_action', { action: 'run', endpoint: path, status: res.ok ? 'success' : 'http_error' });
     } catch (err) {
+      track('docs_action', { action: 'run', endpoint: path, status: 'failed' });
       setResult(t('docs.request_failed') + err.message);
     } finally {
       setRunning(false);
@@ -50,7 +56,7 @@ function Endpoint({ method, path, desc, example, runPath }) {
         </span>
         <code className="font-mono text-sm text-base-content/90">{path}</code>
         <div className="ml-auto flex items-center gap-1">
-          <CopyButton text={example} />
+          <CopyButton text={example} endpoint={path} />
           {runPath && (
             <button
               className="btn btn-xs btn-primary rounded-md gap-1"

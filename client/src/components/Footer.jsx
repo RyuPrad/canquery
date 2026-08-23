@@ -157,6 +157,11 @@ export default function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/privacy" className="text-base-content/65 hover:text-base-content transition-colors">
+                {t('footer.privacy')}
+              </Link>
+            </li>
+            <li>
               <a
                 href="https://open.canada.ca/data/en/dataset"
                 target="_blank"
@@ -175,6 +180,7 @@ export default function Footer() {
           </div>
           <p className="text-sm text-base-content/55">{t('footer.licence_by_source')}</p>
           <p className="text-sm text-base-content/55">{t('footer.independent')}</p>
+          <p className="text-xs text-base-content/45">{t('footer.analytics_notice')}</p>
           <p className="text-xs text-base-content/35">{t('footer.mirrored')}</p>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { useLang } from '../i18n.jsx';
 import { MapPinIcon, ArrowRightIcon, MapIcon, SearchIcon } from '../components/Icons.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import { track } from '../utils/analytics.js';
 
 export default function PlacesPage() {
   const { lang, t } = useLang();
@@ -13,6 +14,10 @@ export default function PlacesPage() {
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query, 250);
+
+  useEffect(() => {
+    if (debouncedQuery) track('place_search', { query: debouncedQuery, language: lang });
+  }, [debouncedQuery, lang]);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +39,15 @@ export default function PlacesPage() {
   }, [debouncedQuery]);
 
   const placeCard = (place) => (
-    <Link key={place.id} to={'/places/' + place.slug} className="cq-card cq-card-hover p-5 group">
+    <Link
+      key={place.id}
+      to={'/places/' + place.slug}
+      className="cq-card cq-card-hover p-5 group"
+      data-analytics-event="place_open"
+      data-analytics-place-id={place.id}
+      data-analytics-place-slug={place.slug}
+      data-analytics-source={debouncedQuery ? 'search_result' : 'featured'}
+    >
       <div className="flex items-start justify-between gap-3">
         <span className="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center"><MapPinIcon size={18} /></span>
         <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />

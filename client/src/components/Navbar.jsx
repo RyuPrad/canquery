@@ -2,6 +2,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { useTheme } from '../theme.jsx';
 import { MapleLeaf, ExternalIcon, SparklesIcon, SunIcon, MoonIcon } from './Icons.jsx';
+import { track } from '../utils/analytics.js';
 
 const navClass = ({ isActive }) => 'cq-nav-link' + (isActive ? ' cq-nav-active' : '');
 
@@ -51,7 +52,10 @@ export default function Navbar() {
           </span>
           <button
             type="button"
-            onClick={toggle}
+            onClick={() => {
+              track('ui_theme', { theme: dark ? 'light' : 'dark' });
+              toggle();
+            }}
             aria-label={t('theme.toggle')}
             title={t('theme.toggle')}
             className="cq-nav-link ml-1"
@@ -61,14 +65,14 @@ export default function Navbar() {
           <div className="cq-seg ml-1">
             <button
               className={'cq-seg-btn' + (lang === 'en' ? ' cq-seg-active' : '')}
-              onClick={() => setLang('en')}
+              onClick={() => { track('ui_language', { language: 'en' }); setLang('en'); }}
               aria-pressed={lang === 'en'}
             >
               EN
             </button>
             <button
               className={'cq-seg-btn' + (lang === 'fr' ? ' cq-seg-active' : '')}
-              onClick={() => setLang('fr')}
+              onClick={() => { track('ui_language', { language: 'fr' }); setLang('fr'); }}
               aria-pressed={lang === 'fr'}
             >
               FR

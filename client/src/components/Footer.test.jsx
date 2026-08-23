@@ -89,3 +89,16 @@ describe('Footer social links', () => {
     expect(bsky.getAttribute('target')).toBe('_blank');
   });
 });
+
+describe('Footer privacy disclosure', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(envelopeRepo(null))));
+  });
+
+  test('links to the privacy page and states that analytics are on by default', async () => {
+    render(<MemoryRouter><Footer /></MemoryRouter>);
+    const privacy = screen.getByRole('link', { name: 'Privacy and analytics' });
+    expect(privacy.getAttribute('href')).toBe('/privacy');
+    expect(screen.getByText(/analytics are on by default/i)).toBeInTheDocument();
+  });
+});

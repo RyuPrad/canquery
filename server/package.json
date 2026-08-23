@@ -24,6 +24,9 @@
         "sync:municipal": "node scripts/sync-municipal-sources.js",
         "maps:once": "node scripts/map-worker.js --once",
         "maps:drain": "node scripts/map-worker.js --drain",
+        "gsc:authorize": "node scripts/authorize-search-console.js",
+        "gsc:sync": "node scripts/sync-search-console.js",
+        "gsc:report": "node scripts/build-search-growth-report.js",
         "lint": "eslint ."
     },
     "dependencies": {
@@ -32,6 +35,7 @@
         "exceljs": "^4.4.0",
         "express": "^5.1.0",
         "express-rate-limit": "^7.4.0",
+        "google-auth-library": "^10.9.1",
         "helmet": "^8.0.0",
         "pg": "^8.13.0",
         "pg-copy-streams": "^7.0.0",

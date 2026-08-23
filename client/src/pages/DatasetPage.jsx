@@ -6,6 +6,7 @@ import useJobPolling from '../hooks/useJobPolling.js';
 import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
+import { track } from '../utils/analytics.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
@@ -83,6 +84,7 @@ function DatasetExplorer({ idOrName }) {
   const [highlightId, setHighlightId] = useState(null);
   const [showAllResources, setShowAllResources] = useState(false);
   const handledHighlightRef = useRef(null);
+  const openedRef = useRef(false);
 
   const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
 
@@ -93,6 +95,15 @@ function DatasetExplorer({ idOrName }) {
       .then(env => {
         if (!cancelled) {
           setDataset(env.data);
+          if (!openedRef.current) {
+            openedRef.current = true;
+            track('dataset_open', {
+              dataset_id: env.data.id,
+              dataset_slug: env.data.name || '',
+              resource_count: (env.data.resources || []).length,
+              source: 'page',
+            });
+          }
           setNotFound(false);
           // Resume any unlocks left in flight before a refresh so their
           // loading badges reappear instead of reverting to "Unlock".
@@ -195,13 +206,13 @@ function DatasetExplorer({ idOrName }) {
         <div className="cq-seg shrink-0 mt-1.5">
           <button
             className={'cq-seg-btn' + (contentLang === 'en' ? ' cq-seg-active' : '')}
-            onClick={() => setContentLang('en')}
+            onClick={() => { track('catalog_filter', { filter: 'dataset_language', value: 'en', dataset_id: dataset.id }); setContentLang('en'); }}
           >
             EN
           </button>
           <button
             className={'cq-seg-btn' + (contentLang === 'fr' ? ' cq-seg-active' : '')}
-            onClick={() => setContentLang('fr')}
+            onClick={() => { track('catalog_filter', { filter: 'dataset_language', value: 'fr', dataset_id: dataset.id }); setContentLang('fr'); }}
           >
             FR
           </button>
@@ -222,7 +233,15 @@ function DatasetExplorer({ idOrName }) {
           </span>
         )}
         {(dataset.places || []).map(place => (
-          <Link key={place.id} to={'/places/' + place.slug} className="inline-flex items-center gap-1.5 hover:text-base-content">
+          <Link
+            key={place.id}
+            to={'/places/' + place.slug}
+            className="inline-flex items-center gap-1.5 hover:text-base-content"
+            data-analytics-event="place_open"
+            data-analytics-place-id={place.id}
+            data-analytics-place-slug={place.slug}
+            data-analytics-source="dataset_page"
+          >
             <MapPinIcon size={14} />
             {place.name?.[contentLang] || place.name?.en}
           </Link>
@@ -240,6 +259,9 @@ function DatasetExplorer({ idOrName }) {
             to={'/?keyword=' + encodeURIComponent(kw)}
             className="cq-pill !text-xs !font-medium"
             title={'Find every dataset tagged ' + kw}
+            data-analytics-event="catalog_search"
+            data-analytics-query={kw}
+            data-analytics-source="dataset_keyword"
           >
             {kw}
           </Link>
@@ -275,6 +297,10 @@ function DatasetExplorer({ idOrName }) {
                 <Link
                   to={'/resources/' + resource.id}
                   className="btn btn-xs btn-primary rounded-lg gap-1"
+                  data-analytics-event="resource_open"
+                  data-analytics-resource-id={resource.id}
+                  data-analytics-dataset-id={dataset.id}
+                  data-analytics-source="dataset_resource"
                 >
                   {t('common.explore')}
                   <ArrowRightIcon size={11} />
@@ -284,6 +310,10 @@ function DatasetExplorer({ idOrName }) {
                 <Link
                   to={'/resources/' + resource.id + '?view=map'}
                   className="btn btn-xs btn-outline rounded-lg gap-1 border-base-content/20"
+                  data-analytics-event="resource_view"
+                  data-analytics-resource-id={resource.id}
+                  data-analytics-view="map"
+                  data-analytics-source="dataset_resource"
                 >
                   <MapIcon size={11} />
                   {t('places.map')}
@@ -293,7 +323,11 @@ function DatasetExplorer({ idOrName }) {
                 unlockJobs[resource.id] ? (
                   <PollBadge
                     jobId={unlockJobs[resource.id]}
-                    onDone={() => { clearUnlockJob(resource.id); handleUnlockDone(); }}
+                    onDone={(job) => {
+                      track('resource_load', { resource_id: resource.id, status: job?.status || 'done', source: 'dataset_page' });
+                      clearUnlockJob(resource.id);
+                      handleUnlockDone();
+                    }}
                     onGone={() => {
                       clearUnlockJob(resource.id);
                       setUnlockJobs(prev => {
@@ -303,6 +337,7 @@ function DatasetExplorer({ idOrName }) {
                       });
                     }}
                     onRetry={() => {
+                      track('resource_load', { resource_id: resource.id, status: 'retry', source: 'dataset_page' });
                       clearUnlockJob(resource.id);
                       setUnlockJobs(prev => {
                         const next = { ...prev };
@@ -315,10 +350,12 @@ function DatasetExplorer({ idOrName }) {
                   <button
                     className="btn btn-xs btn-primary rounded-lg gap-1"
                     onClick={async () => {
+                      track('resource_load', { resource_id: resource.id, status: 'requested', source: 'dataset_page' });
                       try {
                         const env = await enqueueIngest(resource.id);
                         const job = env?.data;
                         if (job?.already_loaded) {
+                          track('resource_load', { resource_id: resource.id, status: 'already_loaded', source: 'dataset_page' });
                           clearUnlockJob(resource.id);
                           setUnlockJobs(prev => {
                             const next = { ...prev };
@@ -332,6 +369,7 @@ function DatasetExplorer({ idOrName }) {
                         setUnlockJobs(prev => ({ ...prev, [resource.id]: job.id }));
                         writeUnlockJob(resource.id, job.id);
                       } catch (err) {
+                        track('resource_load', { resource_id: resource.id, status: 'failed', source: 'dataset_page' });
                         setError(err);
                       }
                     }}
@@ -346,6 +384,11 @@ function DatasetExplorer({ idOrName }) {
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-xs btn-ghost rounded-lg gap-1 text-base-content/60"
+                data-analytics-event="resource_download"
+                data-analytics-resource-id={resource.id}
+                data-analytics-dataset-id={dataset.id}
+                data-analytics-format={resource.format || ''}
+                data-analytics-source="dataset_page"
               >
                 <DownloadIcon size={11} />
                 {t('dataset.download')}
@@ -360,6 +403,9 @@ function DatasetExplorer({ idOrName }) {
             className="btn btn-sm btn-outline rounded-full border-base-content/20 px-6"
             onClick={() => setShowAllResources(value => !value)}
             aria-expanded={showAllResources}
+            data-analytics-event="resource_view"
+            data-analytics-dataset-id={dataset.id}
+            data-analytics-view={showAllResources ? 'fewer_resources' : 'all_resources'}
           >
             {showAllResources ? t('dataset.show_fewer_resources') : t('dataset.show_all_resources')}
             <span className="cq-chip cq-chip-mono ml-1">{dataset.resources.length}</span>

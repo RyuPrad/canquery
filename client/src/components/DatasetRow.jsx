@@ -16,6 +16,10 @@ export default function DatasetRow({ dataset }) {
     <Link
       to={'/datasets/' + (dataset.name || dataset.id)}
       className="cq-card block p-4 sm:px-5 group"
+      data-analytics-event="dataset_open"
+      data-analytics-dataset-id={dataset.id}
+      data-analytics-dataset-slug={dataset.name || ''}
+      data-analytics-source="catalog_result"
     >
       <div className="flex justify-between items-center gap-4">
         <div className="min-w-0">

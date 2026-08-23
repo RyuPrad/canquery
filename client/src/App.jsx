@@ -9,6 +9,8 @@ import OrganizationsPage from './pages/OrganizationsPage'
 import DocsPage from './pages/DocsPage'
 import PlacesPage from './pages/PlacesPage'
 import PlacePage from './pages/PlacePage'
+import PrivacyPage from './pages/PrivacyPage'
+import AnalyticsBridge from './components/AnalyticsBridge.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
 
@@ -41,6 +43,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col text-base-content">
       <ScrollToTop />
+      <AnalyticsBridge />
       <Navbar />
       <main className="flex-1 w-full">
         <Suspense fallback={<div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8"><div className="cq-skel h-[60vh] rounded-2xl" /></div>}>
@@ -53,6 +56,7 @@ export default function App() {
             <Route path="/places" element={<PlacesPage />} />
             <Route path="/places/:slug" element={<PlacePage />} />
             <Route path="/docs" element={<DocsPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

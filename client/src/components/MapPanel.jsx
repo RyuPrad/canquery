@@ -7,6 +7,7 @@ import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import { useLang } from '../i18n.jsx';
 import { useTheme } from '../theme.jsx';
 import { MapIcon } from './Icons.jsx';
+import { track } from '../utils/analytics.js';
 
 const GEOMETRY_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_CBCT_GEOM_3857/MapServer/tile/{z}/{y}/{x}';
 const ENGLISH_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_TXT_3857/MapServer/tile/{z}/{y}/{x}';
@@ -61,9 +62,25 @@ export default function MapPanel({ resourceId, map: mapInfo }) {
         setFeatures(env.data);
         setMeta(env.meta?.map || null);
         setError(null);
+        track('map_viewport', {
+          resource_id: resourceId,
+          bbox: debouncedViewport.bbox,
+          zoom: debouncedViewport.zoom,
+          returned: Number(env.meta?.map?.returned) || 0,
+          truncated: Boolean(env.meta?.map?.truncated),
+          status: 'success',
+        });
       })
       .catch(err => {
-        if (err?.name !== 'AbortError') setError(err);
+        if (err?.name !== 'AbortError') {
+          track('map_viewport', {
+            resource_id: resourceId,
+            bbox: debouncedViewport.bbox,
+            zoom: debouncedViewport.zoom,
+            status: err?.status === 413 ? 'too_broad' : 'failed',
+          });
+          setError(err);
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -94,7 +111,11 @@ export default function MapPanel({ resourceId, map: mapInfo }) {
       container.append(term, detail);
     }
     layer.bindPopup(container, { maxWidth: 320 });
-  }, [mapInfo?.fields]);
+    layer.on('popupopen', () => track('map_feature_open', {
+      resource_id: resourceId,
+      geometry_type: feature?.geometry?.type || mapInfo?.geometry_type || '',
+    }));
+  }, [mapInfo?.fields, mapInfo?.geometry_type, resourceId]);
 
   return (
     <div className="cq-card overflow-hidden relative">
