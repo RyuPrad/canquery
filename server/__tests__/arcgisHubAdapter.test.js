@@ -142,6 +142,100 @@ describe('ArcGIS Hub adapter', () => {
         }));
     });
 
+    test('applies Mississauga portal terms while preserving explicit Statistics Canada licensing', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'Mississauga', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
+        const source = getSource('mississauga-hub');
+        const cityRecord = record({
+            landingPage: 'https://data.mississauga.ca/datasets/mississauga::wards',
+            publisher: { name: 'City Of Mississauga' },
+            license: null
+        });
+        const city = await adapter.enrichRecord(cityRecord, source, { fetchJson });
+        expect(city.status).toBe('included');
+        expect(city.value.places[0].placeId).toBe('sgc-csd-3521005');
+        expect(city.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseUrl: 'https://www.mississauga.ca/file/COM/CityOfMississaugaTermsOfUse.pdf'
+        }));
+
+        const census = await adapter.enrichRecord({
+            ...cityRecord,
+            license: 'https://www.statcan.gc.ca/en/reference/licence'
+        }, source, { fetchJson });
+        expect(census.value.source.licenseUrl).toBe('https://www.statcan.gc.ca/en/reference/licence');
+    });
+
+    test('admits only explicit Brampton CC BY or Statistics Canada records', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'Brampton', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPoint', fields: [] });
+        const source = getSource('brampton-hub');
+        const bramptonRecord = record({
+            landingPage: 'https://geohub.brampton.ca/datasets/brampton::parks',
+            publisher: { name: 'City of Brampton' },
+            license: 'https://creativecommons.org/licenses/by/4.0'
+        });
+        const allowed = await adapter.enrichRecord(bramptonRecord, source, { fetchJson });
+        expect(allowed.status).toBe('included');
+        expect(allowed.value.places[0].placeId).toBe('sgc-csd-3521010');
+        expect(allowed.value.source.licenseUrl).toBe('https://creativecommons.org/licenses/by/4.0/');
+
+        const missing = await adapter.enrichRecord({ ...bramptonRecord, license: null }, source, { fetchJson });
+        expect(missing).toEqual({ status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2' });
+
+        const restricted = await adapter.enrichRecord({
+            ...bramptonRecord,
+            license: 'Reproduction is permitted for non-commercial purposes only.'
+        }, source, { fetchJson });
+        expect(restricted).toEqual({ status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2' });
+    });
+
+    test('uses recognized Peel licences and keeps regional third-party records non-authoritative', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'RegionOfPeel', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolyline', fields: [] });
+        const source = getSource('peel-hub');
+        const peelRecord = record({
+            landingPage: 'https://data.peelregion.ca/datasets/RegionofPeel::roads',
+            publisher: { name: 'Region of Peel - Corporate Services' },
+            license: 'https://data.peelregion.ca/pages/license'
+        });
+        const regional = await adapter.enrichRecord(peelRecord, source, { fetchJson });
+        expect(regional.status).toBe('included');
+        expect(regional.value.organization.titleEn).toBe('Regional Municipality of Peel');
+        expect(regional.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-cd-3521', relationship: 'direct', includesDescendants: true
+        }));
+        expect(regional.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true, licenseUrl: 'https://data.peelregion.ca/pages/license'
+        }));
+
+        const census = await adapter.enrichRecord({
+            ...peelRecord,
+            publisher: { name: 'Statistics Canada' },
+            license: 'Statistics Canada Open License'
+        }, source, { fetchJson });
+        expect(census.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: false,
+            licenseUrl: 'https://www.statcan.gc.ca/en/reference/licence'
+        }));
+
+        const custom = await adapter.enrichRecord({
+            ...peelRecord,
+            publisher: { name: 'Canada Mortgage and Housing Corporation' },
+            license: 'https://www.cmhc-schl.gc.ca/en/data-and-research/cmhc-licence-agreement-use-of-data'
+        }, source, { fetchJson });
+        expect(custom).toEqual({ status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2' });
+
+        const websiteTerms = await adapter.enrichRecord({
+            ...peelRecord,
+            license: 'https://www.peelregion.ca/privacy/terms-of-use.asp'
+        }, source, { fetchJson });
+        expect(websiteTerms).toEqual({ status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2' });
+    });
+
     test('rejects group layers instead of presenting them as downloadable tables', async () => {
         const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
             ? { owner: 'OshawaGIS', type: 'Feature Service' }

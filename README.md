@@ -26,6 +26,10 @@ and all eight lower-tier municipalities, with direct feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
 Clarington is represented through Durham’s regional coverage only: its current
 public web-map terms are personal/non-commercial, so no direct adapter is enabled.
+Peel Region is included alongside direct Mississauga and Brampton feeds; Caledon
+is represented honestly through Peel's regional coverage. Each portal is gated
+to its recognized open licences, so generic website terms, blank licence records
+where no portal-wide grant applies, and non-commercial data stay excluded.
 
 ## Layout
 
@@ -53,6 +57,7 @@ npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
 npm run sync:source -- --source=durham-hub --dry-run
+npm run sync:source -- --source=peel-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
 npm run maps:drain                        # build all queued local map indexes
 npm run dev                   # API on :3100
@@ -76,9 +81,11 @@ curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV
 # browse featured regions/cities (or search every SGC place with q)
 curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'
+curl 'http://localhost:3100/api/v1/places?q=Mississauga'
 
 # place-filtered sources are authoritative; counts expose total + authoritative
 curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
+curl 'http://localhost:3100/api/v1/sources?place=mississauga-on'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'

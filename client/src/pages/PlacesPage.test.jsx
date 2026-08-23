@@ -21,6 +21,23 @@ beforeEach(() => {
       dataset_count: 350, direct_dataset_count: 0, mappable_resource_count: 300
     },
     {
+      id: 'sgc-cd-3521', slug: 'peel-on', kind: 'region',
+      name: { en: 'Peel' }, type: { en: 'Regional municipality' },
+      dataset_count: 901, direct_dataset_count: 139, mappable_resource_count: 609
+    },
+    {
+      id: 'sgc-csd-3521005', slug: 'mississauga-on', kind: 'municipality',
+      name: { en: 'Mississauga' }, type: { en: 'City' },
+      parent: { id: 'sgc-cd-3521', name: { en: 'Peel' } },
+      dataset_count: 429, direct_dataset_count: 290, mappable_resource_count: 222
+    },
+    {
+      id: 'sgc-csd-3521024', slug: 'caledon-on', kind: 'municipality',
+      name: { en: 'Caledon' }, type: { en: 'Town' },
+      parent: { id: 'sgc-cd-3521', name: { en: 'Peel' } },
+      dataset_count: 139, direct_dataset_count: 0, mappable_resource_count: 106
+    },
+    {
       id: 'sgc-cd-3520', slug: 'toronto-on', kind: 'municipality',
       name: { en: 'Toronto' }, type: { en: 'City' },
       parent: { id: 'ca-on', name: { en: 'Ontario' } },
@@ -35,10 +52,13 @@ describe('PlacesPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Featured regions' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Municipalities in Durham' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Municipalities in Peel' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Featured cities' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
-    expect(screen.getByText('Broader-area coverage')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();
+    expect(screen.getAllByText('Broader-area coverage')).toHaveLength(2);
     await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith({
       q: undefined, featured: true, limit: 100
     }));
