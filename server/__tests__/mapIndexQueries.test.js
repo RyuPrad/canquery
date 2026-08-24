@@ -34,6 +34,8 @@ describe('versioned map-index queue', () => {
             resource_id: 'r1', claimed_version: 'v1'
         }));
         expect(db.query.mock.calls[1][0]).toContain('FOR UPDATE SKIP LOCKED');
+        expect(db.query.mock.calls[1][0]).toContain("candidate->>'expectedBytes'");
+        expect(db.query.mock.calls[1][0]).toContain('NULLS LAST');
     });
 
     test('terminal and retry transitions are lease and version guarded', async () => {

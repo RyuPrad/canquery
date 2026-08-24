@@ -137,7 +137,9 @@ Use `npm run sync:source -- --source=<source-id> --dry-run` before enabling a ne
 source. Adapters retain publisher-specific licences and only publish resources
 they can identify safely. Spatial ArcGIS leaf layers use bounded upstream
 viewports; configured CKAN GeoJSON DataStore resources are queued for a bounded
-local PostGIS index.
+local PostGIS index. Catalogued direct GeoJSON resources use the same queue and
+are streamed, CRS-validated, and reprojected to WGS84 without loading a whole
+file into memory.
 
 ## 6. Cron jobs
 
@@ -235,6 +237,7 @@ curl -s 'https://<your-domain>/api/v1/places?featured=true'
 curl -s 'https://<your-domain>/api/v1/places?q=Oshawa'
 curl -s 'https://<your-domain>/api/v1/places?q=Toronto'
 curl -s 'https://<your-domain>/api/v1/places?q=Ottawa'
+curl -s 'https://<your-domain>/api/v1/places?q=Montr%C3%A9al'
 curl -s 'https://<your-domain>/api/v1/places?q=Mississauga'
 curl -s 'https://<your-domain>/api/v1/places?q=Brampton'
 curl -s 'https://<your-domain>/api/v1/sources?place=clarington-on'

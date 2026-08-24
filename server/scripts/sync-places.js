@@ -25,9 +25,11 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-cd-3521',
     'sgc-csd-3521005',
     'sgc-csd-3521010',
-    'sgc-csd-3521024'
+    'sgc-csd-3521024',
+    'sgc-csd-2466023'
 ]);
 const MUNICIPAL_TYPES = {
+    '2466023': ['City', 'Ville'],
     '3518005': ['Town', 'Ville'],
     '3518039': ['Township', 'Canton'],
     '3518017': ['Municipality', 'Municipalité'],
@@ -41,6 +43,7 @@ const MUNICIPAL_TYPES = {
     '3521024': ['Town', 'Ville']
 };
 const PLACE_VIEWPORTS = {
+    '2466023': [45.5019, -73.5674, 10],
     '3506': [45.4215, -75.6972, 9],
     '3518': [44.0569, -78.8570, 9],
     '3518013': [43.8971, -78.8658, 11],
@@ -119,6 +122,8 @@ function normalize(enRows, frRows) {
         if (code === '35') baseSlug = 'ontario';
         let slug = baseSlug;
         if (code === '3518') slug = 'durham-on';
+        if (code === '2466') slug = 'montreal-region-qc';
+        if (code === '2466023') slug = 'montreal-qc';
         if (code === '3506') slug = 'ottawa-on';
         if (code === '3520') slug = 'toronto-on';
         if (code === '3518013') slug = 'oshawa-on';
@@ -146,13 +151,87 @@ function normalize(enRows, frRows) {
     return { places, identifiers };
 }
 
-async function upsert({ places, identifiers }, dryRun) {
-    if (dryRun) return;
+async function preflightPlaceChanges(client, places) {
+    const desiredById = new Map();
+    const desiredBySlug = new Map();
+    for (const place of places) {
+        if (desiredById.has(place.id)) throw new Error('duplicate desired place id: ' + place.id);
+        if (desiredBySlug.has(place.slug)) {
+            throw new Error('duplicate desired place slug: ' + place.slug);
+        }
+        desiredById.set(place.id, place);
+        desiredBySlug.set(place.slug, place.id);
+    }
+    const ids = Array.from(desiredById.keys());
+    const slugs = Array.from(desiredBySlug.keys());
+    const existingResult = await client.query(`
+        SELECT id, slug, name_en FROM places WHERE id = ANY($1::text[])
+    `, [ids]);
+    const canonicalResult = await client.query(`
+        SELECT id, slug FROM places WHERE slug = ANY($1::text[])
+    `, [slugs]);
+    for (const row of canonicalResult.rows) {
+        const desiredOwner = desiredBySlug.get(row.slug);
+        if (desiredOwner !== row.id) {
+            throw new Error('desired place slug is already canonical for another place: ' + row.slug);
+        }
+    }
+    const aliases = [];
+    let nameChanges = 0;
+    let slugChanges = 0;
+    for (const row of existingResult.rows) {
+        const desired = desiredById.get(row.id);
+        if (row.name_en !== desired.nameEn) nameChanges += 1;
+        if (row.slug === desired.slug) continue;
+        if (desiredBySlug.has(row.slug) && desiredBySlug.get(row.slug) !== row.id) {
+            throw new Error('former place slug is becoming canonical for another place: ' + row.slug);
+        }
+        slugChanges += 1;
+        aliases.push({ slug: row.slug, placeId: row.id });
+    }
+    if (aliases.length) {
+        const aliasResult = await client.query(`
+            SELECT slug, place_id FROM place_aliases WHERE slug = ANY($1::text[])
+        `, [aliases.map(item => item.slug)]);
+        const wanted = new Map(aliases.map(item => [item.slug, item.placeId]));
+        for (const row of aliasResult.rows) {
+            if (wanted.get(row.slug) !== row.place_id) {
+                throw new Error('former place slug is already an alias for another place: ' + row.slug);
+            }
+        }
+    }
+    return { aliases, nameChanges, slugChanges, aliasConflicts: 0 };
+}
+
+async function upsert({ places, identifiers }, dryRun, dbPool = pool) {
     const kindOrder = { country: 0, province: 1, territory: 1, region: 2, municipality: 3 };
     const orderedPlaces = [...places].sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind]);
-    const client = await pool.connect();
+    const client = await dbPool.connect();
     try {
         await client.query('BEGIN');
+        const changes = await preflightPlaceChanges(client, orderedPlaces);
+        if (dryRun) {
+            await client.query('ROLLBACK');
+            return changes;
+        }
+        for (let index = 0; index < changes.aliases.length; index += 500) {
+            const chunk = changes.aliases.slice(index, index + 500);
+            const values = [];
+            const tuples = chunk.map((alias, i) => {
+                const p = i * 2 + 1;
+                values.push(alias.slug, alias.placeId);
+                return `($${p},$${p + 1})`;
+            });
+            const inserted = await client.query(`
+                INSERT INTO place_aliases (slug, place_id)
+                VALUES ${tuples.join(',')}
+                ON CONFLICT (slug) DO UPDATE SET place_id = EXCLUDED.place_id
+                WHERE place_aliases.place_id = EXCLUDED.place_id
+            `, values);
+            if (inserted.rowCount !== chunk.length) {
+                throw new Error('place alias ownership changed during refresh');
+            }
+        }
         for (let index = 0; index < orderedPlaces.length; index += 250) {
             const chunk = orderedPlaces.slice(index, index + 250);
             const values = [];
@@ -201,6 +280,7 @@ async function upsert({ places, identifiers }, dryRun) {
             `, values);
         }
         await client.query('COMMIT');
+        return changes;
     } catch (error) {
         try { await client.query('ROLLBACK'); } catch {}
         throw error;
@@ -214,9 +294,16 @@ async function main() {
         fetchPublicBuffer(EN_URL, { maxBytes: 2 * 1024 * 1024 }),
         fetchPublicBuffer(FR_URL, { maxBytes: 2 * 1024 * 1024 })
     ]);
-    const normalized = normalize(rowsFrom(en, 'utf-8'), rowsFrom(fr, 'windows-1252'));
-    await upsert(normalized, process.argv.includes('--dry-run'));
-    console.log(JSON.stringify({ places: normalized.places.length, identifiers: normalized.identifiers.length }));
+    const normalized = normalize(rowsFrom(en, 'windows-1252'), rowsFrom(fr, 'windows-1252'));
+    const changes = await upsert(normalized, process.argv.includes('--dry-run'));
+    console.log(JSON.stringify({
+        places: normalized.places.length,
+        identifiers: normalized.identifiers.length,
+        name_changes: changes.nameChanges,
+        slug_changes: changes.slugChanges,
+        aliases_to_add: changes.aliases.length,
+        alias_conflicts: changes.aliasConflicts
+    }));
 }
 
 if (require.main === module) {
@@ -230,4 +317,4 @@ if (require.main === module) {
         });
 }
 
-module.exports = { normalize, slugify, rowsFrom, upsert, main };
+module.exports = { normalize, slugify, rowsFrom, preflightPlaceChanges, upsert, main };

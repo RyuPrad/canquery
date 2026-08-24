@@ -39,6 +39,7 @@
         "helmet": "^8.0.0",
         "pg": "^8.13.0",
         "pg-copy-streams": "^7.0.0",
+        "stream-json": "2.1.0",
         "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
     },
     "devDependencies": {

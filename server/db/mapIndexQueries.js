@@ -137,7 +137,13 @@ async function claimJob(db, workerId) {
         WHERE resource_id = (
             SELECT resource_id FROM map_index_jobs
             WHERE status = 'pending'
-            ORDER BY updated_at, resource_id
+            ORDER BY
+                CASE
+                    WHEN candidate->>'expectedBytes' ~ '^[0-9]+$'
+                        THEN (candidate->>'expectedBytes')::numeric
+                    ELSE NULL
+                END NULLS LAST,
+                updated_at, resource_id
             LIMIT 1 FOR UPDATE SKIP LOCKED
         )
         RETURNING resource_id, desired_version AS claimed_version,

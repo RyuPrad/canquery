@@ -3,7 +3,7 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'toronto-open-data', 'ottawa-hub',
+            'toronto-open-data', 'montreal-open-data', 'ottawa-hub',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
@@ -36,6 +36,27 @@ describe('configured municipal catalogue sources', () => {
             kind: 'ckan', placeId: 'sgc-cd-3520',
             defaultLicenseUrl: 'https://open.toronto.ca/open-data-licence/'
         }));
+    });
+
+    test('configures Montréal as a French-first, record-licensed CKAN source', () => {
+        const montreal = getSource('montreal-open-data');
+        expect(montreal).toEqual(expect.objectContaining({
+            kind: 'ckan', metadataLanguage: 'fr', licenseMode: 'record-explicit',
+            upstreamHost: 'donnees.montreal.ca', directGeoJsonMaps: true
+        }));
+        expect(montreal.licenseRules.map(rule => rule.license.url)).toEqual([
+            'https://creativecommons.org/licenses/by/4.0/',
+            'https://open.canada.ca/en/open-government-licence-canada'
+        ]);
+        expect(montreal.placeRules).toEqual([
+            expect.objectContaining({
+                placeId: 'sgc-csd-2466023', relationship: 'direct',
+                publisher: expect.any(RegExp)
+            }),
+            expect.objectContaining({
+                placeId: 'sgc-csd-2466023', relationship: 'coverage'
+            })
+        ]);
     });
 
     test('covers each direct feed without inventing a Clarington source', () => {

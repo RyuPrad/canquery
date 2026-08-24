@@ -48,6 +48,12 @@ beforeEach(() => {
       name: { en: 'Ottawa' }, type: { en: 'City' },
       parent: { id: 'ca-on', name: { en: 'Ontario' } },
       dataset_count: 392, direct_dataset_count: 392, mappable_resource_count: 191
+    },
+    {
+      id: 'sgc-csd-2466023', slug: 'montreal-qc', kind: 'municipality',
+      name: { en: 'Montréal', fr: 'Montréal' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-cd-2466', name: { en: 'Montréal', fr: 'Montréal' } },
+      dataset_count: 405, direct_dataset_count: 390, mappable_resource_count: 304
     }
   ] });
 });
@@ -62,6 +68,7 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('heading', { name: 'Featured cities' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Montréal/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();

@@ -77,7 +77,7 @@ async function syncMunicipalSource(source, {
             log.warn(source.id + ' record failed: ' + (results[index].error && results[index].error.message));
         }
         const keepExternalIds = Array.from(new Set(included.map(row => row.externalId).concat(failedExternalIds)));
-        if (included.length === 0) throw new Error('ArcGIS Hub produced no eligible records');
+        if (included.length === 0) throw new Error('catalogue source produced no eligible records');
 
         summary = {
             source_id: source.id,
@@ -89,6 +89,21 @@ async function syncMunicipalSource(source, {
             mappable: included.reduce((count, item) => count +
                 (item.maps || (item.map ? [item.map] : [])).length +
                 (item.mapCandidates || []).length, 0),
+            authoritative: included.filter(item => item.source && item.source.isAuthoritative === true).length,
+            licenses: included.reduce((counts, item) => {
+                const key = item.source && item.source.licenseUrl || 'none';
+                counts[key] = (counts[key] || 0) + 1;
+                return counts;
+            }, {}),
+            relationships: included.flatMap(item => item.places || []).reduce((counts, item) => {
+                counts[item.relationship] = (counts[item.relationship] || 0) + 1;
+                return counts;
+            }, {}),
+            map_modes: included.flatMap(item => item.mapCandidates || []).reduce((counts, item) => {
+                const key = item.mode || 'ckan-datastore-csv';
+                counts[key] = (counts[key] || 0) + 1;
+                return counts;
+            }, {}),
             formats: included.reduce((counts, item) => {
                 const resources = item.resources || (item.resource ? [item.resource] : []);
                 for (const resource of resources) {

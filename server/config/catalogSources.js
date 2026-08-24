@@ -94,6 +94,14 @@ const CC_BY_4_LICENSE = {
     attributionFr: 'Sous licence Creative Commons Attribution 4.0 International.'
 };
 
+const OGL_CANADA_LICENSE = {
+    titleEn: 'Open Government Licence – Canada',
+    titleFr: 'Licence du gouvernement ouvert – Canada',
+    url: 'https://open.canada.ca/en/open-government-licence-canada',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Canada.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Canada.'
+};
+
 const STATCAN_LICENSE = {
     titleEn: 'Statistics Canada Open Licence',
     titleFr: 'Licence ouverte de Statistique Canada',
@@ -143,11 +151,51 @@ const sources = [{
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     placeId: 'sgc-cd-3520',
+    metadataLanguage: 'en',
+    defaultOrganizationId: 'city-of-toronto',
+    defaultOrganizationName: 'city-of-toronto',
+    defaultOrganizationTitleEn: 'City of Toronto',
+    defaultOrganizationTitleFr: 'Ville de Toronto',
     defaultLicenseTitleEn: TORONTO_LICENSE.titleEn,
     defaultLicenseTitleFr: TORONTO_LICENSE.titleFr,
     defaultLicenseUrl: TORONTO_LICENSE.url,
     defaultAttributionEn: TORONTO_LICENSE.attributionEn,
     defaultAttributionFr: TORONTO_LICENSE.attributionFr
+}, {
+    id: 'montreal-open-data',
+    kind: 'ckan',
+    nameEn: 'Montréal Open Data',
+    nameFr: 'Données ouvertes de la Ville de Montréal',
+    homepageUrl: 'https://donnees.montreal.ca/',
+    catalogUrl: 'https://donnees.montreal.ca/api/3/action',
+    upstreamHost: 'donnees.montreal.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-montreal',
+    defaultOrganizationName: 'ville-de-montreal',
+    defaultOrganizationTitleFr: 'Ville de Montréal',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de montréal$/i }],
+    licenseRules: [
+        { licenseId: /^cc-by$/i, license: CC_BY_4_LICENSE },
+        { licenseId: /^ogl-canada-2\.0$/i, license: OGL_CANADA_LICENSE }
+    ],
+    placeRules: [
+        {
+            publisher: /^ville de montréal$/i,
+            placeId: 'sgc-csd-2466023',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            placeId: 'sgc-csd-2466023',
+            relationship: 'coverage',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'ottawa-hub',
     kind: 'arcgis-hub',
@@ -431,6 +479,7 @@ module.exports = {
     OTTAWA_POLICE_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
+    OGL_CANADA_LICENSE,
     STATCAN_LICENSE,
     PEEL_LICENSE
 };
