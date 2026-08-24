@@ -30,9 +30,13 @@ function finiteCap(value, fallback) {
 }
 
 function mapCaps(overrides = {}) {
+    const maxVertices = finiteCap(overrides.maxVertices,
+        finiteCap(process.env.MAP_MAX_VERTICES, 10_000_000));
     return {
         maxRows: finiteCap(overrides.maxRows, finiteCap(process.env.MAP_MAX_ROWS, 1_000_000)),
-        maxVertices: finiteCap(overrides.maxVertices, finiteCap(process.env.MAP_MAX_VERTICES, 10_000_000)),
+        maxVertices,
+        maxFeatureVertices: Math.min(maxVertices, finiteCap(overrides.maxFeatureVertices,
+            finiteCap(process.env.MAP_MAX_FEATURE_VERTICES, 1_000_000))),
         maxFileBytes: finiteCap(overrides.maxFileBytes, finiteCap(process.env.MAP_MAX_FILE_MB, 1024) * 1024 * 1024),
         storeBudgetBytes: finiteCap(overrides.storeBudgetBytes, finiteCap(process.env.MAP_STORE_BUDGET_GB, 20) * GB),
         minFreeBytes: finiteCap(overrides.minFreeBytes, finiteCap(process.env.MAP_MIN_FREE_GB, 30) * GB),
@@ -82,6 +86,16 @@ function geometryVertexCount(geometry) {
     };
     walk(geometry.coordinates);
     return count;
+}
+
+function assertFeatureVertexCount(vertices, caps) {
+    const maxFeatureVertices = finiteCap(caps.maxFeatureVertices, caps.maxVertices);
+    if (vertices > maxFeatureVertices) {
+        throw new MapSkipError(
+            'feature vertex count exceeds map cap ' + maxFeatureVertices,
+            'MAP_VERTICES'
+        );
+    }
 }
 
 function normalizedGeometryType(type) {
@@ -268,6 +282,7 @@ function stagingTransform({ caps, onMetadata }) {
                     callback();
                     return;
                 }
+                assertFeatureVertexCount(vertices, caps);
                 vertexCount += vertices;
                 if (vertexCount > caps.maxVertices) {
                     throw new MapSkipError('vertex count exceeds map cap ' + caps.maxVertices, 'MAP_VERTICES');
@@ -326,6 +341,7 @@ function geoJsonStagingTransform({ caps, onMetadata }) {
                     callback();
                     return;
                 }
+                assertFeatureVertexCount(vertices, caps);
                 vertexCount += vertices;
                 if (vertexCount > caps.maxVertices) {
                     throw new MapSkipError('vertex count exceeds map cap ' + caps.maxVertices, 'MAP_VERTICES');
