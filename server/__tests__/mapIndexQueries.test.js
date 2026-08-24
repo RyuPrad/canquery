@@ -27,12 +27,27 @@ describe('versioned map-index queue', () => {
 
     test('recovers leases and claims one pending version with SKIP LOCKED', async () => {
         const db = { query: jest.fn()
-            .mockResolvedValueOnce({ rowCount: 2 })
+            .mockResolvedValueOnce({
+                rowCount: 2,
+                rows: [
+                    { resource_id: 'r1', status: 'pending' },
+                    { resource_id: 'r2', status: 'failed' }
+                ]
+            })
             .mockResolvedValueOnce({ rows: [{ resource_id: 'r1', claimed_version: 'v1', candidate: {}, attempts: 1 }] }) };
-        await expect(recoverOrphanedJobs(db)).resolves.toMatchObject({ rowCount: 2 });
+        await expect(recoverOrphanedJobs(db, 3)).resolves.toMatchObject({
+            rowCount: 2,
+            rows: expect.arrayContaining([
+                expect.objectContaining({ status: 'pending' }),
+                expect.objectContaining({ status: 'failed' })
+            ])
+        });
         await expect(claimJob(db, '00000000-0000-4000-8000-000000000001')).resolves.toEqual(expect.objectContaining({
             resource_id: 'r1', claimed_version: 'v1'
         }));
+        expect(db.query.mock.calls[0][0]).toContain("attempts >= $1 THEN 'failed'");
+        expect(db.query.mock.calls[0][0]).toContain('RETURNING resource_id, status');
+        expect(db.query.mock.calls[0][1]).toEqual([3]);
         expect(db.query.mock.calls[1][0]).toContain('FOR UPDATE SKIP LOCKED');
         expect(db.query.mock.calls[1][0]).toContain("candidate->>'expectedBytes'");
         expect(db.query.mock.calls[1][0]).toContain('NULLS LAST');
