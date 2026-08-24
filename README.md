@@ -157,8 +157,9 @@ for the production worker).
 Type inference (1,000-row sample → INTEGER/NUMERIC/DATE/TIMESTAMPTZ/TEXT) falls back
 to TEXT per column when a later cast fails.
 
-Local maps have separate defaults: 1,000,000 rows and 10,000,000 vertices per
-resource, a 1 GB download cap, a 20 GB logical map-store budget, and a 30 GB
+Local maps have separate defaults: 1,000,000 rows, 1,000,000 vertices per feature,
+and 10,000,000 vertices per resource, plus a 1 GB download cap, a 20 GB logical
+map-store budget, and a 30 GB
 filesystem free-space floor. Direct GeoJSON supports absent/WGS84, CRS84, and
 named PostGIS EPSG definitions; unsupported or malformed CRS declarations fail
 closed for that resource. `map_store.features` is a reproducible cache and may

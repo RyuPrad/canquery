@@ -135,6 +135,26 @@ describe('bounded local-map conversion', () => {
             .toEqual(['Address']);
     });
 
+    test('rejects one oversized feature before PostGIS conversion', async () => {
+        const transform = geoJsonStagingTransform({
+            caps: { maxRows: 10, maxVertices: 10, maxFeatureVertices: 2 },
+            onMetadata: () => {}
+        });
+        const failed = once(transform, 'error');
+        transform.end({
+            key: 0,
+            value: {
+                type: 'Feature',
+                geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1], [2, 2]] },
+                properties: {}
+            }
+        });
+        const [error] = await failed;
+        expect(error).toBeInstanceOf(MapSkipError);
+        expect(error).toMatchObject({ code: 'MAP_VERTICES' });
+        expect(error.message).toContain('feature vertex count exceeds map cap 2');
+    });
+
     test('validates transformed WGS84 extents', () => {
         expect(validWgs84Extent([-74, 45, -73, 46])).toBe(true);
         expect(validWgs84Extent([277000, 5040000, 300000, 5060000])).toBe(false);
