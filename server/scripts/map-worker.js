@@ -170,8 +170,12 @@ async function main() {
             throw new Error(message);
         }
         console.log('map-worker started as ' + workerId + (drainMode ? ' (drain mode)' : onceMode ? ' (once mode)' : ''));
-        const recovered = await recoverOrphanedJobs(pool);
-        if (recovered.rowCount) console.log('requeued ' + recovered.rowCount + ' interrupted map job(s)');
+        const recovered = await recoverOrphanedJobs(pool, MAX_ATTEMPTS);
+        const recoveredRows = recovered.rows || [];
+        const requeuedCount = recoveredRows.filter(row => row.status === 'pending').length;
+        const failedCount = recoveredRows.filter(row => row.status === 'failed').length;
+        if (requeuedCount) console.log('requeued ' + requeuedCount + ' interrupted map job(s)');
+        if (failedCount) console.error('failed ' + failedCount + ' interrupted map job(s) at the attempt limit');
         const missing = await reconcileMissingFeatures(pool);
         if (missing.length) console.log('queued ' + missing.length + ' map index(es) absent after restore');
 

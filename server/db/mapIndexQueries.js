@@ -85,14 +85,21 @@ async function releaseWorkerLock(db) {
     return result.rows[0].released === true;
 }
 
-async function recoverOrphanedJobs(db) {
+async function recoverOrphanedJobs(db, maxAttempts = 3) {
     return db.query(`
         UPDATE map_index_jobs
-        SET status = 'pending', worker_id = NULL, claimed_at = NULL,
-            heartbeat_at = NULL, finished_at = NULL,
-            error = 'requeued after map worker restart', updated_at = now()
+        SET status = CASE WHEN attempts >= $1 THEN 'failed' ELSE 'pending' END,
+            worker_id = NULL, claimed_at = NULL, heartbeat_at = NULL,
+            finished_at = CASE WHEN attempts >= $1 THEN now() ELSE NULL END,
+            error = CASE
+                WHEN attempts >= $1
+                    THEN 'map worker terminated during indexing after ' || attempts || ' attempts'
+                ELSE 'requeued after map worker restart'
+            END,
+            updated_at = now()
         WHERE status = 'running'
-    `);
+        RETURNING resource_id, status
+    `, [maxAttempts]);
 }
 
 async function reconcileMissingFeatures(db) {

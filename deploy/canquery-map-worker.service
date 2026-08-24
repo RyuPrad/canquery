@@ -14,6 +14,9 @@ Group=canquery
 WorkingDirectory=/home/canquery/canquery/server
 ExecStart=/usr/bin/node scripts/map-worker.js
 Environment=NODE_ENV=production
+# Direct GeoJSON files can contain a few very large Feature objects. stream-json
+# bounds the collection, but each feature still needs enough heap to be assembled.
+Environment=NODE_OPTIONS=--max-old-space-size=1024
 Restart=on-failure
 RestartSec=10
 KillSignal=SIGTERM
