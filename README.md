@@ -21,8 +21,11 @@ versioned Statistics Canada SGC hierarchy powers place-first discovery, and
 spatial resources can be explored through bounded maps before their CSV snapshot
 is loaded. Toronto's official CKAN catalogue is included as one canonical city,
 with its GeoJSON DataStore layers rebuilt into a local PostGIS viewport index.
-The featured local directory also covers Durham Region
-and all eight lower-tier municipalities, with direct feeds from Durham, Ajax,
+Ottawa's official ArcGIS catalogue is included as a second standalone city, with
+the City portal-wide licence and explicit Ottawa Police licensing preserved, plus
+live maps served through bounded upstream viewports. The featured local directory
+also covers Durham Region and all eight lower-tier municipalities, with direct
+feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
 Clarington is represented through Durham’s regional coverage only: its current
 public web-map terms are personal/non-commercial, so no direct adapter is enabled.
@@ -56,6 +59,7 @@ npm install
 npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
+npm run sync:source -- --source=ottawa-hub --dry-run
 npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:source -- --source=peel-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
@@ -156,7 +160,7 @@ be excluded from backups; the queue reindexes missing feature data after restore
 
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
-their municipalities, and standalone featured cities such as Toronto;
+their municipalities, and standalone featured cities such as Ottawa and Toronto;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of

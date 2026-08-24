@@ -42,6 +42,12 @@ beforeEach(() => {
       name: { en: 'Toronto' }, type: { en: 'City' },
       parent: { id: 'ca-on', name: { en: 'Ontario' } },
       dataset_count: 556, direct_dataset_count: 556, mappable_resource_count: 187
+    },
+    {
+      id: 'sgc-cd-3506', slug: 'ottawa-on', kind: 'municipality',
+      name: { en: 'Ottawa' }, type: { en: 'City' },
+      parent: { id: 'ca-on', name: { en: 'Ontario' } },
+      dataset_count: 392, direct_dataset_count: 392, mappable_resource_count: 191
     }
   ] });
 });
@@ -54,6 +60,7 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('heading', { name: 'Municipalities in Durham' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Municipalities in Peel' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Featured cities' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();

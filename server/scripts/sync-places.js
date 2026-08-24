@@ -11,6 +11,7 @@ const PROVINCES = {
 };
 const TERRITORIES = new Set(['60', '61', '62']);
 const FEATURED_PLACE_IDS = new Set([
+    'sgc-cd-3506',
     'sgc-cd-3520',
     'ca-on-durham',
     'sgc-csd-3518005',
@@ -40,6 +41,7 @@ const MUNICIPAL_TYPES = {
     '3521024': ['Town', 'Ville']
 };
 const PLACE_VIEWPORTS = {
+    '3506': [45.4215, -75.6972, 9],
     '3518': [44.0569, -78.8570, 9],
     '3518013': [43.8971, -78.8658, 11],
     '3520': [43.6532, -79.3832, 10],
@@ -78,11 +80,12 @@ function normalize(enRows, frRows) {
         const fr = frByCode.get(code) || {};
         const nameEn = String(row['Class title'] || '').trim();
         const nameFr = String(fr['Titres de classes'] || nameEn).trim();
-        // Toronto's census division and census subdivision describe the same
-        // single-tier city. Keep the CSD identifier, but do not create a second
-        // user-facing place.
-        if (level === 4 && code === '3520005') {
-            identifiers.push({ placeId: 'sgc-cd-3520', scheme: 'sgc-csd', vintage: '2021', value: code });
+        // Ottawa and Toronto are each simultaneously a census division and a
+        // census subdivision. Keep both official identifiers while exposing
+        // one canonical single-tier city for each.
+        if (level === 4 && ['3506008', '3520005'].includes(code)) {
+            const placeId = code === '3506008' ? 'sgc-cd-3506' : 'sgc-cd-3520';
+            identifiers.push({ placeId, scheme: 'sgc-csd', vintage: '2021', value: code });
             continue;
         }
         let id, kind, parentId, scheme, typeEn, typeFr, baseSlug;
@@ -96,11 +99,11 @@ function normalize(enRows, frRows) {
             baseSlug = slugify(nameEn);
         } else if (level === 3) {
             id = code === '3518' ? 'ca-on-durham' : 'sgc-cd-' + code;
-            kind = code === '3520' ? 'municipality' : 'region';
+            kind = ['3506', '3520'].includes(code) ? 'municipality' : 'region';
             parentId = code.slice(0, 2) === '35' ? 'ca-on' : 'sgc-pr-' + code.slice(0, 2);
             scheme = 'sgc-cd';
-            typeEn = code === '3520' ? 'City' : 'Census division';
-            typeFr = code === '3520' ? 'Ville' : 'Division de recensement';
+            typeEn = ['3506', '3520'].includes(code) ? 'City' : 'Census division';
+            typeFr = ['3506', '3520'].includes(code) ? 'Ville' : 'Division de recensement';
             baseSlug = slugify(nameEn) + '-' + provinceAbbr;
         } else {
             id = code === '3518013' ? 'ca-on-oshawa' : 'sgc-csd-' + code;
@@ -116,6 +119,7 @@ function normalize(enRows, frRows) {
         if (code === '35') baseSlug = 'ontario';
         let slug = baseSlug;
         if (code === '3518') slug = 'durham-on';
+        if (code === '3506') slug = 'ottawa-on';
         if (code === '3520') slug = 'toronto-on';
         if (code === '3518013') slug = 'oshawa-on';
         if (code === '3518') {

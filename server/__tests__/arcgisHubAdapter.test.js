@@ -167,6 +167,46 @@ describe('ArcGIS Hub adapter', () => {
         expect(census.value.source.licenseUrl).toBe('https://www.statcan.gc.ca/en/reference/licence');
     });
 
+    test('applies Ottawa portal terms while preserving explicit Police licensing', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'open.ouvert@ottawa.ca', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPoint', fields: [] });
+        const source = getSource('ottawa-hub');
+        const cityRecord = record({
+            landingPage: 'https://open.ottawa.ca/datasets/ottawa::parks',
+            publisher: { name: 'City of Ottawa' },
+            license: null
+        });
+        const city = await adapter.enrichRecord(cityRecord, source, { fetchJson });
+        expect(city.status).toBe('included');
+        expect(city.value.places[0].placeId).toBe('sgc-cd-3506');
+        expect(city.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseUrl: expect.stringContaining('/open-data-licence-version-20')
+        }));
+
+        const police = await adapter.enrichRecord({
+            ...cityRecord,
+            title: 'Ottawa Police Service Neighbourhoods',
+            license: 'https://data.ottawapolice.ca/pages/open-data-licence'
+        }, source, { fetchJson });
+        expect(police.value.source).toEqual(expect.objectContaining({
+            licenseTitleEn: 'Open Government Licence – Ottawa Police Service',
+            licenseUrl: 'https://data.ottawapolice.ca/pages/open-data-licence'
+        }));
+
+        const placeholderFetch = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'ExternalPublisher', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPoint', fields: [] });
+        const placeholder = await adapter.enrichRecord({
+            ...cityRecord,
+            publisher: { name: '{{source}}' }
+        }, source, { fetchJson: placeholderFetch });
+        expect(placeholder).toEqual({
+            status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2'
+        });
+    });
+
     test('admits only explicit Brampton CC BY or Statistics Canada records', async () => {
         const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
             ? { owner: 'Brampton', type: 'Feature Service' }

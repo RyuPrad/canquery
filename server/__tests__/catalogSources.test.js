@@ -3,10 +3,32 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'toronto-open-data',
+            'toronto-open-data', 'ottawa-hub',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
+    });
+
+    test('configures Ottawa as a canonical city with Police licence precedence', () => {
+        const ottawa = getSource('ottawa-hub');
+        expect(ottawa).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub', upstreamHost: 'open.ottawa.ca'
+        }));
+        expect(ottawa.placeRules[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-cd-3506', relationship: 'direct', includesDescendants: false
+        }));
+        expect(ottawa.licenseRules[0]).toEqual(expect.objectContaining({
+            licensePattern: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://data.ottawapolice.ca/pages/open-data-licence'
+            })
+        }));
+        expect(ottawa.licenseRules[1]).toEqual(expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: expect.stringContaining('/open-data-licence-version-20')
+            })
+        }));
     });
 
     test('configures Toronto as an authoritative CKAN city source', () => {

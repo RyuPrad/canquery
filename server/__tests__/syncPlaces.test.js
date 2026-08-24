@@ -96,6 +96,26 @@ describe('Statistics Canada SGC place normalization', () => {
         expect(slugify('Montréal')).toBe('montreal');
     });
 
+    test('merges Ottawa census-division and subdivision identities into one city', () => {
+        const en = [
+            { Level: '2', Code: '35', 'Class title': 'Ontario' },
+            { Level: '3', Code: '3506', 'Class title': 'Ottawa' },
+            { Level: '4', Code: '3506008', 'Class title': 'Ottawa' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+        const ottawa = result.places.filter(place => place.nameEn === 'Ottawa');
+        expect(ottawa).toEqual([expect.objectContaining({
+            id: 'sgc-cd-3506', slug: 'ottawa-on', kind: 'municipality',
+            parentId: 'ca-on', typeEn: 'City', featured: true,
+            latitude: 45.4215, longitude: -75.6972, defaultZoom: 9
+        })]);
+        expect(result.identifiers.filter(item => item.placeId === 'sgc-cd-3506')).toEqual([
+            expect.objectContaining({ scheme: 'sgc-cd', value: '3506' }),
+            expect.objectContaining({ scheme: 'sgc-csd', value: '3506008' })
+        ]);
+    });
+
     test('merges Toronto census-division and subdivision identities into one city', () => {
         const en = [
             { Level: '2', Code: '35', 'Class title': 'Ontario' },
