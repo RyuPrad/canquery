@@ -10,7 +10,8 @@ const {
     MapSkipError,
     indexMapResource,
     validateMapFilesystems,
-    mapCaps
+    mapCaps,
+    candidateMode
 } = require('../services/mapIndexPipeline');
 const {
     acquireWorkerLock,
@@ -62,7 +63,19 @@ function ckanTarget(resource) {
     if (!source || source.kind !== 'ckan' || !raw.upstream_resource_id) {
         throw new MapSkipError('map candidate does not belong to a configured CKAN source', 'MAP_SOURCE');
     }
-    return { resourceId: raw.upstream_resource_id, baseUrl: source.catalogUrl };
+    return { resourceId: raw.upstream_resource_id, baseUrl: source.catalogUrl, source };
+}
+
+function validateDirectGeoJson(resource, candidate) {
+    ckanTarget(resource);
+    const raw = resource && resource.raw && typeof resource.raw === 'object' ? resource.raw : {};
+    if (resource.datastore_active === true || String(raw.original_format || '').toUpperCase() !== 'GEOJSON') {
+        throw new MapSkipError('direct map candidate is not a catalogued GeoJSON file', 'MAP_SOURCE');
+    }
+    if (!resource.url || (candidate.sourceUrl && candidate.sourceUrl !== resource.url)) {
+        throw new MapSkipError('direct map candidate URL differs from the catalogued resource', 'MAP_SOURCE');
+    }
+    return true;
 }
 
 async function probeGeometry(resource) {
@@ -102,24 +115,33 @@ async function processJob(job, workerId, options = {}) {
             console.log('[map ' + job.resource_id + '] reconciled existing index');
             return { reconciled: true };
         }
-        const probe = await (options.probeGeometry || probeGeometry)(resource);
-        if (probe.total > mapCaps(options.caps).maxRows) {
-            throw new MapSkipError('DataStore row count exceeds map cap', 'MAP_ROWS');
+        const mode = candidateMode(job.candidate || {});
+        let expectedRows = null;
+        if (mode === 'ckan-datastore-csv') {
+            const probe = await (options.probeGeometry || probeGeometry)(resource);
+            expectedRows = probe.total;
+            if (probe.total > mapCaps(options.caps).maxRows) {
+                throw new MapSkipError('DataStore row count exceeds map cap', 'MAP_ROWS');
+            }
+        } else {
+            (options.validateDirectGeoJson || validateDirectGeoJson)(resource, job.candidate || {});
         }
-        console.log('[map ' + job.resource_id + '] indexing attempt ' + job.attempts + ' (' + probe.total + ' rows)');
+        console.log('[map ' + job.resource_id + '] indexing attempt ' + job.attempts +
+            ' (' + mode + (expectedRows == null ? '' : ', ' + expectedRows + ' rows') + ')');
         const result = await (options.indexMapResource || indexMapResource)(resource, job, workerId, options.caps);
         console.log('[map ' + job.resource_id + '] ' + result.queueStatus + ': ' + result.featureCount +
             ' features, ' + result.vertexCount + ' vertices');
         return result;
     } catch (error) {
         const skipped = error instanceof MapSkipError || ['CAP_FILE'].includes(error && error.code);
-        console.error('[map ' + job.resource_id + '] ' + (skipped ? 'skipped' : 'failed') + ': ' + error.message);
+        const detail = error && error.code ? error.code + ': ' + error.message : error.message;
+        console.error('[map ' + job.resource_id + '] ' + (skipped ? 'skipped' : 'failed') + ': ' + detail);
         if (skipped) {
-            await finishJob(pool, job, workerId, 'skipped', {}, error.message);
+            await finishJob(pool, job, workerId, 'skipped', {}, detail);
         } else if (job.attempts >= MAX_ATTEMPTS) {
-            await finishJob(pool, job, workerId, 'failed', {}, error.message);
+            await finishJob(pool, job, workerId, 'failed', {}, detail);
         } else {
-            await requeueJob(pool, job, workerId, error.message);
+            await requeueJob(pool, job, workerId, detail);
         }
         return { error, skipped };
     } finally {
@@ -185,4 +207,7 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, processJob, probeGeometry, ckanTarget, requestStop, waitForPoll };
+module.exports = {
+    main, processJob, probeGeometry, ckanTarget, validateDirectGeoJson,
+    requestStop, waitForPoll
+};

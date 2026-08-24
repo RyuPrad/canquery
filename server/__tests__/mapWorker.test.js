@@ -22,7 +22,7 @@ jest.mock('../db/mapIndexQueries', () => ({
 const pool = require('../db/pool');
 const mapQueries = require('../db/mapIndexQueries');
 const { MapSkipError } = require('../services/mapIndexPipeline');
-const { processJob } = require('../scripts/map-worker');
+const { processJob, validateDirectGeoJson } = require('../scripts/map-worker');
 
 const resource = {
     id: 'r1', url: 'https://example.test/r1.csv',
@@ -56,9 +56,37 @@ describe('map worker transitions', () => {
             probeGeometry: async () => { throw new MapSkipError('too many vertices'); }
         });
         expect(mapQueries.finishJob).toHaveBeenCalledWith(
-            pool, job, expect.any(String), 'skipped', {}, 'too many vertices'
+            pool, job, expect.any(String), 'skipped', {}, 'MAP_CAP: too many vertices'
         );
         expect(mapQueries.requeueJob).not.toHaveBeenCalled();
+    });
+
+    test('indexes a catalogued direct GeoJSON without probing DataStore', async () => {
+        const directResource = {
+            id: 'r2', url: 'https://donnees.montreal.ca/r2.geojson', datastore_active: false,
+            raw: {
+                source_id: 'montreal-open-data', upstream_resource_id: 'upstream-r2',
+                original_format: 'GEOJSON'
+            }
+        };
+        const directJob = {
+            ...job, resource_id: 'r2',
+            candidate: { mode: 'geojson-file', sourceUrl: directResource.url }
+        };
+        const probe = jest.fn();
+        const index = jest.fn().mockResolvedValue({ queueStatus: 'ready', featureCount: 1, vertexCount: 1 });
+        await processJob(directJob, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => directResource,
+            probeGeometry: probe,
+            indexMapResource: index,
+            validateDirectGeoJson
+        });
+        expect(probe).not.toHaveBeenCalled();
+        expect(index).toHaveBeenCalled();
+
+        expect(() => validateDirectGeoJson(directResource, {
+            sourceUrl: 'https://attacker.example/map.geojson'
+        })).toThrow(MapSkipError);
     });
 
     test('retries transient failures and marks the third attempt failed', async () => {

@@ -1,4 +1,4 @@
-const { normalize, slugify, rowsFrom } = require('../scripts/sync-places');
+const { normalize, slugify, rowsFrom, preflightPlaceChanges } = require('../scripts/sync-places');
 
 describe('Statistics Canada SGC place normalization', () => {
     test('builds stable province, region and municipality ancestry', () => {
@@ -94,6 +94,52 @@ describe('Statistics Canada SGC place normalization', () => {
         const parsed = rowsFrom(Buffer.from('Level,Code,Class title\n2,35,Ontario\n'), 'utf-8');
         expect(parsed[0].Code).toBe('35');
         expect(slugify('Montréal')).toBe('montreal');
+        const accented = rowsFrom(Buffer.from(
+            'Level,Code,Class title\n3,2466,Montr\xe9al\n', 'latin1'
+        ), 'windows-1252');
+        expect(accented[0]['Class title']).toBe('Montréal');
+    });
+
+    test('keeps Montréal region and city distinct and features only the city', () => {
+        const en = [
+            { Level: '2', Code: '24', 'Class title': 'Quebec' },
+            { Level: '3', Code: '2466', 'Class title': 'Montréal' },
+            { Level: '4', Code: '2466023', 'Class title': 'Montréal' }
+        ];
+        const fr = [
+            { Code: '24', 'Titres de classes': 'Québec' },
+            { Code: '2466', 'Titres de classes': 'Montréal' },
+            { Code: '2466023', 'Titres de classes': 'Montréal' }
+        ];
+        const result = normalize(en, fr);
+        expect(result.places.find(place => place.id === 'sgc-pr-24')).toEqual(expect.objectContaining({
+            nameEn: 'Quebec', nameFr: 'Québec', slug: 'quebec'
+        }));
+        expect(result.places.find(place => place.id === 'sgc-cd-2466')).toEqual(expect.objectContaining({
+            slug: 'montreal-region-qc', kind: 'region', parentId: 'sgc-pr-24', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-2466023')).toEqual(expect.objectContaining({
+            slug: 'montreal-qc', kind: 'municipality', parentId: 'sgc-cd-2466',
+            typeEn: 'City', typeFr: 'Ville', featured: true,
+            latitude: 45.5019, longitude: -73.5674, defaultZoom: 10
+        }));
+    });
+
+    test('plans former-slug aliases and fails closed on ownership conflicts', async () => {
+        const desired = [{ id: 'p1', slug: 'montreal-qc', nameEn: 'Montréal' }];
+        const db = { query: jest.fn()
+            .mockResolvedValueOnce({ rows: [{ id: 'p1', slug: 'montr-al-qc', name_en: 'Montr�al' }] })
+            .mockResolvedValueOnce({ rows: [] })
+            .mockResolvedValueOnce({ rows: [] }) };
+        await expect(preflightPlaceChanges(db, desired)).resolves.toEqual({
+            aliases: [{ slug: 'montr-al-qc', placeId: 'p1' }],
+            nameChanges: 1, slugChanges: 1, aliasConflicts: 0
+        });
+
+        const conflict = { query: jest.fn()
+            .mockResolvedValueOnce({ rows: [] })
+            .mockResolvedValueOnce({ rows: [{ id: 'p2', slug: 'montreal-qc' }] }) };
+        await expect(preflightPlaceChanges(conflict, desired)).rejects.toThrow(/canonical for another place/);
     });
 
     test('merges Ottawa census-division and subdivision identities into one city', () => {

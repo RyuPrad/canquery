@@ -23,7 +23,11 @@ is loaded. Toronto's official CKAN catalogue is included as one canonical city,
 with its GeoJSON DataStore layers rebuilt into a local PostGIS viewport index.
 Ottawa's official ArcGIS catalogue is included as a second standalone city, with
 the City portal-wide licence and explicit Ottawa Police licensing preserved, plus
-live maps served through bounded upstream viewports. The featured local directory
+live maps served through bounded upstream viewports. Montréal's official CKAN
+catalogue is included as a French-first standalone city: record-level CC BY 4.0
+and Open Government Licence - Canada terms are preserved, while selected direct
+GeoJSON files are streamed and reprojected into the local PostGIS index. The
+featured local directory
 also covers Durham Region and all eight lower-tier municipalities, with direct
 feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
@@ -59,6 +63,7 @@ npm install
 npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
+npm run sync:source -- --source=montreal-open-data --dry-run
 npm run sync:source -- --source=ottawa-hub --dry-run
 npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:source -- --source=peel-hub --dry-run
@@ -86,6 +91,7 @@ curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV
 curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'
 curl 'http://localhost:3100/api/v1/places?q=Mississauga'
+curl 'http://localhost:3100/api/v1/places?q=Montr%C3%A9al'
 
 # place-filtered sources are authoritative; counts expose total + authoritative
 curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
@@ -129,11 +135,11 @@ expensive profile, aggregation, and export routes have dedicated rate limits.
 |---|---|
 | `scripts/catalog-sync.js` | full harvest: `package_list` → batched `package_show` (chunks of 50, concurrency 2), resumable via `sync_progress`; `--limit N`, `--dry-run` |
 | `scripts/incremental-sync.js` | upserts through a persisted, overlapping `metadata_modified` watermark with deterministic `id` tie ordering; page-cap runs are marked incomplete without advancing it |
-| `scripts/sync-places.js` | imports the EN/FR Statistics Canada SGC hierarchy with stable internal place ids |
+| `scripts/sync-places.js` | imports the Windows-1252 EN/FR Statistics Canada SGC hierarchy with stable internal ids and alias-safe canonical slug repair |
 | `scripts/sync-source.js` | validates or syncs one configured source adapter; `--source`, `--limit`, `--dry-run` |
 | `scripts/sync-municipal-sources.js` | refreshes every enabled non-federal source independently so one failure cannot suppress the others |
 | `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
-| `scripts/map-worker.js` | exclusively owns the versioned map queue, streams official CKAN CSV dumps into PostGIS under row/vertex/file/disk budgets, and self-heals excluded map data after restore; `--once` or `--drain` |
+| `scripts/map-worker.js` | exclusively owns the versioned map queue, streams CKAN CSV dumps and direct GeoJSON files into PostGIS, reprojects named EPSG CRSs to WGS84 under row/vertex/file/disk budgets, and self-heals excluded map data after restore; `--once` or `--drain` |
 | `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
@@ -153,14 +159,17 @@ to TEXT per column when a later cast fails.
 
 Local maps have separate defaults: 1,000,000 rows and 10,000,000 vertices per
 resource, a 1 GB download cap, a 20 GB logical map-store budget, and a 30 GB
-filesystem free-space floor. `map_store.features` is a reproducible cache and may
+filesystem free-space floor. Direct GeoJSON supports absent/WGS84, CRS84, and
+named PostGIS EPSG definitions; unsupported or malformed CRS declarations fail
+closed for that resource. `map_store.features` is a reproducible cache and may
 be excluded from backups; the queue reindexes missing feature data after restore.
 
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
-their municipalities, and standalone featured cities such as Ottawa and Toronto;
+their municipalities, and standalone featured cities such as Montréal, Ottawa
+and Toronto;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of
@@ -183,7 +192,8 @@ cd server && npm test && npm run lint
 cd client && npm test && npm run lint && npm run build
 ```
 
-Coverage includes source adapters, place hierarchy and APIs, bounded map
+Coverage includes source adapters, place hierarchy and APIs, streaming direct
+GeoJSON plus projected-CRS map conversion, bounded map
 queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
 SSRF/redirect/DNS-pinning checks, bounded caches, spreadsheet-safe streaming CSV
 exports, Excel archive caps, lease recovery, lossless incremental sync, strict

@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { fetchPublicJson } = require('./publicJson');
 
 const PAGE_SIZE = 100;
+const DIRECT_GEOJSON_VERSION = 'geojson-v1';
 const FORMAT_PRIORITY = new Map([
     ['CSV-4326', 0], ['CSV-WGS84', 0], ['CSV', 1], ['XLSX', 2], ['XLS', 3],
     ['GEOJSON', 4], ['JSON', 5], ['GPKG', 6], ['SHP', 7], ['ZIP', 8], ['PDF', 9]
@@ -75,6 +76,84 @@ function mapVersion(resource) {
     return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
 }
 
+function directMapVersion(resource) {
+    const identity = [
+        DIRECT_GEOJSON_VERSION,
+        resource.metadata_modified || null,
+        resource.last_modified || null,
+        resource.hash || null,
+        Number(resource.size) > 0 ? Number(resource.size) : null,
+        resource.url || null
+    ];
+    return crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+}
+
+function patternMatches(pattern, value) {
+    if (!pattern) return true;
+    if (pattern instanceof RegExp) {
+        pattern.lastIndex = 0;
+        return pattern.test(clean(value));
+    }
+    return clean(pattern).toLowerCase() === clean(value).toLowerCase();
+}
+
+function publisherName(record, source) {
+    const organization = record.organization || {};
+    return clean(organization.title) ||
+        clean(source.defaultOrganizationTitleEn || source.defaultOrganizationTitleFr) ||
+        clean(source.nameEn || source.nameFr) || 'Publisher';
+}
+
+function authoritativePublisher(source, publisher) {
+    if (!Array.isArray(source.authoritativePublishers)) return true;
+    return source.authoritativePublishers.some(rule => patternMatches(rule.publisher, publisher));
+}
+
+function placeRuleFor(source, publisher) {
+    const configured = Array.isArray(source.placeRules) ? source.placeRules : [];
+    const match = configured.find(rule => patternMatches(rule.publisher, publisher));
+    if (match) return match;
+    if (!source.placeId) return null;
+    return {
+        placeId: source.placeId,
+        relationship: 'direct',
+        includesDescendants: false
+    };
+}
+
+function configuredLicense(source) {
+    if (!source.defaultLicenseUrl) return null;
+    return {
+        titleEn: source.defaultLicenseTitleEn || null,
+        titleFr: source.defaultLicenseTitleFr || null,
+        url: source.defaultLicenseUrl,
+        attributionEn: source.defaultAttributionEn || null,
+        attributionFr: source.defaultAttributionFr || null
+    };
+}
+
+function licenseFor(record, source) {
+    const rules = Array.isArray(source.licenseRules) ? source.licenseRules : [];
+    if (rules.length) {
+        const id = clean(record.license_id);
+        const title = clean(record.license_title);
+        const url = clean(record.license_url);
+        const rule = rules.find(item =>
+            patternMatches(item.licenseId, id) &&
+            patternMatches(item.licenseTitle, title) &&
+            patternMatches(item.licenseUrl, url)
+        );
+        return rule ? rule.license : null;
+    }
+    return configuredLicense(source);
+}
+
+function translated(value, language) {
+    const result = { en: null, fr: null };
+    result[language === 'fr' ? 'fr' : 'en'] = clean(value) || null;
+    return result;
+}
+
 function resourceUrl(resource, actionBase) {
     if (resource.datastore_active === true) {
         return actionBase.replace(/\/api\/3\/action\/?$/, '') + '/datastore/dump/' + encodeURIComponent(resource.id);
@@ -85,22 +164,25 @@ function resourceUrl(resource, actionBase) {
 function normalizeResource(resource, datasetId, source) {
     const upstreamId = clean(resource.id);
     const originalFormat = formatOf(resource);
+    const language = source.metadataLanguage === 'fr' ? 'fr' : 'en';
+    const name = translated(clean(resource.name) || originalFormat, language);
     return {
         id: namespace(source.id, 'resource', upstreamId),
         datasetId,
-        nameEn: clean(resource.name) || originalFormat,
-        nameFr: null,
+        nameEn: name.en,
+        nameFr: name.fr,
         format: resource.datastore_active === true ? 'CSV' : originalFormat,
         url: resourceUrl(resource, source.catalogUrl),
-        sizeBytes: Number.isFinite(Number(resource.size)) ? Number(resource.size) : null,
+        sizeBytes: Number.isFinite(Number(resource.size)) && Number(resource.size) > 0 ? Number(resource.size) : null,
         datastoreActive: resource.datastore_active === true,
-        language: 'en',
+        language,
         lastModified: timestamp(resource.last_modified || resource.metadata_modified),
         raw: {
             provider: 'ckan',
             source_id: source.id,
             upstream_resource_id: upstreamId,
             original_format: originalFormat,
+            source_hash: clean(resource.hash) || null,
             record_count: Number.isFinite(Number(resource.record_count)) ? Number(resource.record_count) : null,
             vertex_count: Number.isFinite(Number(resource.vertex_count)) ? Number(resource.vertex_count) : null
         }
@@ -145,19 +227,38 @@ async function enrichRecord(record, source) {
     }
     const datasetId = namespace(source.id, 'dataset', externalId);
     const organization = record.organization || {};
-    const upstreamOrgId = clean(organization.id || record.owner_org || 'city-of-toronto');
+    const upstreamOrgId = clean(organization.id || record.owner_org || source.defaultOrganizationId || 'publisher');
     const orgId = namespace(source.id, 'org', upstreamOrgId);
+    const publisher = publisherName(record, source);
+    const placeRule = placeRuleFor(source, publisher);
+    const licence = licenseFor(record, source);
+    if (!licence || !licence.url) {
+        return { status: 'excluded', reason: 'unlicensed', externalId: canonicalKey(externalId) };
+    }
+    const language = source.metadataLanguage === 'fr' ? 'fr' : 'en';
+    const organizationTitle = translated(publisher, language);
+    if (source.defaultOrganizationTitleEn && !organizationTitle.en) {
+        organizationTitle.en = source.defaultOrganizationTitleEn;
+    }
+    if (source.defaultOrganizationTitleFr && !organizationTitle.fr) {
+        organizationTitle.fr = source.defaultOrganizationTitleFr;
+    }
     const selectedResources = chooseResources(Array.isArray(record.resources) ? record.resources : []);
     const resources = selectedResources.map(resource => normalizeResource(resource, datasetId, source));
     const resourceByUpstream = new Map(resources.map(resource => [resource.raw.upstream_resource_id, resource]));
     const mapCandidates = selectedResources
-        .filter(resource => resource.datastore_active === true && formatOf(resource) === 'GEOJSON')
+        .filter(resource => formatOf(resource) === 'GEOJSON' &&
+            (resource.datastore_active === true ||
+                (source.directGeoJsonMaps === true && clean(resource.url) !== '')))
         .map(resource => ({
             resourceId: resourceByUpstream.get(clean(resource.id)).id,
-            desiredVersion: mapVersion(resource),
+            desiredVersion: resource.datastore_active === true ? mapVersion(resource) : directMapVersion(resource),
+            mode: resource.datastore_active === true ? 'ckan-datastore-csv' : 'geojson-file',
             sourceUrl: resourceUrl(resource, source.catalogUrl),
             expectedRows: Number.isFinite(Number(resource.record_count)) ? Number(resource.record_count) : null,
             expectedVertices: Number.isFinite(Number(resource.vertex_count)) ? Number(resource.vertex_count) : null,
+            expectedBytes: Number.isFinite(Number(resource.size)) && Number(resource.size) > 0
+                ? Number(resource.size) : null,
             raw: { upstream_resource_id: clean(resource.id) }
         }));
     const keywords = Array.from(new Set([
@@ -165,51 +266,63 @@ async function enrichRecord(record, source) {
         ...(Array.isArray(record.tags) ? record.tags.map(tag => tag && (tag.display_name || tag.name)) : [])
     ].map(clean).filter(Boolean)));
     const modified = timestamp(record.metadata_modified || record.last_refreshed);
+    const datasetTitle = translated(record.title, language);
+    const datasetNotes = translated(record.notes || record.excerpt, language);
     return {
         status: 'included',
         value: {
             externalId: canonicalKey(externalId),
             organization: {
                 id: orgId,
-                name: source.id + '-' + (clean(organization.name) || 'city-of-toronto'),
-                titleEn: clean(organization.title) || 'City of Toronto',
-                titleFr: 'Ville de Toronto',
-                placeId: source.placeId
+                name: source.id + '-' + (clean(organization.name) || source.defaultOrganizationName || 'publisher'),
+                titleEn: organizationTitle.en,
+                titleFr: organizationTitle.fr,
+                placeId: placeRule ? placeRule.placeId : null
             },
             dataset: {
                 id: datasetId,
                 name: source.id + '-' + clean(record.name),
-                titleEn: clean(record.title),
-                titleFr: null,
-                notesEn: clean(record.notes || record.excerpt) || null,
-                notesFr: null,
+                titleEn: datasetTitle.en,
+                titleFr: datasetTitle.fr,
+                notesEn: datasetNotes.en,
+                notesFr: datasetNotes.fr,
                 orgId,
-                keywordsEn: keywords,
-                keywordsFr: [],
+                keywordsEn: language === 'en' ? keywords : [],
+                keywordsFr: language === 'fr' ? keywords : [],
                 metadataModified: modified,
-                raw: { provider: 'ckan', source_id: source.id, upstream_dataset_id: externalId, retired: record.is_retired === true }
+                raw: {
+                    provider: 'ckan', source_id: source.id, upstream_dataset_id: externalId,
+                    metadata_language: language, retired: record.is_retired === true
+                }
             },
             source: {
                 sourceId: source.id,
                 externalId: canonicalKey(externalId),
                 datasetId,
                 landingUrl: source.homepageUrl.replace(/\/+$/, '') + '/dataset/' + encodeURIComponent(record.name) + '/',
-                licenseTitleEn: source.defaultLicenseTitleEn,
-                licenseTitleFr: source.defaultLicenseTitleFr,
-                licenseUrl: source.defaultLicenseUrl,
-                attributionEn: source.defaultAttributionEn,
-                attributionFr: source.defaultAttributionFr,
-                isAuthoritative: true,
-                raw: { upstream_dataset_id: externalId, retired: record.is_retired === true }
+                licenseTitleEn: licence.titleEn || null,
+                licenseTitleFr: licence.titleFr || null,
+                licenseUrl: licence.url,
+                attributionEn: licence.attributionEn || null,
+                attributionFr: licence.attributionFr || null,
+                isAuthoritative: authoritativePublisher(source, publisher),
+                raw: {
+                    upstream_dataset_id: externalId,
+                    publisher,
+                    license_id: clean(record.license_id) || null,
+                    license_title: clean(record.license_title) || null,
+                    license_url: clean(record.license_url) || null,
+                    retired: record.is_retired === true
+                }
             },
             resources,
-            places: [{
+            places: placeRule ? [{
                 datasetId,
-                placeId: source.placeId,
-                relationship: 'direct',
-                includesDescendants: false,
+                placeId: placeRule.placeId,
+                relationship: placeRule.relationship,
+                includesDescendants: placeRule.includesDescendants === true,
                 assignmentMethod: 'source'
-            }],
+            }] : [],
             maps: [],
             manageMaps: false,
             manageMapCandidates: true,
@@ -227,5 +340,9 @@ module.exports = {
     logicalKey,
     priority,
     mapVersion,
+    directMapVersion,
+    licenseFor,
+    authoritativePublisher,
+    placeRuleFor,
     namespace
 };

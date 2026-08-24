@@ -1,12 +1,21 @@
 const { once } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { parse } = require('csv-parse');
 const { csvParseOptions } = require('../services/csvLoad');
 const {
     MapSkipError,
     geometryVertexCount,
     selectPropertyFields,
+    selectGeoJsonPropertyFields,
     stagingTransform,
-    validateCandidate
+    geoJsonStagingTransform,
+    validateCandidate,
+    candidateMode,
+    sourceSridFromCrs,
+    inspectGeoJsonFile,
+    validWgs84Extent
 } = require('../services/mapIndexPipeline');
 
 describe('bounded local-map conversion', () => {
@@ -49,6 +58,87 @@ describe('bounded local-map conversion', () => {
 
         expect(() => validateCandidate({ expectedRows: 11 }, { maxRows: 10, maxVertices: 100 }))
             .toThrow(MapSkipError);
+        expect(() => validateCandidate({ expectedBytes: 101 }, {
+            maxRows: 10, maxVertices: 100, maxFileBytes: 100
+        })).toThrow(MapSkipError);
+    });
+
+    test('keeps legacy candidate mode while validating explicit modes', () => {
+        expect(candidateMode({})).toBe('ckan-datastore-csv');
+        expect(candidateMode({ mode: 'geojson-file' })).toBe('geojson-file');
+        expect(() => candidateMode({ mode: 'remote-url' })).toThrow(MapSkipError);
+    });
+
+    test('recognizes supported named CRSs and rejects unsupported declarations', () => {
+        expect(sourceSridFromCrs({ present: false })).toBe(4326);
+        expect(sourceSridFromCrs({ present: true, isNull: true })).toBe(4326);
+        expect(sourceSridFromCrs({
+            present: true, type: 'name', name: 'urn:ogc:def:crs:OGC:1.3:CRS84'
+        })).toBe(4326);
+        expect(sourceSridFromCrs({
+            present: true, type: 'name', name: 'urn:ogc:def:crs:EPSG::32188'
+        })).toBe(32188);
+        expect(() => sourceSridFromCrs({ present: true, type: 'link', name: 'EPSG:2950' }))
+            .toThrow(MapSkipError);
+    });
+
+    test('inspects a FeatureCollection without assembling its features', async () => {
+        const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'canquery-map-test-'));
+        const projected = path.join(dir, 'projected.geojson');
+        const defaultCrs = path.join(dir, 'default.geojson');
+        try {
+            await fs.promises.writeFile(projected, JSON.stringify({
+                type: 'FeatureCollection',
+                crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::2950' } },
+                features: []
+            }));
+            await fs.promises.writeFile(defaultCrs, JSON.stringify({
+                type: 'FeatureCollection', features: []
+            }));
+            await expect(inspectGeoJsonFile(projected)).resolves.toEqual({
+                sourceSrid: 2950, crsName: 'urn:ogc:def:crs:EPSG::2950'
+            });
+            await expect(inspectGeoJsonFile(defaultCrs)).resolves.toEqual({
+                sourceSrid: 4326, crsName: null
+            });
+        } finally {
+            await fs.promises.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    test('streams Feature objects and keeps only bounded scalar popup fields', async () => {
+        let metadata;
+        const transform = geoJsonStagingTransform({
+            caps: { maxRows: 10, maxVertices: 10 },
+            onMetadata: value => { metadata = value; }
+        });
+        const chunks = [];
+        transform.on('data', chunk => chunks.push(chunk.toString()));
+        transform.write({ key: 0, value: { type: 'Feature', geometry: null, properties: {} } });
+        transform.write({
+            key: 1,
+            value: {
+                type: 'Feature', geometry: { type: 'Point', coordinates: [-73.5, 45.5] },
+                properties: { Name: 'Station', nested: { secret: true }, values: [1, 2], year: 2026 }
+            }
+        });
+        transform.end();
+        await once(transform, 'end');
+        expect(transform.result()).toEqual(expect.objectContaining({
+            rowCount: 2, featureCount: 1, vertexCount: 1, invalidCount: 1,
+            geometryType: 'point'
+        }));
+        expect(metadata.fields.map(field => field.name)).toEqual(['Name', 'year']);
+        expect(chunks.join('')).toContain('Station');
+        expect(chunks.join('')).not.toContain('secret');
+        expect(selectGeoJsonPropertyFields({ payload: {}, Address: 'Main' }).map(field => field.name))
+            .toEqual(['Address']);
+    });
+
+    test('validates transformed WGS84 extents', () => {
+        expect(validWgs84Extent([-74, 45, -73, 46])).toBe(true);
+        expect(validWgs84Extent([277000, 5040000, 300000, 5060000])).toBe(false);
+        expect(validWgs84Extent(null)).toBe(false);
     });
 
     test('accepts CKAN exports that mix CRLF headers with LF records', async () => {
