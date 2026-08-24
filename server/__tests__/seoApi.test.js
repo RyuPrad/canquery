@@ -114,11 +114,13 @@ describe('dataset sitemap chunk', () => {
 describe('place sitemap', () => {
     it('emits only place rows supplied by the active-dataset query', async () => {
         catalogRead.listPlaceSitemap.mockResolvedValue([
-            { slug: 'oshawa-on', metadata_modified: '2026-08-01T00:00:00Z' }
+            { slug: 'oshawa-on', metadata_modified: '2026-08-01T00:00:00Z' },
+            { slug: 'ottawa-on', metadata_modified: '2026-08-23T00:00:00Z' }
         ]);
         const res = await request(app).get('/sitemap-places.xml');
         expect(res.status).toBe(200);
         expect(res.text).toContain('<loc>https://canquery.com/places/oshawa-on</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/places/ottawa-on</loc>');
         expect(res.text).toContain('<lastmod>2026-08-01T00:00:00.000Z</lastmod>');
     });
 });

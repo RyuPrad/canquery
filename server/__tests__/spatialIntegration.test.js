@@ -46,4 +46,37 @@ spatialDescribe('PostGIS viewport integration', () => {
         expect(Math.min(...coordinates.filter(value => value < 0))).toBeGreaterThanOrEqual(-79.800001);
         expect(Math.max(...coordinates.filter(value => value < 0))).toBeLessThanOrEqual(-79.199999);
     });
+
+    test('migrations expose one canonical Ottawa city with durable aliases', async () => {
+        const place = await client.query(`
+            SELECT id, slug, kind, type_en, type_fr, parent_id, featured,
+                   latitude, longitude, default_zoom
+            FROM places WHERE id = 'sgc-cd-3506'
+        `);
+        expect(place.rows).toEqual([expect.objectContaining({
+            id: 'sgc-cd-3506', slug: 'ottawa-on', kind: 'municipality',
+            type_en: 'City', type_fr: 'Ville', parent_id: 'ca-on', featured: true,
+            latitude: 45.4215, longitude: -75.6972, default_zoom: 9
+        })]);
+
+        const identifiers = await client.query(`
+            SELECT scheme, value FROM place_identifiers
+            WHERE place_id = 'sgc-cd-3506' ORDER BY scheme
+        `);
+        expect(identifiers.rows).toEqual([
+            { scheme: 'sgc-cd', value: '3506' },
+            { scheme: 'sgc-csd', value: '3506008' }
+        ]);
+
+        const aliases = await client.query(`
+            SELECT slug FROM place_aliases
+            WHERE place_id = 'sgc-cd-3506' ORDER BY slug
+        `);
+        expect(aliases.rows).toEqual([
+            { slug: 'ottawa-on-3506008' },
+            { slug: 'sgc-csd-3506008' }
+        ]);
+        const duplicate = await client.query("SELECT 1 FROM places WHERE id = 'sgc-csd-3506008'");
+        expect(duplicate.rowCount).toBe(0);
+    });
 });

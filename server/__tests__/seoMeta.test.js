@@ -122,12 +122,12 @@ describe('seoMeta - site + static meta', () => {
 
     it('builds indexable metadata for place pages', () => {
         const meta = seo.placeMeta({
-            id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa',
-            type_en: 'City', latitude: 43.897, longitude: -78.866
+            id: 'sgc-cd-3506', slug: 'ottawa-on', name_en: 'Ottawa',
+            type_en: 'City', latitude: 45.4215, longitude: -75.6972
         });
-        expect(meta.canonical).toBe('https://canquery.com/places/oshawa-on');
+        expect(meta.canonical).toBe('https://canquery.com/places/ottawa-on');
         expect(meta.jsonLd[0]['@type']).toBe('AdministrativeArea');
-        expect(meta.jsonLd[0].geo.latitude).toBeCloseTo(43.897);
+        expect(meta.jsonLd[0].geo.latitude).toBeCloseTo(45.4215);
     });
 
     it('static sections get a title and a clean canonical', () => {

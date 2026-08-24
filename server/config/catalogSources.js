@@ -62,6 +62,22 @@ const TORONTO_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Toronto.'
 };
 
+const OTTAWA_LICENSE = {
+    titleEn: 'Open Government Licence – City of Ottawa',
+    titleFr: 'Licence du gouvernement ouvert – Ville d’Ottawa',
+    url: 'https://ottawa.ca/en/city-hall/open-transparent-and-accountable-government/open-data/open-data-licence-version-20',
+    attributionEn: 'Contains information licensed under the Open Government Licence – City of Ottawa.',
+    attributionFr: 'Contient de l’information visée par la Licence du gouvernement ouvert – Ville d’Ottawa.'
+};
+
+const OTTAWA_POLICE_LICENSE = {
+    titleEn: 'Open Government Licence – Ottawa Police Service',
+    titleFr: 'Licence du gouvernement ouvert – Service de police d’Ottawa',
+    url: 'https://data.ottawapolice.ca/pages/open-data-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Ottawa Police Service.',
+    attributionFr: 'Contient de l’information visée par la Licence du gouvernement ouvert – Service de police d’Ottawa.'
+};
+
 const MISSISSAUGA_LICENSE = {
     titleEn: 'City of Mississauga Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
@@ -132,6 +148,36 @@ const sources = [{
     defaultLicenseUrl: TORONTO_LICENSE.url,
     defaultAttributionEn: TORONTO_LICENSE.attributionEn,
     defaultAttributionFr: TORONTO_LICENSE.attributionFr
+}, {
+    id: 'ottawa-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'City of Ottawa Open Data',
+    nameFr: 'Données ouvertes de la Ville d’Ottawa',
+    homepageUrl: 'https://open.ottawa.ca/',
+    catalogUrl: 'https://open.ottawa.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'open.ottawa.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    publisherAliases: [
+        { publisher: /^city of ottawa$/i, name: 'City of Ottawa' }
+    ],
+    authoritativePublishers: [{ publisher: /^city of ottawa$/i }],
+    // The City licence applies portal-wide. Explicit Ottawa Police licence
+    // evidence wins first so those records retain their own attribution.
+    licenseRules: [
+        {
+            licensePattern: /data\.ottawapolice\.ca\/pages\/open-data-licence/i,
+            license: OTTAWA_POLICE_LICENSE
+        },
+        { publisher: /^city of ottawa$/i, license: OTTAWA_LICENSE }
+    ],
+    placeRules: [{
+        publisher: /^city of ottawa$/i,
+        placeId: 'sgc-cd-3506',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
 }, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
@@ -381,6 +427,8 @@ module.exports = {
     CLOCA_LICENSE,
     ONTARIO_LICENSE,
     TORONTO_LICENSE,
+    OTTAWA_LICENSE,
+    OTTAWA_POLICE_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     STATCAN_LICENSE,

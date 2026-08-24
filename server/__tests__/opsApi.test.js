@@ -55,6 +55,7 @@ describe('ops API', () => {
         expect(res.status).toBe(200);
         expect(res.body.data.jobs.full.status).toBe('pending');
         expect(res.body.data.jobs.evict.status).toBe('pending');
+        expect(res.body.data.jobs['source:ottawa-hub'].status).toBe('pending');
         expect(res.body.data.ok).toBe(true);
     });
 
