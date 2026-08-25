@@ -69,6 +69,21 @@ describe('ingestion caps', () => {
         fs.unlinkSync(filePath);
     });
 
+    it('preserves the HTTP status on a failed download', async () => {
+        const missingFetch = async () => ({
+            status: 404,
+            body: new ReadableStream({ start(controller) { controller.close(); } })
+        });
+        await expect(downloadToTempFile('https://example.org/missing.csv', {
+            maxFileBytes: 1024,
+            fetchImpl: missingFetch
+        })).rejects.toMatchObject({
+            code: 'DOWNLOAD_HTTP',
+            httpStatus: 404,
+            message: 'download failed: HTTP 404'
+        });
+    });
+
     it('a stalled download is aborted instead of hanging the worker', async () => {
         // Sends one chunk then never closes - mirrors an upstream that accepts
         // the socket and then goes silent. Without the stall guard this read

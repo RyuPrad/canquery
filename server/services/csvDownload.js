@@ -367,7 +367,9 @@ async function downloadToTempFile(url, {
     if (status < 200 || status >= 300 || !responseBody) {
         disarm();
         destroyResponse(res);
-        throw new Error('download failed: HTTP ' + status);
+        const err = downloadError('download failed: HTTP ' + status, 'DOWNLOAD_HTTP');
+        err.httpStatus = status;
+        throw err;
     }
     const contentLength = Number(responseHeader(res, 'content-length'));
     if (Number.isFinite(contentLength) && contentLength > maxFileBytes) {
