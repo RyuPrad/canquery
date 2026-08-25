@@ -103,4 +103,20 @@ describe('map worker transitions', () => {
             pool, finalJob, expect.any(String), 'failed', {}, 'temporary upstream failure'
         );
     });
+
+    test('skips a permanently missing catalogued download without retrying', async () => {
+        const error = Object.assign(new Error('download failed: HTTP 404'), {
+            code: 'DOWNLOAD_HTTP', httpStatus: 404
+        });
+        await processJob(job, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => resource,
+            probeGeometry: async () => ({ total: 1, fields: [{ id: 'geometry' }] }),
+            indexMapResource: async () => { throw error; }
+        });
+        expect(mapQueries.finishJob).toHaveBeenCalledWith(
+            pool, job, expect.any(String), 'skipped', {},
+            'DOWNLOAD_HTTP: download failed: HTTP 404'
+        );
+        expect(mapQueries.requeueJob).not.toHaveBeenCalled();
+    });
 });

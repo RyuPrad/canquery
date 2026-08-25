@@ -41,6 +41,10 @@ function requestStop(signal) {
     if (wakePoll) wakePoll();
 }
 
+function isPermanentMissingDownload(error) {
+    return error && error.code === 'DOWNLOAD_HTTP' && [404, 410].includes(Number(error.httpStatus));
+}
+
 function waitForPoll() {
     if (stopRequested) return Promise.resolve();
     return new Promise(resolve => {
@@ -133,7 +137,8 @@ async function processJob(job, workerId, options = {}) {
             ' features, ' + result.vertexCount + ' vertices');
         return result;
     } catch (error) {
-        const skipped = error instanceof MapSkipError || ['CAP_FILE'].includes(error && error.code);
+        const skipped = error instanceof MapSkipError || ['CAP_FILE'].includes(error && error.code)
+            || isPermanentMissingDownload(error);
         const detail = error && error.code ? error.code + ': ' + error.message : error.message;
         console.error('[map ' + job.resource_id + '] ' + (skipped ? 'skipped' : 'failed') + ': ' + detail);
         if (skipped) {
