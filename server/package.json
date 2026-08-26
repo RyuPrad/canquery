@@ -24,12 +24,16 @@
         "sync:municipal": "node scripts/sync-municipal-sources.js",
         "maps:once": "node scripts/map-worker.js --once",
         "maps:drain": "node scripts/map-worker.js --drain",
+        "maps:prune": "node scripts/prune-map-objects.js",
         "gsc:authorize": "node scripts/authorize-search-console.js",
         "gsc:sync": "node scripts/sync-search-console.js",
         "gsc:report": "node scripts/build-search-growth-report.js",
         "lint": "eslint ."
     },
     "dependencies": {
+        "@aws-sdk/client-s3": "3.1118.0",
+        "@aws-sdk/lib-storage": "3.1118.0",
+        "@mapbox/vector-tile": "3.0.0",
         "csv-parse": "^6.2.1",
         "dotenv": "^16.4.0",
         "exceljs": "^4.4.0",
@@ -37,8 +41,10 @@
         "express-rate-limit": "^7.4.0",
         "google-auth-library": "^10.9.1",
         "helmet": "^8.0.0",
+        "pbf": "5.1.2",
         "pg": "^8.13.0",
         "pg-copy-streams": "^7.0.0",
+        "pmtiles": "4.5.0",
         "stream-json": "2.1.0",
         "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
     },

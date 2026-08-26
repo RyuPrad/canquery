@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { circleMarker } from 'leaflet';
 import { GeoJSON, MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,6 +13,7 @@ const GEOMETRY_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/res
 const ENGLISH_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_TXT_3857/MapServer/tile/{z}/{y}/{x}';
 const FRENCH_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBCT_TXT_3857/MapServer/tile/{z}/{y}/{x}';
 const ATTRIBUTION = '&copy; <a href="https://natural-resources.canada.ca/">Natural Resources Canada</a>, Open Government Licence - Canada';
+const PmtilesMapPanel = lazy(() => import('./PmtilesMapPanel.jsx'));
 
 function viewportOf(map) {
   const bounds = map.getBounds();
@@ -40,6 +41,17 @@ function initialBounds(extent) {
 }
 
 export default function MapPanel({ resourceId, map: mapInfo }) {
+  if (mapInfo?.provider === 'pmtiles') {
+    return (
+      <Suspense fallback={<div className="cq-card cq-map grid place-items-center"><span className="loading loading-spinner loading-md" /></div>}>
+        <PmtilesMapPanel resourceId={resourceId} map={mapInfo} />
+      </Suspense>
+    );
+  }
+  return <LegacyMapPanel resourceId={resourceId} mapInfo={mapInfo} />;
+}
+
+function LegacyMapPanel({ resourceId, mapInfo }) {
   const { lang, t } = useLang();
   const { dark } = useTheme();
   const [viewport, setViewport] = useState(null);

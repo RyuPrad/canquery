@@ -151,6 +151,27 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
+    test('features Calgary beneath Division No. 6 with its curated viewport', () => {
+        const en = [
+            { Level: '2', Code: '48', 'Class title': 'Alberta' },
+            { Level: '3', Code: '4806', 'Class title': 'Division No. 6' },
+            { Level: '4', Code: '4806016', 'Class title': 'Calgary' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+        expect(result.places.find(place => place.id === 'sgc-pr-48')).toEqual(expect.objectContaining({
+            slug: 'alberta', parentId: 'ca', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-cd-4806')).toEqual(expect.objectContaining({
+            slug: 'division-no-6-ab', kind: 'region', parentId: 'sgc-pr-48', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-4806016')).toEqual(expect.objectContaining({
+            slug: 'calgary-ab', kind: 'municipality', parentId: 'sgc-cd-4806',
+            typeEn: 'City', typeFr: 'Ville', featured: true,
+            latitude: 51.0447, longitude: -114.0719, defaultZoom: 9
+        }));
+    });
+
     test('plans former-slug aliases and fails closed on ownership conflicts', async () => {
         const desired = [{ id: 'p1', slug: 'montreal-qc', nameEn: 'Montréal' }];
         const db = { query: jest.fn()

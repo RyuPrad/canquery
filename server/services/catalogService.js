@@ -9,6 +9,7 @@ const { sources: configuredSources } = require('../config/catalogSources');
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
 const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
 const MAX_ROWS = Number(process.env.MAX_ROWS) > 0 ? Number(process.env.MAX_ROWS) : 1_000_000;
+const MAX_COLS = Number(process.env.MAX_COLS) > 0 ? Number(process.env.MAX_COLS) : 120;
 
 const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
 
@@ -30,12 +31,22 @@ const knownRecordCount = (row) => {
     return Number.isFinite(count) && count >= 0 ? count : null;
 };
 
+const knownFieldCount = (row) => {
+    const raw = row && row.raw && typeof row.raw === 'object' && !Array.isArray(row.raw)
+        ? row.raw : {};
+    if (raw.field_count == null || raw.field_count === '') return null;
+    const count = Number(raw.field_count);
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+};
+
 const isIngestableFile = (row) => {
     const cap = ingestCapBytesFor(row && row.format);
     const recordCount = knownRecordCount(row);
+    const fieldCount = knownFieldCount(row);
     return cap !== null &&
         (row.size_bytes == null || Number(row.size_bytes) <= cap) &&
-        (recordCount == null || recordCount <= MAX_ROWS);
+        (recordCount == null || recordCount <= MAX_ROWS) &&
+        (fieldCount == null || fieldCount <= MAX_COLS);
 };
 
 const clampLimit = (limit, def, max) => {
@@ -134,7 +145,15 @@ const shapeResource = (row) => ({
         geometry_type: row.map_geometry_type,
         extent: row.map_extent || null,
         fields: Array.isArray(row.map_fields) ? row.map_fields : [],
-        indexed_at: row.map_indexed_at || null
+        indexed_at: row.map_indexed_at || null,
+        ...(row.map_provider === 'pmtiles' ? {
+            version: row.map_source_version,
+            min_zoom: Number(row.map_tile_min_zoom),
+            max_zoom: Number(row.map_tile_max_zoom),
+            layer: row.map_tile_layer,
+            tiles: '/api/v1/resources/' + encodeURIComponent(row.id) + '/map/tiles/' +
+                encodeURIComponent(row.map_source_version) + '/{z}/{x}/{y}.pbf'
+        } : {})
     } : null,
     ingestion: row.ingest_status
         ? { status: row.ingest_status, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at }
@@ -474,6 +493,7 @@ module.exports = {
     ingestCapBytesFor,
     knownRecordCount,
     isIngestableFile,
+    knownFieldCount,
     recentlyUnlocked,
     popularResources,
     opsStatus,

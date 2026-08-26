@@ -16,7 +16,9 @@ jest.mock('../db/mapIndexQueries', () => ({
     acquireWorkerLock: jest.fn(), releaseWorkerLock: jest.fn(),
     recoverOrphanedJobs: jest.fn(), reconcileMissingFeatures: jest.fn(),
     claimJob: jest.fn(), heartbeatJob: jest.fn().mockResolvedValue(true),
-    finishJob: jest.fn(), requeueJob: jest.fn(), getReadyMapState: jest.fn()
+    finishJob: jest.fn(), requeueJob: jest.fn(), getReadyMapState: jest.fn(),
+    listPmtilesMapObjects: jest.fn(), deletePmtilesMapMetadata: jest.fn(),
+    requeueMissingPmtilesMaps: jest.fn()
 }));
 
 const pool = require('../db/pool');
@@ -199,5 +201,39 @@ describe('map worker transitions', () => {
             'DOWNLOAD_HTTP: download failed: HTTP 404'
         );
         expect(mapQueries.requeueJob).not.toHaveBeenCalled();
+    });
+
+    test('builds Socrata PMTiles without passing a queued URL to the PostGIS indexer', async () => {
+        const pmtilesResource = {
+            id: 'socrata-calgary-open-data-resource-abcd-1234',
+            url: 'https://data.calgary.ca/api/views/abcd-1234/rows.csv?accessType=DOWNLOAD',
+            format: 'CSV', datastore_active: false,
+            raw: {
+                provider: 'socrata', source_id: 'calgary-open-data',
+                upstream_dataset_id: 'abcd-1234'
+            }
+        };
+        const pmtilesJob = {
+            ...job, resource_id: pmtilesResource.id,
+            candidate: {
+                mode: 'socrata-geojson-pmtiles',
+                sourceUrl: 'https://data.calgary.ca/resource/abcd-1234.geojson',
+                raw: {
+                    provider: 'socrata', source_id: 'calgary-open-data',
+                    upstream_dataset_id: 'abcd-1234'
+                }
+            }
+        };
+        const build = jest.fn().mockResolvedValue({
+            queueStatus: 'ready', featureCount: 2, vertexCount: 2
+        });
+        const index = jest.fn();
+        await processJob(pmtilesJob, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => pmtilesResource,
+            buildPmtilesResource: build,
+            indexMapResource: index
+        });
+        expect(build).toHaveBeenCalledWith(pmtilesResource, pmtilesJob, expect.any(String), undefined, {});
+        expect(index).not.toHaveBeenCalled();
     });
 });

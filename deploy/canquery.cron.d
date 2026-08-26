@@ -21,6 +21,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # (ingests + pins each dataset's representative resource; cheap once warmed)
 15 5 * * * root /usr/local/sbin/canquery-run-job.sh seed-top100
 
+# Remove PMTiles uploads that are no longer referenced after the recovery
+# grace period. This wrapper sources the write environment before dropping
+# privileges; no credential is placed in the cron file.
+45 4 * * * root /usr/local/sbin/canquery-run-map-job.sh prune-map-objects
+
 # Optional private Search Console reporting. Configure GSC_OAUTH_PATH,
 # GSC_SITE_URL, and GSC_REPORT_PATH, complete a durable OAuth grant, run the
 # first 90-day import, then uncomment both entries.

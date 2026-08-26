@@ -63,7 +63,7 @@ function validateCandidate(candidate, caps) {
 
 function candidateMode(candidate = {}) {
     const mode = candidate.mode || 'ckan-datastore-csv';
-    if (!['ckan-datastore-csv', 'geojson-file'].includes(mode)) {
+    if (!['ckan-datastore-csv', 'geojson-file', 'socrata-geojson-pmtiles'].includes(mode)) {
         throw new MapSkipError('unsupported map candidate mode', 'MAP_SOURCE');
     }
     return mode;

@@ -86,6 +86,14 @@ const VANCOUVER_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Vancouver.'
 };
 
+const CALGARY_LICENSE = {
+    titleEn: 'Open Government Licence – City of Calgary v2.1',
+    titleFr: 'Licence du gouvernement ouvert – Ville de Calgary v2.1',
+    url: 'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/u45n-7awa/',
+    attributionEn: 'Contains information licensed under the Open Government Licence – City of Calgary.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Calgary.'
+};
+
 const MISSISSAUGA_LICENSE = {
     titleEn: 'City of Mississauga Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
@@ -270,6 +278,33 @@ const sources = [{
         relationship: 'direct',
         includesDescendants: false
     }]
+}, {
+    id: 'calgary-open-data',
+    kind: 'socrata',
+    nameEn: 'City of Calgary Open Data',
+    nameFr: 'Données ouvertes de la Ville de Calgary',
+    homepageUrl: 'https://data.calgary.ca/',
+    catalogUrl: 'https://data.calgary.ca/api/catalog/v1',
+    upstreamHost: 'data.calgary.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'en',
+    placeId: 'sgc-csd-4806016',
+    dataSupplier: 'The City of Calgary',
+    defaultOrganizationId: 'city-of-calgary',
+    defaultOrganizationName: 'city-of-calgary',
+    defaultOrganizationTitleEn: 'City of Calgary',
+    defaultOrganizationTitleFr: 'Ville de Calgary',
+    defaultLicenseTitleEn: CALGARY_LICENSE.titleEn,
+    defaultLicenseTitleFr: CALGARY_LICENSE.titleFr,
+    defaultLicenseUrl: CALGARY_LICENSE.url,
+    defaultAttributionEn: CALGARY_LICENSE.attributionEn,
+    defaultAttributionFr: CALGARY_LICENSE.attributionFr,
+    approvedLicenseUrls: [
+        'https://data.calgary.ca/d/Open-Data-Terms/u45n-7awa',
+        'https://data.calgary.ca/stories/s/u45n-7awa/'
+    ]
 }, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
@@ -522,6 +557,7 @@ module.exports = {
     OTTAWA_LICENSE,
     OTTAWA_POLICE_LICENSE,
     VANCOUVER_LICENSE,
+    CALGARY_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,

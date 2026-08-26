@@ -1,9 +1,17 @@
 const rateLimit = require('express-rate-limit');
-const generalLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const TILE_PATH = /^\/api\/v1\/resources\/[^/]+\/map\/tiles\/[^/]+\/\d+\/\d+\/\d+\.pbf$/;
+const generalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: req => TILE_PATH.test(String(req.originalUrl || req.url).split('?')[0])
+});
 const ingestLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many ingest requests, try again later' } });
 const profileLimiter = rateLimit({ windowMs: 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many profile requests, try again later' } });
 const exportLimiter = rateLimit({ windowMs: 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many export requests, try again later' } });
 const mapLimiter = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many map requests, try again later' } });
+const tileLimiter = rateLimit({ windowMs: 60 * 1000, limit: 240, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many map tile requests, try again later' } });
 const aggregateRateLimiter = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many aggregation requests, try again later' } });
 
 // Ordinary table pagination remains under the general API limit. Only requests
@@ -17,4 +25,4 @@ function aggregationLimiter(req, res, next) {
     return aggregateRateLimiter(req, res, next);
 }
 
-module.exports = { generalLimiter, ingestLimiter, profileLimiter, exportLimiter, mapLimiter, aggregationLimiter };
+module.exports = { generalLimiter, ingestLimiter, profileLimiter, exportLimiter, mapLimiter, tileLimiter, aggregationLimiter };

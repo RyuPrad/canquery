@@ -4,9 +4,20 @@ describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
             'toronto-open-data', 'montreal-open-data', 'ottawa-hub', 'vancouver-open-data',
+            'calgary-open-data',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
+    });
+
+    test('configures Calgary as a strict record-licensed Socrata city source', () => {
+        const calgary = getSource('calgary-open-data');
+        expect(calgary).toEqual(expect.objectContaining({
+            kind: 'socrata', upstreamHost: 'data.calgary.ca',
+            placeId: 'sgc-csd-4806016', dataSupplier: 'The City of Calgary',
+            defaultLicenseUrl: expect.stringContaining('Open-Calgary-Terms-of-Use')
+        }));
+        expect(calgary.approvedLicenseUrls).toHaveLength(2);
     });
 
     test('configures Vancouver as a record-licensed Opendatasoft city source', () => {

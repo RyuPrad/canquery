@@ -65,12 +65,12 @@ async function sweepMapCandidates(db, datasetIds, candidateResourceIds) {
           AND NOT (r.id = ANY($2::text[]))
           AND (EXISTS (SELECT 1 FROM map_index_jobs j WHERE j.resource_id = r.id)
                OR EXISTS (SELECT 1 FROM resource_maps rm
-                          WHERE rm.resource_id = r.id AND rm.provider = 'canquery'))
+                          WHERE rm.resource_id = r.id AND rm.provider IN ('canquery','pmtiles')))
     `, [datasetIds, candidateResourceIds || []]);
     const ids = stale.rows.map(row => row.id);
     if (ids.length === 0) return { removed: 0 };
     await db.query('DELETE FROM map_store.features WHERE resource_id = ANY($1::text[])', [ids]);
-    await db.query("DELETE FROM resource_maps WHERE provider = 'canquery' AND resource_id = ANY($1::text[])", [ids]);
+    await db.query("DELETE FROM resource_maps WHERE provider IN ('canquery','pmtiles') AND resource_id = ANY($1::text[])", [ids]);
     await db.query('DELETE FROM map_index_jobs WHERE resource_id = ANY($1::text[])', [ids]);
     return { removed: ids.length };
 }
@@ -135,7 +135,7 @@ async function reconcileMissingFeatures(db) {
     }
 }
 
-async function claimJob(db, workerId) {
+async function claimJob(db, workerId, resourceId = null) {
     const result = await db.query(`
         UPDATE map_index_jobs
         SET status = 'running', attempts = attempts + 1, worker_id = $1,
@@ -144,6 +144,7 @@ async function claimJob(db, workerId) {
         WHERE resource_id = (
             SELECT resource_id FROM map_index_jobs
             WHERE status = 'pending'
+              AND ($2::text IS NULL OR resource_id = $2)
             ORDER BY
                 CASE
                     WHEN candidate->>'expectedBytes' ~ '^[0-9]+$'
@@ -160,7 +161,7 @@ async function claimJob(db, workerId) {
         )
         RETURNING resource_id, desired_version AS claimed_version,
                   candidate, attempts
-    `, [workerId]);
+    `, [workerId, resourceId]);
     return result.rows[0] || null;
 }
 
@@ -226,13 +227,63 @@ async function getMapQueueHealth(db) {
 
 async function getReadyMapState(db, resourceId, version) {
     const result = await db.query(`
-        SELECT rm.source_version, rm.feature_count, rm.byte_size, rm.indexed_at,
+        SELECT rm.provider, rm.source_version, rm.feature_count, rm.byte_size, rm.indexed_at,
+               rm.storage_key, rm.storage_etag, rm.storage_sha256,
                EXISTS (SELECT 1 FROM map_store.features f WHERE f.resource_id = rm.resource_id) AS has_features
         FROM resource_maps rm
-        WHERE rm.resource_id = $1 AND rm.provider = 'canquery'
+        WHERE rm.resource_id = $1 AND rm.provider IN ('canquery','pmtiles')
           AND rm.source_version = $2
     `, [resourceId, version]);
     return result.rows[0] || null;
+}
+
+async function listPmtilesMapObjects(db) {
+    const result = await db.query(`
+        SELECT resource_id, storage_key, storage_etag, storage_sha256, byte_size
+        FROM resource_maps WHERE provider = 'pmtiles'
+        ORDER BY resource_id
+    `);
+    return result.rows;
+}
+
+async function deletePmtilesMapMetadata(db, resourceId) {
+    const result = await db.query(`
+        DELETE FROM resource_maps
+        WHERE resource_id = $1 AND provider = 'pmtiles'
+        RETURNING storage_key
+    `, [resourceId]);
+    return result.rows[0] || null;
+}
+
+async function requeueMissingPmtilesMaps(db, resourceIds) {
+    if (!resourceIds || resourceIds.length === 0) return [];
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        const removed = await client.query(`
+            DELETE FROM resource_maps
+            WHERE provider = 'pmtiles' AND resource_id = ANY($1::text[])
+            RETURNING resource_id
+        `, [resourceIds]);
+        const ids = removed.rows.map(row => row.resource_id);
+        if (ids.length) {
+            await client.query(`
+                UPDATE map_index_jobs
+                SET status = 'pending', indexed_version = NULL, attempts = 0,
+                    worker_id = NULL, claimed_at = NULL, heartbeat_at = NULL,
+                    finished_at = NULL,
+                    error = 'PMTiles object absent; queued for rebuild', updated_at = now()
+                WHERE resource_id = ANY($1::text[])
+            `, [ids]);
+        }
+        await client.query('COMMIT');
+        return ids;
+    } catch (error) {
+        try { await client.query('ROLLBACK'); } catch {}
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
 async function queryLocalMap(db, { resourceId, bbox, tolerance, limit }) {
@@ -276,5 +327,8 @@ module.exports = {
     requeueJob,
     getMapQueueHealth,
     getReadyMapState,
+    listPmtilesMapObjects,
+    deletePmtilesMapMetadata,
+    requeueMissingPmtilesMaps,
     queryLocalMap
 };
