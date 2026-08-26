@@ -78,6 +78,14 @@ const OTTAWA_POLICE_LICENSE = {
     attributionFr: 'Contient de l’information visée par la Licence du gouvernement ouvert – Service de police d’Ottawa.'
 };
 
+const VANCOUVER_LICENSE = {
+    titleEn: 'Open Government Licence – Vancouver',
+    titleFr: 'Licence du gouvernement ouvert – Vancouver',
+    url: 'https://opendata.vancouver.ca/pages/licence/',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Vancouver.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Vancouver.'
+};
+
 const MISSISSAUGA_LICENSE = {
     titleEn: 'City of Mississauga Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
@@ -223,6 +231,42 @@ const sources = [{
     placeRules: [{
         publisher: /^city of ottawa$/i,
         placeId: 'sgc-cd-3506',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'vancouver-open-data',
+    kind: 'opendatasoft',
+    nameEn: 'City of Vancouver Open Data',
+    nameFr: 'Données ouvertes de la Ville de Vancouver',
+    homepageUrl: 'https://opendata.vancouver.ca/',
+    catalogUrl: 'https://opendata.vancouver.ca/api/explore/v2.1',
+    upstreamHost: 'opendata.vancouver.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'en',
+    timezone: 'America/Vancouver',
+    defaultOrganizationId: 'city-of-vancouver',
+    defaultOrganizationName: 'city-of-vancouver',
+    defaultOrganizationTitleEn: 'City of Vancouver',
+    defaultOrganizationTitleFr: 'Ville de Vancouver',
+    defaultLicenseTitleEn: VANCOUVER_LICENSE.titleEn,
+    defaultLicenseTitleFr: VANCOUVER_LICENSE.titleFr,
+    defaultLicenseUrl: VANCOUVER_LICENSE.url,
+    defaultAttributionEn: VANCOUVER_LICENSE.attributionEn,
+    defaultAttributionFr: VANCOUVER_LICENSE.attributionFr,
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^city of vancouver$/i }],
+    licenseRules: [{
+        publisher: /^city of vancouver$/i,
+        licenseTitle: /^open government licence\s*[-–]\s*vancouver$/i,
+        licenseUrl: /^https:\/\/opendata\.vancouver\.ca\/pages\/licence\/?$/i,
+        license: VANCOUVER_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^city of vancouver$/i,
+        placeId: 'sgc-csd-5915022',
         relationship: 'direct',
         includesDescendants: false
     }]
@@ -477,6 +521,7 @@ module.exports = {
     TORONTO_LICENSE,
     OTTAWA_LICENSE,
     OTTAWA_POLICE_LICENSE,
+    VANCOUVER_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,

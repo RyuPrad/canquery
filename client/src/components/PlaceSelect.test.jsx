@@ -14,6 +14,7 @@ describe('PlaceSelect', () => {
       { id: 'sgc-cd-3506', slug: 'ottawa-on', kind: 'municipality', name: { en: 'Ottawa' }, parent: { id: 'ca-on' }, dataset_count: 392 },
       { id: 'sgc-cd-3520', slug: 'toronto-on', kind: 'municipality', name: { en: 'Toronto' }, parent: { id: 'ca-on' }, dataset_count: 556 },
       { id: 'sgc-csd-2466023', slug: 'montreal-qc', kind: 'municipality', name: { en: 'Montréal' }, parent: { id: 'sgc-cd-2466' }, dataset_count: 405 },
+      { id: 'sgc-csd-5915022', slug: 'vancouver-bc', kind: 'municipality', name: { en: 'Vancouver' }, parent: { id: 'sgc-cd-5915' }, dataset_count: 178 },
     ]} />);
     const select = screen.getByRole('combobox', { name: 'Choose a place' });
     expect(select).toHaveDisplayValue('All Canada');
@@ -21,6 +22,7 @@ describe('PlaceSelect', () => {
     expect(onChange).toHaveBeenCalledWith('oshawa-on');
     expect(screen.getByRole('option', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Montréal/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('option', { name: /Vancouver/ })).toHaveLength(1);
     expect([...container.querySelectorAll('optgroup')].map(group => group.label)).toEqual([
       'Featured regions', 'Municipalities in Durham', 'Municipalities in Peel', 'Featured cities', 'Other places'
     ]);

@@ -117,12 +117,13 @@ describe('Catalog API', () => {
             { id: 'r4', dataset_id: 'd1', name_en: 'd', name_fr: null, format: 'PDF', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null },
             { id: 'r5', dataset_id: 'd1', name_en: 'e', name_fr: null, format: 'XLSX', url: 'u', size_bytes: '1048576', datastore_active: false, language: null, last_modified: null, ingest_status: null },
             { id: 'r6', dataset_id: 'd1', name_en: 'f', name_fr: null, format: 'XLSX', url: 'u', size_bytes: String(25 * 1024 * 1024), datastore_active: false, language: null, last_modified: null, ingest_status: null },
-            { id: 'r7', dataset_id: 'd1', name_en: 'g', name_fr: null, format: 'XLS', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null }
+            { id: 'r7', dataset_id: 'd1', name_en: 'g', name_fr: null, format: 'XLS', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null },
+            { id: 'r8', dataset_id: 'd1', name_en: 'h', name_fr: null, format: 'CSV', url: 'u', size_bytes: null, raw: { record_count: 1000001 }, datastore_active: false, language: null, last_modified: null, ingest_status: null }
         ]);
         const res = await request(app).get('/api/v1/datasets/d1');
         expect(res.status).toBe(200);
         const modes = res.body.data.resources.map(r => r.query_mode);
-        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'ingestable']);
+        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'ingestable', 'file-only']);
         // Relative catalogue URLs are resolved to absolute so the client's links work.
         expect(res.body.data.resources[0].url).toBe('https://open.canada.ca/u');
     });

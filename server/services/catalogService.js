@@ -8,6 +8,7 @@ const { sources: configuredSources } = require('../config/catalogSources');
 
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
 const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
+const MAX_ROWS = Number(process.env.MAX_ROWS) > 0 ? Number(process.env.MAX_ROWS) : 1_000_000;
 
 const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
 
@@ -15,9 +16,26 @@ const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
 // but XLSX shared strings/styles and legacy XLS parsing still expand in memory
 // inside that child process.
 const ingestCapBytesFor = (format) => {
-    if (format === 'CSV') return maxFileBytes();
-    if (format === 'XLSX' || format === 'XLS') return MAX_XLSX_MB * 1024 * 1024;
+    const normalized = String(format || '').toUpperCase();
+    if (normalized === 'CSV') return maxFileBytes();
+    if (normalized === 'XLSX' || normalized === 'XLS') return MAX_XLSX_MB * 1024 * 1024;
     return null;
+};
+
+const knownRecordCount = (row) => {
+    const raw = row && row.raw && typeof row.raw === 'object' && !Array.isArray(row.raw)
+        ? row.raw : {};
+    if (raw.record_count == null || raw.record_count === '') return null;
+    const count = Number(raw.record_count);
+    return Number.isFinite(count) && count >= 0 ? count : null;
+};
+
+const isIngestableFile = (row) => {
+    const cap = ingestCapBytesFor(row && row.format);
+    const recordCount = knownRecordCount(row);
+    return cap !== null &&
+        (row.size_bytes == null || Number(row.size_bytes) <= cap) &&
+        (recordCount == null || recordCount <= MAX_ROWS);
 };
 
 const clampLimit = (limit, def, max) => {
@@ -95,8 +113,7 @@ const shapePlaceMatch = (row) => row.matched_place_id ? {
 const computeQueryMode = (row) => {
     if (row.ingest_status === 'ready') return 'ingested';
     if (row.datastore_active) return 'datastore';
-    const cap = ingestCapBytesFor(row.format);
-    if (cap !== null && (row.size_bytes == null || Number(row.size_bytes) <= cap)) return 'ingestable';
+    if (isIngestableFile(row)) return 'ingestable';
     return 'file-only';
 };
 
@@ -455,6 +472,8 @@ module.exports = {
     healthz,
     computeQueryMode,
     ingestCapBytesFor,
+    knownRecordCount,
+    isIngestableFile,
     recentlyUnlocked,
     popularResources,
     opsStatus,

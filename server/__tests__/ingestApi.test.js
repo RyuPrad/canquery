@@ -120,6 +120,19 @@ describe('ingest API', () => {
         expect(res.body.download_url).toBe('https://example.org/y.pdf');
     });
 
+    it('keeps a CSV with a known upstream row count over the cap download-only', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({
+            id: 'large-csv',
+            raw: { provider: 'opendatasoft', record_count: 1_000_001 }
+        }));
+
+        const res = await request(app).post('/api/v1/resources/large-csv/ingest');
+
+        expect(res.status).toBe(422);
+        expect(res.body.download_url).toBe('https://example.org/file.csv');
+        expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
+    });
+
     it('job polling returns the job', async () => {
         ingestQueries.getJobById.mockResolvedValue({ id: 7, resource_id: 'csv-1', status: 'done', attempts: 1, error: null, claimed_at: '2026-01-01', finished_at: '2026-01-01', created_at: '2026-01-01' });
         const res = await request(app).get('/api/v1/jobs/7');

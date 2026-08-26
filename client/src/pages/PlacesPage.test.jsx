@@ -54,6 +54,12 @@ beforeEach(() => {
       name: { en: 'Montréal', fr: 'Montréal' }, type: { en: 'City', fr: 'Ville' },
       parent: { id: 'sgc-cd-2466', name: { en: 'Montréal', fr: 'Montréal' } },
       dataset_count: 405, direct_dataset_count: 390, mappable_resource_count: 304
+    },
+    {
+      id: 'sgc-csd-5915022', slug: 'vancouver-bc', kind: 'municipality',
+      name: { en: 'Vancouver', fr: 'Vancouver' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-cd-5915', name: { en: 'Greater Vancouver', fr: 'Greater Vancouver' } },
+      dataset_count: 178, direct_dataset_count: 178, mappable_resource_count: 133
     }
   ] });
 });
@@ -69,6 +75,7 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('link', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Montréal/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /Vancouver/ })).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();

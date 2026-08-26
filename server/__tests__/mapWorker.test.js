@@ -22,6 +22,8 @@ jest.mock('../db/mapIndexQueries', () => ({
 const pool = require('../db/pool');
 const mapQueries = require('../db/mapIndexQueries');
 const { MapSkipError } = require('../services/mapIndexPipeline');
+const { getSource } = require('../config/catalogSources');
+const { exportUrl } = require('../services/opendatasoftAdapter');
 const { processJob, validateDirectGeoJson } = require('../scripts/map-worker');
 
 const resource = {
@@ -87,6 +89,85 @@ describe('map worker transitions', () => {
         expect(() => validateDirectGeoJson(directResource, {
             sourceUrl: 'https://attacker.example/map.geojson'
         })).toThrow(MapSkipError);
+    });
+
+    test('reconstructs the Opendatasoft GeoJSON export instead of trusting the candidate URL', async () => {
+        const source = getSource('vancouver-open-data');
+        const upstreamId = 'public-trees';
+        const csvUrl = exportUrl(source, upstreamId, 'csv');
+        const geoJsonUrl = exportUrl(source, upstreamId, 'geojson');
+        const directResource = {
+            id: 'r-vancouver', url: csvUrl, format: 'CSV', datastore_active: false,
+            raw: {
+                provider: 'opendatasoft', source_id: source.id,
+                upstream_dataset_id: upstreamId, dataset_uid: 'da_trees',
+                original_format: 'CSV'
+            }
+        };
+        const candidate = {
+            mode: 'geojson-file', sourceUrl: geoJsonUrl, expectedRows: 42,
+            raw: {
+                provider: 'opendatasoft', source_id: source.id,
+                upstream_dataset_id: upstreamId, dataset_uid: 'da_trees'
+            }
+        };
+        const directJob = { ...job, resource_id: directResource.id, candidate };
+        const probe = jest.fn();
+        const index = jest.fn().mockResolvedValue({ queueStatus: 'ready', featureCount: 1, vertexCount: 1 });
+
+        await processJob(directJob, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => directResource,
+            probeGeometry: probe,
+            indexMapResource: index,
+            validateDirectGeoJson
+        });
+
+        expect(probe).not.toHaveBeenCalled();
+        expect(index).toHaveBeenCalledWith(
+            expect.objectContaining({ id: directResource.id, url: geoJsonUrl }),
+            directJob,
+            '00000000-0000-4000-8000-000000000001',
+            undefined
+        );
+        expect(csvUrl).not.toBe(geoJsonUrl);
+    });
+
+    test('skips a mismatched Opendatasoft map URL before invoking the downloader', async () => {
+        const source = getSource('vancouver-open-data');
+        const upstreamId = 'public-trees';
+        const directResource = {
+            id: 'r-vancouver-bad', url: exportUrl(source, upstreamId, 'csv'),
+            format: 'CSV', datastore_active: false,
+            raw: {
+                provider: 'opendatasoft', source_id: source.id,
+                upstream_dataset_id: upstreamId, original_format: 'CSV'
+            }
+        };
+        const directJob = {
+            ...job,
+            resource_id: directResource.id,
+            candidate: {
+                mode: 'geojson-file', sourceUrl: 'https://attacker.example/map.geojson',
+                raw: {
+                    provider: 'opendatasoft', source_id: source.id,
+                    upstream_dataset_id: upstreamId
+                }
+            }
+        };
+        const index = jest.fn();
+
+        await processJob(directJob, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => directResource,
+            indexMapResource: index,
+            validateDirectGeoJson
+        });
+
+        expect(index).not.toHaveBeenCalled();
+        expect(mapQueries.finishJob).toHaveBeenCalledWith(
+            pool, directJob, expect.any(String), 'skipped', {},
+            expect.stringContaining('MAP_SOURCE')
+        );
+        expect(mapQueries.requeueJob).not.toHaveBeenCalled();
     });
 
     test('retries transient failures and marks the third attempt failed', async () => {
