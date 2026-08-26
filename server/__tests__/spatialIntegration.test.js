@@ -189,4 +189,45 @@ spatialDescribe('PostGIS viewport integration', () => {
             { slug: 'montreal-qc-2466023', place_id: 'sgc-csd-2466023' }
         ]);
     });
+
+    test('migrations seed the canonical featured Vancouver ancestry', async () => {
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN ('sgc-pr-59', 'sgc-cd-5915', 'sgc-csd-5915022')
+            ORDER BY CASE id
+                WHEN 'sgc-pr-59' THEN 1
+                WHEN 'sgc-cd-5915' THEN 2
+                ELSE 3
+            END
+        `);
+        expect(places.rows).toEqual([
+            expect.objectContaining({
+                id: 'sgc-pr-59', slug: 'british-columbia', kind: 'province',
+                parent_id: 'ca', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-cd-5915', slug: 'greater-vancouver-bc', kind: 'region',
+                parent_id: 'sgc-pr-59', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-csd-5915022', slug: 'vancouver-bc', kind: 'municipality',
+                parent_id: 'sgc-cd-5915', type_en: 'City', type_fr: 'Ville',
+                featured: true, latitude: 49.2827, longitude: -123.1207,
+                default_zoom: 10
+            })
+        ]);
+
+        const identifiers = await client.query(`
+            SELECT place_id, scheme, value FROM place_identifiers
+            WHERE place_id IN ('sgc-pr-59', 'sgc-cd-5915', 'sgc-csd-5915022')
+            ORDER BY place_id
+        `);
+        expect(identifiers.rows).toEqual([
+            { place_id: 'sgc-cd-5915', scheme: 'sgc-cd', value: '5915' },
+            { place_id: 'sgc-csd-5915022', scheme: 'sgc-csd', value: '5915022' },
+            { place_id: 'sgc-pr-59', scheme: 'sgc-pr', value: '59' }
+        ]);
+    });
 });

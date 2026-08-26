@@ -150,6 +150,11 @@ async function claimJob(db, workerId) {
                         THEN (candidate->>'expectedBytes')::numeric
                     ELSE NULL
                 END NULLS LAST,
+                CASE
+                    WHEN candidate->>'expectedRows' ~ '^[0-9]+$'
+                        THEN (candidate->>'expectedRows')::numeric
+                    ELSE NULL
+                END NULLS LAST,
                 updated_at, resource_id
             LIMIT 1 FOR UPDATE SKIP LOCKED
         )

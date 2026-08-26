@@ -6,6 +6,7 @@ const longRunningPool = require('../db/longRunningPool');
 const { getResourceById } = require('../db/catalogReadQueries');
 const { datastoreSearch } = require('../services/ckanClient');
 const { getSource } = require('../config/catalogSources');
+const { exportUrl: opendatasoftExportUrl } = require('../services/opendatasoftAdapter');
 const {
     MapSkipError,
     indexMapResource,
@@ -71,15 +72,33 @@ function ckanTarget(resource) {
 }
 
 function validateDirectGeoJson(resource, candidate) {
-    ckanTarget(resource);
     const raw = resource && resource.raw && typeof resource.raw === 'object' ? resource.raw : {};
+    const source = getSource(raw.source_id);
+    if (source && source.kind === 'opendatasoft') {
+        const candidateRaw = candidate && candidate.raw && typeof candidate.raw === 'object'
+            ? candidate.raw : {};
+        if (raw.provider !== 'opendatasoft' || !raw.upstream_dataset_id ||
+            resource.datastore_active === true || String(resource.format || '').toUpperCase() !== 'CSV') {
+            throw new MapSkipError('direct map candidate is not a catalogued Opendatasoft export', 'MAP_SOURCE');
+        }
+        const expectedCsvUrl = opendatasoftExportUrl(source, raw.upstream_dataset_id, 'csv');
+        const expectedGeoJsonUrl = opendatasoftExportUrl(source, raw.upstream_dataset_id, 'geojson');
+        if (resource.url !== expectedCsvUrl || candidate.sourceUrl !== expectedGeoJsonUrl ||
+            candidateRaw.provider !== 'opendatasoft' || candidateRaw.source_id !== raw.source_id ||
+            candidateRaw.upstream_dataset_id !== raw.upstream_dataset_id) {
+            throw new MapSkipError('Opendatasoft map candidate differs from its catalogued exports', 'MAP_SOURCE');
+        }
+        return expectedGeoJsonUrl;
+    }
+
+    ckanTarget(resource);
     if (resource.datastore_active === true || String(raw.original_format || '').toUpperCase() !== 'GEOJSON') {
         throw new MapSkipError('direct map candidate is not a catalogued GeoJSON file', 'MAP_SOURCE');
     }
     if (!resource.url || (candidate.sourceUrl && candidate.sourceUrl !== resource.url)) {
         throw new MapSkipError('direct map candidate URL differs from the catalogued resource', 'MAP_SOURCE');
     }
-    return true;
+    return resource.url;
 }
 
 async function probeGeometry(resource) {
@@ -121,6 +140,7 @@ async function processJob(job, workerId, options = {}) {
         }
         const mode = candidateMode(job.candidate || {});
         let expectedRows = null;
+        let downloadUrl = resource.url;
         if (mode === 'ckan-datastore-csv') {
             const probe = await (options.probeGeometry || probeGeometry)(resource);
             expectedRows = probe.total;
@@ -128,11 +148,18 @@ async function processJob(job, workerId, options = {}) {
                 throw new MapSkipError('DataStore row count exceeds map cap', 'MAP_ROWS');
             }
         } else {
-            (options.validateDirectGeoJson || validateDirectGeoJson)(resource, job.candidate || {});
+            downloadUrl = (options.validateDirectGeoJson || validateDirectGeoJson)(
+                resource, job.candidate || {}
+            ) || resource.url;
         }
         console.log('[map ' + job.resource_id + '] indexing attempt ' + job.attempts +
             ' (' + mode + (expectedRows == null ? '' : ', ' + expectedRows + ' rows') + ')');
-        const result = await (options.indexMapResource || indexMapResource)(resource, job, workerId, options.caps);
+        const result = await (options.indexMapResource || indexMapResource)(
+            downloadUrl === resource.url ? resource : { ...resource, url: downloadUrl },
+            job,
+            workerId,
+            options.caps
+        );
         console.log('[map ' + job.resource_id + '] ' + result.queueStatus + ': ' + result.featureCount +
             ' features, ' + result.vertexCount + ' vertices');
         return result;

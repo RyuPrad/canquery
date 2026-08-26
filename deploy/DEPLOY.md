@@ -139,7 +139,9 @@ they can identify safely. Spatial ArcGIS leaf layers use bounded upstream
 viewports; configured CKAN GeoJSON DataStore resources are queued for a bounded
 local PostGIS index. Catalogued direct GeoJSON resources use the same queue and
 are streamed, CRS-validated, and reprojected to WGS84 without loading a whole
-file into memory.
+file into memory. Opendatasoft sources reconstruct and validate their separate
+CSV and GeoJSON export URLs from the configured catalogue identity; queued URLs
+are never treated as arbitrary download targets.
 
 ## 6. Cron jobs
 
@@ -238,11 +240,13 @@ curl -s 'https://<your-domain>/api/v1/places?q=Oshawa'
 curl -s 'https://<your-domain>/api/v1/places?q=Toronto'
 curl -s 'https://<your-domain>/api/v1/places?q=Ottawa'
 curl -s 'https://<your-domain>/api/v1/places?q=Montr%C3%A9al'
+curl -s 'https://<your-domain>/api/v1/places?q=Vancouver'
 curl -s 'https://<your-domain>/api/v1/places?q=Mississauga'
 curl -s 'https://<your-domain>/api/v1/places?q=Brampton'
 curl -s 'https://<your-domain>/api/v1/sources?place=clarington-on'
 curl -s 'https://<your-domain>/api/v1/sources?place=caledon-on'
 curl -s 'https://<your-domain>/api/v1/sources?place=ottawa-on'
+curl -s 'https://<your-domain>/api/v1/sources?place=vancouver-bc'
 # UI: search by place, open a mapped dataset, pan/zoom the live Map tab, then load its table snapshot
 ```
 

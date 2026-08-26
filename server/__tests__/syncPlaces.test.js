@@ -125,6 +125,32 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
+    test('features Vancouver as a canonical city beneath Greater Vancouver', () => {
+        const en = [
+            { Level: '2', Code: '59', 'Class title': 'British Columbia' },
+            { Level: '3', Code: '5915', 'Class title': 'Greater Vancouver' },
+            { Level: '4', Code: '5915022', 'Class title': 'Vancouver' }
+        ];
+        const fr = [
+            { Code: '59', 'Titres de classes': 'Colombie-Britannique' },
+            { Code: '5915', 'Titres de classes': 'Greater Vancouver' },
+            { Code: '5915022', 'Titres de classes': 'Vancouver' }
+        ];
+        const result = normalize(en, fr);
+
+        expect(result.places.find(place => place.id === 'sgc-pr-59')).toEqual(expect.objectContaining({
+            slug: 'british-columbia', parentId: 'ca', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-cd-5915')).toEqual(expect.objectContaining({
+            slug: 'greater-vancouver-bc', kind: 'region', parentId: 'sgc-pr-59', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-5915022')).toEqual(expect.objectContaining({
+            slug: 'vancouver-bc', kind: 'municipality', parentId: 'sgc-cd-5915',
+            typeEn: 'City', typeFr: 'Ville', featured: true,
+            latitude: 49.2827, longitude: -123.1207, defaultZoom: 10
+        }));
+    });
+
     test('plans former-slug aliases and fails closed on ownership conflicts', async () => {
         const desired = [{ id: 'p1', slug: 'montreal-qc', nameEn: 'Montréal' }];
         const db = { query: jest.fn()

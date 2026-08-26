@@ -27,7 +27,11 @@ live maps served through bounded upstream viewports. Montréal's official CKAN
 catalogue is included as a French-first standalone city: record-level CC BY 4.0
 and Open Government Licence - Canada terms are preserved, while selected direct
 GeoJSON files are streamed and reprojected into the local PostGIS index. The
-featured local directory
+City of Vancouver's official Opendatasoft catalogue is included as an English-first
+standalone city. Its record-explicit Open Government Licence - Vancouver metadata
+is preserved, CSV exports remain loadable only within the shared row cap, and all
+eligible spatial datasets use separately validated GeoJSON exports in the local
+PostGIS index. The featured local directory
 also covers Durham Region and all eight lower-tier municipalities, with direct
 feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
@@ -65,6 +69,7 @@ node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
 npm run sync:source -- --source=montreal-open-data --dry-run
 npm run sync:source -- --source=ottawa-hub --dry-run
+npm run sync:source -- --source=vancouver-open-data --dry-run
 npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:source -- --source=peel-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
@@ -92,10 +97,12 @@ curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'
 curl 'http://localhost:3100/api/v1/places?q=Mississauga'
 curl 'http://localhost:3100/api/v1/places?q=Montr%C3%A9al'
+curl 'http://localhost:3100/api/v1/places?q=Vancouver'
 
 # place-filtered sources are authoritative; counts expose total + authoritative
 curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
 curl 'http://localhost:3100/api/v1/sources?place=mississauga-on'
+curl 'http://localhost:3100/api/v1/sources?place=vancouver-bc'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -104,7 +111,7 @@ curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
 
-# bounded GeoJSON for an upstream ArcGIS or locally indexed CKAN resource
+# bounded GeoJSON for an upstream ArcGIS or locally indexed CKAN/Opendatasoft resource
 curl 'http://localhost:3100/api/v1/resources/<id>/map?bbox=-79,43.8,-78.7,44&zoom=11&limit=1000'
 
 # load a tabular file (idempotent; 5/hour/IP), then poll a newly-enqueued job.
@@ -139,7 +146,7 @@ expensive profile, aggregation, and export routes have dedicated rate limits.
 | `scripts/sync-source.js` | validates or syncs one configured source adapter; `--source`, `--limit`, `--dry-run` |
 | `scripts/sync-municipal-sources.js` | refreshes every enabled non-federal source independently so one failure cannot suppress the others |
 | `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
-| `scripts/map-worker.js` | exclusively owns the versioned map queue, streams CKAN CSV dumps and direct GeoJSON files into PostGIS, reprojects named EPSG CRSs to WGS84 under row/vertex/file/disk budgets, and self-heals excluded map data after restore; `--once` or `--drain` |
+| `scripts/map-worker.js` | exclusively owns the versioned map queue, streams CKAN CSV dumps and validated CKAN/Opendatasoft GeoJSON exports into PostGIS, reprojects named EPSG CRSs to WGS84 under row/vertex/file/disk budgets, and self-heals excluded map data after restore; `--once` or `--drain` |
 | `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
@@ -162,15 +169,17 @@ and 10,000,000 vertices per resource, plus a 1 GB download cap, a 20 GB logical
 map-store budget, and a 30 GB
 filesystem free-space floor. Direct GeoJSON supports absent/WGS84, CRS84, and
 named PostGIS EPSG definitions; unsupported or malformed CRS declarations fail
-closed for that resource. `map_store.features` is a reproducible cache and may
+closed for that resource. Known upstream record counts above `MAX_ROWS` keep a
+CSV discoverable as `file-only` without enqueueing an ingest that cannot finish.
+`map_store.features` is a reproducible cache and may
 be excluded from backups; the queue reindexes missing feature data after restore.
 
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
-their municipalities, and standalone featured cities such as Montréal, Ottawa
-and Toronto;
+their municipalities, and standalone featured cities such as Montréal, Ottawa,
+Toronto and Vancouver;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of
@@ -193,7 +202,7 @@ cd server && npm test && npm run lint
 cd client && npm test && npm run lint && npm run build
 ```
 
-Coverage includes source adapters, place hierarchy and APIs, streaming direct
+Coverage includes CKAN, ArcGIS Hub and Opendatasoft source adapters, place hierarchy and APIs, streaming direct
 GeoJSON plus projected-CRS map conversion, bounded map
 queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
 SSRF/redirect/DNS-pinning checks, bounded caches, spreadsheet-safe streaming CSV

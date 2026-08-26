@@ -3,10 +3,31 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'toronto-open-data', 'montreal-open-data', 'ottawa-hub',
+            'toronto-open-data', 'montreal-open-data', 'ottawa-hub', 'vancouver-open-data',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
+    });
+
+    test('configures Vancouver as a record-licensed Opendatasoft city source', () => {
+        const vancouver = getSource('vancouver-open-data');
+        expect(vancouver).toEqual(expect.objectContaining({
+            kind: 'opendatasoft', metadataLanguage: 'en',
+            licenseMode: 'record-explicit', timezone: 'America/Vancouver',
+            upstreamHost: 'opendata.vancouver.ca'
+        }));
+        expect(vancouver.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            licenseTitle: expect.any(RegExp),
+            licenseUrl: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://opendata.vancouver.ca/pages/licence/'
+            })
+        })]);
+        expect(vancouver.placeRules).toEqual([expect.objectContaining({
+            placeId: 'sgc-csd-5915022', relationship: 'direct',
+            includesDescendants: false
+        })]);
     });
 
     test('configures Ottawa as a canonical city with Police licence precedence', () => {
