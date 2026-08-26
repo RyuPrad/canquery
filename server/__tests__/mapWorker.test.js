@@ -236,4 +236,22 @@ describe('map worker transitions', () => {
         expect(build).toHaveBeenCalledWith(pmtilesResource, pmtilesJob, expect.any(String), undefined, {});
         expect(index).not.toHaveBeenCalled();
     });
+
+    test('skips stale Socrata PMTiles work without retrying the unchanged candidate', async () => {
+        const staleJob = {
+            ...job,
+            candidate: { mode: 'socrata-geojson-pmtiles' }
+        };
+        await processJob(staleJob, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => resource,
+            buildPmtilesResource: async () => {
+                throw new MapSkipError('source changed', 'MAP_SOURCE_CHANGED');
+            }
+        });
+        expect(mapQueries.finishJob).toHaveBeenCalledWith(
+            pool, staleJob, expect.any(String), 'skipped', {},
+            'MAP_SOURCE_CHANGED: source changed'
+        );
+        expect(mapQueries.requeueJob).not.toHaveBeenCalled();
+    });
 });

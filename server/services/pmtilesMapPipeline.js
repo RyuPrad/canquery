@@ -374,7 +374,10 @@ async function buildPmtilesResource(resource, job, workerId, capsRaw = {}, optio
     });
     const startVersion = directMapVersion(firstView, source, expectedRows);
     if (startVersion !== job.claimed_version) {
-        throw new Error('Socrata source changed before PMTiles indexing began');
+        throw new MapSkipError(
+            'Socrata source changed before PMTiles indexing began',
+            'MAP_SOURCE_CHANGED'
+        );
     }
 
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'canquery-pmtiles-'));
@@ -398,7 +401,10 @@ async function buildPmtilesResource(resource, job, workerId, capsRaw = {}, optio
             userAgent: caps.userAgent
         });
         if (directMapVersion(finalView, source, expectedRows) !== startVersion) {
-            throw new Error('Socrata source changed while the PMTiles archive was being built');
+            throw new MapSkipError(
+                'Socrata source changed while the PMTiles archive was being built',
+                'MAP_SOURCE_CHANGED'
+            );
         }
         const key = objectKeyFor(resource.id, job.claimed_version);
         const sha256 = await sha256File(outputPath);

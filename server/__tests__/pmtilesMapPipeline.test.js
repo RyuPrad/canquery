@@ -10,7 +10,8 @@ const {
     validateSocrataCandidate,
     downloadSocrataFeatures,
     runTippecanoe,
-    commitPmtilesMap
+    commitPmtilesMap,
+    buildPmtilesResource
 } = require('../services/pmtilesMapPipeline');
 
 const source = getSource('calgary-open-data');
@@ -110,6 +111,26 @@ describe('PMTiles map pipeline', () => {
             '--drop-densest-as-needed', '--maximum-tile-bytes=500000'
         ]));
         expect(invocation.args).not.toContain('--extend-zooms-if-still-dropping');
+    });
+
+    test('fail-closes a source version that changed before indexing without retrying stale work', async () => {
+        const metadataPool = {
+            query: jest.fn().mockResolvedValue({ rows: [{ bytes: '0' }] })
+        };
+        const view = {
+            id: 'abcd-1234', viewLastModified: 1, rowsUpdatedAt: 2,
+            columns: [{ fieldName: 'point', dataTypeName: 'point' }]
+        };
+        await expect(buildPmtilesResource(
+            resource,
+            { resource_id: resource.id, claimed_version: 'a'.repeat(64), candidate },
+            '00000000-0000-4000-8000-000000000001',
+            {
+                minFreeBytes: 1, maxFileBytes: 1, archiveMaxBytes: 1,
+                fetchJson: jest.fn().mockResolvedValue(view)
+            },
+            { metadataPool, storageConfig: { budgetBytes: 100 } }
+        )).rejects.toMatchObject({ code: 'MAP_SOURCE_CHANGED' });
     });
 
     test('commits object metadata and queue readiness in one transaction', async () => {
