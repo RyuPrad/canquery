@@ -153,7 +153,10 @@ async function downloadSocrataFeatures({ candidate, inputPath, caps, view, sourc
                 throw new MapSkipError('GeoJSON download exceeds map cap ' + caps.maxFileBytes, 'CAP_FILE');
             }
             if (payload.features.length !== limit) {
-                throw new Error('Socrata row count changed while the map archive was being built');
+                throw new MapSkipError(
+                    'Socrata row count changed while the map archive was being built',
+                    'MAP_SOURCE_CHANGED'
+                );
             }
             for (const upstream of payload.features) {
                 rows += 1;
@@ -190,7 +193,12 @@ async function downloadSocrataFeatures({ candidate, inputPath, caps, view, sourc
                 features += 1;
             }
         }
-        if (rows !== expectedRows) throw new Error('Socrata row count changed while the map archive was being built');
+        if (rows !== expectedRows) {
+            throw new MapSkipError(
+                'Socrata row count changed while the map archive was being built',
+                'MAP_SOURCE_CHANGED'
+            );
+        }
         if (!features || !validWgs84Extent(bounds)) {
             throw new MapSkipError('Socrata source contains no valid WGS84 geometry', 'MAP_GEOMETRY');
         }

@@ -92,6 +92,25 @@ describe('PMTiles map pipeline', () => {
         }
     });
 
+    test('fail-closes a Socrata row-count change instead of retrying a stale page plan', async () => {
+        const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pmtiles-row-drift-test-'));
+        const inputPath = path.join(dir, 'features.geojsonseq');
+        try {
+            await expect(downloadSocrataFeatures({
+                resource, candidate, inputPath,
+                caps: {
+                    pageSize: 2, maxRows: 10, maxVertices: 10, maxFeatureVertices: 10,
+                    maxFileBytes: 1024 * 1024,
+                    fetchJson: async () => ({ type: 'FeatureCollection', features: [] }),
+                    userAgent: 'test'
+                },
+                view: { columns: [] }, source, datasetId: 'abcd-1234'
+            })).rejects.toMatchObject({ code: 'MAP_SOURCE_CHANGED' });
+        } finally {
+            await fs.promises.rm(dir, { recursive: true, force: true });
+        }
+    });
+
     test('invokes Tippecanoe with fixed zoom, layer, drop, and tile-byte bounds', async () => {
         let invocation;
         const spawnImpl = (command, args) => {
