@@ -28,6 +28,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "daisyui": "^5.5.23",
     "leaflet": "^1.9.4",
+    "maplibre-gl": "6.6.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-leaflet": "^5.0.0",

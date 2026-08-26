@@ -31,7 +31,11 @@ City of Vancouver's official Opendatasoft catalogue is included as an English-fi
 standalone city. Its record-explicit Open Government Licence - Vancouver metadata
 is preserved, CSV exports remain loadable only within the shared row cap, and all
 eligible spatial datasets use separately validated GeoJSON exports in the local
-PostGIS index. The featured local directory
+PostGIS index. The City of Calgary's official Socrata catalogue is included as another standalone
+city. Only records that explicitly name The City of Calgary and the approved
+Open Government Licence - City of Calgary terms are admitted. Geometry tables
+within the shared row cap are built as immutable PMTiles in private object
+storage and served through same-origin vector tiles. The featured local directory
 also covers Durham Region and all eight lower-tier municipalities, with direct
 feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
@@ -70,6 +74,7 @@ npm run sync:places                       # Statistics Canada SGC hierarchy
 npm run sync:source -- --source=montreal-open-data --dry-run
 npm run sync:source -- --source=ottawa-hub --dry-run
 npm run sync:source -- --source=vancouver-open-data --dry-run
+npm run sync:source -- --source=calgary-open-data --dry-run
 npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:source -- --source=peel-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
@@ -98,11 +103,13 @@ curl 'http://localhost:3100/api/v1/places?q=Oshawa'
 curl 'http://localhost:3100/api/v1/places?q=Mississauga'
 curl 'http://localhost:3100/api/v1/places?q=Montr%C3%A9al'
 curl 'http://localhost:3100/api/v1/places?q=Vancouver'
+curl 'http://localhost:3100/api/v1/places?q=Calgary'
 
 # place-filtered sources are authoritative; counts expose total + authoritative
 curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
 curl 'http://localhost:3100/api/v1/sources?place=mississauga-on'
 curl 'http://localhost:3100/api/v1/sources?place=vancouver-bc'
+curl 'http://localhost:3100/api/v1/sources?place=calgary-ab'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -111,7 +118,7 @@ curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
 curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
 
-# bounded GeoJSON for an upstream ArcGIS or locally indexed CKAN/Opendatasoft resource
+# bounded GeoJSON compatibility view for ArcGIS, PostGIS, or PMTiles resources
 curl 'http://localhost:3100/api/v1/resources/<id>/map?bbox=-79,43.8,-78.7,44&zoom=11&limit=1000'
 
 # load a tabular file (idempotent; 5/hour/IP), then poll a newly-enqueued job.
@@ -146,7 +153,8 @@ expensive profile, aggregation, and export routes have dedicated rate limits.
 | `scripts/sync-source.js` | validates or syncs one configured source adapter; `--source`, `--limit`, `--dry-run` |
 | `scripts/sync-municipal-sources.js` | refreshes every enabled non-federal source independently so one failure cannot suppress the others |
 | `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
-| `scripts/map-worker.js` | exclusively owns the versioned map queue, streams CKAN CSV dumps and validated CKAN/Opendatasoft GeoJSON exports into PostGIS, reprojects named EPSG CRSs to WGS84 under row/vertex/file/disk budgets, and self-heals excluded map data after restore; `--once` or `--drain` |
+| `scripts/map-worker.js` | exclusively owns the versioned map queue; keeps CKAN/Opendatasoft maps in PostGIS and builds bounded Socrata GeoJSON into immutable private-R2 PMTiles; validates source identity, versions, geometry, object integrity and budgets; `--once`, `--drain`, or `--resource=<id>` |
+| `scripts/prune-map-objects.js` | removes private PMTiles objects that have been unreferenced for at least 24 hours; bounded daily cleanup, `--dry-run` |
 | `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
@@ -173,13 +181,21 @@ closed for that resource. Known upstream record counts above `MAX_ROWS` keep a
 CSV discoverable as `file-only` without enqueueing an ingest that cannot finish.
 `map_store.features` is a reproducible cache and may
 be excluded from backups; the queue reindexes missing feature data after restore.
+Calgary's admitted Socrata geometry tables use a hybrid path instead: sequential
+portal-local GeoJSON pages are reduced to 20 scalar popup fields, passed to a
+pinned Tippecanoe build, and uploaded as immutable PMTiles to a private R2 bucket.
+The browser receives only a same-origin versioned vector-tile URL. R2 keys and
+credentials never appear in public metadata. Archives use z0-z16, a 500,000-byte
+compressed tile ceiling, a 2 GB per-archive cap, a 30-minute build timeout and a
+100 GB logical bucket budget. Existing Toronto, Montréal and Vancouver local maps
+remain in PostGIS.
 
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
-their municipalities, and standalone featured cities such as Montréal, Ottawa,
-Toronto and Vancouver;
+their municipalities, and standalone featured cities such as Calgary, Montréal,
+Ottawa, Toronto and Vancouver;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of
@@ -202,8 +218,8 @@ cd server && npm test && npm run lint
 cd client && npm test && npm run lint && npm run build
 ```
 
-Coverage includes CKAN, ArcGIS Hub and Opendatasoft source adapters, place hierarchy and APIs, streaming direct
-GeoJSON plus projected-CRS map conversion, bounded map
+Coverage includes CKAN, ArcGIS Hub, Opendatasoft and Socrata source adapters, place hierarchy and APIs, streaming direct
+GeoJSON plus projected-CRS map conversion, private-R2 PMTiles generation/range reads, bounded map
 queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
 SSRF/redirect/DNS-pinning checks, bounded caches, spreadsheet-safe streaming CSV
 exports, Excel archive caps, lease recovery, lossless incremental sync, strict

@@ -1,5 +1,8 @@
 const catchAsync = require('../utils/catchAsync');
 const mapService = require('../services/mapService');
+const pmtilesMapService = require('../services/pmtilesMapService');
+const { getResourceMapById } = require('../db/catalogReadQueries');
+const AppError = require('../utils/AppError');
 const { envelope } = require('../utils/envelope');
 
 const getResourceMap = catchAsync(async (req, res) => {
@@ -17,4 +20,16 @@ const getResourceMap = catchAsync(async (req, res) => {
     }));
 });
 
-module.exports = { getResourceMap };
+const getResourceMapTile = catchAsync(async (req, res) => {
+    const row = await getResourceMapById(req.params.id);
+    if (!row || row.provider !== 'pmtiles') {
+        throw new AppError('Map tile not found', 404);
+    }
+    const tile = await pmtilesMapService.getTile(row, req.params);
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    if (!tile) return res.status(204).end();
+    res.type('application/x-protobuf');
+    res.send(tile);
+});
+
+module.exports = { getResourceMap, getResourceMapTile };

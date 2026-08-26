@@ -48,7 +48,15 @@ TMP_MIN_FREE_MB=512
 MAP_STORE_BUDGET_GB=20
 MAP_MIN_FREE_GB=30
 MAP_STORE_DATA_PATH=<readable-path-on-postgres-filesystem>
+MAP_R2_BUDGET_GB=100
 ```
+
+PMTiles uses two bucket-scoped S3 credentials. Copy the provided example files
+to `/etc/canquery-map-read.env` and `/etc/canquery-map-write.env`, fill them
+without shell history, set `root:<app-group>` ownership and mode `0640`, and
+grant the API credential Object Read only. Grant the worker credential Object
+Read & Write only. Keep the R2 bucket private: no public development URL,
+custom domain, or browser CORS policy is required.
 
 Never commit `.env` (it is gitignored). Apply migrations:
 
@@ -101,7 +109,8 @@ curl -s http://127.0.0.1:3100/healthz   # expect {"ok":true,...}
 ```
 
 `canquery-api` serves the API + SPA; `canquery-worker` drains the ingest queue;
-`canquery-map-worker` builds bounded local PostGIS map indexes one at a time.
+`canquery-map-worker` builds bounded local PostGIS indexes and private-R2
+PMTiles archives one at a time.
 The worker unit applies a cgroup memory ceiling and gives an active ingest a
 bounded grace period on SIGTERM. Excel conversion has a second, lower V8 heap
 limit and timeout inside its child process.
@@ -115,6 +124,13 @@ starting the worker:
 ```bash
 sudo -u canquery stat -f <readable-path-on-postgres-filesystem>
 ```
+
+Calgary PMTiles additionally require Tippecanoe 2.79.0, pinned to immutable
+commit `68ab8dcc229f95b8b25877697d5e8d66783af503`. Build it in a matching
+AlmaLinux 10 environment, verify `tippecanoe --version`, then install the
+read-only bundle under `/opt/canquery-tippecanoe/releases/2.79.0-68ab8dcc` and
+point `/opt/canquery-tippecanoe/current` at that release. Do not install an
+unversioned package at deploy time.
 
 ## 5. First harvest and place index
 
@@ -141,7 +157,11 @@ local PostGIS index. Catalogued direct GeoJSON resources use the same queue and
 are streamed, CRS-validated, and reprojected to WGS84 without loading a whole
 file into memory. Opendatasoft sources reconstruct and validate their separate
 CSV and GeoJSON export URLs from the configured catalogue identity; queued URLs
-are never treated as arbitrary download targets.
+are never treated as arbitrary download targets. Socrata sources reconstruct
+catalogue, CSV and paginated GeoJSON endpoints from their configured portal and
+record id. Geometry tables within the row cap become immutable PMTiles in the
+private object bucket; all other admitted CSVs remain discoverable and honestly
+fall back to loadable or download-only according to row/column caps.
 
 ## 6. Cron jobs
 
@@ -159,12 +179,26 @@ exec su -s /bin/sh canquery -c \
   "cd /home/canquery/canquery/server && node scripts/${JOB}.js >> $LOG 2>&1"
 EOF
 chmod +x /usr/local/sbin/canquery-run-job.sh
+cat > /usr/local/sbin/canquery-run-map-job.sh <<'EOF'
+#!/bin/sh
+set -eu
+set -a
+. /etc/canquery-map-write.env
+set +a
+JOB="$1"
+LOG="/home/canquery/logs/${JOB}.log"
+touch "$LOG" && chown canquery:canquery "$LOG"
+exec su -s /bin/sh canquery -c \
+  "cd /home/canquery/canquery/server && node scripts/${JOB}.js >> $LOG 2>&1"
+EOF
+chmod 0750 /usr/local/sbin/canquery-run-map-job.sh
 cp deploy/canquery.cron.d /etc/cron.d/canquery
 ```
 
 Schedule (see `deploy/canquery.cron.d`): `catalog-sync` daily, `incremental-sync`
 every 30 min, municipal sources daily, `evict-store` daily, and the Top 100 seed
-daily. The versioned SGC place import runs during deployment (and again when its
+daily. Unreferenced PMTiles objects are pruned daily after a 24-hour recovery
+grace period. The versioned SGC place import runs during deployment (and again when its
 configured vintage changes). The ingest worker is the systemd service from step
 4, not cron. The map worker is also a systemd service; `maps:drain` is useful for
 an initial source launch or controlled rebuild.
@@ -203,7 +237,7 @@ upstream-deleted datasets, with a configurable maximum-delete-fraction guard.
 
 ## 7. Database backups
 
-The local map feature cache is reproducible. To keep logical dumps compact,
+The local map feature cache and PMTiles archives are reproducible. To keep logical dumps compact,
 exclude only its data while retaining its schema, queue, and map metadata:
 
 ```bash
@@ -212,7 +246,10 @@ pg_dump --format=custom --exclude-table-data=map_store.features canquery > canqu
 
 A restore destination needs the PostGIS package installed before migrations or
 restore. At startup the map worker queues any metadata row whose feature data is
-absent. This does not replace an encrypted, tested off-server backup for the
+absent and any PMTiles row whose object is confirmed missing. R2 archives need
+not be copied into the PostgreSQL dump; a restored catalogue can reuse intact
+objects or rebuild missing ones from the configured Socrata source. This does
+not replace an encrypted, tested off-server backup for the
 catalogue and user-loaded tables.
 
 ## 8. Frontend build + reverse proxy
@@ -241,6 +278,7 @@ curl -s 'https://<your-domain>/api/v1/places?q=Toronto'
 curl -s 'https://<your-domain>/api/v1/places?q=Ottawa'
 curl -s 'https://<your-domain>/api/v1/places?q=Montr%C3%A9al'
 curl -s 'https://<your-domain>/api/v1/places?q=Vancouver'
+curl -s 'https://<your-domain>/api/v1/places?q=Calgary'
 curl -s 'https://<your-domain>/api/v1/places?q=Mississauga'
 curl -s 'https://<your-domain>/api/v1/places?q=Brampton'
 curl -s 'https://<your-domain>/api/v1/sources?place=clarington-on'

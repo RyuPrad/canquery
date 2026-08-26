@@ -4,6 +4,7 @@ const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 const { shapeProvenance } = require('./catalogService');
 const mapIndexQueries = require('../db/mapIndexQueries');
+const pmtilesMapService = require('./pmtilesMapService');
 
 const mapCache = createCache({
     name: 'resource-map',
@@ -40,7 +41,7 @@ function parseInteger(value, { name, fallback, min, max }) {
 function safeFields(row) {
     const fields = Array.isArray(row.fields) ? row.fields : [];
     return fields
-        .filter(field => field && (row.provider === 'canquery'
+        .filter(field => field && (['canquery', 'pmtiles'].includes(row.provider)
             ? typeof field.name === 'string' && field.name.length > 0 && field.name.length <= 200
             : /^[A-Za-z_][A-Za-z0-9_]*$/.test(field.name || '')))
         .slice(0, 20)
@@ -135,6 +136,13 @@ async function queryMap(resourceId, { bbox, zoom, limit }, options = {}) {
                     }
                     return { collection, exceeded };
                 }
+                if (provider === 'pmtiles') {
+                    return (options.decodePmtilesViewport || pmtilesMapService.decodeViewport)(row, {
+                        bbox: normalizedBounds,
+                        zoom: mapZoom,
+                        limit: effectiveLimit
+                    }, options.pmtilesOptions || {});
+                }
                 if (provider !== 'arcgis') throw new AppError('Unsupported map provider', 502);
                 if (activeFetches >= MAX_ACTIVE_FETCHES) {
                     throw new AppError('Map service is busy; try again shortly', 503);
@@ -168,6 +176,9 @@ async function queryMap(resourceId, { bbox, zoom, limit }, options = {}) {
         throw new AppError('Map data is temporarily unavailable', 502);
     }
     if (!result) throw new AppError('Map data is temporarily unavailable', 502);
+    if (Buffer.byteLength(JSON.stringify(result.collection)) > 8 * 1024 * 1024) {
+        throw new AppError('Map viewport contains too much geometry; zoom in', 413);
+    }
     const returned = result.collection.features.length;
     return {
         data: result.collection,

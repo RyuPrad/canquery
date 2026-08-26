@@ -81,6 +81,49 @@ describe('bounded ArcGIS map service', () => {
         expect(result.provenance.primary_license.url).toBe('https://example.test/licence');
     });
 
+    test('decodes a bounded PMTiles viewport through the same compatibility envelope', async () => {
+        const pmtiles = {
+            ...row('pmtiles-map'), provider: 'pmtiles', source_version: 'a'.repeat(64),
+            storage_key: 'maps/private', storage_etag: 'etag', storage_sha256: 'b'.repeat(64),
+            tile_min_zoom: 0, tile_max_zoom: 16, tile_layer: 'features'
+        };
+        const decodePmtilesViewport = jest.fn().mockResolvedValue({
+            collection: { type: 'FeatureCollection', features: [] }, exceeded: false
+        });
+        const result = await mapService.queryMap('pmtiles-map', {
+            bbox: '-114.2,50.9,-113.9,51.2', zoom: '10', limit: '25'
+        }, {
+            getResourceMapById: async () => pmtiles,
+            decodePmtilesViewport
+        });
+        expect(decodePmtilesViewport).toHaveBeenCalledWith(pmtiles, {
+            bbox: [-114.2, 50.9, -113.9, 51.2], zoom: 10, limit: 25
+        }, {});
+        expect(result.map.provider).toBe('pmtiles');
+    });
+
+    test('keeps the PMTiles compatibility response under the shared 8 MiB cap', async () => {
+        const pmtiles = {
+            ...row('pmtiles-cap'), provider: 'pmtiles', source_version: 'a'.repeat(64),
+            storage_key: 'maps/private', storage_etag: 'etag', storage_sha256: 'b'.repeat(64),
+            tile_min_zoom: 0, tile_max_zoom: 16, tile_layer: 'features'
+        };
+        await expect(mapService.queryMap('pmtiles-cap', {
+            bbox: '-114.2,50.9,-113.9,51.2', zoom: '10', limit: '25'
+        }, {
+            getResourceMapById: async () => pmtiles,
+            decodePmtilesViewport: async () => ({
+                collection: {
+                    type: 'FeatureCollection',
+                    features: [{ type: 'Feature', geometry: null, properties: {
+                        value: 'x'.repeat(8 * 1024 * 1024)
+                    } }]
+                },
+                exceeded: false
+            })
+        })).rejects.toMatchObject({ statusCode: 413 });
+    });
+
     test('uses honest errors for missing and oversized layers', async () => {
         await expect(mapService.queryMap('missing', { bbox: '-79,43,-78,44' }, {
             getResourceMapById: async () => null

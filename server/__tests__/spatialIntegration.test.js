@@ -230,4 +230,55 @@ spatialDescribe('PostGIS viewport integration', () => {
             { place_id: 'sgc-pr-59', scheme: 'sgc-pr', value: '59' }
         ]);
     });
+
+    test('migrations seed canonical Calgary and PMTiles storage constraints', async () => {
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN ('sgc-pr-48', 'sgc-cd-4806', 'sgc-csd-4806016')
+            ORDER BY CASE id
+                WHEN 'sgc-pr-48' THEN 1 WHEN 'sgc-cd-4806' THEN 2 ELSE 3 END
+        `);
+        expect(places.rows).toEqual([
+            expect.objectContaining({
+                id: 'sgc-pr-48', slug: 'alberta', kind: 'province',
+                parent_id: 'ca', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-cd-4806', slug: 'division-no-6-ab', kind: 'region',
+                parent_id: 'sgc-pr-48', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-csd-4806016', slug: 'calgary-ab', kind: 'municipality',
+                parent_id: 'sgc-cd-4806', type_en: 'City', type_fr: 'Ville',
+                featured: true, latitude: 51.0447, longitude: -114.0719,
+                default_zoom: 9
+            })
+        ]);
+
+        await client.query(`
+            INSERT INTO resource_maps (
+                resource_id, provider, service_url, geometry_type, fields,
+                feature_count, byte_size, indexed_at, source_version,
+                storage_key, storage_etag, storage_sha256,
+                tile_min_zoom, tile_max_zoom, tile_layer
+            ) VALUES (
+                $1,'pmtiles','https://data.calgary.ca/resource/test.geojson',
+                'point','[]',1,100,now(),$2,'maps/test','etag',$3,0,16,'features'
+            )
+        `, [resourceId, 'a'.repeat(64), 'b'.repeat(64)]);
+        const stored = await client.query(`
+            SELECT provider, storage_key, tile_min_zoom, tile_max_zoom, tile_layer
+            FROM resource_maps WHERE resource_id = $1
+        `, [resourceId]);
+        expect(stored.rows[0]).toEqual({
+            provider: 'pmtiles', storage_key: 'maps/test',
+            tile_min_zoom: 0, tile_max_zoom: 16, tile_layer: 'features'
+        });
+        await expect(client.query(`
+            UPDATE resource_maps SET storage_sha256 = 'invalid' WHERE resource_id = $1
+        `, [resourceId])).rejects.toThrow();
+        await client.query('DELETE FROM resource_maps WHERE resource_id = $1', [resourceId]);
+    });
 });

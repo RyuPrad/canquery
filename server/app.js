@@ -28,7 +28,9 @@ app.set('trust proxy', 1);
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
-            'img-src': ["'self'", 'data:', 'https://maps-cartes.services.geo.ca']
+            'img-src': ["'self'", 'data:', 'blob:', 'https://maps-cartes.services.geo.ca'],
+            'connect-src': ["'self'", 'https://maps-cartes.services.geo.ca'],
+            'worker-src': ["'self'", 'blob:']
         }
     }
 }));

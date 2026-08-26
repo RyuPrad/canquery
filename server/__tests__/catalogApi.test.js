@@ -118,14 +118,30 @@ describe('Catalog API', () => {
             { id: 'r5', dataset_id: 'd1', name_en: 'e', name_fr: null, format: 'XLSX', url: 'u', size_bytes: '1048576', datastore_active: false, language: null, last_modified: null, ingest_status: null },
             { id: 'r6', dataset_id: 'd1', name_en: 'f', name_fr: null, format: 'XLSX', url: 'u', size_bytes: String(25 * 1024 * 1024), datastore_active: false, language: null, last_modified: null, ingest_status: null },
             { id: 'r7', dataset_id: 'd1', name_en: 'g', name_fr: null, format: 'XLS', url: 'u', size_bytes: null, datastore_active: false, language: null, last_modified: null, ingest_status: null },
-            { id: 'r8', dataset_id: 'd1', name_en: 'h', name_fr: null, format: 'CSV', url: 'u', size_bytes: null, raw: { record_count: 1000001 }, datastore_active: false, language: null, last_modified: null, ingest_status: null }
+            { id: 'r8', dataset_id: 'd1', name_en: 'h', name_fr: null, format: 'CSV', url: 'u', size_bytes: null, raw: { record_count: 1000001 }, datastore_active: false, language: null, last_modified: null, ingest_status: null },
+            { id: 'r9', dataset_id: 'd1', name_en: 'i', name_fr: null, format: 'CSV', url: 'u', size_bytes: null, raw: { field_count: 121 }, datastore_active: false, language: null, last_modified: null, ingest_status: null },
+            {
+                id: 'r10', dataset_id: 'd1', name_en: 'j', name_fr: null,
+                format: 'CSV', url: 'u', size_bytes: null, datastore_active: false,
+                language: null, last_modified: null, ingest_status: null,
+                map_provider: 'pmtiles', map_geometry_type: 'point',
+                map_extent: [-114.2, 50.9, -113.9, 51.2], map_fields: [],
+                map_indexed_at: '2026-08-26T00:00:00Z',
+                map_source_version: 'a'.repeat(64), map_tile_min_zoom: 0,
+                map_tile_max_zoom: 16, map_tile_layer: 'features'
+            }
         ]);
         const res = await request(app).get('/api/v1/datasets/d1');
         expect(res.status).toBe(200);
         const modes = res.body.data.resources.map(r => r.query_mode);
-        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'ingestable', 'file-only']);
+        expect(modes).toEqual(['datastore', 'ingested', 'file-only', 'file-only', 'ingestable', 'file-only', 'ingestable', 'file-only', 'file-only', 'ingestable']);
         // Relative catalogue URLs are resolved to absolute so the client's links work.
         expect(res.body.data.resources[0].url).toBe('https://open.canada.ca/u');
+        expect(res.body.data.resources[9].map).toEqual(expect.objectContaining({
+            provider: 'pmtiles', version: 'a'.repeat(64), min_zoom: 0,
+            max_zoom: 16, layer: 'features',
+            tiles: '/api/v1/resources/r10/map/tiles/' + 'a'.repeat(64) + '/{z}/{x}/{y}.pbf'
+        }));
     });
 
     it('GET /api/v1/stats wraps totals in the envelope', async () => {

@@ -15,6 +15,9 @@ Group=canquery
 WorkingDirectory=/home/canquery/canquery/server
 ExecStart=/usr/bin/node server.js
 Environment=NODE_ENV=production
+# Read-only credentials for PMTiles byte-range reads. Keep this separate from
+# the worker's write-capable environment.
+EnvironmentFile=-/etc/canquery-map-read.env
 Restart=on-failure
 RestartSec=3
 

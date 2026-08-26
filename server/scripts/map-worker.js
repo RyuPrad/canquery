@@ -14,6 +14,8 @@ const {
     mapCaps,
     candidateMode
 } = require('../services/mapIndexPipeline');
+const { buildPmtilesResource } = require('../services/pmtilesMapPipeline');
+const { headObject, closeStorageClient } = require('../services/r2MapStorage');
 const {
     acquireWorkerLock,
     releaseWorkerLock,
@@ -23,11 +25,16 @@ const {
     heartbeatJob,
     finishJob,
     requeueJob,
-    getReadyMapState
+    getReadyMapState,
+    listPmtilesMapObjects,
+    deletePmtilesMapMetadata,
+    requeueMissingPmtilesMaps
 } = require('../db/mapIndexQueries');
 
 const onceMode = process.argv.includes('--once');
 const drainMode = process.argv.includes('--drain');
+const resourceArg = process.argv.find(arg => arg.startsWith('--resource='));
+const resourceTarget = resourceArg ? resourceArg.slice('--resource='.length).trim() : null;
 const POLL_MS = Number(process.env.MAP_INDEX_POLL_MS) || 3000;
 const HEARTBEAT_MS = Math.max(1000, Number(process.env.MAP_INDEX_HEARTBEAT_MS) || 15000);
 const MAX_ATTEMPTS = 3;
@@ -131,7 +138,20 @@ async function processJob(job, workerId, options = {}) {
         const resource = await (options.getResourceById || getResourceById)(job.resource_id);
         if (!resource) throw new MapSkipError('resource vanished from catalogue', 'MAP_SOURCE');
         const ready = await (options.getReadyMapState || getReadyMapState)(pool, job.resource_id, job.claimed_version);
-        if (ready && ready.has_features) {
+        if (ready && ready.provider === 'pmtiles') {
+            const stored = await (options.headObject || headObject)(ready.storage_key, options.storageOptions || {});
+            if (stored && stored.etag === ready.storage_etag &&
+                stored.sha256 === ready.storage_sha256 && stored.byteSize === Number(ready.byte_size)) {
+                await finishJob(pool, job, workerId, 'ready', {
+                    featureCount: Number(ready.feature_count) || null,
+                    downloadedBytes: Number(ready.byte_size) || null
+                });
+                console.log('[map ' + job.resource_id + '] reconciled existing PMTiles archive');
+                return { reconciled: true };
+            }
+            if (stored) throw new Error('PMTiles object integrity differs from catalogue metadata');
+            await (options.deletePmtilesMapMetadata || deletePmtilesMapMetadata)(pool, job.resource_id);
+        } else if (ready && ready.has_features) {
             await finishJob(pool, job, workerId, 'ready', {
                 featureCount: Number(ready.feature_count) || null
             });
@@ -147,19 +167,23 @@ async function processJob(job, workerId, options = {}) {
             if (probe.total > mapCaps(options.caps).maxRows) {
                 throw new MapSkipError('DataStore row count exceeds map cap', 'MAP_ROWS');
             }
-        } else {
+        } else if (mode === 'geojson-file') {
             downloadUrl = (options.validateDirectGeoJson || validateDirectGeoJson)(
                 resource, job.candidate || {}
             ) || resource.url;
         }
         console.log('[map ' + job.resource_id + '] indexing attempt ' + job.attempts +
             ' (' + mode + (expectedRows == null ? '' : ', ' + expectedRows + ' rows') + ')');
-        const result = await (options.indexMapResource || indexMapResource)(
-            downloadUrl === resource.url ? resource : { ...resource, url: downloadUrl },
-            job,
-            workerId,
-            options.caps
-        );
+        const result = mode === 'socrata-geojson-pmtiles'
+            ? await (options.buildPmtilesResource || buildPmtilesResource)(
+                resource, job, workerId, options.caps, options.pmtilesOptions || {}
+            )
+            : await (options.indexMapResource || indexMapResource)(
+                downloadUrl === resource.url ? resource : { ...resource, url: downloadUrl },
+                job,
+                workerId,
+                options.caps
+            );
         console.log('[map ' + job.resource_id + '] ' + result.queueStatus + ': ' + result.featureCount +
             ' features, ' + result.vertexCount + ' vertices');
         return result;
@@ -179,6 +203,16 @@ async function processJob(job, workerId, options = {}) {
     } finally {
         clearInterval(heartbeat);
     }
+}
+
+async function reconcileMissingPmtiles(options = {}) {
+    const rows = await (options.listPmtilesMapObjects || listPmtilesMapObjects)(pool);
+    const missing = [];
+    for (const row of rows) {
+        const stored = await (options.headObject || headObject)(row.storage_key, options.storageOptions || {});
+        if (!stored) missing.push(row.resource_id);
+    }
+    return (options.requeueMissingPmtilesMaps || requeueMissingPmtilesMaps)(pool, missing);
 }
 
 async function main() {
@@ -210,13 +244,15 @@ async function main() {
         if (failedCount) console.error('failed ' + failedCount + ' interrupted map job(s) at the attempt limit');
         const missing = await reconcileMissingFeatures(pool);
         if (missing.length) console.log('queued ' + missing.length + ' map index(es) absent after restore');
+        const missingPmtiles = await reconcileMissingPmtiles();
+        if (missingPmtiles.length) console.log('queued ' + missingPmtiles.length + ' PMTiles archive(s) absent from storage');
 
         while (!stopRequested) {
-            const job = await claimJob(pool, workerId);
+            const job = await claimJob(pool, workerId, resourceTarget);
             if (job) {
                 await processJob(job, workerId);
                 if (onceMode) break;
-            } else if (onceMode || drainMode) {
+            } else if (onceMode || drainMode || resourceTarget) {
                 console.log('no pending map jobs');
                 break;
             } else {
@@ -230,6 +266,7 @@ async function main() {
             }
         }
         if (lockClient) lockClient.release();
+        closeStorageClient();
         await Promise.all([pool.end(), longRunningPool.end()]);
     }
 }
@@ -245,5 +282,5 @@ if (require.main === module) {
 
 module.exports = {
     main, processJob, probeGeometry, ckanTarget, validateDirectGeoJson,
-    requestStop, waitForPoll
+    reconcileMissingPmtiles, requestStop, waitForPoll
 };

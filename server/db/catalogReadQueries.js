@@ -131,7 +131,11 @@ async function listResourcesForDataset(datasetId) {
                ir.status AS ingest_status, ir.row_count AS ingested_row_count, ir.ingested_at,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
-               rm.indexed_at AS map_indexed_at
+               rm.indexed_at AS map_indexed_at,
+               rm.source_version AS map_source_version,
+               rm.tile_min_zoom AS map_tile_min_zoom,
+               rm.tile_max_zoom AS map_tile_max_zoom,
+               rm.tile_layer AS map_tile_layer
         FROM resources r
         LEFT JOIN ingested_resources ir ON ir.resource_id = r.id
         LEFT JOIN resource_maps rm ON rm.resource_id = r.id
@@ -159,6 +163,10 @@ async function getResourceById(id) {
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
                rm.indexed_at AS map_indexed_at,
+               rm.source_version AS map_source_version,
+               rm.tile_min_zoom AS map_tile_min_zoom,
+               rm.tile_max_zoom AS map_tile_max_zoom,
+               rm.tile_layer AS map_tile_layer,
                ${PROVENANCE_SELECT},
                ${PLACES_SELECT}
         FROM resources r
@@ -176,6 +184,8 @@ async function getResourceMapById(id) {
                rm.extent, rm.object_id_field, rm.display_field, rm.fields,
                rm.max_record_count, rm.feature_count, rm.byte_size,
                rm.indexed_at, rm.source_version, rm.updated_at,
+               rm.storage_key, rm.storage_etag, rm.storage_sha256,
+               rm.tile_min_zoom, rm.tile_max_zoom, rm.tile_layer,
                ${PROVENANCE_SELECT}
         FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
