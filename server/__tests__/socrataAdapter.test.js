@@ -41,22 +41,25 @@ function view(overrides = {}) {
 }
 
 describe('Socrata catalogue adapter', () => {
-    test('discovers every advertised dataset and rejects drift or duplicates', async () => {
+    test('discovers one bounded catalogue snapshot and rejects truncation or duplicates', async () => {
         const records = Array.from({ length: 201 }, (_, index) => catalogRecord('id-' + index));
         const fetchJson = jest.fn(async value => {
             const url = new URL(value);
-            const offset = Number(url.searchParams.get('offset'));
             expect(url.searchParams.get('only')).toBe('datasets');
             expect(url.searchParams.get('search_context')).toBe('data.calgary.ca');
-            return { resultSetSize: records.length, results: records.slice(offset, offset + 100) };
+            expect(url.searchParams.get('limit')).toBe('5000');
+            expect(url.searchParams.get('offset')).toBe('0');
+            return { resultSetSize: records.length, results: records };
         });
         await expect(discover(source, { fetchJson })).resolves.toEqual(records);
-        expect(fetchJson).toHaveBeenCalledTimes(3);
+        expect(fetchJson).toHaveBeenCalledTimes(1);
 
-        await expect(discover(source, { fetchJson: jest.fn()
-            .mockResolvedValueOnce({ resultSetSize: 101, results: records.slice(0, 100) })
-            .mockResolvedValueOnce({ resultSetSize: 102, results: records.slice(100, 102) })
-        })).rejects.toThrow(/count changed/);
+        await expect(discover(source, { fetchJson: async () => ({
+            resultSetSize: 5001, results: records
+        }) })).rejects.toThrow(/safe snapshot limit/);
+        await expect(discover(source, { fetchJson: async () => ({
+            resultSetSize: 202, results: records
+        }) })).rejects.toThrow(/advertised count/);
         await expect(discover(source, { fetchJson: async () => ({
             resultSetSize: 2, results: [catalogRecord('same'), catalogRecord('same')]
         }) })).rejects.toThrow(/duplicate dataset id/);

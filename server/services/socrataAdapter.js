@@ -1,7 +1,11 @@
 const crypto = require('node:crypto');
 const { fetchPublicJson } = require('./publicJson');
 
-const PAGE_SIZE = 100;
+// The Discovery API is relevance-ranked and does not expose a stable catalogue
+// sort key. Fetch each configured city in one bounded response so an item cannot
+// move across offset pages during a sync. Larger future portals fail closed
+// instead of risking an incomplete source sweep.
+const PAGE_SIZE = 5000;
 const MAP_VERSION = 'socrata-pmtiles-v1';
 const GEOMETRY_TYPES = new Set([
     'point', 'multipoint', 'line', 'multiline', 'polygon', 'multipolygon',
@@ -262,40 +266,33 @@ function directMapVersion(view, source, recordCount) {
 async function discover(source, options = {}) {
     validateSource(source);
     const fetchJson = options.fetchJson || fetchPublicJson;
-    const records = [];
-    const identities = new Set();
-    let expectedTotal = null;
+    const url = new URL(source.catalogUrl);
+    url.searchParams.set('only', 'datasets');
+    url.searchParams.set('search_context', source.upstreamHost);
+    url.searchParams.set('limit', String(PAGE_SIZE));
+    url.searchParams.set('offset', '0');
+    const body = await fetchJson(url.href, options.http);
+    const expectedTotal = Number(body && body.resultSetSize);
+    const records = body && body.results;
+    if (!Number.isInteger(expectedTotal) || expectedTotal < 0 || !Array.isArray(records)) {
+        throw new Error('Socrata source returned an invalid catalogue response');
+    }
+    if (expectedTotal > PAGE_SIZE) {
+        throw new Error('Socrata source catalogue exceeds the safe snapshot limit');
+    }
+    if (records.length !== expectedTotal) {
+        throw new Error('Socrata source catalogue ended before its advertised count');
+    }
 
-    for (let offset = 0; expectedTotal == null || offset < expectedTotal; offset += PAGE_SIZE) {
-        const url = new URL(source.catalogUrl);
-        url.searchParams.set('only', 'datasets');
-        url.searchParams.set('search_context', source.upstreamHost);
-        url.searchParams.set('limit', String(PAGE_SIZE));
-        url.searchParams.set('offset', String(offset));
-        const body = await fetchJson(url.href, options.http);
-        const total = Number(body && body.resultSetSize);
-        const page = body && body.results;
-        if (!Number.isInteger(total) || total < 0 || !Array.isArray(page)) {
-            throw new Error('Socrata source returned an invalid catalogue response');
+    const identities = new Set();
+    for (const record of records) {
+        const identity = identityFor(record);
+        if (!identity) throw new Error('Socrata source returned a record without a dataset id');
+        const key = canonicalKey(identity);
+        if (identities.has(key)) {
+            throw new Error('Socrata source returned a duplicate dataset id: ' + identity);
         }
-        if (expectedTotal == null) expectedTotal = total;
-        if (expectedTotal !== total) {
-            throw new Error('Socrata source catalogue count changed during pagination');
-        }
-        const expectedPage = Math.min(PAGE_SIZE, expectedTotal - offset);
-        if (page.length !== expectedPage) {
-            throw new Error('Socrata source catalogue ended before its advertised count');
-        }
-        for (const record of page) {
-            const identity = identityFor(record);
-            if (!identity) throw new Error('Socrata source returned a record without a dataset id');
-            const key = canonicalKey(identity);
-            if (identities.has(key)) {
-                throw new Error('Socrata source returned a duplicate dataset id: ' + identity);
-            }
-            identities.add(key);
-            records.push(record);
-        }
+        identities.add(key);
     }
 
     if (!expectedTotal || records.length !== expectedTotal) {
