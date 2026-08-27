@@ -281,4 +281,43 @@ spatialDescribe('PostGIS viewport integration', () => {
         `, [resourceId])).rejects.toThrow();
         await client.query('DELETE FROM resource_maps WHERE resource_id = $1', [resourceId]);
     });
+
+    test('migrations seed canonical featured Edmonton and Winnipeg ancestry', async () => {
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN (
+                'sgc-pr-46', 'sgc-cd-4611', 'sgc-csd-4611040',
+                'sgc-pr-48', 'sgc-cd-4811', 'sgc-csd-4811061'
+            )
+        `);
+        const byId = new Map(places.rows.map(row => [row.id, row]));
+        expect(byId.get('sgc-cd-4611')).toEqual(expect.objectContaining({
+            slug: 'division-no-11-mb', kind: 'region', parent_id: 'sgc-pr-46', featured: false
+        }));
+        expect(byId.get('sgc-csd-4611040')).toEqual(expect.objectContaining({
+            slug: 'winnipeg-mb', kind: 'municipality', parent_id: 'sgc-cd-4611',
+            type_en: 'City', type_fr: 'Ville', featured: true,
+            latitude: 49.8954, longitude: -97.1385, default_zoom: 9
+        }));
+        expect(byId.get('sgc-cd-4811')).toEqual(expect.objectContaining({
+            slug: 'division-no-11-ab', kind: 'region', parent_id: 'sgc-pr-48', featured: false
+        }));
+        expect(byId.get('sgc-csd-4811061')).toEqual(expect.objectContaining({
+            slug: 'edmonton-ab', kind: 'municipality', parent_id: 'sgc-cd-4811',
+            type_en: 'City', type_fr: 'Ville', featured: true,
+            latitude: 53.5461, longitude: -113.4938, default_zoom: 9
+        }));
+
+        const identifiers = await client.query(`
+            SELECT place_id, scheme, value FROM place_identifiers
+            WHERE place_id IN ('sgc-csd-4611040', 'sgc-csd-4811061')
+            ORDER BY place_id
+        `);
+        expect(identifiers.rows).toEqual([
+            { place_id: 'sgc-csd-4611040', scheme: 'sgc-csd', value: '4611040' },
+            { place_id: 'sgc-csd-4811061', scheme: 'sgc-csd', value: '4811061' }
+        ]);
+    });
 });

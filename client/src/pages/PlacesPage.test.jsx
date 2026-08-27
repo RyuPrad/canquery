@@ -60,6 +60,24 @@ beforeEach(() => {
       name: { en: 'Vancouver', fr: 'Vancouver' }, type: { en: 'City', fr: 'Ville' },
       parent: { id: 'sgc-cd-5915', name: { en: 'Greater Vancouver', fr: 'Greater Vancouver' } },
       dataset_count: 178, direct_dataset_count: 178, mappable_resource_count: 133
+    },
+    {
+      id: 'sgc-csd-4806016', slug: 'calgary-ab', kind: 'municipality',
+      name: { en: 'Calgary', fr: 'Calgary' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-cd-4806', name: { en: 'Division No. 6', fr: 'Division No. 6' } },
+      dataset_count: 570, direct_dataset_count: 570, mappable_resource_count: 250
+    },
+    {
+      id: 'sgc-csd-4811061', slug: 'edmonton-ab', kind: 'municipality',
+      name: { en: 'Edmonton', fr: 'Edmonton' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-cd-4811', name: { en: 'Division No. 11', fr: 'Division No. 11' } },
+      dataset_count: 974, direct_dataset_count: 974, mappable_resource_count: 126
+    },
+    {
+      id: 'sgc-csd-4611040', slug: 'winnipeg-mb', kind: 'municipality',
+      name: { en: 'Winnipeg', fr: 'Winnipeg' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-cd-4611', name: { en: 'Division No. 11', fr: 'Division No. 11' } },
+      dataset_count: 229, direct_dataset_count: 229, mappable_resource_count: 94
     }
   ] });
 });
@@ -76,6 +94,9 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Montréal/ })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /Vancouver/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Calgary/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Edmonton/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Winnipeg/ })).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();

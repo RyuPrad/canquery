@@ -172,6 +172,34 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
+    test('features Edmonton and Winnipeg beneath their separate Division No. 11 parents', () => {
+        const en = [
+            { Level: '2', Code: '46', 'Class title': 'Manitoba' },
+            { Level: '3', Code: '4611', 'Class title': 'Division No. 11' },
+            { Level: '4', Code: '4611040', 'Class title': 'Winnipeg' },
+            { Level: '2', Code: '48', 'Class title': 'Alberta' },
+            { Level: '3', Code: '4811', 'Class title': 'Division No. 11' },
+            { Level: '4', Code: '4811061', 'Class title': 'Edmonton' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+
+        expect(result.places.find(place => place.id === 'sgc-cd-4611')).toEqual(expect.objectContaining({
+            slug: 'division-no-11-mb', parentId: 'sgc-pr-46', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-4611040')).toEqual(expect.objectContaining({
+            slug: 'winnipeg-mb', parentId: 'sgc-cd-4611', typeEn: 'City', typeFr: 'Ville',
+            featured: true, latitude: 49.8954, longitude: -97.1385, defaultZoom: 9
+        }));
+        expect(result.places.find(place => place.id === 'sgc-cd-4811')).toEqual(expect.objectContaining({
+            slug: 'division-no-11-ab', parentId: 'sgc-pr-48', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-4811061')).toEqual(expect.objectContaining({
+            slug: 'edmonton-ab', parentId: 'sgc-cd-4811', typeEn: 'City', typeFr: 'Ville',
+            featured: true, latitude: 53.5461, longitude: -113.4938, defaultZoom: 9
+        }));
+    });
+
     test('plans former-slug aliases and fails closed on ownership conflicts', async () => {
         const desired = [{ id: 'p1', slug: 'montreal-qc', nameEn: 'Montréal' }];
         const db = { query: jest.fn()

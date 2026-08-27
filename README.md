@@ -35,7 +35,13 @@ PostGIS index. The City of Calgary's official Socrata catalogue is included as a
 city. Only records that explicitly name The City of Calgary and the approved
 Open Government Licence - City of Calgary terms are admitted. Geometry tables
 within the shared row cap are built as immutable PMTiles in private object
-storage and served through same-origin vector tiles. The featured local directory
+storage and served through same-origin vector tiles. Edmonton and Winnipeg use
+the same bounded Socrata path as separate featured cities. Edmonton admits only
+records explicitly attributed to the City under its portal terms. Winnipeg
+requires its record-specific Open Government Licence - Winnipeg evidence, admits
+recognized City units, and permits missing attribution only alongside that exact
+licence evidence. Records attributed to external governments or agencies remain
+excluded. The featured local directory
 also covers Durham Region and all eight lower-tier municipalities, with direct
 feeds from Durham, Ajax,
 Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
@@ -104,12 +110,16 @@ curl 'http://localhost:3100/api/v1/places?q=Mississauga'
 curl 'http://localhost:3100/api/v1/places?q=Montr%C3%A9al'
 curl 'http://localhost:3100/api/v1/places?q=Vancouver'
 curl 'http://localhost:3100/api/v1/places?q=Calgary'
+curl 'http://localhost:3100/api/v1/places?q=Edmonton'
+curl 'http://localhost:3100/api/v1/places?q=Winnipeg'
 
 # place-filtered sources are authoritative; counts expose total + authoritative
 curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
 curl 'http://localhost:3100/api/v1/sources?place=mississauga-on'
 curl 'http://localhost:3100/api/v1/sources?place=vancouver-bc'
 curl 'http://localhost:3100/api/v1/sources?place=calgary-ab'
+curl 'http://localhost:3100/api/v1/sources?place=edmonton-ab'
+curl 'http://localhost:3100/api/v1/sources?place=winnipeg-mb'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -181,7 +191,8 @@ closed for that resource. Known upstream record counts above `MAX_ROWS` keep a
 CSV discoverable as `file-only` without enqueueing an ingest that cannot finish.
 `map_store.features` is a reproducible cache and may
 be excluded from backups; the queue reindexes missing feature data after restore.
-Calgary's admitted Socrata geometry tables use a hybrid path instead: sequential
+Admitted Calgary, Edmonton and Winnipeg Socrata geometry tables use a hybrid
+path instead: sequential
 portal-local GeoJSON pages are reduced to 20 scalar popup fields, passed to a
 pinned Tippecanoe build, and uploaded as immutable PMTiles to a private R2 bucket.
 The browser receives only a same-origin versioned vector-tile URL. R2 keys and
@@ -195,7 +206,7 @@ remain in PostGIS.
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
 their municipalities, and standalone featured cities such as Calgary, Montréal,
-Ottawa, Toronto and Vancouver;
+Edmonton, Ottawa, Toronto, Vancouver and Winnipeg;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of
