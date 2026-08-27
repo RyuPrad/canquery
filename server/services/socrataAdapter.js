@@ -8,6 +8,9 @@ const GEOMETRY_TYPES = new Set([
     // Socrata's legacy location type is emitted as GeoJSON Point geometry.
     'location'
 ]);
+const PUBLISHER_MODES = new Set(['custom-field', 'attribution']);
+const LICENSE_MODES = new Set(['custom-field', 'view-license-name']);
+const COMPARISONS = new Set(['text', 'url']);
 
 function clean(value) {
     return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
@@ -82,6 +85,19 @@ function customFields(view) {
     return fields && typeof fields === 'object' ? fields : {};
 }
 
+function customFieldValue(view, rule) {
+    const section = customFields(view)[rule.section];
+    if (!section || typeof section !== 'object') return '';
+    const fields = array(rule.fields || rule.field).map(clean).filter(Boolean);
+    for (const field of fields) {
+        if (Object.prototype.hasOwnProperty.call(section, field)) {
+            const value = clean(section[field]);
+            if (value) return value;
+        }
+    }
+    return '';
+}
+
 function supplierFor(view) {
     return clean(customFields(view)['Data Supplier'] &&
         customFields(view)['Data Supplier'].Organization);
@@ -105,11 +121,79 @@ function normalizeUrl(value) {
     }
 }
 
+function normalizeEvidence(value, comparison) {
+    if (comparison === 'url') return normalizeUrl(value);
+    return clean(value).toLowerCase();
+}
+
+function validateRule(rule, kind) {
+    const modes = kind === 'publisher' ? PUBLISHER_MODES : LICENSE_MODES;
+    if (!rule || typeof rule !== 'object' || !modes.has(rule.mode)) {
+        throw new Error('Socrata source has an invalid ' + kind + ' evidence mode');
+    }
+    const comparison = rule.comparison || 'text';
+    if (!COMPARISONS.has(comparison) || (kind === 'publisher' && comparison !== 'text')) {
+        throw new Error('Socrata source has an invalid ' + kind + ' comparison');
+    }
+    if (rule.mode === 'custom-field') {
+        const fields = array(rule.fields || rule.field).map(clean).filter(Boolean);
+        if (!clean(rule.section) || !fields.length) {
+            throw new Error('Socrata source has an incomplete ' + kind + ' custom field');
+        }
+    }
+    const allowed = array(rule.allowed).map(value => normalizeEvidence(value, comparison)).filter(Boolean);
+    if (!allowed.length || allowed.length !== array(rule.allowed).length) {
+        throw new Error('Socrata source has an invalid ' + kind + ' allowlist');
+    }
+    return { ...rule, comparison, allowed: new Set(allowed) };
+}
+
+function validateSource(source) {
+    const required = [
+        'id', 'homepageUrl', 'catalogUrl', 'upstreamHost', 'placeId',
+        'defaultOrganizationId', 'defaultOrganizationName', 'defaultOrganizationTitleEn',
+        'defaultLicenseTitleEn', 'defaultLicenseUrl', 'defaultAttributionEn'
+    ];
+    if (!source || source.kind !== 'socrata' || required.some(key => !clean(source[key]))) {
+        throw new Error('Socrata source configuration is incomplete');
+    }
+    const policy = source.socrataPolicy;
+    if (!policy || typeof policy !== 'object') {
+        throw new Error('Socrata source admission policy is missing');
+    }
+    return {
+        publisher: validateRule(policy.publisher, 'publisher'),
+        license: validateRule(policy.license, 'license')
+    };
+}
+
+function evidenceFor(view, rule) {
+    if (rule.mode === 'custom-field') return customFieldValue(view, rule);
+    if (rule.mode === 'attribution') return clean(view && view.attribution);
+    if (rule.mode === 'view-license-name') return clean(view && view.license && view.license.name);
+    return '';
+}
+
+function admissionFor(view, source) {
+    const policy = validateSource(source);
+    const publisher = evidenceFor(view, policy.publisher);
+    const license = evidenceFor(view, policy.license);
+    const normalizedPublisher = normalizeEvidence(publisher, policy.publisher.comparison);
+    const normalizedLicense = normalizeEvidence(license, policy.license.comparison);
+    return {
+        publisher,
+        license,
+        publisherMode: policy.publisher.mode,
+        licenseMode: policy.license.mode,
+        publisherAdmitted: (!normalizedPublisher && policy.publisher.allowBlank === true) ||
+            policy.publisher.allowed.has(normalizedPublisher),
+        licenseAdmitted: Boolean(normalizedLicense) && policy.license.allowed.has(normalizedLicense)
+    };
+}
+
 function licenseFor(view, source) {
-    if (supplierFor(view) !== clean(source.dataSupplier)) return null;
-    const supplied = normalizeUrl(recordLicenseUrl(view));
-    const allowed = new Set(array(source.approvedLicenseUrls).map(normalizeUrl).filter(Boolean));
-    if (!supplied || !allowed.has(supplied)) return null;
+    const admission = admissionFor(view, source);
+    if (!admission.publisherAdmitted || !admission.licenseAdmitted) return null;
     return {
         titleEn: source.defaultLicenseTitleEn || null,
         titleFr: source.defaultLicenseTitleFr || null,
@@ -176,6 +260,7 @@ function directMapVersion(view, source, recordCount) {
 }
 
 async function discover(source, options = {}) {
+    validateSource(source);
     const fetchJson = options.fetchJson || fetchPublicJson;
     const records = [];
     const identities = new Set();
@@ -220,6 +305,7 @@ async function discover(source, options = {}) {
 }
 
 async function enrichRecord(record, source, options = {}) {
+    validateSource(source);
     const externalId = identityFor(record);
     const catalog = record && record.resource || {};
     if (!externalId || clean(catalog.type).toLowerCase() !== 'dataset' ||
@@ -234,14 +320,18 @@ async function enrichRecord(record, source, options = {}) {
         return { status: 'excluded', reason: 'not-public', externalId: canonicalKey(externalId) };
     }
 
-    const licence = licenseFor(view, source);
-    if (!licence) {
+    const admission = admissionFor(view, source);
+    if (!admission.publisherAdmitted) {
         return {
             status: 'excluded',
-            reason: supplierFor(view) === clean(source.dataSupplier) ? 'unlicensed' : 'publisher-not-admitted',
+            reason: 'publisher-not-admitted',
             externalId: canonicalKey(externalId)
         };
     }
+    if (!admission.licenseAdmitted) {
+        return { status: 'excluded', reason: 'unlicensed', externalId: canonicalKey(externalId) };
+    }
+    const licence = licenseFor(view, source);
 
     const columns = array(view.columns).filter(column => clean(column && column.fieldName));
     if (!columns.length) {
@@ -253,7 +343,7 @@ async function enrichRecord(record, source, options = {}) {
     const hasMap = spatialFields.length > 0 && recordCount != null && recordCount <= maxMapRows;
     const datasetId = namespace(source.id, 'dataset', externalId);
     const resourceId = namespace(source.id, 'resource', externalId);
-    const orgId = namespace(source.id, 'org', source.defaultOrganizationId || 'city-of-calgary');
+    const orgId = namespace(source.id, 'org', source.defaultOrganizationId);
     const modified = timestamp(view.viewLastModified || view.rowsUpdatedAt || catalog.updatedAt);
     const keywords = Array.from(new Set(array(view.tags).concat(array(catalog.domain_tags))
         .map(clean).filter(Boolean)));
@@ -270,8 +360,8 @@ async function enrichRecord(record, source, options = {}) {
             externalId: canonicalKey(externalId),
             organization: {
                 id: orgId,
-                name: source.id + '-' + (source.defaultOrganizationName || 'city-of-calgary'),
-                titleEn: source.defaultOrganizationTitleEn || source.dataSupplier,
+                name: source.id + '-' + source.defaultOrganizationName,
+                titleEn: source.defaultOrganizationTitleEn,
                 titleFr: source.defaultOrganizationTitleFr || null,
                 placeId: source.placeId
             },
@@ -286,7 +376,7 @@ async function enrichRecord(record, source, options = {}) {
                 keywordsEn: keywords,
                 keywordsFr: [],
                 metadataModified: modified,
-                raw: { ...rawIdentity, metadata_language: 'en' }
+                raw: { ...rawIdentity, metadata_language: source.metadataLanguage || 'en' }
             },
             source: {
                 sourceId: source.id,
@@ -301,8 +391,12 @@ async function enrichRecord(record, source, options = {}) {
                 isAuthoritative: true,
                 raw: {
                     upstream_dataset_id: externalId,
-                    data_supplier: supplierFor(view),
-                    license_url: recordLicenseUrl(view),
+                    publisher_evidence: admission.publisher || null,
+                    publisher_evidence_mode: admission.publisherMode,
+                    license_evidence: admission.license || null,
+                    license_evidence_mode: admission.licenseMode,
+                    data_supplier: supplierFor(view) || null,
+                    license_url: recordLicenseUrl(view) || null,
                     rows_updated_at: timestamp(view.rowsUpdatedAt),
                     view_last_modified: timestamp(view.viewLastModified)
                 }
@@ -370,6 +464,8 @@ module.exports = {
     csvUrl,
     geoJsonBaseUrl,
     geoJsonPageUrl,
+    admissionFor,
+    validateSource,
     licenseFor,
     cachedRecordCount,
     exactRecordCount,

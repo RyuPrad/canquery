@@ -4,11 +4,14 @@ const {
     csvUrl,
     geoJsonPageUrl,
     directMapVersion,
-    cachedRecordCount
+    cachedRecordCount,
+    validateSource
 } = require('../services/socrataAdapter');
 const { getSource } = require('../config/catalogSources');
 
 const source = getSource('calgary-open-data');
+const edmonton = getSource('edmonton-open-data');
+const winnipeg = getSource('winnipeg-open-data');
 
 function catalogRecord(id = 'abcd-1234') {
     return {
@@ -85,6 +88,89 @@ describe('Socrata catalogue adapter', () => {
         })]);
     });
 
+    test('admits only explicitly attributed Edmonton records under the portal terms', async () => {
+        const allowedView = view({
+            attribution: ' The City of Edmonton ',
+            license: { name: 'See Terms of Use' },
+            metadata: { custom_fields: {} }
+        });
+        const result = await enrichRecord(catalogRecord(), edmonton, {
+            fetchJson: async () => allowedView
+        });
+        expect(result.status).toBe('included');
+        expect(result.value).toEqual(expect.objectContaining({
+            organization: expect.objectContaining({
+                id: 'socrata-edmonton-open-data-org-city-of-edmonton',
+                placeId: 'sgc-csd-4811061'
+            }),
+            source: expect.objectContaining({
+                licenseUrl: expect.stringContaining('City-of-Edmonton-Open-Data-Terms-of-Use'),
+                raw: expect.objectContaining({
+                    publisher_evidence: 'The City of Edmonton',
+                    publisher_evidence_mode: 'attribution',
+                    license_evidence: 'See Terms of Use',
+                    license_evidence_mode: 'view-license-name'
+                })
+            })
+        }));
+        expect(result.value.resources[0].url)
+            .toBe('https://data.edmonton.ca/api/views/abcd-1234/rows.csv?accessType=DOWNLOAD');
+
+        for (const attribution of ['', 'EPCOR']) {
+            await expect(enrichRecord(catalogRecord(), edmonton, {
+                fetchJson: async () => ({ ...allowedView, attribution })
+            })).resolves.toEqual(expect.objectContaining({
+                status: 'excluded', reason: 'publisher-not-admitted'
+            }));
+        }
+        await expect(enrichRecord(catalogRecord(), edmonton, {
+            fetchJson: async () => ({ ...allowedView, license: { name: 'Canada Open Government Licence' } })
+        })).resolves.toEqual(expect.objectContaining({ status: 'excluded', reason: 'unlicensed' }));
+    });
+
+    test('uses Winnipeg record-specific licence evidence and rejects external publishers', async () => {
+        const allowedView = view({
+            attribution: null,
+            license: { name: 'Open Government Licence - Prince Edward Island' },
+            metadata: { custom_fields: {
+                Licence: { Licence: 'Open Government Licence - Winnipeg' }
+            } }
+        });
+        const result = await enrichRecord(catalogRecord(), winnipeg, {
+            fetchJson: async () => allowedView
+        });
+        expect(result.status).toBe('included');
+        expect(result.value).toEqual(expect.objectContaining({
+            organization: expect.objectContaining({
+                id: 'socrata-winnipeg-open-data-org-city-of-winnipeg',
+                placeId: 'sgc-csd-4611040'
+            }),
+            source: expect.objectContaining({
+                licenseUrl: 'https://data.winnipeg.ca/open-data-licence',
+                raw: expect.objectContaining({
+                    publisher_evidence: null,
+                    license_evidence: 'Open Government Licence - Winnipeg'
+                })
+            })
+        }));
+
+        await expect(enrichRecord(catalogRecord(), winnipeg, {
+            fetchJson: async () => ({ ...allowedView, attribution: 'Winnipeg Transit' })
+        })).resolves.toEqual(expect.objectContaining({ status: 'included' }));
+        await expect(enrichRecord(catalogRecord(), winnipeg, {
+            fetchJson: async () => ({ ...allowedView, attribution: 'Province of Manitoba' })
+        })).resolves.toEqual(expect.objectContaining({
+            status: 'excluded', reason: 'publisher-not-admitted'
+        }));
+        await expect(enrichRecord(catalogRecord(), winnipeg, {
+            fetchJson: async () => ({
+                ...allowedView,
+                metadata: { custom_fields: {} },
+                license: { name: 'Canada Open Government Licence' }
+            })
+        })).resolves.toEqual(expect.objectContaining({ status: 'excluded', reason: 'unlicensed' }));
+    });
+
     test('fails closed on publisher and record licence, and bounds map admission', async () => {
         const external = view({ metadata: { custom_fields: {
             'Data Supplier': { Organization: 'Government of Alberta' },
@@ -137,5 +223,18 @@ describe('Socrata catalogue adapter', () => {
         const result = await enrichRecord(catalogRecord(), source, { fetchJson });
         expect(result.value.resources[0].raw.record_count).toBe(17);
         expect(new URL(fetchJson.mock.calls[1][0]).origin).toBe('https://data.calgary.ca');
+    });
+
+    test('rejects incomplete or unknown Socrata admission configuration before fetching', () => {
+        expect(() => validateSource({ ...source, socrataPolicy: null })).toThrow(/policy is missing/);
+        expect(() => validateSource({
+            ...source,
+            socrataPolicy: {
+                ...source.socrataPolicy,
+                license: { ...source.socrataPolicy.license, mode: 'arbitrary-path' }
+            }
+        })).toThrow(/invalid license evidence mode/);
+        expect(() => validateSource({ ...source, defaultOrganizationId: '' }))
+            .toThrow(/configuration is incomplete/);
     });
 });

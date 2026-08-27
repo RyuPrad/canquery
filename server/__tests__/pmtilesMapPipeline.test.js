@@ -39,6 +39,31 @@ describe('PMTiles map pipeline', () => {
         })).toThrow(/catalogued exports/);
     });
 
+    test('reconstructs each configured city portal without cross-source URL trust', () => {
+        for (const sourceId of ['edmonton-open-data', 'winnipeg-open-data']) {
+            const citySource = getSource(sourceId);
+            const cityResource = {
+                id: `socrata-${sourceId}-resource-city-1234`,
+                url: csvUrl(citySource, 'city-1234'), format: 'CSV',
+                raw: { provider: 'socrata', source_id: sourceId, upstream_dataset_id: 'city-1234' }
+            };
+            const cityCandidate = {
+                mode: 'socrata-geojson-pmtiles',
+                sourceUrl: geoJsonBaseUrl(citySource, 'city-1234'),
+                expectedRows: 1,
+                raw: { provider: 'socrata', source_id: sourceId, upstream_dataset_id: 'city-1234' }
+            };
+            expect(validateSocrataCandidate(cityResource, cityCandidate)).toEqual({
+                source: citySource, datasetId: 'city-1234',
+                expectedGeoJson: `https://${citySource.upstreamHost}/resource/city-1234.geojson`
+            });
+            expect(() => validateSocrataCandidate(cityResource, {
+                ...cityCandidate,
+                sourceUrl: geoJsonBaseUrl(source, 'city-1234')
+            })).toThrow(/catalogued exports/);
+        }
+    });
+
     test('selects at most 20 scalar popup columns with useful fields first', () => {
         const columns = Array.from({ length: 25 }, (_, index) => ({
             fieldName: index === 24 ? 'name' : 'field_' + index,

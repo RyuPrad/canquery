@@ -94,6 +94,22 @@ const CALGARY_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Calgary.'
 };
 
+const EDMONTON_LICENSE = {
+    titleEn: 'Open Government Licence – Edmonton',
+    titleFr: 'Licence du gouvernement ouvert – Edmonton',
+    url: 'https://data.edmonton.ca/stories/s/City-of-Edmonton-Open-Data-Terms-of-Use/msh8-if28/',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Edmonton.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Edmonton.'
+};
+
+const WINNIPEG_LICENSE = {
+    titleEn: 'Open Government Licence – Winnipeg',
+    titleFr: 'Licence du gouvernement ouvert – Winnipeg',
+    url: 'https://data.winnipeg.ca/open-data-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Winnipeg.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Winnipeg.'
+};
+
 const MISSISSAUGA_LICENSE = {
     titleEn: 'City of Mississauga Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
@@ -291,7 +307,6 @@ const sources = [{
     maxDeleteFraction: 0.1,
     metadataLanguage: 'en',
     placeId: 'sgc-csd-4806016',
-    dataSupplier: 'The City of Calgary',
     defaultOrganizationId: 'city-of-calgary',
     defaultOrganizationName: 'city-of-calgary',
     defaultOrganizationTitleEn: 'City of Calgary',
@@ -301,10 +316,84 @@ const sources = [{
     defaultLicenseUrl: CALGARY_LICENSE.url,
     defaultAttributionEn: CALGARY_LICENSE.attributionEn,
     defaultAttributionFr: CALGARY_LICENSE.attributionFr,
-    approvedLicenseUrls: [
-        'https://data.calgary.ca/d/Open-Data-Terms/u45n-7awa',
-        'https://data.calgary.ca/stories/s/u45n-7awa/'
-    ]
+    socrataPolicy: {
+        publisher: {
+            mode: 'custom-field', section: 'Data Supplier', field: 'Organization',
+            allowed: ['The City of Calgary']
+        },
+        license: {
+            mode: 'custom-field', section: 'License/Attribution',
+            fields: ['License URL', 'License-URL'], comparison: 'url',
+            allowed: [
+                'https://data.calgary.ca/d/Open-Data-Terms/u45n-7awa',
+                'https://data.calgary.ca/stories/s/u45n-7awa/'
+            ]
+        }
+    }
+}, {
+    id: 'edmonton-open-data',
+    kind: 'socrata',
+    nameEn: 'City of Edmonton Open Data',
+    nameFr: 'Données ouvertes de la Ville d’Edmonton',
+    homepageUrl: 'https://data.edmonton.ca/',
+    catalogUrl: 'https://data.edmonton.ca/api/catalog/v1',
+    upstreamHost: 'data.edmonton.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'en',
+    placeId: 'sgc-csd-4811061',
+    defaultOrganizationId: 'city-of-edmonton',
+    defaultOrganizationName: 'city-of-edmonton',
+    defaultOrganizationTitleEn: 'City of Edmonton',
+    defaultOrganizationTitleFr: 'Ville d’Edmonton',
+    defaultLicenseTitleEn: EDMONTON_LICENSE.titleEn,
+    defaultLicenseTitleFr: EDMONTON_LICENSE.titleFr,
+    defaultLicenseUrl: EDMONTON_LICENSE.url,
+    defaultAttributionEn: EDMONTON_LICENSE.attributionEn,
+    defaultAttributionFr: EDMONTON_LICENSE.attributionFr,
+    socrataPolicy: {
+        publisher: {
+            mode: 'attribution',
+            allowed: ['City of Edmonton', 'The City of Edmonton']
+        },
+        license: {
+            mode: 'view-license-name',
+            allowed: ['See Terms of Use']
+        }
+    }
+}, {
+    id: 'winnipeg-open-data',
+    kind: 'socrata',
+    nameEn: 'City of Winnipeg Open Data',
+    nameFr: 'Données ouvertes de la Ville de Winnipeg',
+    homepageUrl: 'https://data.winnipeg.ca/',
+    catalogUrl: 'https://data.winnipeg.ca/api/catalog/v1',
+    upstreamHost: 'data.winnipeg.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'en',
+    placeId: 'sgc-csd-4611040',
+    defaultOrganizationId: 'city-of-winnipeg',
+    defaultOrganizationName: 'city-of-winnipeg',
+    defaultOrganizationTitleEn: 'City of Winnipeg',
+    defaultOrganizationTitleFr: 'Ville de Winnipeg',
+    defaultLicenseTitleEn: WINNIPEG_LICENSE.titleEn,
+    defaultLicenseTitleFr: WINNIPEG_LICENSE.titleFr,
+    defaultLicenseUrl: WINNIPEG_LICENSE.url,
+    defaultAttributionEn: WINNIPEG_LICENSE.attributionEn,
+    defaultAttributionFr: WINNIPEG_LICENSE.attributionFr,
+    socrataPolicy: {
+        publisher: {
+            mode: 'attribution', allowBlank: true,
+            allowed: ['City of Winnipeg', 'Winnipeg Transit', 'Public Works', 'City Clerks']
+        },
+        license: {
+            mode: 'custom-field', section: 'Licence', field: 'Licence',
+            allowed: ['Open Government Licence - Winnipeg']
+        }
+    }
 }, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
@@ -558,6 +647,8 @@ module.exports = {
     OTTAWA_POLICE_LICENSE,
     VANCOUVER_LICENSE,
     CALGARY_LICENSE,
+    EDMONTON_LICENSE,
+    WINNIPEG_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,
