@@ -4,10 +4,31 @@ describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
             'toronto-open-data', 'montreal-open-data', 'ottawa-hub', 'vancouver-open-data',
-            'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data',
+            'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data', 'halifax-hub',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
+    });
+
+    test('configures Halifax as an exact-publisher ArcGIS source under its portal licence', () => {
+        const halifax = getSource('halifax-hub');
+        expect(halifax).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub', upstreamHost: 'data-hrm.hub.arcgis.com',
+            catalogUrl: 'https://data-hrm.hub.arcgis.com/api/feed/dcat-us/1.1.json'
+        }));
+        expect(halifax.restrictedLicensePatterns).toEqual(expect.arrayContaining([
+            expect.any(RegExp)
+        ]));
+        expect(halifax.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://data-hrm.hub.arcgis.com/pages/open-data-licence'
+            })
+        })]);
+        expect(halifax.placeRules).toEqual([expect.objectContaining({
+            placeId: 'sgc-csd-1209034', relationship: 'direct',
+            includesDescendants: false
+        })]);
     });
 
     test('configures Calgary as a strict record-licensed Socrata city source', () => {

@@ -41,10 +41,14 @@ records explicitly attributed to the City under its portal terms. Winnipeg
 requires its record-specific Open Government Licence - Winnipeg evidence, admits
 recognized City units, and permits missing attribution only alongside that exact
 licence evidence. Records attributed to external governments or agencies remain
-excluded. The featured local directory
-also covers Durham Region and all eight lower-tier municipalities, with direct
-feeds from Durham, Ajax,
-Oshawa, Pickering and the explicitly open-licensed subset of Whitby.
+excluded. Halifax Regional Municipality's official ArcGIS catalogue adds the
+first Atlantic standalone destination. The portal-wide Open Government Licence -
+Halifax applies only to exact Halifax Regional Municipality publisher evidence;
+placeholder, external, and explicitly restricted records remain excluded, while
+eligible spatial layers use the existing bounded ArcGIS viewport path. The
+featured local directory also covers Durham Region and all eight lower-tier
+municipalities, with direct feeds from Durham, Ajax, Oshawa, Pickering and the
+explicitly open-licensed subset of Whitby.
 Clarington is represented through Durham’s regional coverage only: its current
 public web-map terms are personal/non-commercial, so no direct adapter is enabled.
 Peel Region is included alongside direct Mississauga and Brampton feeds; Caledon
@@ -81,6 +85,7 @@ npm run sync:source -- --source=montreal-open-data --dry-run
 npm run sync:source -- --source=ottawa-hub --dry-run
 npm run sync:source -- --source=vancouver-open-data --dry-run
 npm run sync:source -- --source=calgary-open-data --dry-run
+npm run sync:source -- --source=halifax-hub --dry-run
 npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:source -- --source=peel-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
@@ -112,6 +117,7 @@ curl 'http://localhost:3100/api/v1/places?q=Vancouver'
 curl 'http://localhost:3100/api/v1/places?q=Calgary'
 curl 'http://localhost:3100/api/v1/places?q=Edmonton'
 curl 'http://localhost:3100/api/v1/places?q=Winnipeg'
+curl 'http://localhost:3100/api/v1/places?q=Halifax'
 
 # place-filtered sources are authoritative; counts expose total + authoritative
 curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
@@ -120,6 +126,7 @@ curl 'http://localhost:3100/api/v1/sources?place=vancouver-bc'
 curl 'http://localhost:3100/api/v1/sources?place=calgary-ab'
 curl 'http://localhost:3100/api/v1/sources?place=edmonton-ab'
 curl 'http://localhost:3100/api/v1/sources?place=winnipeg-mb'
+curl 'http://localhost:3100/api/v1/sources?place=halifax-ns'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -206,7 +213,7 @@ remain in PostGIS.
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
 their municipalities, and standalone featured cities such as Calgary, Montréal,
-Edmonton, Ottawa, Toronto, Vancouver and Winnipeg;
+Edmonton, Halifax, Ottawa, Toronto, Vancouver and Winnipeg;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of

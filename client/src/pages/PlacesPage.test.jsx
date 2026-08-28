@@ -78,6 +78,13 @@ beforeEach(() => {
       name: { en: 'Winnipeg', fr: 'Winnipeg' }, type: { en: 'City', fr: 'Ville' },
       parent: { id: 'sgc-cd-4611', name: { en: 'Division No. 11', fr: 'Division No. 11' } },
       dataset_count: 229, direct_dataset_count: 229, mappable_resource_count: 94
+    },
+    {
+      id: 'sgc-csd-1209034', slug: 'halifax-ns', kind: 'municipality',
+      name: { en: 'Halifax', fr: 'Halifax' },
+      type: { en: 'Regional municipality', fr: 'Municipalité régionale' },
+      parent: { id: 'sgc-cd-1209', name: { en: 'Halifax', fr: 'Halifax' } },
+      dataset_count: 327, direct_dataset_count: 327, mappable_resource_count: 196
     }
   ] });
 });
@@ -97,6 +104,7 @@ describe('PlacesPage', () => {
     expect(screen.getAllByRole('link', { name: /Calgary/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Edmonton/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Winnipeg/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Halifax/ })).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();

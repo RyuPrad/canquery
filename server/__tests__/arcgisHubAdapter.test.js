@@ -207,6 +207,48 @@ describe('ArcGIS Hub adapter', () => {
         });
     });
 
+    test('applies Halifax portal terms only to exact HRM publisher evidence', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'opendata_HRM', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
+        const source = getSource('halifax-hub');
+        const cityRecord = record({
+            landingPage: 'https://data-hrm.hub.arcgis.com/datasets/HRM::parks',
+            publisher: { name: 'Halifax Regional Municipality' },
+            license: null
+        });
+        const city = await adapter.enrichRecord(cityRecord, source, { fetchJson });
+
+        expect(city.status).toBe('included');
+        expect(city.value.organization.titleEn).toBe('Halifax Regional Municipality');
+        expect(city.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-1209034', relationship: 'direct', includesDescendants: false
+        }));
+        expect(city.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseTitleEn: 'Open Government Licence – Halifax',
+            licenseUrl: 'https://data-hrm.hub.arcgis.com/pages/open-data-licence'
+        }));
+
+        const restricted = await adapter.enrichRecord({
+            ...cityRecord,
+            license: 'Reproduction is permitted for non-commercial use only.'
+        }, source, { fetchJson });
+        expect(restricted).toEqual({
+            status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2'
+        });
+
+        const externalFetch = jest.fn(async () => ({ owner: 'ExternalPublisher', type: 'Feature Service' }));
+        const placeholder = await adapter.enrichRecord({
+            ...cityRecord,
+            publisher: { name: '{{source}}' }
+        }, source, { fetchJson: externalFetch });
+        expect(placeholder).toEqual({
+            status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2'
+        });
+        expect(externalFetch).toHaveBeenCalledTimes(1);
+    });
+
     test('admits only explicit Brampton CC BY or Statistics Canada records', async () => {
         const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
             ? { owner: 'Brampton', type: 'Feature Service' }

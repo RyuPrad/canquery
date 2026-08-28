@@ -1,4 +1,6 @@
 const { Client, Pool } = require('pg');
+const fs = require('node:fs');
+const path = require('node:path');
 const { queryLocalMap } = require('../db/mapIndexQueries');
 const { indexMapResource } = require('../services/mapIndexPipeline');
 
@@ -318,6 +320,62 @@ spatialDescribe('PostGIS viewport integration', () => {
         expect(identifiers.rows).toEqual([
             { place_id: 'sgc-csd-4611040', scheme: 'sgc-csd', value: '4611040' },
             { place_id: 'sgc-csd-4811061', scheme: 'sgc-csd', value: '4811061' }
+        ]);
+    });
+
+    test('migration seeds distinct Halifax ancestry and one featured municipality', async () => {
+        // Reproduce the generic full-SGC slugs seen before migration 018, then
+        // re-run its SQL to prove the same-name canonical swap is safe.
+        await client.query("DELETE FROM place_aliases WHERE slug = 'halifax-ns-1209034'");
+        await client.query("UPDATE places SET slug = 'halifax-ns-1209034' WHERE id = 'sgc-csd-1209034'");
+        await client.query("UPDATE places SET slug = 'halifax-ns' WHERE id = 'sgc-cd-1209'");
+        const migration = fs.readFileSync(path.join(
+            __dirname, '..', 'sql', 'migrations', '018_halifax_place.sql'
+        ), 'utf8');
+        await client.query(migration);
+
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN ('sgc-pr-12', 'sgc-cd-1209', 'sgc-csd-1209034')
+            ORDER BY CASE id
+                WHEN 'sgc-pr-12' THEN 1 WHEN 'sgc-cd-1209' THEN 2 ELSE 3 END
+        `);
+        expect(places.rows).toEqual([
+            expect.objectContaining({
+                id: 'sgc-pr-12', slug: 'nova-scotia', kind: 'province',
+                parent_id: 'ca', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-cd-1209', slug: 'halifax-region-ns', kind: 'region',
+                parent_id: 'sgc-pr-12', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-csd-1209034', slug: 'halifax-ns', kind: 'municipality',
+                parent_id: 'sgc-cd-1209', type_en: 'Regional municipality',
+                type_fr: 'Municipalité régionale', featured: true,
+                latitude: 44.6488, longitude: -63.5752, default_zoom: 8
+            })
+        ]);
+
+        const identifiers = await client.query(`
+            SELECT place_id, scheme, value FROM place_identifiers
+            WHERE place_id IN ('sgc-pr-12', 'sgc-cd-1209', 'sgc-csd-1209034')
+            ORDER BY place_id
+        `);
+        expect(identifiers.rows).toEqual([
+            { place_id: 'sgc-cd-1209', scheme: 'sgc-cd', value: '1209' },
+            { place_id: 'sgc-csd-1209034', scheme: 'sgc-csd', value: '1209034' },
+            { place_id: 'sgc-pr-12', scheme: 'sgc-pr', value: '12' }
+        ]);
+
+        const aliases = await client.query(`
+            SELECT slug, place_id FROM place_aliases
+            WHERE slug = 'halifax-ns-1209034'
+        `);
+        expect(aliases.rows).toEqual([
+            { slug: 'halifax-ns-1209034', place_id: 'sgc-csd-1209034' }
         ]);
     });
 });
