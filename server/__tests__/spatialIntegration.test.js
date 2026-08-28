@@ -533,6 +533,7 @@ spatialDescribe('PostGIS viewport integration', () => {
                 'laval-qc-2465', 'laval-qc-2465005', 'sgc-csd-2465005'
             )
         `);
+        await client.query("UPDATE places SET slug = 'quebec-qc-2423027-temp' WHERE id = 'sgc-csd-2423027'");
         await client.query("UPDATE places SET slug = 'quebec-qc' WHERE id = 'sgc-cd-2423'");
         await client.query("UPDATE places SET slug = 'quebec-qc-2423027' WHERE id = 'sgc-csd-2423027'");
         await client.query(`
