@@ -524,4 +524,121 @@ spatialDescribe('PostGIS viewport integration', () => {
             place_id: 'sgc-csd-5915004', scheme: 'sgc-csd', value: '5915004'
         }]);
     });
+
+    test('migration canonicalizes Québec City and Laval with durable aliases', async () => {
+        await client.query(`
+            DELETE FROM place_aliases
+            WHERE slug IN (
+                'quebec-qc-2423', 'quebec-qc-2423027',
+                'laval-qc-2465', 'laval-qc-2465005', 'sgc-csd-2465005'
+            )
+        `);
+        await client.query("UPDATE places SET slug = 'quebec-qc' WHERE id = 'sgc-cd-2423'");
+        await client.query("UPDATE places SET slug = 'quebec-qc-2423027' WHERE id = 'sgc-csd-2423027'");
+        await client.query(`
+            UPDATE places
+            SET type_en = 'Municipality', type_fr = 'Municipalité',
+                featured = false, latitude = NULL, longitude = NULL,
+                default_zoom = NULL
+            WHERE id = 'sgc-cd-2465'
+        `);
+        await client.query(`
+            INSERT INTO places (
+                id, slug, kind, name_en, name_fr, type_en, type_fr,
+                parent_id, enabled, featured
+            ) VALUES (
+                'sgc-csd-2465005', 'laval-qc-2465005', 'municipality',
+                'Laval', 'Laval', 'Municipality', 'Municipalité',
+                'sgc-cd-2465', true, false
+            )
+        `);
+        await client.query(`
+            DELETE FROM place_identifiers
+            WHERE scheme = 'sgc-csd' AND vintage = '2021' AND value = '2465005'
+        `);
+        await client.query(`
+            INSERT INTO place_identifiers (place_id, scheme, vintage, value)
+            VALUES ('sgc-csd-2465005', 'sgc-csd', '2021', '2465005')
+        `);
+        await client.query("UPDATE organizations SET place_id = 'sgc-csd-2465005' WHERE id = $1", [orgId]);
+        await client.query(`
+            DELETE FROM dataset_places
+            WHERE source_id = 'open-canada' AND dataset_id = $1
+        `, [datasetId]);
+        await client.query(`
+            INSERT INTO dataset_places (
+                source_id, dataset_id, place_id, relationship,
+                includes_descendants, assignment_method
+            ) VALUES ('open-canada', $1, 'sgc-csd-2465005', 'direct', false, 'source')
+        `, [datasetId]);
+
+        const migration = fs.readFileSync(path.join(
+            __dirname, '..', 'sql', 'migrations', '021_quebec_laval_places.sql'
+        ), 'utf8');
+        await client.query(migration);
+        await client.query(migration);
+
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN ('sgc-cd-2423', 'sgc-csd-2423027', 'sgc-cd-2465', 'sgc-csd-2465005')
+            ORDER BY id
+        `);
+        expect(places.rows).toEqual([
+            expect.objectContaining({
+                id: 'sgc-cd-2423', slug: 'quebec-region-qc', kind: 'region',
+                parent_id: 'sgc-pr-24', type_en: 'Census division',
+                type_fr: 'Division de recensement', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-cd-2465', slug: 'laval-qc', kind: 'municipality',
+                parent_id: 'sgc-pr-24', type_en: 'City', type_fr: 'Ville',
+                featured: true, latitude: 45.6066, longitude: -73.7124, default_zoom: 10
+            }),
+            expect.objectContaining({
+                id: 'sgc-csd-2423027', slug: 'quebec-qc', kind: 'municipality',
+                parent_id: 'sgc-cd-2423', type_en: 'City', type_fr: 'Ville',
+                featured: true, latitude: 46.8139, longitude: -71.208, default_zoom: 10
+            })
+        ]);
+        expect(places.rows.find(row => row.id === 'sgc-csd-2465005')).toBeUndefined();
+
+        const identifiers = await client.query(`
+            SELECT place_id, scheme, value
+            FROM place_identifiers
+            WHERE place_id IN ('sgc-cd-2465', 'sgc-csd-2465005')
+            ORDER BY scheme
+        `);
+        expect(identifiers.rows).toEqual([
+            { place_id: 'sgc-cd-2465', scheme: 'sgc-cd', value: '2465' },
+            { place_id: 'sgc-cd-2465', scheme: 'sgc-csd', value: '2465005' }
+        ]);
+
+        const aliases = await client.query(`
+            SELECT slug, place_id FROM place_aliases
+            WHERE slug IN (
+                'quebec-qc-2423', 'quebec-qc-2423027',
+                'laval-qc-2465', 'laval-qc-2465005', 'sgc-csd-2465005'
+            )
+            ORDER BY slug
+        `);
+        expect(aliases.rows).toEqual([
+            { slug: 'laval-qc-2465', place_id: 'sgc-cd-2465' },
+            { slug: 'laval-qc-2465005', place_id: 'sgc-cd-2465' },
+            { slug: 'quebec-qc-2423', place_id: 'sgc-cd-2423' },
+            { slug: 'quebec-qc-2423027', place_id: 'sgc-csd-2423027' },
+            { slug: 'sgc-csd-2465005', place_id: 'sgc-cd-2465' }
+        ]);
+
+        const references = await client.query(`
+            SELECT o.place_id,
+                   EXISTS (
+                       SELECT 1 FROM dataset_places dp
+                       WHERE dp.dataset_id = $2 AND dp.place_id = 'sgc-cd-2465'
+                   ) AS dataset_moved
+            FROM organizations o WHERE o.id = $1
+        `, [orgId, datasetId]);
+        expect(references.rows).toEqual([{ place_id: 'sgc-cd-2465', dataset_moved: true }]);
+    });
 });

@@ -162,6 +162,11 @@ catalogue, CSV and paginated GeoJSON endpoints from their configured portal and
 record id. Geometry tables within the row cap become immutable PMTiles in the
 private object bucket; all other admitted CSVs remain discoverable and honestly
 fall back to loadable or download-only according to row/column caps.
+Shared CKAN portals may be configured with an exact organization filter and a
+separate dataset base URL. Discovery pins the advertised count and fails closed
+on count drift, duplicate or missing package ids, truncated pages, or records
+outside the configured organization. Keep publisher and record-level licence
+rules explicit for each municipal organization.
 
 ## 6. Cron jobs
 

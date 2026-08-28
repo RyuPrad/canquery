@@ -13,10 +13,13 @@ const TERRITORIES = new Set(['60', '61', '62']);
 const SINGLE_TIER_CITY_CSD = {
     '3506008': 'sgc-cd-3506',
     '3520005': 'sgc-cd-3520',
-    '3525005': 'sgc-cd-3525'
+    '3525005': 'sgc-cd-3525',
+    '2465005': 'sgc-cd-2465'
 };
-const SINGLE_TIER_CITY_CD = new Set(['3506', '3520', '3525']);
+const SINGLE_TIER_CITY_CD = new Set(['2465', '3506', '3520', '3525']);
 const FEATURED_PLACE_IDS = new Set([
+    'sgc-csd-2423027',
+    'sgc-cd-2465',
     'sgc-cd-3506',
     'sgc-cd-3520',
     'sgc-cd-3525',
@@ -42,6 +45,8 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-csd-5915004'
 ]);
 const MUNICIPAL_TYPES = {
+    '2423027': ['City', 'Ville'],
+    '2465005': ['City', 'Ville'],
     '2466023': ['City', 'Ville'],
     '3514019': ['Township', 'Canton'],
     '3518005': ['Town', 'Ville'],
@@ -63,6 +68,8 @@ const MUNICIPAL_TYPES = {
     '5915004': ['City', 'Ville']
 };
 const PLACE_VIEWPORTS = {
+    '2423027': [46.8139, -71.2080, 10],
+    '2465': [45.6066, -73.7124, 10],
     '2466023': [45.5019, -73.5674, 10],
     '3506': [45.4215, -75.6972, 9],
     '3525': [43.2557, -79.8711, 9],
@@ -110,9 +117,10 @@ function normalize(enRows, frRows) {
         const fr = frByCode.get(code) || {};
         const nameEn = String(row['Class title'] || '').trim();
         const nameFr = String(fr['Titres de classes'] || nameEn).trim();
-        // Ottawa, Toronto and Hamilton are each simultaneously a census
-        // division and a census subdivision. Keep both official identifiers
-        // while exposing one canonical single-tier city for each.
+        // Québec remains a distinct city subdivision under its multi-city
+        // census division. Laval, Ottawa, Toronto and Hamilton are each
+        // single-tier census divisions with a matching city subdivision;
+        // preserve both official identifiers while exposing one city.
         if (level === 4 && SINGLE_TIER_CITY_CSD[code]) {
             const placeId = SINGLE_TIER_CITY_CSD[code];
             identifiers.push({ placeId, scheme: 'sgc-csd', vintage: '2021', value: code });
@@ -151,8 +159,11 @@ function normalize(enRows, frRows) {
         if (code === '1209') slug = 'halifax-region-ns';
         if (code === '1209034') slug = 'halifax-ns';
         if (code === '3518') slug = 'durham-on';
+        if (code === '2423') slug = 'quebec-region-qc';
+        if (code === '2423027') slug = 'quebec-qc';
         if (code === '2466') slug = 'montreal-region-qc';
         if (code === '2466023') slug = 'montreal-qc';
+        if (code === '2465') slug = 'laval-qc';
         if (code === '3506') slug = 'ottawa-on';
         if (code === '3514019') slug = 'hamilton-township-on';
         if (code === '3520') slug = 'toronto-on';

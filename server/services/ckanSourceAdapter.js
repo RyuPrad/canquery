@@ -138,10 +138,12 @@ function licenseFor(record, source) {
         const id = clean(record.license_id);
         const title = clean(record.license_title);
         const url = clean(record.license_url);
+        const publisher = publisherName(record, source);
         const rule = rules.find(item =>
             patternMatches(item.licenseId, id) &&
             patternMatches(item.licenseTitle, title) &&
-            patternMatches(item.licenseUrl, url)
+            patternMatches(item.licenseUrl, url) &&
+            patternMatches(item.publisher, publisher)
         );
         return rule ? rule.license : null;
     }
@@ -200,19 +202,41 @@ function canonicalKey(identity) {
 async function discover(source, options = {}) {
     const fetchJson = options.fetchJson || fetchPublicJson;
     const records = [];
+    const catalogOrganization = clean(source.catalogOrganization);
+    if (catalogOrganization && !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(catalogOrganization)) {
+        throw new Error('CKAN source has an unsafe catalog organization slug');
+    }
     let total = null;
+    const seen = new Set();
     for (let start = 0; total == null || start < total; start += PAGE_SIZE) {
         const url = new URL(source.catalogUrl.replace(/\/+$/, '') + '/package_search');
         url.searchParams.set('rows', String(PAGE_SIZE));
         url.searchParams.set('start', String(start));
         url.searchParams.set('sort', 'id asc');
+        if (catalogOrganization) url.searchParams.set('fq', 'organization:' + catalogOrganization);
         const body = await fetchJson(url.href, options.http);
         const result = body && body.success !== false ? body.result : null;
         if (!result || !Array.isArray(result.results) || !Number.isInteger(Number(result.count))) {
             throw new Error('CKAN source returned an invalid package_search response');
         }
-        total = Number(result.count);
-        records.push(...result.results);
+        const pageTotal = Number(result.count);
+        if (pageTotal < 0) throw new Error('CKAN source returned an invalid package_search count');
+        if (total == null) total = pageTotal;
+        else if (pageTotal !== total) throw new Error('CKAN source catalogue count changed while paging');
+        for (const record of result.results) {
+            const identity = identityFor(record);
+            if (!identity) throw new Error('CKAN source returned a package without an id');
+            const key = canonicalKey(identity);
+            if (seen.has(key)) throw new Error('CKAN source returned a duplicate package id');
+            seen.add(key);
+            if (catalogOrganization) {
+                const organization = record && record.organization || {};
+                if (clean(organization.name).toLowerCase() !== catalogOrganization.toLowerCase()) {
+                    throw new Error('CKAN source returned a package outside its configured organization');
+                }
+            }
+            records.push(record);
+        }
         if (result.results.length === 0) break;
     }
     if (total === 0 || records.length === 0) throw new Error('CKAN source returned an empty catalogue');
@@ -299,7 +323,9 @@ async function enrichRecord(record, source) {
                 sourceId: source.id,
                 externalId: canonicalKey(externalId),
                 datasetId,
-                landingUrl: source.homepageUrl.replace(/\/+$/, '') + '/dataset/' + encodeURIComponent(record.name) + '/',
+                landingUrl: (source.datasetBaseUrl ||
+                    source.homepageUrl.replace(/\/+$/, '') + '/dataset').replace(/\/+$/, '') +
+                    '/' + encodeURIComponent(record.name) + '/',
                 licenseTitleEn: licence.titleEn || null,
                 licenseTitleFr: licence.titleFr || null,
                 licenseUrl: licence.url,

@@ -270,6 +270,74 @@ const sources = [{
         }
     ]
 }, {
+    id: 'quebec-city-open-data',
+    kind: 'ckan',
+    nameEn: 'Québec City Open Data',
+    nameFr: 'Données ouvertes de la Ville de Québec',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-quebec',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-quebec',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-quebec',
+    defaultOrganizationName: 'ville-de-quebec',
+    defaultOrganizationTitleEn: 'Québec City',
+    defaultOrganizationTitleFr: 'Ville de Québec',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de québec$/i }],
+    licenseRules: [{
+        publisher: /^ville de québec$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de québec$/i,
+        placeId: 'sgc-csd-2423027',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'laval-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Laval Open Data',
+    nameFr: 'Données ouvertes de la Ville de Laval',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-laval',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-laval',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-laval',
+    defaultOrganizationName: 'ville-de-laval',
+    defaultOrganizationTitleEn: 'City of Laval',
+    defaultOrganizationTitleFr: 'Ville de Laval',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de laval$/i }],
+    licenseRules: [{
+        publisher: /^ville de laval$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de laval$/i,
+        placeId: 'sgc-cd-2465',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
     id: 'ottawa-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Ottawa Open Data',

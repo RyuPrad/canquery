@@ -14,6 +14,8 @@ describe('PlaceSelect', () => {
       { id: 'sgc-cd-3506', slug: 'ottawa-on', kind: 'municipality', name: { en: 'Ottawa' }, parent: { id: 'ca-on' }, dataset_count: 392 },
       { id: 'sgc-cd-3520', slug: 'toronto-on', kind: 'municipality', name: { en: 'Toronto' }, parent: { id: 'ca-on' }, dataset_count: 556 },
       { id: 'sgc-csd-2466023', slug: 'montreal-qc', kind: 'municipality', name: { en: 'Montréal' }, parent: { id: 'sgc-cd-2466' }, dataset_count: 405 },
+      { id: 'sgc-csd-2423027', slug: 'quebec-qc', kind: 'municipality', name: { en: 'Québec' }, parent: { id: 'sgc-cd-2423' }, dataset_count: 35 },
+      { id: 'sgc-cd-2465', slug: 'laval-qc', kind: 'municipality', name: { en: 'Laval' }, parent: { id: 'sgc-pr-24' }, dataset_count: 130 },
       { id: 'sgc-csd-5915022', slug: 'vancouver-bc', kind: 'municipality', name: { en: 'Vancouver' }, parent: { id: 'sgc-cd-5915' }, dataset_count: 178 },
       { id: 'sgc-csd-4806016', slug: 'calgary-ab', kind: 'municipality', name: { en: 'Calgary' }, parent: { id: 'sgc-cd-4806' }, dataset_count: 570 },
       { id: 'sgc-csd-4811061', slug: 'edmonton-ab', kind: 'municipality', name: { en: 'Edmonton' }, parent: { id: 'sgc-cd-4811' }, dataset_count: 974 },
@@ -29,6 +31,8 @@ describe('PlaceSelect', () => {
     expect(screen.getByRole('option', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Montréal/ })).toBeInTheDocument();
     expect(screen.getAllByRole('option', { name: /Vancouver/ })).toHaveLength(1);
+    expect(screen.getAllByRole('option', { name: /Québec/ })).toHaveLength(1);
+    expect(screen.getAllByRole('option', { name: /Laval/ })).toHaveLength(1);
     expect(screen.getAllByRole('option', { name: /Calgary/ })).toHaveLength(1);
     expect(screen.getAllByRole('option', { name: /Edmonton/ })).toHaveLength(1);
     expect(screen.getAllByRole('option', { name: /Winnipeg/ })).toHaveLength(1);

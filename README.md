@@ -21,6 +21,9 @@ versioned Statistics Canada SGC hierarchy powers place-first discovery, and
 spatial resources can be explored through bounded maps before their CSV snapshot
 is loaded. Toronto's official CKAN catalogue is included as one canonical city,
 with its GeoJSON DataStore layers rebuilt into a local PostGIS viewport index.
+Québec City and Laval use the official shared Données Québec CKAN catalogue
+with exact organization and licence evidence, French-first metadata, and
+selected direct GeoJSON resources indexed locally.
 Ottawa's official ArcGIS catalogue is included as a second standalone city, with
 the City portal-wide licence and explicit Ottawa Police licensing preserved, plus
 live maps served through bounded upstream viewports. Montréal's official CKAN
@@ -93,6 +96,8 @@ npm run migrate               # idempotent, applies sql/migrations/*.sql
 node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
 npm run sync:places                       # Statistics Canada SGC hierarchy
 npm run sync:source -- --source=montreal-open-data --dry-run
+npm run sync:source -- --source=quebec-city-open-data --dry-run
+npm run sync:source -- --source=laval-open-data --dry-run
 npm run sync:source -- --source=ottawa-hub --dry-run
 npm run sync:source -- --source=vancouver-open-data --dry-run
 npm run sync:source -- --source=calgary-open-data --dry-run
@@ -126,6 +131,8 @@ curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'
 curl 'http://localhost:3100/api/v1/places?q=Mississauga'
 curl 'http://localhost:3100/api/v1/places?q=Montr%C3%A9al'
+curl 'http://localhost:3100/api/v1/places?q=Qu%C3%A9bec'
+curl 'http://localhost:3100/api/v1/places?q=Laval'
 curl 'http://localhost:3100/api/v1/places?q=Vancouver'
 curl 'http://localhost:3100/api/v1/places?q=Calgary'
 curl 'http://localhost:3100/api/v1/places?q=Edmonton'
@@ -144,6 +151,8 @@ curl 'http://localhost:3100/api/v1/sources?place=winnipeg-mb'
 curl 'http://localhost:3100/api/v1/sources?place=halifax-ns'
 curl 'http://localhost:3100/api/v1/sources?place=hamilton-on'
 curl 'http://localhost:3100/api/v1/sources?place=surrey-bc'
+curl 'http://localhost:3100/api/v1/sources?place=quebec-qc'
+curl 'http://localhost:3100/api/v1/sources?place=laval-qc'
 
 # dataset detail - resources tagged datastore | ingested | ingestable | file-only
 curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
@@ -230,7 +239,8 @@ remain in PostGIS.
 The SPA (`client/`) starts with a search plus an optional remembered place
 (All Canada remains the default). Its grouped selector shows featured regions,
 their municipalities, and standalone featured cities such as Calgary, Montréal,
-Edmonton, Halifax, Hamilton, Ottawa, Surrey, Toronto, Vancouver and Winnipeg;
+Québec City, Laval, Edmonton, Halifax, Hamilton, Ottawa, Surrey, Toronto,
+Vancouver and Winnipeg;
 search on `/places` still reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of
