@@ -151,6 +151,36 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
+    test('keeps the Halifax census division and featured regional municipality distinct', () => {
+        const en = [
+            { Level: '2', Code: '12', 'Class title': 'Nova Scotia' },
+            { Level: '3', Code: '1209', 'Class title': 'Halifax' },
+            { Level: '4', Code: '1209034', 'Class title': 'Halifax' }
+        ];
+        const fr = [
+            { Code: '12', 'Titres de classes': 'Nouvelle-Écosse' },
+            { Code: '1209', 'Titres de classes': 'Halifax' },
+            { Code: '1209034', 'Titres de classes': 'Halifax' }
+        ];
+        const result = normalize(en, fr);
+
+        expect(result.places.find(place => place.id === 'sgc-pr-12')).toEqual(expect.objectContaining({
+            slug: 'nova-scotia', nameFr: 'Nouvelle-Écosse', parentId: 'ca', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-cd-1209')).toEqual(expect.objectContaining({
+            slug: 'halifax-region-ns', kind: 'region', parentId: 'sgc-pr-12', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-1209034')).toEqual(expect.objectContaining({
+            slug: 'halifax-ns', kind: 'municipality', parentId: 'sgc-cd-1209',
+            typeEn: 'Regional municipality', typeFr: 'Municipalité régionale', featured: true,
+            latitude: 44.6488, longitude: -63.5752, defaultZoom: 8
+        }));
+        expect(result.identifiers).toEqual(expect.arrayContaining([
+            expect.objectContaining({ placeId: 'sgc-cd-1209', scheme: 'sgc-cd', value: '1209' }),
+            expect.objectContaining({ placeId: 'sgc-csd-1209034', scheme: 'sgc-csd', value: '1209034' })
+        ]));
+    });
+
     test('features Calgary beneath Division No. 6 with its curated viewport', () => {
         const en = [
             { Level: '2', Code: '48', 'Class title': 'Alberta' },

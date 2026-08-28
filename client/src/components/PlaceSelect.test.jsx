@@ -18,6 +18,7 @@ describe('PlaceSelect', () => {
       { id: 'sgc-csd-4806016', slug: 'calgary-ab', kind: 'municipality', name: { en: 'Calgary' }, parent: { id: 'sgc-cd-4806' }, dataset_count: 570 },
       { id: 'sgc-csd-4811061', slug: 'edmonton-ab', kind: 'municipality', name: { en: 'Edmonton' }, parent: { id: 'sgc-cd-4811' }, dataset_count: 974 },
       { id: 'sgc-csd-4611040', slug: 'winnipeg-mb', kind: 'municipality', name: { en: 'Winnipeg' }, parent: { id: 'sgc-cd-4611' }, dataset_count: 229 },
+      { id: 'sgc-csd-1209034', slug: 'halifax-ns', kind: 'municipality', name: { en: 'Halifax' }, parent: { id: 'sgc-cd-1209' }, dataset_count: 327 },
     ]} />);
     const select = screen.getByRole('combobox', { name: 'Choose a place' });
     expect(select).toHaveDisplayValue('All Canada');
@@ -29,6 +30,7 @@ describe('PlaceSelect', () => {
     expect(screen.getAllByRole('option', { name: /Calgary/ })).toHaveLength(1);
     expect(screen.getAllByRole('option', { name: /Edmonton/ })).toHaveLength(1);
     expect(screen.getAllByRole('option', { name: /Winnipeg/ })).toHaveLength(1);
+    expect(screen.getAllByRole('option', { name: /Halifax/ })).toHaveLength(1);
     expect([...container.querySelectorAll('optgroup')].map(group => group.label)).toEqual([
       'Featured regions', 'Municipalities in Durham', 'Municipalities in Peel', 'Featured cities', 'Other places'
     ]);

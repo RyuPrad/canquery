@@ -30,7 +30,8 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-csd-5915022',
     'sgc-csd-4806016',
     'sgc-csd-4811061',
-    'sgc-csd-4611040'
+    'sgc-csd-4611040',
+    'sgc-csd-1209034'
 ]);
 const MUNICIPAL_TYPES = {
     '2466023': ['City', 'Ville'],
@@ -48,7 +49,8 @@ const MUNICIPAL_TYPES = {
     '5915022': ['City', 'Ville'],
     '4806016': ['City', 'Ville'],
     '4811061': ['City', 'Ville'],
-    '4611040': ['City', 'Ville']
+    '4611040': ['City', 'Ville'],
+    '1209034': ['Regional municipality', 'Municipalité régionale']
 };
 const PLACE_VIEWPORTS = {
     '2466023': [45.5019, -73.5674, 10],
@@ -63,7 +65,8 @@ const PLACE_VIEWPORTS = {
     '5915022': [49.2827, -123.1207, 10],
     '4806016': [51.0447, -114.0719, 9],
     '4811061': [53.5461, -113.4938, 9],
-    '4611040': [49.8954, -97.1385, 9]
+    '4611040': [49.8954, -97.1385, 9],
+    '1209034': [44.6488, -63.5752, 8]
 };
 
 function slugify(value) {
@@ -133,6 +136,8 @@ function normalize(enRows, frRows) {
         if (code === '35') parentId = 'ca';
         if (code === '35') baseSlug = 'ontario';
         let slug = baseSlug;
+        if (code === '1209') slug = 'halifax-region-ns';
+        if (code === '1209034') slug = 'halifax-ns';
         if (code === '3518') slug = 'durham-on';
         if (code === '2466') slug = 'montreal-region-qc';
         if (code === '2466023') slug = 'montreal-qc';

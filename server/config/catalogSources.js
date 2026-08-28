@@ -110,6 +110,14 @@ const WINNIPEG_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Winnipeg.'
 };
 
+const HALIFAX_LICENSE = {
+    titleEn: 'Open Government Licence – Halifax',
+    titleFr: 'Licence du gouvernement ouvert – Halifax',
+    url: 'https://data-hrm.hub.arcgis.com/pages/open-data-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Halifax.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Halifax.'
+};
+
 const MISSISSAUGA_LICENSE = {
     titleEn: 'City of Mississauga Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
@@ -395,6 +403,35 @@ const sources = [{
         }
     }
 }, {
+    id: 'halifax-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'Halifax Regional Municipality Open Data',
+    nameFr: 'Données ouvertes de la municipalité régionale d’Halifax',
+    homepageUrl: 'https://data-hrm.hub.arcgis.com/',
+    catalogUrl: 'https://data-hrm.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'data-hrm.hub.arcgis.com',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
+    publisherAliases: [
+        { publisher: /^halifax regional municipality$/i, name: 'Halifax Regional Municipality' }
+    ],
+    authoritativePublishers: [{ publisher: /^halifax regional municipality$/i }],
+    // The official Halifax licence applies portal-wide, but only exact HRM
+    // publisher evidence is admitted. Placeholder and external records remain
+    // fail-closed, and explicit restricted terms are checked first.
+    licenseRules: [{
+        publisher: /^halifax regional municipality$/i,
+        license: HALIFAX_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^halifax regional municipality$/i,
+        placeId: 'sgc-csd-1209034',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Oshawa Open Data Hub',
@@ -649,6 +686,7 @@ module.exports = {
     CALGARY_LICENSE,
     EDMONTON_LICENSE,
     WINNIPEG_LICENSE,
+    HALIFAX_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,
