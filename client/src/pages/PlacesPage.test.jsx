@@ -56,6 +56,18 @@ beforeEach(() => {
       dataset_count: 405, direct_dataset_count: 390, mappable_resource_count: 304
     },
     {
+      id: 'sgc-csd-2423027', slug: 'quebec-qc', kind: 'municipality',
+      name: { en: 'Québec', fr: 'Québec' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-cd-2423', name: { en: 'Québec', fr: 'Québec' } },
+      dataset_count: 35, direct_dataset_count: 35, mappable_resource_count: 24
+    },
+    {
+      id: 'sgc-cd-2465', slug: 'laval-qc', kind: 'municipality',
+      name: { en: 'Laval', fr: 'Laval' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'sgc-pr-24', name: { en: 'Québec', fr: 'Québec' } },
+      dataset_count: 130, direct_dataset_count: 130, mappable_resource_count: 73
+    },
+    {
       id: 'sgc-csd-5915022', slug: 'vancouver-bc', kind: 'municipality',
       name: { en: 'Vancouver', fr: 'Vancouver' }, type: { en: 'City', fr: 'Ville' },
       parent: { id: 'sgc-cd-5915', name: { en: 'Greater Vancouver', fr: 'Greater Vancouver' } },
@@ -112,6 +124,8 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('link', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Montréal/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Québec/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Laval/ })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /Vancouver/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Calgary/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Edmonton/ })).toHaveLength(1);

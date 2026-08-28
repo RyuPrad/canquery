@@ -3,7 +3,8 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'toronto-open-data', 'montreal-open-data', 'ottawa-hub', 'vancouver-open-data',
+            'toronto-open-data', 'montreal-open-data', 'quebec-city-open-data', 'laval-open-data',
+            'ottawa-hub', 'vancouver-open-data',
             'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data', 'halifax-hub',
             'hamilton-hub', 'surrey-hub',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
@@ -199,6 +200,35 @@ describe('configured municipal catalogue sources', () => {
                 placeId: 'sgc-csd-2466023', relationship: 'coverage'
             })
         ]);
+    });
+
+    test('configures Québec City and Laval as filtered shared CKAN sources', () => {
+        for (const [id, organization, publisher, placeId] of [
+            ['quebec-city-open-data', 'ville-de-quebec', 'Ville de Québec', 'sgc-csd-2423027'],
+            ['laval-open-data', 'ville-de-laval', 'Ville de Laval', 'sgc-cd-2465']
+        ]) {
+            const source = getSource(id);
+            expect(source).toEqual(expect.objectContaining({
+                kind: 'ckan', metadataLanguage: 'fr', directGeoJsonMaps: true,
+                upstreamHost: 'www.donneesquebec.ca',
+                catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+                catalogOrganization: organization,
+                datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+                licenseMode: 'record-explicit'
+            }));
+            expect(source.authoritativePublishers).toEqual([
+                { publisher: expect.any(RegExp) }
+            ]);
+            expect(source.licenseRules).toEqual([expect.objectContaining({
+                publisher: expect.any(RegExp), licenseId: 'cc-by',
+                licenseTitle: 'Attribution (CC-BY 4.0)',
+                licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by'
+            })]);
+            expect(source.placeRules).toEqual([expect.objectContaining({
+                placeId, relationship: 'direct', includesDescendants: false
+            })]);
+            expect(source.authoritativePublishers[0].publisher.test(publisher)).toBe(true);
+        }
     });
 
     test('covers each direct feed without inventing a Clarington source', () => {

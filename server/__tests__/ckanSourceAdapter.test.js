@@ -3,6 +3,8 @@ const { getSource } = require('../config/catalogSources');
 
 const source = getSource('toronto-open-data');
 const montreal = getSource('montreal-open-data');
+const quebecCity = getSource('quebec-city-open-data');
+const laval = getSource('laval-open-data');
 
 function packageRecord(overrides = {}) {
     return {
@@ -35,6 +37,51 @@ describe('generic CKAN source adapter', () => {
         })).rejects.toThrow(/ended before|empty/i);
     });
 
+    test('filters shared CKAN portals and rejects duplicate or foreign records', async () => {
+        const records = [
+            packageRecord({ id: 'shared-one', organization: { name: 'ville-de-quebec' } }),
+            packageRecord({ id: 'shared-two', organization: { name: 'ville-de-quebec' } })
+        ];
+        const fetchJson = jest.fn(async url => {
+            const parsed = new URL(url);
+            expect(parsed.searchParams.get('fq')).toBe('organization:ville-de-quebec');
+            return { success: true, result: { count: 2, results: records } };
+        });
+        await expect(adapter.discover(quebecCity, { fetchJson })).resolves.toHaveLength(2);
+        expect(fetchJson).toHaveBeenCalledTimes(1);
+
+        await expect(adapter.discover(quebecCity, {
+            fetchJson: async () => ({ success: true, result: {
+                count: 2, results: [records[0], records[0]]
+            } })
+        })).rejects.toThrow(/duplicate/i);
+
+        await expect(adapter.discover(quebecCity, {
+            fetchJson: async () => ({ success: true, result: {
+                count: 2, results: [records[0], {
+                    ...records[1], organization: { name: 'other-org' }
+                }]
+            } })
+        })).rejects.toThrow(/outside its configured organization/i);
+    });
+
+    test('rejects unsafe shared organization configuration and changing counts', async () => {
+        await expect(adapter.discover({ ...quebecCity, catalogOrganization: 'ville-de-quebec&x' }, {
+            fetchJson: jest.fn()
+        })).rejects.toThrow(/unsafe/i);
+
+        const firstPage = Array.from({ length: 100 }, (_, index) => ({
+            id: 'row-' + index, organization: { name: 'ville-de-quebec' }
+        }));
+        await expect(adapter.discover(quebecCity, {
+            fetchJson: jest.fn()
+                .mockResolvedValueOnce({ success: true, result: { count: 101, results: firstPage } })
+                .mockResolvedValueOnce({ success: true, result: {
+                    count: 102, results: [{ id: 'row-100', organization: { name: 'ville-de-quebec' } }]
+                } })
+        })).rejects.toThrow(/count changed/i);
+    });
+
     test('namespaces identities, attaches Toronto licensing, and retains every DataStore resource', async () => {
         const record = packageRecord({
             resources: [{
@@ -62,7 +109,8 @@ describe('generic CKAN source adapter', () => {
         expect(result.value.dataset.keywordsEn).toEqual(['Transportation', 'Roads']);
         expect(result.value.source).toEqual(expect.objectContaining({
             isAuthoritative: true,
-            licenseUrl: 'https://open.toronto.ca/open-data-licence/'
+            licenseUrl: 'https://open.toronto.ca/open-data-licence/',
+            landingUrl: 'https://open.toronto.ca/dataset/road-centrelines/'
         }));
         expect(result.value.resources).toHaveLength(2);
         const datastore = result.value.resources.find(resource => resource.datastoreActive);
@@ -165,6 +213,43 @@ describe('generic CKAN source adapter', () => {
             organization: { id: 'third-party', title: 'Third Party' }
         }), montreal)).resolves.toEqual(expect.objectContaining({
             status: 'excluded', reason: 'unlicensed'
+        }));
+    });
+
+    test('admits exact Données Québec evidence and uses the shared dataset base URL', async () => {
+        const record = packageRecord({
+            id: 'quebec-record', name: 'fontaines-a-boire', title: 'Fontaines à boire',
+            organization: { id: 'ville-de-quebec', name: 'ville-de-quebec', title: 'Ville de Québec' },
+            license_id: 'cc-by',
+            license_title: 'Attribution (CC-BY 4.0)',
+            license_url: 'https://www.donneesquebec.ca/licence/#cc-by',
+            resources: [{
+                id: 'quebec-geojson', name: 'Fontaines GeoJSON', format: 'GeoJSON',
+                url: 'https://www.donneesquebec.ca/recherche/dataset/fontaines-a-boire/resource/quebec-geojson'
+            }]
+        });
+        const result = await adapter.enrichRecord(record, quebecCity);
+        expect(result.status).toBe('included');
+        expect(result.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+            landingUrl: 'https://www.donneesquebec.ca/recherche/dataset/fontaines-a-boire/'
+        }));
+        expect(result.value.places).toEqual([expect.objectContaining({
+            placeId: 'sgc-csd-2423027', relationship: 'direct'
+        })]);
+        await expect(adapter.enrichRecord({ ...record, organization: {
+            id: 'ville-de-quebec', name: 'ville-de-quebec', title: 'Other Publisher'
+        } }, quebecCity)).resolves.toEqual(expect.objectContaining({
+            status: 'excluded', reason: 'unlicensed'
+        }));
+
+        const lavalResult = await adapter.enrichRecord({ ...record,
+            id: 'laval-record',
+            organization: { id: 'ville-de-laval', name: 'ville-de-laval', title: 'Ville de Laval' }
+        }, laval);
+        expect(lavalResult.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-cd-2465'
         }));
     });
 });

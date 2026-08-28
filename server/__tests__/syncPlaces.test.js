@@ -125,6 +125,54 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
+    test('keeps the Québec census division distinct from its featured city', () => {
+        const en = [
+            { Level: '2', Code: '24', 'Class title': 'Quebec' },
+            { Level: '3', Code: '2423', 'Class title': 'Québec' },
+            { Level: '4', Code: '2423027', 'Class title': 'Québec' },
+            { Level: '4', Code: '2423057', 'Class title': "L'Ancienne-Lorette" }
+        ];
+        const fr = [
+            { Code: '24', 'Titres de classes': 'Québec' },
+            { Code: '2423', 'Titres de classes': 'Québec' },
+            { Code: '2423027', 'Titres de classes': 'Québec' },
+            { Code: '2423057', 'Titres de classes': "L'Ancienne-Lorette" }
+        ];
+        const result = normalize(en, fr);
+        expect(result.places.find(place => place.id === 'sgc-cd-2423')).toEqual(expect.objectContaining({
+            slug: 'quebec-region-qc', kind: 'region', parentId: 'sgc-pr-24', featured: false
+        }));
+        expect(result.places.find(place => place.id === 'sgc-csd-2423027')).toEqual(expect.objectContaining({
+            slug: 'quebec-qc', kind: 'municipality', parentId: 'sgc-cd-2423',
+            typeEn: 'City', typeFr: 'Ville', featured: true,
+            latitude: 46.8139, longitude: -71.208, defaultZoom: 10
+        }));
+        expect(result.identifiers).toEqual(expect.arrayContaining([
+            expect.objectContaining({ placeId: 'sgc-cd-2423', scheme: 'sgc-cd', value: '2423' }),
+            expect.objectContaining({ placeId: 'sgc-csd-2423027', scheme: 'sgc-csd', value: '2423027' })
+        ]));
+    });
+
+    test('merges Laval census-division and subdivision identities into one city', () => {
+        const en = [
+            { Level: '2', Code: '24', 'Class title': 'Quebec' },
+            { Level: '3', Code: '2465', 'Class title': 'Laval' },
+            { Level: '4', Code: '2465005', 'Class title': 'Laval' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+        const laval = result.places.filter(place => place.nameEn === 'Laval');
+        expect(laval).toEqual([expect.objectContaining({
+            id: 'sgc-cd-2465', slug: 'laval-qc', kind: 'municipality',
+            parentId: 'sgc-pr-24', typeEn: 'City', typeFr: 'Ville', featured: true,
+            latitude: 45.6066, longitude: -73.7124, defaultZoom: 10
+        })]);
+        expect(result.identifiers.filter(item => item.placeId === 'sgc-cd-2465')).toEqual([
+            expect.objectContaining({ scheme: 'sgc-cd', value: '2465' }),
+            expect.objectContaining({ scheme: 'sgc-csd', value: '2465005' })
+        ]);
+    });
+
     test('features Vancouver as a canonical city beneath Greater Vancouver', () => {
         const en = [
             { Level: '2', Code: '59', 'Class title': 'British Columbia' },
