@@ -126,6 +126,14 @@ const HAMILTON_LICENSE = {
     attributionFr: 'Contient des données du secteur public fournies selon la licence de données ouvertes de la Ville de Hamilton.'
 };
 
+const SURREY_LICENSE = {
+    titleEn: 'Open Government License – Surrey',
+    titleFr: 'Licence du gouvernement ouvert – Surrey',
+    url: 'https://opendata-surrey.hub.arcgis.com/pages/55089a19491a4fe59a41e059fd8af708',
+    attributionEn: 'Contains information licensed under the Open Government License – City of Surrey.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Surrey.'
+};
+
 // The feed currently publishes the City itself plus these exact department
 // paths. Keep the allowlist fail-closed: an unfamiliar publisher string must be
 // reviewed before portal-wide City terms can be applied to it.
@@ -486,6 +494,36 @@ const sources = [{
         includesDescendants: false
     }]
 }, {
+    id: 'surrey-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'City of Surrey Open Data',
+    nameFr: 'Données ouvertes de la Ville de Surrey',
+    homepageUrl: 'https://opendata-surrey.hub.arcgis.com/',
+    catalogUrl: 'https://opendata-surrey.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata-surrey.hub.arcgis.com',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
+    publisherAliases: [
+        { publisher: /^city of surrey$/i, name: 'City of Surrey' }
+    ],
+    authoritativePublishers: [{ publisher: /^city of surrey$/i }],
+    // Surrey's official open-data page applies this licence portal-wide. Keep
+    // admission tied to exact City publisher evidence; generic ArcGIS
+    // placeholder text is not a restriction, while explicit restrictive terms
+    // and external publishers still fail closed.
+    licenseRules: [{
+        publisher: /^city of surrey$/i,
+        license: SURREY_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^city of surrey$/i,
+        placeId: 'sgc-csd-5915004',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Oshawa Open Data Hub',
@@ -742,6 +780,7 @@ module.exports = {
     WINNIPEG_LICENSE,
     HALIFAX_LICENSE,
     HAMILTON_LICENSE,
+    SURREY_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,

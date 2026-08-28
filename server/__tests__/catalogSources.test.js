@@ -5,7 +5,7 @@ describe('configured municipal catalogue sources', () => {
         expect(sources.map(source => source.id)).toEqual([
             'toronto-open-data', 'montreal-open-data', 'ottawa-hub', 'vancouver-open-data',
             'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data', 'halifax-hub',
-            'hamilton-hub',
+            'hamilton-hub', 'surrey-hub',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
@@ -148,6 +148,29 @@ describe('configured municipal catalogue sources', () => {
                 url: expect.stringContaining('/open-data-licence-version-20')
             })
         }));
+    });
+
+    test('configures Surrey as an exact-publisher ArcGIS source under its portal licence', () => {
+        const surrey = getSource('surrey-hub');
+        expect(surrey).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub', upstreamHost: 'opendata-surrey.hub.arcgis.com',
+            catalogUrl: 'https://opendata-surrey.hub.arcgis.com/api/feed/dcat-us/1.1.json'
+        }));
+        expect(surrey.restrictedLicensePatterns).toEqual(expect.arrayContaining([
+            expect.any(RegExp)
+        ]));
+        expect(surrey.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                titleEn: 'Open Government License – Surrey',
+                url: expect.stringContaining('/pages/55089a19491a4fe59a41e059fd8af708'),
+                attributionEn: 'Contains information licensed under the Open Government License – City of Surrey.'
+            })
+        })]);
+        expect(surrey.placeRules).toEqual([expect.objectContaining({
+            placeId: 'sgc-csd-5915004', relationship: 'direct',
+            includesDescendants: false
+        })]);
     });
 
     test('configures Toronto as an authoritative CKAN city source', () => {

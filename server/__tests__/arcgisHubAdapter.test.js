@@ -302,6 +302,48 @@ describe('ArcGIS Hub adapter', () => {
         expect(placeholderFetch).toHaveBeenCalledTimes(1);
     });
 
+    test('applies Surrey portal terms only to exact City publisher evidence', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'SurreyGIS', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPoint', fields: [] });
+        const source = getSource('surrey-hub');
+        const cityRecord = record({
+            landingPage: 'https://opendata-surrey.hub.arcgis.com/datasets/surrey::public-art',
+            publisher: { name: 'City of Surrey' },
+            license: '<p>Constraints go here</p>'
+        });
+        const city = await adapter.enrichRecord(cityRecord, source, { fetchJson });
+
+        expect(city.status).toBe('included');
+        expect(city.value.organization.titleEn).toBe('City of Surrey');
+        expect(city.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-5915004', relationship: 'direct', includesDescendants: false
+        }));
+        expect(city.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseTitleEn: 'Open Government License – Surrey',
+            licenseUrl: expect.stringContaining('/pages/55089a19491a4fe59a41e059fd8af708'),
+            attributionEn: 'Contains information licensed under the Open Government License – City of Surrey.'
+        }));
+
+        const restricted = await adapter.enrichRecord({
+            ...cityRecord,
+            license: 'Available for personal, non-commercial use only.'
+        }, source, { fetchJson });
+        expect(restricted).toEqual({
+            status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2'
+        });
+
+        const external = await adapter.enrichRecord({
+            ...cityRecord,
+            publisher: { name: 'Ministry of Education' },
+            license: null
+        }, source, { fetchJson });
+        expect(external).toEqual({
+            status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2'
+        });
+    });
+
     test('admits only explicit Brampton CC BY or Statistics Canada records', async () => {
         const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
             ? { owner: 'Brampton', type: 'Feature Service' }

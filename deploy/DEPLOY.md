@@ -281,6 +281,7 @@ curl -s 'https://<your-domain>/api/v1/places?q=Vancouver'
 curl -s 'https://<your-domain>/api/v1/places?q=Calgary'
 curl -s 'https://<your-domain>/api/v1/places?q=Halifax'
 curl -s 'https://<your-domain>/api/v1/places?q=Hamilton'
+curl -s 'https://<your-domain>/api/v1/places?q=Surrey'
 curl -s 'https://<your-domain>/api/v1/places?q=Mississauga'
 curl -s 'https://<your-domain>/api/v1/places?q=Brampton'
 curl -s 'https://<your-domain>/api/v1/sources?place=clarington-on'
@@ -289,6 +290,7 @@ curl -s 'https://<your-domain>/api/v1/sources?place=ottawa-on'
 curl -s 'https://<your-domain>/api/v1/sources?place=vancouver-bc'
 curl -s 'https://<your-domain>/api/v1/sources?place=halifax-ns'
 curl -s 'https://<your-domain>/api/v1/sources?place=hamilton-on'
+curl -s 'https://<your-domain>/api/v1/sources?place=surrey-bc'
 # UI: search by place, open a mapped dataset, pan/zoom the live Map tab, then load its table snapshot
 ```
 

@@ -151,6 +151,33 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
+    test('features Surrey as a canonical city beneath Greater Vancouver', () => {
+        const en = [
+            { Level: '2', Code: '59', 'Class title': 'British Columbia' },
+            { Level: '3', Code: '5915', 'Class title': 'Greater Vancouver' },
+            { Level: '4', Code: '5915004', 'Class title': 'Surrey' }
+        ];
+        const fr = [
+            { Code: '59', 'Titres de classes': 'Colombie-Britannique' },
+            { Code: '5915', 'Titres de classes': 'Greater Vancouver' },
+            { Code: '5915004', 'Titres de classes': 'Surrey' }
+        ];
+        const result = normalize(en, fr);
+
+        expect(result.places.find(place => place.id === 'sgc-csd-5915004')).toEqual(
+            expect.objectContaining({
+                slug: 'surrey-bc', kind: 'municipality', parentId: 'sgc-cd-5915',
+                typeEn: 'City', typeFr: 'Ville', featured: true,
+                latitude: 49.1913, longitude: -122.849, defaultZoom: 10
+            })
+        );
+        expect(result.identifiers).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                placeId: 'sgc-csd-5915004', scheme: 'sgc-csd', value: '5915004'
+            })
+        ]));
+    });
+
     test('keeps the Halifax census division and featured regional municipality distinct', () => {
         const en = [
             { Level: '2', Code: '12', 'Class title': 'Nova Scotia' },
