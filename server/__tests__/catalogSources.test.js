@@ -5,6 +5,7 @@ describe('configured municipal catalogue sources', () => {
         expect(sources.map(source => source.id)).toEqual([
             'toronto-open-data', 'montreal-open-data', 'ottawa-hub', 'vancouver-open-data',
             'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data', 'halifax-hub',
+            'hamilton-hub',
             'oshawa-hub', 'ajax-hub', 'pickering-hub', 'whitby-hub', 'durham-hub',
             'mississauga-hub', 'brampton-hub', 'peel-hub'
         ]);
@@ -81,6 +82,29 @@ describe('configured municipal catalogue sources', () => {
             mode: 'custom-field', section: 'Licence', field: 'Licence',
             allowed: ['Open Government Licence - Winnipeg']
         }));
+    });
+
+    test('configures Hamilton as an allowlisted City publisher under its portal licence', () => {
+        const hamilton = getSource('hamilton-hub');
+        expect(hamilton).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub', upstreamHost: 'open.hamilton.ca',
+            catalogUrl: 'https://open.hamilton.ca/api/feed/dcat-us/1.1.json'
+        }));
+        expect(hamilton.publisherAliases).toHaveLength(11);
+        expect(hamilton.restrictedLicensePatterns).toEqual(expect.arrayContaining([
+            expect.any(RegExp)
+        ]));
+        expect(hamilton.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: expect.stringContaining('/open-data-licence-terms-and-conditions'),
+                attributionEn: 'Contains public sector Data made available under the City of Hamilton’s Open Data Licence'
+            })
+        })]);
+        expect(hamilton.placeRules).toEqual([expect.objectContaining({
+            placeId: 'sgc-cd-3525', relationship: 'direct',
+            includesDescendants: false
+        })]);
     });
 
     test('configures Vancouver as a record-licensed Opendatasoft city source', () => {

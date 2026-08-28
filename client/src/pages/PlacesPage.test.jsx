@@ -85,6 +85,12 @@ beforeEach(() => {
       type: { en: 'Regional municipality', fr: 'Municipalité régionale' },
       parent: { id: 'sgc-cd-1209', name: { en: 'Halifax', fr: 'Halifax' } },
       dataset_count: 327, direct_dataset_count: 327, mappable_resource_count: 196
+    },
+    {
+      id: 'sgc-cd-3525', slug: 'hamilton-on', kind: 'municipality',
+      name: { en: 'Hamilton', fr: 'Hamilton' }, type: { en: 'City', fr: 'Ville' },
+      parent: { id: 'ca-on', name: { en: 'Ontario', fr: 'Ontario' } },
+      dataset_count: 376, direct_dataset_count: 376, mappable_resource_count: 154
     }
   ] });
 });
@@ -105,6 +111,7 @@ describe('PlacesPage', () => {
     expect(screen.getAllByRole('link', { name: /Edmonton/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Winnipeg/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Halifax/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Hamilton/ })).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Clarington/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();

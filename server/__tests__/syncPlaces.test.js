@@ -285,4 +285,36 @@ describe('Statistics Canada SGC place normalization', () => {
             expect.objectContaining({ scheme: 'sgc-csd', value: '3520005' })
         ]);
     });
+
+    test('merges the City of Hamilton while disambiguating Hamilton Township', () => {
+        const en = [
+            { Level: '2', Code: '35', 'Class title': 'Ontario' },
+            { Level: '3', Code: '3514', 'Class title': 'Northumberland' },
+            { Level: '4', Code: '3514019', 'Class title': 'Hamilton' },
+            { Level: '3', Code: '3525', 'Class title': 'Hamilton' },
+            { Level: '4', Code: '3525005', 'Class title': 'Hamilton' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+
+        expect(result.places.find(place => place.id === 'sgc-csd-3514019')).toEqual(
+            expect.objectContaining({
+                slug: 'hamilton-township-on', kind: 'municipality',
+                parentId: 'sgc-cd-3514', typeEn: 'Township', typeFr: 'Canton',
+                featured: false
+            })
+        );
+        expect(result.places.find(place => place.id === 'sgc-cd-3525')).toEqual(
+            expect.objectContaining({
+                slug: 'hamilton-on', kind: 'municipality', parentId: 'ca-on',
+                typeEn: 'City', typeFr: 'Ville', featured: true,
+                latitude: 43.2557, longitude: -79.8711, defaultZoom: 9
+            })
+        );
+        expect(result.places.find(place => place.id === 'sgc-csd-3525005')).toBeUndefined();
+        expect(result.identifiers.filter(item => item.placeId === 'sgc-cd-3525')).toEqual([
+            expect.objectContaining({ scheme: 'sgc-cd', value: '3525' }),
+            expect.objectContaining({ scheme: 'sgc-csd', value: '3525005' })
+        ]);
+    });
 });

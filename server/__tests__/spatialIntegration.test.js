@@ -378,4 +378,102 @@ spatialDescribe('PostGIS viewport integration', () => {
             { slug: 'halifax-ns-1209034', place_id: 'sgc-csd-1209034' }
         ]);
     });
+
+    test('migration canonicalizes the City of Hamilton and preserves the township', async () => {
+        // Recreate the three generic SGC rows present before migration 019,
+        // including references to the duplicate City subdivision.
+        await client.query(`
+            DELETE FROM place_aliases
+            WHERE slug IN (
+                'hamilton-on-3514019', 'hamilton-on-3525',
+                'hamilton-on-3525005', 'sgc-csd-3525005'
+            )
+        `);
+        await client.query("UPDATE places SET slug = 'hamilton-on-3525' WHERE id = 'sgc-cd-3525'");
+        await client.query("UPDATE places SET slug = 'hamilton-on' WHERE id = 'sgc-csd-3514019'");
+        await client.query(`
+            INSERT INTO places (
+                id, slug, kind, name_en, name_fr, type_en, type_fr,
+                parent_id, enabled, featured
+            ) VALUES (
+                'sgc-csd-3525005', 'hamilton-on-3525005', 'municipality',
+                'Hamilton', 'Hamilton', 'Municipality', 'Municipalité',
+                'sgc-cd-3525', true, false
+            )
+        `);
+        await client.query(`
+            DELETE FROM place_identifiers
+            WHERE scheme = 'sgc-csd' AND vintage = '2021' AND value = '3525005'
+        `);
+        await client.query(`
+            INSERT INTO place_identifiers (place_id, scheme, vintage, value)
+            VALUES ('sgc-csd-3525005', 'sgc-csd', '2021', '3525005')
+        `);
+        await client.query("UPDATE organizations SET place_id = 'sgc-csd-3525005' WHERE id = $1", [orgId]);
+        await client.query(`
+            INSERT INTO dataset_places (
+                source_id, dataset_id, place_id, relationship,
+                includes_descendants, assignment_method
+            ) VALUES ('open-canada', $1, 'sgc-csd-3525005', 'direct', false, 'source')
+        `, [datasetId]);
+
+        const migration = fs.readFileSync(path.join(
+            __dirname, '..', 'sql', 'migrations', '019_hamilton_place.sql'
+        ), 'utf8');
+        await client.query(migration);
+        await client.query(migration);
+
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN ('sgc-csd-3514019', 'sgc-cd-3525', 'sgc-csd-3525005')
+            ORDER BY id
+        `);
+        expect(places.rows).toEqual([
+            expect.objectContaining({
+                id: 'sgc-cd-3525', slug: 'hamilton-on', kind: 'municipality',
+                parent_id: 'ca-on', type_en: 'City', type_fr: 'Ville', featured: true,
+                latitude: 43.2557, longitude: -79.8711, default_zoom: 9
+            }),
+            expect.objectContaining({
+                id: 'sgc-csd-3514019', slug: 'hamilton-township-on',
+                kind: 'municipality', parent_id: 'sgc-cd-3514',
+                type_en: 'Township', type_fr: 'Canton', featured: false
+            })
+        ]);
+
+        const identifiers = await client.query(`
+            SELECT scheme, value FROM place_identifiers
+            WHERE place_id = 'sgc-cd-3525' ORDER BY scheme
+        `);
+        expect(identifiers.rows).toEqual([
+            { scheme: 'sgc-cd', value: '3525' },
+            { scheme: 'sgc-csd', value: '3525005' }
+        ]);
+
+        const aliases = await client.query(`
+            SELECT slug, place_id FROM place_aliases
+            WHERE slug LIKE 'hamilton-on-%' OR slug = 'sgc-csd-3525005'
+            ORDER BY slug
+        `);
+        expect(aliases.rows).toEqual([
+            { slug: 'hamilton-on-3514019', place_id: 'sgc-csd-3514019' },
+            { slug: 'hamilton-on-3525', place_id: 'sgc-cd-3525' },
+            { slug: 'hamilton-on-3525005', place_id: 'sgc-cd-3525' },
+            { slug: 'sgc-csd-3525005', place_id: 'sgc-cd-3525' }
+        ]);
+
+        const references = await client.query(`
+            SELECT o.place_id,
+                   EXISTS (
+                       SELECT 1 FROM dataset_places dp
+                       WHERE dp.dataset_id = $2 AND dp.place_id = 'sgc-cd-3525'
+                   ) AS dataset_moved
+            FROM organizations o WHERE o.id = $1
+        `, [orgId, datasetId]);
+        expect(references.rows).toEqual([{
+            place_id: 'sgc-cd-3525', dataset_moved: true
+        }]);
+    });
 });

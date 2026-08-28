@@ -118,6 +118,31 @@ const HALIFAX_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Halifax.'
 };
 
+const HAMILTON_LICENSE = {
+    titleEn: 'City of Hamilton Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville de Hamilton',
+    url: 'https://www.hamilton.ca/city-council/data-maps/open-data/open-data-licence-terms-and-conditions',
+    attributionEn: 'Contains public sector Data made available under the City of Hamilton’s Open Data Licence',
+    attributionFr: 'Contient des données du secteur public fournies selon la licence de données ouvertes de la Ville de Hamilton.'
+};
+
+// The feed currently publishes the City itself plus these exact department
+// paths. Keep the allowlist fail-closed: an unfamiliar publisher string must be
+// reviewed before portal-wide City terms can be applied to it.
+const HAMILTON_PUBLISHER_PATTERNS = [
+    /^city of hamilton$/i,
+    /^city of hamilton;\s*corporate services;\s*information technology$/i,
+    /^city of hamilton;\s*planning and economic development;\s*planning$/i,
+    /^city of hamilton;\s*public works;\s*transportation operations & maintenance$/i,
+    /^city of hamilton,\s*corporate services,\s*information technology,\s*business applications,\s*spatial solutions and data services$/i,
+    /^city of hamilton;\s*public works;\s*hamilton water$/i,
+    /^city of hamilton;\s*public works;\s*engineering services$/i,
+    /^city of hamilton;\s*planning and economic development;\s*transportation planning and parking$/i,
+    /^city of hamilton;\s*public works;\s*environmental services$/i,
+    /^city of hamilton;\s*planning and economic development;\s*parking and by-law services$/i,
+    /^city of hamilton;;$/i
+];
+
 const MISSISSAUGA_LICENSE = {
     titleEn: 'City of Mississauga Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
@@ -432,6 +457,35 @@ const sources = [{
         includesDescendants: false
     }]
 }, {
+    id: 'hamilton-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'City of Hamilton Open Data',
+    nameFr: 'Données ouvertes de la Ville de Hamilton',
+    homepageUrl: 'https://open.hamilton.ca/',
+    catalogUrl: 'https://open.hamilton.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'open.hamilton.ca',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
+    publisherAliases: HAMILTON_PUBLISHER_PATTERNS.map(publisher => ({
+        publisher, name: 'City of Hamilton'
+    })),
+    authoritativePublishers: [{ publisher: /^city of hamilton$/i }],
+    // The official licence governs the open-data catalogue. Apply it only
+    // after an exact configured City/department publisher match and after the
+    // restricted-terms check above.
+    licenseRules: [{
+        publisher: /^city of hamilton$/i,
+        license: HAMILTON_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^city of hamilton$/i,
+        placeId: 'sgc-cd-3525',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Oshawa Open Data Hub',
@@ -687,6 +741,7 @@ module.exports = {
     EDMONTON_LICENSE,
     WINNIPEG_LICENSE,
     HALIFAX_LICENSE,
+    HAMILTON_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,

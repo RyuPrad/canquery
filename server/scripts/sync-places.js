@@ -10,9 +10,16 @@ const PROVINCES = {
     '46': 'mb', '47': 'sk', '48': 'ab', '59': 'bc', '60': 'yt', '61': 'nt', '62': 'nu'
 };
 const TERRITORIES = new Set(['60', '61', '62']);
+const SINGLE_TIER_CITY_CSD = {
+    '3506008': 'sgc-cd-3506',
+    '3520005': 'sgc-cd-3520',
+    '3525005': 'sgc-cd-3525'
+};
+const SINGLE_TIER_CITY_CD = new Set(['3506', '3520', '3525']);
 const FEATURED_PLACE_IDS = new Set([
     'sgc-cd-3506',
     'sgc-cd-3520',
+    'sgc-cd-3525',
     'ca-on-durham',
     'sgc-csd-3518005',
     'sgc-csd-3518039',
@@ -35,6 +42,7 @@ const FEATURED_PLACE_IDS = new Set([
 ]);
 const MUNICIPAL_TYPES = {
     '2466023': ['City', 'Ville'],
+    '3514019': ['Township', 'Canton'],
     '3518005': ['Town', 'Ville'],
     '3518039': ['Township', 'Canton'],
     '3518017': ['Municipality', 'Municipalité'],
@@ -55,6 +63,7 @@ const MUNICIPAL_TYPES = {
 const PLACE_VIEWPORTS = {
     '2466023': [45.5019, -73.5674, 10],
     '3506': [45.4215, -75.6972, 9],
+    '3525': [43.2557, -79.8711, 9],
     '3518': [44.0569, -78.8570, 9],
     '3518013': [43.8971, -78.8658, 11],
     '3520': [43.6532, -79.3832, 10],
@@ -98,11 +107,11 @@ function normalize(enRows, frRows) {
         const fr = frByCode.get(code) || {};
         const nameEn = String(row['Class title'] || '').trim();
         const nameFr = String(fr['Titres de classes'] || nameEn).trim();
-        // Ottawa and Toronto are each simultaneously a census division and a
-        // census subdivision. Keep both official identifiers while exposing
-        // one canonical single-tier city for each.
-        if (level === 4 && ['3506008', '3520005'].includes(code)) {
-            const placeId = code === '3506008' ? 'sgc-cd-3506' : 'sgc-cd-3520';
+        // Ottawa, Toronto and Hamilton are each simultaneously a census
+        // division and a census subdivision. Keep both official identifiers
+        // while exposing one canonical single-tier city for each.
+        if (level === 4 && SINGLE_TIER_CITY_CSD[code]) {
+            const placeId = SINGLE_TIER_CITY_CSD[code];
             identifiers.push({ placeId, scheme: 'sgc-csd', vintage: '2021', value: code });
             continue;
         }
@@ -117,11 +126,11 @@ function normalize(enRows, frRows) {
             baseSlug = slugify(nameEn);
         } else if (level === 3) {
             id = code === '3518' ? 'ca-on-durham' : 'sgc-cd-' + code;
-            kind = ['3506', '3520'].includes(code) ? 'municipality' : 'region';
+            kind = SINGLE_TIER_CITY_CD.has(code) ? 'municipality' : 'region';
             parentId = code.slice(0, 2) === '35' ? 'ca-on' : 'sgc-pr-' + code.slice(0, 2);
             scheme = 'sgc-cd';
-            typeEn = ['3506', '3520'].includes(code) ? 'City' : 'Census division';
-            typeFr = ['3506', '3520'].includes(code) ? 'Ville' : 'Division de recensement';
+            typeEn = SINGLE_TIER_CITY_CD.has(code) ? 'City' : 'Census division';
+            typeFr = SINGLE_TIER_CITY_CD.has(code) ? 'Ville' : 'Division de recensement';
             baseSlug = slugify(nameEn) + '-' + provinceAbbr;
         } else {
             id = code === '3518013' ? 'ca-on-oshawa' : 'sgc-csd-' + code;
@@ -142,7 +151,9 @@ function normalize(enRows, frRows) {
         if (code === '2466') slug = 'montreal-region-qc';
         if (code === '2466023') slug = 'montreal-qc';
         if (code === '3506') slug = 'ottawa-on';
+        if (code === '3514019') slug = 'hamilton-township-on';
         if (code === '3520') slug = 'toronto-on';
+        if (code === '3525') slug = 'hamilton-on';
         if (code === '3518013') slug = 'oshawa-on';
         if (code === '3518') {
             typeEn = 'Regional municipality';

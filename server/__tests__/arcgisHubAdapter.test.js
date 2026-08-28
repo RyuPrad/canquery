@@ -249,6 +249,59 @@ describe('ArcGIS Hub adapter', () => {
         expect(externalFetch).toHaveBeenCalledTimes(1);
     });
 
+    test('admits only allowlisted Hamilton City department publishers', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'Hamilton_Open_Data', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolyline', fields: [] });
+        const source = getSource('hamilton-hub');
+        const cityRecord = record({
+            landingPage: 'https://open.hamilton.ca/datasets/SpatialSolutions::roads',
+            publisher: { name: 'City of Hamilton;Public Works;Hamilton Water' },
+            license: null
+        });
+        const city = await adapter.enrichRecord(cityRecord, source, { fetchJson });
+
+        expect(city.status).toBe('included');
+        expect(city.value.organization.titleEn).toBe('City of Hamilton');
+        expect(city.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-cd-3525', relationship: 'direct', includesDescendants: false
+        }));
+        expect(city.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseTitleEn: 'City of Hamilton Open Data Licence',
+            licenseUrl: expect.stringContaining('/open-data-licence-terms-and-conditions'),
+            attributionEn: 'Contains public sector Data made available under the City of Hamilton’s Open Data Licence'
+        }));
+
+        const restricted = await adapter.enrichRecord({
+            ...cityRecord,
+            license: 'Available for personal, non-commercial use only.'
+        }, source, { fetchJson });
+        expect(restricted).toEqual({
+            status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2'
+        });
+
+        const unfamiliar = await adapter.enrichRecord({
+            ...cityRecord,
+            publisher: { name: 'City of Hamilton;External Partner' }
+        }, source, { fetchJson });
+        expect(unfamiliar).toEqual({
+            status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2'
+        });
+
+        const placeholderFetch = jest.fn(async () => ({
+            owner: 'ExternalPublisher', type: 'Feature Service'
+        }));
+        const placeholder = await adapter.enrichRecord({
+            ...cityRecord,
+            publisher: { name: '{{source}}' }
+        }, source, { fetchJson: placeholderFetch });
+        expect(placeholder).toEqual({
+            status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2'
+        });
+        expect(placeholderFetch).toHaveBeenCalledTimes(1);
+    });
+
     test('admits only explicit Brampton CC BY or Statistics Canada records', async () => {
         const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
             ? { owner: 'Brampton', type: 'Feature Service' }
