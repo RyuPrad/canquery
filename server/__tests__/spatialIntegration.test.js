@@ -476,4 +476,52 @@ spatialDescribe('PostGIS viewport integration', () => {
             place_id: 'sgc-cd-3525', dataset_moved: true
         }]);
     });
+
+    test('migration seeds canonical featured Surrey ancestry idempotently', async () => {
+        await client.query(`
+            UPDATE places
+            SET type_en = 'Municipality', type_fr = 'Municipalité',
+                featured = false, latitude = NULL, longitude = NULL,
+                default_zoom = NULL
+            WHERE id = 'sgc-csd-5915004'
+        `);
+        const migration = fs.readFileSync(path.join(
+            __dirname, '..', 'sql', 'migrations', '020_surrey_place.sql'
+        ), 'utf8');
+        await client.query(migration);
+        await client.query(migration);
+
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN ('sgc-pr-59', 'sgc-cd-5915', 'sgc-csd-5915004')
+            ORDER BY CASE id
+                WHEN 'sgc-pr-59' THEN 1 WHEN 'sgc-cd-5915' THEN 2 ELSE 3 END
+        `);
+        expect(places.rows).toEqual([
+            expect.objectContaining({
+                id: 'sgc-pr-59', slug: 'british-columbia', kind: 'province',
+                parent_id: 'ca', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-cd-5915', slug: 'greater-vancouver-bc', kind: 'region',
+                parent_id: 'sgc-pr-59', featured: false
+            }),
+            expect.objectContaining({
+                id: 'sgc-csd-5915004', slug: 'surrey-bc', kind: 'municipality',
+                parent_id: 'sgc-cd-5915', type_en: 'City', type_fr: 'Ville',
+                featured: true, latitude: 49.1913, longitude: -122.849,
+                default_zoom: 10
+            })
+        ]);
+
+        const identifier = await client.query(`
+            SELECT place_id, scheme, value FROM place_identifiers
+            WHERE scheme = 'sgc-csd' AND vintage = '2021' AND value = '5915004'
+        `);
+        expect(identifier.rows).toEqual([{
+            place_id: 'sgc-csd-5915004', scheme: 'sgc-csd', value: '5915004'
+        }]);
+    });
 });

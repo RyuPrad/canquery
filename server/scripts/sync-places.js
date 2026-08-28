@@ -38,7 +38,8 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-csd-4806016',
     'sgc-csd-4811061',
     'sgc-csd-4611040',
-    'sgc-csd-1209034'
+    'sgc-csd-1209034',
+    'sgc-csd-5915004'
 ]);
 const MUNICIPAL_TYPES = {
     '2466023': ['City', 'Ville'],
@@ -58,7 +59,8 @@ const MUNICIPAL_TYPES = {
     '4806016': ['City', 'Ville'],
     '4811061': ['City', 'Ville'],
     '4611040': ['City', 'Ville'],
-    '1209034': ['Regional municipality', 'Municipalité régionale']
+    '1209034': ['Regional municipality', 'Municipalité régionale'],
+    '5915004': ['City', 'Ville']
 };
 const PLACE_VIEWPORTS = {
     '2466023': [45.5019, -73.5674, 10],
@@ -75,7 +77,8 @@ const PLACE_VIEWPORTS = {
     '4806016': [51.0447, -114.0719, 9],
     '4811061': [53.5461, -113.4938, 9],
     '4611040': [49.8954, -97.1385, 9],
-    '1209034': [44.6488, -63.5752, 8]
+    '1209034': [44.6488, -63.5752, 8],
+    '5915004': [49.1913, -122.8490, 10]
 };
 
 function slugify(value) {
