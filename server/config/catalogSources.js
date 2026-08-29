@@ -57,7 +57,7 @@ const ONTARIO_LICENSE = {
 const TORONTO_LICENSE = {
     titleEn: 'Open Government Licence – Toronto',
     titleFr: 'Licence du gouvernement ouvert – Toronto',
-    url: 'https://open.toronto.ca/open-data-license/',
+    url: 'https://open.toronto.ca/open-data-licence/',
     attributionEn: 'Contains information licensed under the Open Government Licence – Toronto.',
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Toronto.'
 };
@@ -661,23 +661,20 @@ const sources = [{
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     publisherAliases: [
-        { publisher: /^city of ottawa$/i, name: 'City of Ottawa' },
-        { publisher: /^ottawa police service$/i, name: 'Ottawa Police Service' },
-        { publisher: /^{{source}}$/i, name: 'City of Ottawa' }
+        { publisher: /^city of ottawa$/i, name: 'City of Ottawa' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of ottawa$/i },
-        { publisher: /^ottawa police service$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^city of ottawa$/i }],
+    // The City licence applies portal-wide. Explicit Ottawa Police licence
+    // evidence wins first so those records retain their own attribution.
     licenseRules: [
-        { publisher: /^ottawa police service$/i, license: OTTAWA_POLICE_LICENSE },
-        { licensePattern: /data\.ottawapolice\.ca\/pages\/open-data-licence/i, license: OTTAWA_POLICE_LICENSE },
-        { publisher: /^city of ottawa$/i, license: OTTAWA_LICENSE },
-        { publisher: /^{{source}}$/i, license: OTTAWA_LICENSE }
+        {
+            licensePattern: /data\.ottawapolice\.ca\/pages\/open-data-licence/i,
+            license: OTTAWA_POLICE_LICENSE
+        },
+        { publisher: /^city of ottawa$/i, license: OTTAWA_LICENSE }
     ],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of ottawa$/i,
         placeId: 'sgc-cd-3506',
         relationship: 'direct',
         includesDescendants: false
@@ -688,30 +685,32 @@ const sources = [{
     nameEn: 'City of Vancouver Open Data',
     nameFr: 'Données ouvertes de la Ville de Vancouver',
     homepageUrl: 'https://opendata.vancouver.ca/',
-    catalogUrl: 'https://opendata.vancouver.ca',
+    catalogUrl: 'https://opendata.vancouver.ca/api/explore/v2.1',
+    upstreamHost: 'opendata.vancouver.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     metadataLanguage: 'en',
-    licenseMode: 'record-explicit',
     timezone: 'America/Vancouver',
-    upstreamHost: 'opendata.vancouver.ca',
-    authoritativePublishers: [
-        { publisher: /^city of vancouver$/i },
-        { publisher: /^{{source}}$/i }
-    ],
-    publisherAliases: [
-        { publisher: /^city of vancouver$/i, name: 'City of Vancouver' },
-        { publisher: /^{{source}}$/i, name: 'City of Vancouver' }
-    ],
+    defaultOrganizationId: 'city-of-vancouver',
+    defaultOrganizationName: 'city-of-vancouver',
+    defaultOrganizationTitleEn: 'City of Vancouver',
+    defaultOrganizationTitleFr: 'Ville de Vancouver',
+    defaultLicenseTitleEn: VANCOUVER_LICENSE.titleEn,
+    defaultLicenseTitleFr: VANCOUVER_LICENSE.titleFr,
+    defaultLicenseUrl: VANCOUVER_LICENSE.url,
+    defaultAttributionEn: VANCOUVER_LICENSE.attributionEn,
+    defaultAttributionFr: VANCOUVER_LICENSE.attributionFr,
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^city of vancouver$/i }],
     licenseRules: [{
         publisher: /^city of vancouver$/i,
-        licenseTitle: /^open government licence\s*[-–—]\s*vancouver$/i,
-        licenseUrl: /^https?:\/\/opendata\.vancouver\.ca\/pages\/licence\/?$/i,
+        licenseTitle: /^open government licence\s*[-–]\s*vancouver$/i,
+        licenseUrl: /^https:\/\/opendata\.vancouver\.ca\/pages\/licence\/?$/i,
         license: VANCOUVER_LICENSE
     }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of vancouver$/i,
         placeId: 'sgc-csd-5915022',
         relationship: 'direct',
         includesDescendants: false
@@ -719,15 +718,16 @@ const sources = [{
 }, {
     id: 'calgary-open-data',
     kind: 'socrata',
-    nameEn: 'Open Calgary',
+    nameEn: 'City of Calgary Open Data',
     nameFr: 'Données ouvertes de la Ville de Calgary',
     homepageUrl: 'https://data.calgary.ca/',
-    catalogUrl: 'https://data.calgary.ca',
+    catalogUrl: 'https://data.calgary.ca/api/catalog/v1',
+    upstreamHost: 'data.calgary.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    placeId: 'sgc-csd-4806016',
     metadataLanguage: 'en',
+    placeId: 'sgc-csd-4806016',
     defaultOrganizationId: 'city-of-calgary',
     defaultOrganizationName: 'city-of-calgary',
     defaultOrganizationTitleEn: 'City of Calgary',
@@ -739,21 +739,15 @@ const sources = [{
     defaultAttributionFr: CALGARY_LICENSE.attributionFr,
     socrataPolicy: {
         publisher: {
-            mode: 'custom-field',
-            section: 'Open Calgary',
-            field: 'Publishing Department',
+            mode: 'custom-field', section: 'Data Supplier', field: 'Organization',
             allowed: ['The City of Calgary']
         },
         license: {
-            mode: 'custom-field',
-            section: 'Open Calgary',
-            field: 'Terms of Use',
-            comparison: 'url',
+            mode: 'custom-field', section: 'License/Attribution',
+            fields: ['License URL', 'License-URL'], comparison: 'url',
             allowed: [
-                'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/u45n-7awa/',
-                'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/u45n-7awa',
-                'https://data.calgary.ca/stories/s/Open-Data-Terms-of-Use/mhr5-yyvw',
-                'https://data.calgary.ca/stories/s/Open-Data-Terms-of-Use/mhr5-yyvw/'
+                'https://data.calgary.ca/d/Open-Data-Terms/u45n-7awa',
+                'https://data.calgary.ca/stories/s/u45n-7awa/'
             ]
         }
     }
@@ -763,12 +757,13 @@ const sources = [{
     nameEn: 'City of Edmonton Open Data',
     nameFr: 'Données ouvertes de la Ville d’Edmonton',
     homepageUrl: 'https://data.edmonton.ca/',
-    catalogUrl: 'https://data.edmonton.ca',
+    catalogUrl: 'https://data.edmonton.ca/api/catalog/v1',
+    upstreamHost: 'data.edmonton.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    placeId: 'sgc-csd-4811061',
     metadataLanguage: 'en',
+    placeId: 'sgc-csd-4811061',
     defaultOrganizationId: 'city-of-edmonton',
     defaultOrganizationName: 'city-of-edmonton',
     defaultOrganizationTitleEn: 'City of Edmonton',
@@ -781,16 +776,11 @@ const sources = [{
     socrataPolicy: {
         publisher: {
             mode: 'attribution',
-            allowed: [
-                'City of Edmonton',
-                'The City of Edmonton'
-            ]
+            allowed: ['City of Edmonton', 'The City of Edmonton']
         },
         license: {
             mode: 'view-license-name',
-            allowed: [
-                'See Terms of Use'
-            ]
+            allowed: ['See Terms of Use']
         }
     }
 }, {
@@ -799,12 +789,13 @@ const sources = [{
     nameEn: 'City of Winnipeg Open Data',
     nameFr: 'Données ouvertes de la Ville de Winnipeg',
     homepageUrl: 'https://data.winnipeg.ca/',
-    catalogUrl: 'https://data.winnipeg.ca',
+    catalogUrl: 'https://data.winnipeg.ca/api/catalog/v1',
+    upstreamHost: 'data.winnipeg.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    placeId: 'sgc-csd-4611040',
     metadataLanguage: 'en',
+    placeId: 'sgc-csd-4611040',
     defaultOrganizationId: 'city-of-winnipeg',
     defaultOrganizationName: 'city-of-winnipeg',
     defaultOrganizationTitleEn: 'City of Winnipeg',
@@ -816,27 +807,19 @@ const sources = [{
     defaultAttributionFr: WINNIPEG_LICENSE.attributionFr,
     socrataPolicy: {
         publisher: {
-            mode: 'attribution',
-            allowBlank: true,
-            allowed: [
-                'City of Winnipeg',
-                'Winnipeg Transit'
-            ]
+            mode: 'attribution', allowBlank: true,
+            allowed: ['City of Winnipeg', 'Winnipeg Transit', 'Public Works', 'City Clerks']
         },
         license: {
-            mode: 'custom-field',
-            section: 'Licence',
-            field: 'Licence',
-            allowed: [
-                'Open Government Licence - Winnipeg'
-            ]
+            mode: 'custom-field', section: 'Licence', field: 'Licence',
+            allowed: ['Open Government Licence - Winnipeg']
         }
     }
 }, {
     id: 'halifax-hub',
     kind: 'arcgis-hub',
-    nameEn: 'Halifax Open Data',
-    nameFr: 'Données ouvertes de la Ville d’Halifax',
+    nameEn: 'Halifax Regional Municipality Open Data',
+    nameFr: 'Données ouvertes de la municipalité régionale d’Halifax',
     homepageUrl: 'https://data-hrm.hub.arcgis.com/',
     catalogUrl: 'https://data-hrm.hub.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data-hrm.hub.arcgis.com',
@@ -845,37 +828,18 @@ const sources = [{
     maxDeleteFraction: 0.1,
     restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^halifax regional municipality$/i, name: 'Halifax Regional Municipality' },
-        { publisher: /^halifax$/i, name: 'Halifax Regional Municipality' },
-        { publisher: /^hrm$/i, name: 'Halifax Regional Municipality' }
+        { publisher: /^halifax regional municipality$/i, name: 'Halifax Regional Municipality' }
     ],
-    authoritativePublishers: [
-        { publisher: /^halifax regional municipality$/i },
-        { publisher: /^halifax$/i },
-        { publisher: /^hrm$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^halifax regional municipality$/i }],
+    // The official Halifax licence applies portal-wide, but only exact HRM
+    // publisher evidence is admitted. Placeholder and external records remain
+    // fail-closed, and explicit restricted terms are checked first.
     licenseRules: [{
         publisher: /^halifax regional municipality$/i,
-        license: HALIFAX_LICENSE
-    }, {
-        publisher: /^halifax$/i,
-        license: HALIFAX_LICENSE
-    }, {
-        publisher: /^hrm$/i,
         license: HALIFAX_LICENSE
     }],
     placeRules: [{
         publisher: /^halifax regional municipality$/i,
-        placeId: 'sgc-csd-1209034',
-        relationship: 'direct',
-        includesDescendants: false
-    }, {
-        publisher: /^halifax$/i,
-        placeId: 'sgc-csd-1209034',
-        relationship: 'direct',
-        includesDescendants: false
-    }, {
-        publisher: /^hrm$/i,
         placeId: 'sgc-csd-1209034',
         relationship: 'direct',
         includesDescendants: false
@@ -892,19 +856,19 @@ const sources = [{
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
-    publisherAliases: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
-        publisher: pattern,
-        name: 'City of Hamilton'
+    publisherAliases: HAMILTON_PUBLISHER_PATTERNS.map(publisher => ({
+        publisher, name: 'City of Hamilton'
     })),
-    authoritativePublishers: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
-        publisher: pattern
-    })),
-    licenseRules: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
-        publisher: pattern,
+    authoritativePublishers: [{ publisher: /^city of hamilton$/i }],
+    // The official licence governs the open-data catalogue. Apply it only
+    // after an exact configured City/department publisher match and after the
+    // restricted-terms check above.
+    licenseRules: [{
+        publisher: /^city of hamilton$/i,
         license: HAMILTON_LICENSE
-    })),
+    }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of hamilton$/i,
         placeId: 'sgc-cd-3525',
         relationship: 'direct',
         includesDescendants: false
@@ -914,7 +878,7 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'City of Surrey Open Data',
     nameFr: 'Données ouvertes de la Ville de Surrey',
-    homepageUrl: 'https://data.surrey.ca/',
+    homepageUrl: 'https://opendata-surrey.hub.arcgis.com/',
     catalogUrl: 'https://opendata-surrey.hub.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'opendata-surrey.hub.arcgis.com',
     enabled: true,
@@ -924,9 +888,11 @@ const sources = [{
     publisherAliases: [
         { publisher: /^city of surrey$/i, name: 'City of Surrey' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of surrey$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^city of surrey$/i }],
+    // Surrey's official open-data page applies this licence portal-wide. Keep
+    // admission tied to exact City publisher evidence; generic ArcGIS
+    // placeholder text is not a restriction, while explicit restrictive terms
+    // and external publishers still fail closed.
     licenseRules: [{
         publisher: /^city of surrey$/i,
         license: SURREY_LICENSE
@@ -940,122 +906,103 @@ const sources = [{
 }, {
     id: 'oshawa-hub',
     kind: 'arcgis-hub',
-    nameEn: 'City of Oshawa Open Data',
-    nameFr: 'Données ouvertes de la Ville d’Oshawa',
-    homepageUrl: 'https://open-data-oshawa.hub.arcgis.com/',
-    catalogUrl: 'https://open-data-oshawa.hub.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open-data-oshawa.hub.arcgis.com',
+    nameEn: 'City of Oshawa Open Data Hub',
+    nameFr: 'Portail de données ouvertes de la Ville d’Oshawa',
+    homepageUrl: 'https://city-oshawa.opendata.arcgis.com/',
+    catalogUrl: 'https://city-oshawa.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'city-oshawa.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^(the corporation of the )?city of oshawa$/i, name: 'City of Oshawa' },
-        { publisher: /^oshawa$/i, name: 'City of Oshawa' }
+        { publisher: DURHAM_PUBLISHER, name: 'Regional Municipality of Durham' }
     ],
-    authoritativePublishers: [
-        { publisher: /^(the corporation of the )?city of oshawa$/i },
-        { publisher: /^oshawa$/i }
-    ],
+    authoritativePublishers: [{ publisher: /city of oshawa/i }],
     licenseRules: [
-        { publisher: /^(the corporation of the )?city of oshawa$/i, license: OSHAWA_LICENSE },
-        { publisher: /^oshawa$/i, license: OSHAWA_LICENSE },
+        { publisher: /city of oshawa/i, license: OSHAWA_LICENSE },
         ...regionalRules.licenseRules
     ],
     placeRules: [
-        { publisher: /^(the corporation of the )?city of oshawa$/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
-        { publisher: /^oshawa$/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
+        { publisher: /city of oshawa/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
         ...regionalRules.placeRules
     ]
 }, {
     id: 'ajax-hub',
     kind: 'arcgis-hub',
-    nameEn: 'Town of Ajax Open Data',
-    nameFr: 'Données ouvertes de la Ville d’Ajax',
-    homepageUrl: 'https://open-data-ajax.opendata.arcgis.com/',
-    catalogUrl: 'https://open-data-ajax.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open-data-ajax.opendata.arcgis.com',
+    nameEn: 'Town of Ajax Open Data Portal',
+    nameFr: 'Portail de données ouvertes de la Ville d’Ajax',
+    homepageUrl: 'https://opendata.ajax.ca/',
+    catalogUrl: 'https://opendata.ajax.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata.ajax.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^town of ajax$/i, name: 'Town of Ajax' },
-        { publisher: /^ajax$/i, name: 'Town of Ajax' }
+        { publisher: /^(the corporation of the )?town of ajax$/i, name: 'Town of Ajax' }
     ],
-    authoritativePublishers: [
-        { publisher: /^town of ajax$/i },
-        { publisher: /^ajax$/i }
-    ],
-    licenseRules: [
-        { publisher: /^town of ajax$/i, license: AJAX_LICENSE },
-        { publisher: /^ajax$/i, license: AJAX_LICENSE },
-        ...regionalRules.licenseRules
-    ],
-    placeRules: [
-        { publisher: /^town of ajax$/i, placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false },
-        { publisher: /^ajax$/i, placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false },
-        ...regionalRules.placeRules
-    ]
+    authoritativePublishers: [{ publisher: /town of ajax/i }],
+    licenseRules: [{ publisher: /town of ajax/i, license: AJAX_LICENSE }],
+    placeRules: [{
+        publisher: /town of ajax/i,
+        placeId: 'sgc-csd-3518005',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
 }, {
     id: 'pickering-hub',
     kind: 'arcgis-hub',
-    nameEn: 'City of Pickering Open Data',
-    nameFr: 'Données ouvertes de la Ville de Pickering',
-    homepageUrl: 'https://data.pickering.ca/',
-    catalogUrl: 'https://data.pickering.ca/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'data.pickering.ca',
+    nameEn: 'City of Pickering Open Data Portal',
+    nameFr: 'Portail de données ouvertes de la Ville de Pickering',
+    homepageUrl: 'https://opendata.pickering.ca/',
+    catalogUrl: 'https://opendata.pickering.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata.pickering.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^(the corporation of the )?city of pickering$/i, name: 'City of Pickering' },
-        { publisher: /^pickering$/i, name: 'City of Pickering' }
+        { publisher: /^(the )?city of pickering$/i, name: 'City of Pickering' },
+        { publisher: /^opendata_cityofpickering$/i, name: 'City of Pickering' },
+        { publisher: DURHAM_PUBLISHER, name: 'Regional Municipality of Durham' }
     ],
-    authoritativePublishers: [
-        { publisher: /^(the corporation of the )?city of pickering$/i },
-        { publisher: /^pickering$/i }
-    ],
+    authoritativePublishers: [{ publisher: /city of pickering/i }],
     licenseRules: [
-        { publisher: /^(the corporation of the )?city of pickering$/i, license: PICKERING_LICENSE },
-        { publisher: /^pickering$/i, license: PICKERING_LICENSE },
+        { publisher: /city of pickering/i, license: PICKERING_LICENSE },
         ...regionalRules.licenseRules
     ],
     placeRules: [
-        { publisher: /^(the corporation of the )?city of pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
-        { publisher: /^pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
+        {
+            publisher: /city of pickering/i,
+            placeId: 'sgc-csd-3518001',
+            relationship: 'direct',
+            includesDescendants: false
+        },
         ...regionalRules.placeRules
     ]
 }, {
     id: 'whitby-hub',
     kind: 'arcgis-hub',
-    nameEn: 'Town of Whitby Open Data',
-    nameFr: 'Données ouvertes de la Ville de Whitby',
-    homepageUrl: 'https://opendata.whitby.ca/',
-    catalogUrl: 'https://opendata.whitby.ca/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'opendata.whitby.ca',
+    nameEn: 'Town of Whitby GeoHub',
+    nameFr: 'Géoportail de la Ville de Whitby',
+    homepageUrl: 'https://geohub-whitby.hub.arcgis.com/',
+    catalogUrl: 'https://geohub-whitby.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'geohub-whitby.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     licenseMode: 'record-explicit',
-    restrictedLicensePatterns: [/custom\s+license/i, /terms\s+of\s+use/i, /copyright/i],
+    restrictedLicensePatterns: [/personal,?\s+non-commercial/i],
     publisherAliases: [
-        { publisher: /^(the corporation of the )?town of whitby$/i, name: 'Town of Whitby' },
-        { publisher: /^whitby$/i, name: 'Town of Whitby' }
+        { publisher: /^(the corporation of the )?town of whitby$/i, name: 'Town of Whitby' }
     ],
-    authoritativePublishers: [
-        { publisher: /^(the corporation of the )?town of whitby$/i },
-        { publisher: /^whitby$/i }
-    ],
-    licenseRules: [
-        {
-            licensePattern: /open\s+government\s+licen[cs]e/i,
-            license: WHITBY_LICENSE
-        }
-    ],
+    authoritativePublishers: [{ publisher: /town of whitby/i }],
+    licenseRules: [{
+        publisher: /town of whitby/i,
+        licensePattern: /(223810efc31c40b3aff99dd74f809a97|open government licen[cs]e)/i,
+        license: WHITBY_LICENSE
+    }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /town of whitby/i,
         placeId: 'sgc-csd-3518009',
         relationship: 'direct',
         includesDescendants: false
@@ -1063,86 +1010,67 @@ const sources = [{
 }, {
     id: 'durham-hub',
     kind: 'arcgis-hub',
-    nameEn: 'Durham Region Open Data',
-    nameFr: 'Données ouvertes de la région de Durham',
-    homepageUrl: 'https://open-data-durham.opendata.arcgis.com/',
-    catalogUrl: 'https://open-data-durham.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open-data-durham.opendata.arcgis.com',
+    nameEn: 'Regional Municipality of Durham Open Data',
+    nameFr: 'Données ouvertes de la municipalité régionale de Durham',
+    homepageUrl: 'https://opendata.durham.ca/',
+    catalogUrl: 'https://opendata.durham.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata.durham.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: DURHAM_PUBLISHER, name: 'Region of Durham' },
-        { publisher: /^(the corporation of the )?city of oshawa$/i, name: 'City of Oshawa' },
-        { publisher: /^town of ajax$/i, name: 'Town of Ajax' },
-        { publisher: /^(the corporation of the )?city of pickering$/i, name: 'City of Pickering' },
-        { publisher: /^(the corporation of the )?town of whitby$/i, name: 'Town of Whitby' },
-        { publisher: /^municipality of clarington$/i, name: 'Municipality of Clarington' },
-        { publisher: /^township of scugog$/i, name: 'Township of Scugog' },
-        { publisher: /^township of uxbridge$/i, name: 'Township of Uxbridge' },
-        { publisher: /^township of brock$/i, name: 'Township of Brock' },
-        { publisher: CONSERVATION_PUBLISHER, name: 'Central Lake Ontario Conservation Authority' }
+        { publisher: DURHAM_PUBLISHER, name: 'Regional Municipality of Durham' }
     ],
     authoritativePublishers: [
         { publisher: DURHAM_PUBLISHER },
         { publisher: /township of (brock|scugog|uxbridge)/i }
     ],
-    licenseRules: [
-        { publisher: DURHAM_PUBLISHER, license: DURHAM_LICENSE },
-        { publisher: /^(the corporation of the )?city of oshawa$/i, license: OSHAWA_LICENSE },
-        { publisher: /^town of ajax$/i, license: AJAX_LICENSE },
-        { publisher: /^(the corporation of the )?city of pickering$/i, license: PICKERING_LICENSE },
-        { publisher: /^(the corporation of the )?town of whitby$/i, license: WHITBY_LICENSE },
-        { publisher: /township of (brock|scugog|uxbridge)/i, license: DURHAM_LICENSE },
-        { publisher: CONSERVATION_PUBLISHER, license: CLOCA_LICENSE },
-        { publisher: ONTARIO_PUBLISHER, license: ONTARIO_LICENSE }
-    ],
+    licenseRules: regionalRules.licenseRules,
     placeRules: [
         { publisher: DURHAM_PUBLISHER, placeId: 'ca-on-durham', relationship: 'direct', includesDescendants: true },
-        { publisher: /^(the corporation of the )?city of oshawa$/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
-        { publisher: /^town of ajax$/i, placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false },
-        { publisher: /^(the corporation of the )?city of pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
-        { publisher: /^(the corporation of the )?town of whitby$/i, placeId: 'sgc-csd-3518009', relationship: 'direct', includesDescendants: false },
-        { publisher: /^municipality of clarington$/i, placeId: 'sgc-csd-3518017', relationship: 'direct', includesDescendants: false },
-        { publisher: /^township of scugog$/i, placeId: 'sgc-csd-3518020', relationship: 'direct', includesDescendants: false },
-        { publisher: /^township of uxbridge$/i, placeId: 'sgc-csd-3518029', relationship: 'direct', includesDescendants: false },
-        { publisher: /^township of brock$/i, placeId: 'sgc-csd-3518039', relationship: 'direct', includesDescendants: false },
-        { publisher: CONSERVATION_PUBLISHER, placeId: 'ca-on-durham', relationship: 'direct', includesDescendants: true },
+        {
+            publisher: /township of brock/i,
+            placeId: 'sgc-csd-3518039',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            publisher: /township of scugog/i,
+            placeId: 'sgc-csd-3518020',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            publisher: /township of uxbridge/i,
+            placeId: 'sgc-csd-3518029',
+            relationship: 'direct',
+            includesDescendants: false
+        },
         { publisher: ONTARIO_PUBLISHER, placeId: 'ca-on', relationship: 'coverage', includesDescendants: true }
     ]
 }, {
     id: 'mississauga-hub',
     kind: 'arcgis-hub',
-    nameEn: 'City of Mississauga Open Data',
-    nameFr: 'Données ouvertes de la Ville de Mississauga',
+    nameEn: 'Mississauga Open Data',
+    nameFr: 'Données ouvertes de Mississauga',
     homepageUrl: 'https://data.mississauga.ca/',
     catalogUrl: 'https://data.mississauga.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data.mississauga.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^city of mississauga$/i, name: 'City of Mississauga' },
-        { publisher: /^mississauga$/i, name: 'City of Mississauga' }
+        { publisher: /^city of mississauga$/i, name: 'City of Mississauga' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of mississauga$/i },
-        { publisher: /^mississauga$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^city of mississauga$/i }],
+    // The portal-wide terms apply to City datasets even when an ArcGIS item
+    // omits its per-record licence. More specific third-party terms win first.
     licenseRules: [
-        {
-            licensePattern: /statistics\s+canada/i,
-            license: STATCAN_LICENSE
-        },
-        {
-            publisher: /.*/,
-            license: MISSISSAUGA_LICENSE
-        }
+        { licensePattern: /statcan\.gc\.ca|statistics canada open licen[cs]e/i, license: STATCAN_LICENSE },
+        { publisher: /^city of mississauga$/i, license: MISSISSAUGA_LICENSE }
     ],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of mississauga$/i,
         placeId: 'sgc-csd-3521005',
         relationship: 'direct',
         includesDescendants: false
@@ -1150,8 +1078,8 @@ const sources = [{
 }, {
     id: 'brampton-hub',
     kind: 'arcgis-hub',
-    nameEn: 'City of Brampton Open Data (GeoHub)',
-    nameFr: 'Données ouvertes de la Ville de Brampton (GeoHub)',
+    nameEn: 'Brampton GeoHub',
+    nameFr: 'Géoportail de Brampton',
     homepageUrl: 'https://geohub.brampton.ca/',
     catalogUrl: 'https://geohub.brampton.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'geohub.brampton.ca',
@@ -1159,27 +1087,20 @@ const sources = [{
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     licenseMode: 'record-explicit',
-    restrictedLicensePatterns: [/custom\s+license/i, /terms\s+of\s+use/i, /copyright/i],
+    restrictedLicensePatterns: [/non.?commercial/i, /elections\.on\.ca/i],
     publisherAliases: [
-        { publisher: /^city of brampton$/i, name: 'City of Brampton' },
-        { publisher: /^brampton$/i, name: 'City of Brampton' }
+        { publisher: /^city of brampton$/i, name: 'City of Brampton' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of brampton$/i },
-        { publisher: /^brampton$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^city of brampton$/i }],
     licenseRules: [
+        { licensePattern: /statcan\.gc\.ca|statistics canada open licen[cs]e/i, license: STATCAN_LICENSE },
         {
-            licensePattern: /creative\s+commons/i,
+            licensePattern: /creativecommons\.org\/licenses\/by\/4\.0|creative commons attribution|creative commons by-law/i,
             license: CC_BY_4_LICENSE
-        },
-        {
-            licensePattern: /open\s+government\s+licen[cs]e/i,
-            license: STATCAN_LICENSE
         }
     ],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of brampton$/i,
         placeId: 'sgc-csd-3521010',
         relationship: 'direct',
         includesDescendants: false
@@ -1187,8 +1108,8 @@ const sources = [{
 }, {
     id: 'peel-hub',
     kind: 'arcgis-hub',
-    nameEn: 'Region of Peel Open Data',
-    nameFr: 'Données ouvertes de la région de Peel',
+    nameEn: 'Peel Region Data Portal',
+    nameFr: 'Portail de données de la région de Peel',
     homepageUrl: 'https://data.peelregion.ca/',
     catalogUrl: 'https://data.peelregion.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data.peelregion.ca',
@@ -1196,34 +1117,26 @@ const sources = [{
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     licenseMode: 'record-explicit',
-    restrictedLicensePatterns: [/custom\s+license/i, /terms\s+of\s+use/i, /copyright/i],
+    restrictedLicensePatterns: [/peelregion\.ca\/privacy\/terms-of-use/i],
     publisherAliases: [
-        { publisher: /^region of peel$/i, name: 'Region of Peel' },
-        { publisher: /^regional municipality of peel$/i, name: 'Region of Peel' },
-        { publisher: /^peel$/i, name: 'Region of Peel' }
+        { publisher: /regional municipality of peel|region of peel/i, name: 'Regional Municipality of Peel' }
     ],
-    authoritativePublishers: [
-        { publisher: /^region of peel$/i },
-        { publisher: /^regional municipality of peel$/i },
-        { publisher: /^peel$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^regional municipality of peel$/i }],
     licenseRules: [
+        { licensePattern: /statcan\.gc\.ca|statistics canada open licen[cs]e/i, license: STATCAN_LICENSE },
         {
-            licensePattern: /open\s+data\s+licen[cs]e/i,
+            licensePattern: /data\.peelregion\.ca\/pages\/license|open data licence for the regional municipality of peel/i,
             license: PEEL_LICENSE
         },
-        {
-            licensePattern: /open\s+government\s+licen[cs]e/i,
-            license: OGL_CANADA_LICENSE
-        }
+        { licensePattern: /ontario\.ca\/page\/open-government-licence/i, license: ONTARIO_LICENSE }
     ],
     placeRules: [{
-        publisher: /.*/,
         placeId: 'sgc-cd-3521',
         relationship: 'direct',
         includesDescendants: true
     }]
-}, {
+},
+{
     id: 'victoria-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Victoria Open Data',
@@ -1234,94 +1147,138 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^city of victoria$/i, name: 'City of Victoria' },
-        { publisher: /^{{source}}$/i, name: 'City of Victoria' }
+        { publisher: /^city of victoria$/i, name: 'City of Victoria' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of victoria$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^city of victoria$/i }
     ],
     licenseRules: [
-        { publisher: /^city of victoria$/i, license: VICTORIA_LICENSE },
-        { publisher: /^{{source}}$/i, license: VICTORIA_LICENSE }
+        {
+            publisher: /^city of victoria$/i,
+            license: VICTORIA_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-5917034',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /^city of victoria$/i,
+            placeId: 'sgc-csd-5917034',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'waterloo-region-hub',
     kind: 'arcgis-hub',
     nameEn: 'Region of Waterloo Open Data',
-    nameFr: 'Données ouvertes de la Région de Waterloo',
+    nameFr: 'Données ouvertes de la région de Waterloo',
     homepageUrl: 'https://rowopendata-rmw.opendata.arcgis.com/',
     catalogUrl: 'https://rowopendata-rmw.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'rowopendata-rmw.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^regional municipality of waterloo$/i, name: 'Region of Waterloo' },
         { publisher: /^region of waterloo$/i, name: 'Region of Waterloo' },
         { publisher: /^city of kitchener$/i, name: 'City of Kitchener' },
         { publisher: /^city of cambridge$/i, name: 'City of Cambridge' },
-        { publisher: /^city of waterloo$/i, name: 'City of Waterloo' },
-        { publisher: /^{{source}}$/i, name: 'Region of Waterloo' }
+        { publisher: /^city of waterloo$/i, name: 'City of Waterloo' }
     ],
     authoritativePublishers: [
-        { publisher: /^regional municipality of waterloo$/i },
         { publisher: /^region of waterloo$/i },
         { publisher: /^city of kitchener$/i },
         { publisher: /^city of cambridge$/i },
-        { publisher: /^city of waterloo$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^city of waterloo$/i }
     ],
     licenseRules: [
-        { publisher: /^regional municipality of waterloo$/i, license: WATERLOO_REGION_LICENSE },
-        { publisher: /^region of waterloo$/i, license: WATERLOO_REGION_LICENSE },
-        { publisher: /^city of kitchener$/i, license: KITCHENER_LICENSE },
-        { publisher: /^city of cambridge$/i, license: CAMBRIDGE_LICENSE },
-        { publisher: /^city of waterloo$/i, license: WATERLOO_CITY_LICENSE },
-        { publisher: /^{{source}}$/i, license: WATERLOO_REGION_LICENSE }
+        {
+            publisher: /^region of waterloo$/i,
+            license: WATERLOO_REGION_LICENSE
+        },
+        {
+            publisher: /^city of kitchener$/i,
+            license: KITCHENER_LICENSE
+        },
+        {
+            publisher: /^city of cambridge$/i,
+            license: CAMBRIDGE_LICENSE
+        },
+        {
+            publisher: /^city of waterloo$/i,
+            license: WATERLOO_CITY_LICENSE
+        }
     ],
     placeRules: [
-        { publisher: /^city of kitchener$/i, placeId: 'sgc-csd-3530013', relationship: 'direct', includesDescendants: false },
-        { publisher: /^city of cambridge$/i, placeId: 'sgc-csd-3530010', relationship: 'direct', includesDescendants: false },
-        { publisher: /^city of waterloo$/i, placeId: 'sgc-csd-3530016', relationship: 'direct', includesDescendants: false },
-        { publisher: /.*/, placeId: 'sgc-cd-3530', relationship: 'direct', includesDescendants: true }
+        {
+            publisher: /^region of waterloo$/i,
+            placeId: 'sgc-cd-3530',
+            relationship: 'direct',
+            includesDescendants: true
+        },
+        {
+            publisher: /^city of kitchener$/i,
+            placeId: 'sgc-csd-3530013',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            publisher: /^city of cambridge$/i,
+            placeId: 'sgc-csd-3530010',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            publisher: /^city of waterloo$/i,
+            placeId: 'sgc-csd-3530016',
+            relationship: 'direct',
+            includesDescendants: false
+        }
     ]
 }, {
     id: 'london-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of London Open Data',
     nameFr: 'Données ouvertes de la Ville de London',
-    homepageUrl: 'https://open.london.ca/',
+    homepageUrl: 'https://open-london.opendata.arcgis.com/',
     catalogUrl: 'https://open-london.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'open-london.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of london$/i, name: 'City of London' },
-        { publisher: /^{{source}}$/i, name: 'City of London' }
+        { publisher: /^cityoflondon_admin$/i, name: 'City of London' }
     ],
     authoritativePublishers: [
         { publisher: /^city of london$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^cityoflondon_admin$/i }
     ],
     licenseRules: [
-        { publisher: /^city of london$/i, license: LONDON_LICENSE },
-        { publisher: /^{{source}}$/i, license: LONDON_LICENSE }
+        {
+            publisher: /.*/,
+            license: LONDON_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3539036',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /.*/,
+            placeId: 'sgc-csd-3539036',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'kelowna-hub',
     kind: 'arcgis-hub',
@@ -1333,24 +1290,30 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^city of kelowna$/i, name: 'City of Kelowna' },
-        { publisher: /^{{source}}$/i, name: 'City of Kelowna' }
+        { publisher: /^city of kelowna$/i, name: 'City of Kelowna' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of kelowna$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^city of kelowna$/i }
     ],
     licenseRules: [
-        { publisher: /^city of kelowna$/i, license: KELOWNA_LICENSE },
-        { publisher: /^{{source}}$/i, license: KELOWNA_LICENSE }
+        {
+            publisher: /^city of kelowna$/i,
+            license: KELOWNA_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-5935010',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /^city of kelowna$/i,
+            placeId: 'sgc-csd-5935010',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'fredericton-hub',
     kind: 'arcgis-hub',
@@ -1362,24 +1325,30 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^city of fredericton$/i, name: 'City of Fredericton' },
-        { publisher: /^{{source}}$/i, name: 'City of Fredericton' }
+        { publisher: /^city of fredericton$/i, name: 'City of Fredericton' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of fredericton$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^city of fredericton$/i }
     ],
     licenseRules: [
-        { publisher: /^city of fredericton$/i, license: FREDERICTON_LICENSE },
-        { publisher: /^{{source}}$/i, license: FREDERICTON_LICENSE }
+        {
+            publisher: /^city of fredericton$/i,
+            license: FREDERICTON_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-1310032',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /^city of fredericton$/i,
+            placeId: 'sgc-csd-1310032',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'burlington-hub',
     kind: 'arcgis-hub',
@@ -1391,24 +1360,32 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of burlington$/i, name: 'City of Burlington' },
-        { publisher: /^{{source}}$/i, name: 'City of Burlington' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Burlington' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of burlington$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /burlington/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of burlington$/i, license: BURLINGTON_LICENSE },
-        { publisher: /^{{source}}$/i, license: BURLINGTON_LICENSE }
+        {
+            publisher: /.*/,
+            license: BURLINGTON_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3524002',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /.*/,
+            placeId: 'sgc-csd-3524002',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'oakville-hub',
     kind: 'arcgis-hub',
@@ -1420,24 +1397,30 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^town of oakville$/i, name: 'Town of Oakville' },
-        { publisher: /^{{source}}$/i, name: 'Town of Oakville' }
+        { publisher: /^town of oakville$/i, name: 'Town of Oakville' }
     ],
     authoritativePublishers: [
-        { publisher: /^town of oakville$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^town of oakville$/i }
     ],
     licenseRules: [
-        { publisher: /^town of oakville$/i, license: OAKVILLE_LICENSE },
-        { publisher: /^{{source}}$/i, license: OAKVILLE_LICENSE }
+        {
+            publisher: /^town of oakville$/i,
+            license: OAKVILLE_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3524001',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /^town of oakville$/i,
+            placeId: 'sgc-csd-3524001',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'milton-hub',
     kind: 'arcgis-hub',
@@ -1449,24 +1432,30 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^town of milton$/i, name: 'Town of Milton' },
-        { publisher: /^{{source}}$/i, name: 'Town of Milton' }
+        { publisher: /^town of milton$/i, name: 'Town of Milton' }
     ],
     authoritativePublishers: [
-        { publisher: /^town of milton$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^town of milton$/i }
     ],
     licenseRules: [
-        { publisher: /^town of milton$/i, license: MILTON_LICENSE },
-        { publisher: /^{{source}}$/i, license: MILTON_LICENSE }
+        {
+            publisher: /^town of milton$/i,
+            license: MILTON_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3524009',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /^town of milton$/i,
+            placeId: 'sgc-csd-3524009',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'sudbury-hub',
     kind: 'arcgis-hub',
@@ -1478,24 +1467,32 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of greater sudbury$/i, name: 'City of Greater Sudbury' },
-        { publisher: /^{{source}}$/i, name: 'City of Greater Sudbury' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Greater Sudbury' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of greater sudbury$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /greater sudbury/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of greater sudbury$/i, license: SUDBURY_LICENSE },
-        { publisher: /^{{source}}$/i, license: SUDBURY_LICENSE }
+        {
+            publisher: /.*/,
+            license: SUDBURY_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-cd-3553',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /.*/,
+            placeId: 'sgc-cd-3553',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'burnaby-hub',
     kind: 'arcgis-hub',
@@ -1507,24 +1504,32 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of burnaby$/i, name: 'City of Burnaby' },
-        { publisher: /^{{source}}$/i, name: 'City of Burnaby' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Burnaby' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of burnaby$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /burnaby/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of burnaby$/i, license: BURNABY_LICENSE },
-        { publisher: /^{{source}}$/i, license: BURNABY_LICENSE }
+        {
+            publisher: /.*/,
+            license: BURNABY_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-5915025',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /.*/,
+            placeId: 'sgc-csd-5915025',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'saskatoon-hub',
     kind: 'arcgis-hub',
@@ -1536,58 +1541,81 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of saskatoon$/i, name: 'City of Saskatoon' },
-        { publisher: /^{{source}}$/i, name: 'City of Saskatoon' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Saskatoon' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of saskatoon$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /saskatoon/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of saskatoon$/i, license: SASKATOON_LICENSE },
-        { publisher: /^{{source}}$/i, license: SASKATOON_LICENSE }
+        {
+            publisher: /.*/,
+            license: SASKATOON_LICENSE
+        }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-4711066',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /.*/,
+            placeId: 'sgc-csd-4711066',
+            relationship: 'direct',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'markham-hub',
     kind: 'arcgis-hub',
     nameEn: 'City of Markham Open Data',
     nameFr: 'Données ouvertes de la Ville de Markham',
-    homepageUrl: 'https://data-markham.opendata.arcgis.com/',
+    homepageUrl: 'https://open.markham.ca/',
     catalogUrl: 'https://data-markham.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data-markham.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of markham$/i, name: 'City of Markham' },
         { publisher: /^regional municipality of york$/i, name: 'York Region' },
         { publisher: /^york region$/i, name: 'York Region' },
-        { publisher: /^{{source}}$/i, name: 'City of Markham' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Markham' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of markham$/i },
-        { publisher: /^regional municipality of york$/i },
-        { publisher: /^york region$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /markham/i },
+        { publisher: /york/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of markham$/i, license: MARKHAM_LICENSE },
-        { publisher: /^regional municipality of york$/i, license: YORK_REGION_LICENSE },
-        { publisher: /^york region$/i, license: YORK_REGION_LICENSE },
-        { publisher: /^{{source}}$/i, license: MARKHAM_LICENSE }
+        { publisher: /york/i, license: YORK_REGION_LICENSE },
+        { publisher: /.*/, license: MARKHAM_LICENSE }
     ],
     placeRules: [
-        { publisher: /^city of markham$/i, placeId: 'sgc-csd-3519036', relationship: 'direct', includesDescendants: false },
-        { publisher: /^regional municipality of york$/i, placeId: 'sgc-cd-3519', relationship: 'direct', includesDescendants: true },
-        { publisher: /^york region$/i, placeId: 'sgc-cd-3519', relationship: 'direct', includesDescendants: true },
-        { publisher: /.*/, placeId: 'sgc-csd-3519036', relationship: 'direct', includesDescendants: false }
+        {
+            publisher: /markham/i,
+            placeId: 'sgc-csd-3519036',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            publisher: /york/i,
+            placeId: 'sgc-cd-3519',
+            relationship: 'direct',
+            includesDescendants: true
+        },
+        {
+            publisher: /^\{\{source\}\}$/i,
+            placeId: 'sgc-csd-3519036',
+            relationship: 'direct',
+            includesDescendants: false
+        }
     ]
 }, {
     id: 'newmarket-hub',
@@ -1600,17 +1628,20 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^town of newmarket$/i, name: 'Town of Newmarket' },
-        { publisher: /^{{source}}$/i, name: 'Town of Newmarket' }
+        { publisher: /^\{\{source\}\}$/i, name: 'Town of Newmarket' }
     ],
     authoritativePublishers: [
-        { publisher: /^town of newmarket$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /newmarket/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^town of newmarket$/i, license: NEWMARKET_LICENSE },
-        { publisher: /^{{source}}$/i, license: NEWMARKET_LICENSE }
+        { publisher: /.*/, license: NEWMARKET_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1629,17 +1660,21 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of niagara falls$/i, name: 'City of Niagara Falls' },
-        { publisher: /^{{source}}$/i, name: 'City of Niagara Falls' }
+        { publisher: /^the city of niagara falls$/i, name: 'City of Niagara Falls' },
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Niagara Falls' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of niagara falls$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /niagara falls/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of niagara falls$/i, license: NIAGARA_FALLS_LICENSE },
-        { publisher: /^{{source}}$/i, license: NIAGARA_FALLS_LICENSE }
+        { publisher: /.*/, license: NIAGARA_FALLS_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1653,22 +1688,25 @@ const sources = [{
     nameEn: 'City of Welland Open Data',
     nameFr: 'Données ouvertes de la Ville de Welland',
     homepageUrl: 'https://open.welland.ca/',
-    catalogUrl: 'https://open.welland.ca/api/feed/dcat-us/1.1.json',
+    catalogUrl: 'https://open-welland.hub.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'open-welland.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of welland$/i, name: 'City of Welland' },
-        { publisher: /^{{source}}$/i, name: 'City of Welland' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Welland' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of welland$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /welland/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of welland$/i, license: WELLAND_LICENSE },
-        { publisher: /^{{source}}$/i, license: WELLAND_LICENSE }
+        { publisher: /.*/, license: WELLAND_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1687,17 +1725,21 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of moncton$/i, name: 'City of Moncton' },
-        { publisher: /^{{source}}$/i, name: 'City of Moncton' }
+        { publisher: /^ville de moncton$/i, name: 'City of Moncton' },
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Moncton' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of moncton$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /moncton/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of moncton$/i, license: MONCTON_LICENSE },
-        { publisher: /^{{source}}$/i, license: MONCTON_LICENSE }
+        { publisher: /.*/, license: MONCTON_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1711,22 +1753,25 @@ const sources = [{
     nameEn: 'City of Guelph Open Data',
     nameFr: 'Données ouvertes de la Ville de Guelph',
     homepageUrl: 'https://explore.guelph.ca/',
-    catalogUrl: 'https://explore.guelph.ca/api/feed/dcat-us/1.1.json',
+    catalogUrl: 'https://geodatahub-cityofguelph.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'geodatahub-cityofguelph.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^city of guelph$/i, name: 'City of Guelph' },
-        { publisher: /^{{source}}$/i, name: 'City of Guelph' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Guelph' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of guelph$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /guelph/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of guelph$/i, license: GUELPH_LICENSE },
-        { publisher: /^{{source}}$/i, license: GUELPH_LICENSE }
+        { publisher: /.*/, license: GUELPH_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1745,17 +1790,19 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
         { publisher: /^district of saanich$/i, name: 'District of Saanich' },
-        { publisher: /^{{source}}$/i, name: 'District of Saanich' }
+        { publisher: /^saanich$/i, name: 'District of Saanich' }
     ],
     authoritativePublishers: [
-        { publisher: /^district of saanich$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /saanich/i }
     ],
     licenseRules: [
-        { publisher: /^district of saanich$/i, license: SAANICH_LICENSE },
-        { publisher: /^{{source}}$/i, license: SAANICH_LICENSE }
+        { publisher: /.*/, license: SAANICH_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1774,20 +1821,19 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [
+        /non.?commercial/i,
+        /personal use only/i
+    ],
     publisherAliases: [
-        { publisher: /^city of belleville$/i, name: 'City of Belleville' },
-        { publisher: /^{{source}}$/i, name: 'City of Belleville' }
+        { publisher: /^city of belleville/i, name: 'City of Belleville' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of belleville$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^city of belleville/i }],
     licenseRules: [
-        { publisher: /^city of belleville$/i, license: BELLEVILLE_LICENSE },
-        { publisher: /^{{source}}$/i, license: BELLEVILLE_LICENSE }
+        { publisher: /^city of belleville/i, license: BELLEVILLE_LICENSE }
     ],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of belleville/i,
         placeId: 'sgc-csd-3512005',
         relationship: 'direct',
         includesDescendants: false
@@ -1803,17 +1849,13 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^city of yellowknife$/i, name: 'City of Yellowknife' },
-        { publisher: /^{{source}}$/i, name: 'City of Yellowknife' }
+        { publisher: /^city of yellowknife$/i, name: 'City of Yellowknife' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of yellowknife$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^city of yellowknife$/i }],
     licenseRules: [
-        { publisher: /^city of yellowknife$/i, license: YELLOWKNIFE_LICENSE },
-        { publisher: /^{{source}}$/i, license: YELLOWKNIFE_LICENSE }
+        { publisher: /.*/, license: YELLOWKNIFE_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1832,17 +1874,14 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^city of barrie$/i, name: 'City of Barrie' },
-        { publisher: /^{{source}}$/i, name: 'City of Barrie' }
+        { publisher: /^the city of barrie$/i, name: 'City of Barrie' },
+        { publisher: /^city of barrie$/i, name: 'City of Barrie' }
     ],
-    authoritativePublishers: [
-        { publisher: /^city of barrie$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    authoritativePublishers: [{ publisher: /city of barrie/i }],
     licenseRules: [
-        { publisher: /^city of barrie$/i, license: BARRIE_LICENSE },
-        { publisher: /^{{source}}$/i, license: BARRIE_LICENSE }
+        { publisher: /.*/, license: BARRIE_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1861,17 +1900,17 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^city of thunder bay$/i, name: 'City of Thunder Bay' },
-        { publisher: /^{{source}}$/i, name: 'City of Thunder Bay' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Thunder Bay' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of thunder bay$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /city of thunder bay/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of thunder bay$/i, license: THUNDER_BAY_LICENSE },
-        { publisher: /^{{source}}$/i, license: THUNDER_BAY_LICENSE }
+        { publisher: /.*/, license: THUNDER_BAY_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1890,20 +1929,13 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^municipality of chatham-kent$/i, name: 'Municipality of Chatham-Kent' },
-        { publisher: /^chatham-kent$/i, name: 'Municipality of Chatham-Kent' },
-        { publisher: /^{{source}}$/i, name: 'Municipality of Chatham-Kent' }
+        { publisher: /^municipality of chatham-kent$/i, name: 'Municipality of Chatham-Kent' }
     ],
-    authoritativePublishers: [
-        { publisher: /^municipality of chatham-kent$/i },
-        { publisher: /^chatham-kent$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    authoritativePublishers: [{ publisher: /^municipality of chatham-kent$/i }],
     licenseRules: [
-        { publisher: /^municipality of chatham-kent$/i, license: CHATHAM_KENT_LICENSE },
-        { publisher: /^chatham-kent$/i, license: CHATHAM_KENT_LICENSE },
-        { publisher: /^{{source}}$/i, license: CHATHAM_KENT_LICENSE }
+        { publisher: /.*/, license: CHATHAM_KENT_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1922,20 +1954,17 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^city of kawartha lakes$/i, name: 'City of Kawartha Lakes' },
-        { publisher: /^kawartha lakes$/i, name: 'City of Kawartha Lakes' },
-        { publisher: /^{{source}}$/i, name: 'City of Kawartha Lakes' }
+        { publisher: /^\{\{source\}\}$/i, name: 'City of Kawartha Lakes' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of kawartha lakes$/i },
-        { publisher: /^kawartha lakes$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /kawartha lakes/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of kawartha lakes$/i, license: KAWARTHA_LAKES_LICENSE },
-        { publisher: /^kawartha lakes$/i, license: KAWARTHA_LAKES_LICENSE },
-        { publisher: /^{{source}}$/i, license: KAWARTHA_LAKES_LICENSE }
+        { publisher: /.*/, license: KAWARTHA_LAKES_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1954,23 +1983,18 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^the corporation of the district of summerland$/i, name: 'District of Summerland' },
+        { publisher: /^districtofsummerland$/i, name: 'District of Summerland' },
         { publisher: /^district of summerland$/i, name: 'District of Summerland' },
-        { publisher: /^summerland$/i, name: 'District of Summerland' },
-        { publisher: /^{{source}}$/i, name: 'District of Summerland' }
+        { publisher: /^\{\{source\}\}$/i, name: 'District of Summerland' }
     ],
     authoritativePublishers: [
-        { publisher: /^the corporation of the district of summerland$/i },
-        { publisher: /^district of summerland$/i },
-        { publisher: /^summerland$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /summerland/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^the corporation of the district of summerland$/i, license: SUMMERLAND_LICENSE },
-        { publisher: /^district of summerland$/i, license: SUMMERLAND_LICENSE },
-        { publisher: /^summerland$/i, license: SUMMERLAND_LICENSE },
-        { publisher: /^{{source}}$/i, license: SUMMERLAND_LICENSE }
+        { publisher: /.*/, license: SUMMERLAND_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1989,20 +2013,14 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^the corporation of norfolk county$/i, name: 'Norfolk County' },
-        { publisher: /^norfolk county$/i, name: 'Norfolk County' },
-        { publisher: /^{{source}}$/i, name: 'Norfolk County' }
+        { publisher: /^map norfolk$/i, name: 'Norfolk County' },
+        { publisher: /^norfolk county$/i, name: 'Norfolk County' }
     ],
-    authoritativePublishers: [
-        { publisher: /^the corporation of norfolk county$/i },
-        { publisher: /^norfolk county$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    authoritativePublishers: [{ publisher: /norfolk/i }],
     licenseRules: [
-        { publisher: /^the corporation of norfolk county$/i, license: NORFOLK_LICENSE },
-        { publisher: /^norfolk county$/i, license: NORFOLK_LICENSE },
-        { publisher: /^{{source}}$/i, license: NORFOLK_LICENSE }
+        { publisher: /.*/, license: NORFOLK_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -2021,20 +2039,18 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^the corporation of haldimand county$/i, name: 'Haldimand County' },
         { publisher: /^haldimand county$/i, name: 'Haldimand County' },
-        { publisher: /^{{source}}$/i, name: 'Haldimand County' }
+        { publisher: /^\{\{source\}\}$/i, name: 'Haldimand County' }
     ],
     authoritativePublishers: [
-        { publisher: /^the corporation of haldimand county$/i },
-        { publisher: /^haldimand county$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /haldimand/i },
+        { publisher: /^\{\{source\}\}$/i }
     ],
     licenseRules: [
-        { publisher: /^the corporation of haldimand county$/i, license: HALDIMAND_LICENSE },
-        { publisher: /^haldimand county$/i, license: HALDIMAND_LICENSE },
-        { publisher: /^{{source}}$/i, license: HALDIMAND_LICENSE }
+        { publisher: /.*/, license: HALDIMAND_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -2282,7 +2298,8 @@ const sources = [{
         relationship: 'direct',
         includesDescendants: true
     }]
-}];
+}
+];
 
 function getSource(id) {
     return sources.find(source => source.id === id) || null;
@@ -2291,6 +2308,23 @@ function getSource(id) {
 module.exports = {
     sources,
     getSource,
+    OSHAWA_LICENSE,
+    DURHAM_LICENSE,
+    AJAX_LICENSE,
+    PICKERING_LICENSE,
+    WHITBY_LICENSE,
+    CLOCA_LICENSE,
+    ONTARIO_LICENSE,
+    TORONTO_LICENSE,
+    OTTAWA_LICENSE,
+    OTTAWA_POLICE_LICENSE,
+    VANCOUVER_LICENSE,
+    CALGARY_LICENSE,
+    EDMONTON_LICENSE,
+    WINNIPEG_LICENSE,
+    HALIFAX_LICENSE,
+    HAMILTON_LICENSE,
+    SURREY_LICENSE,
     VICTORIA_LICENSE,
     WATERLOO_REGION_LICENSE,
     KITCHENER_LICENSE,
@@ -2330,23 +2364,6 @@ module.exports = {
     LANGLEY_CITY_LICENSE,
     HURON_LICENSE,
     CUMBERLAND_LICENSE,
-    SURREY_LICENSE,
-    HAMILTON_LICENSE,
-    HALIFAX_LICENSE,
-    WINNIPEG_LICENSE,
-    EDMONTON_LICENSE,
-    CALGARY_LICENSE,
-    VANCOUVER_LICENSE,
-    OTTAWA_LICENSE,
-    OTTAWA_POLICE_LICENSE,
-    TORONTO_LICENSE,
-    ONTARIO_LICENSE,
-    OSHAWA_LICENSE,
-    DURHAM_LICENSE,
-    AJAX_LICENSE,
-    PICKERING_LICENSE,
-    WHITBY_LICENSE,
-    CLOCA_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,
