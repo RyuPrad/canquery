@@ -23,7 +23,9 @@ WHERE slug IN (
     'shawinigan-city-qc',
     'levis-city-qc',
     'sherbrooke-city-qc',
-    'saint-john-city-nb'
+    'saint-john-city-nb',
+    'saint-john-city',
+    'saint-john-nb-1301'
 );
 
 -- Provinces
@@ -31,8 +33,8 @@ INSERT INTO places (
     id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id,
     latitude, longitude, default_zoom, enabled, featured
 ) VALUES
-    ('ca-qc', 'quebec', 'province', 'Quebec', 'Québec', 'Province', 'Province', 'ca', NULL, NULL, NULL, true, false),
-    ('ca-nb', 'new-brunswick', 'province', 'New Brunswick', 'Nouveau-Brunswick', 'Province', 'Province', 'ca', NULL, NULL, NULL, true, false)
+    ('sgc-pr-24', 'quebec', 'province', 'Quebec', 'Québec', 'Province', 'Province', 'ca', NULL, NULL, NULL, true, false),
+    ('sgc-pr-13', 'new-brunswick', 'province', 'New Brunswick', 'Nouveau-Brunswick', 'Province', 'Province', 'ca', NULL, NULL, NULL, true, false)
 ON CONFLICT (id) DO UPDATE SET
     slug = EXCLUDED.slug,
     kind = EXCLUDED.kind,
@@ -50,16 +52,16 @@ INSERT INTO places (
     id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id,
     latitude, longitude, default_zoom, enabled, featured
 ) VALUES
-    ('sgc-cd-2481', 'gatineau-region-qc', 'region', 'Gatineau', 'Gatineau', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2437', 'trois-rivieres-region-qc', 'region', 'Francheville', 'Francheville', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2460', 'lassomption-qc', 'region', 'L’Assomption', 'L’Assomption', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2458', 'longueuil-region-qc', 'region', 'Longueuil', 'Longueuil', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2494', 'le-saguenay-et-son-fjord-qc', 'region', 'Le Saguenay-et-son-Fjord', 'Le Saguenay-et-son-Fjord', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2410', 'rimouski-neigette-qc', 'region', 'Rimouski-Neigette', 'Rimouski-Neigette', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2436', 'shawinigan-region-qc', 'region', 'Shawinigan', 'Shawinigan', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2425', 'levis-region-qc', 'region', 'Lévis', 'Lévis', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-2443', 'sherbrooke-region-qc', 'region', 'Sherbrooke', 'Sherbrooke', 'Census division', 'Division de recensement', 'ca-qc', NULL, NULL, NULL, true, false),
-    ('sgc-cd-1301', 'saint-john-county-nb', 'region', 'Saint John', 'Saint John', 'County', 'Comté', 'ca-nb', NULL, NULL, NULL, true, false)
+    ('sgc-cd-2481', 'gatineau-region-qc', 'region', 'Gatineau', 'Gatineau', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2437', 'trois-rivieres-region-qc', 'region', 'Francheville', 'Francheville', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2460', 'lassomption-qc', 'region', 'L’Assomption', 'L’Assomption', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2458', 'longueuil-region-qc', 'region', 'Longueuil', 'Longueuil', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2494', 'le-saguenay-et-son-fjord-qc', 'region', 'Le Saguenay-et-son-Fjord', 'Le Saguenay-et-son-Fjord', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2410', 'rimouski-neigette-qc', 'region', 'Rimouski-Neigette', 'Rimouski-Neigette', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2436', 'shawinigan-region-qc', 'region', 'Shawinigan', 'Shawinigan', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2425', 'levis-region-qc', 'region', 'Lévis', 'Lévis', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-2443', 'sherbrooke-region-qc', 'region', 'Sherbrooke', 'Sherbrooke', 'Census division', 'Division de recensement', 'sgc-pr-24', NULL, NULL, NULL, true, false),
+    ('sgc-cd-1301', 'saint-john-county-nb', 'region', 'Saint John', 'Saint John', 'County', 'Comté', 'sgc-pr-13', NULL, NULL, NULL, true, false)
 ON CONFLICT (id) DO UPDATE SET
     slug = EXCLUDED.slug,
     kind = EXCLUDED.kind,
@@ -103,47 +105,47 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 -- Identifiers
-INSERT INTO place_identifiers (place_id, scheme, identifier, is_primary) VALUES
-    ('sgc-cd-2481', 'sgc-cd', '2481', true),
-    ('sgc-cd-2437', 'sgc-cd', '2437', true),
-    ('sgc-cd-2460', 'sgc-cd', '2460', true),
-    ('sgc-cd-2458', 'sgc-cd', '2458', true),
-    ('sgc-cd-2494', 'sgc-cd', '2494', true),
-    ('sgc-cd-2410', 'sgc-cd', '2410', true),
-    ('sgc-cd-2436', 'sgc-cd', '2436', true),
-    ('sgc-cd-2425', 'sgc-cd', '2425', true),
-    ('sgc-cd-2443', 'sgc-cd', '2443', true),
-    ('sgc-cd-1301', 'sgc-cd', '1301', true),
-    ('sgc-csd-2481017', 'sgc-csd', '2481017', true),
-    ('sgc-csd-2437067', 'sgc-csd', '2437067', true),
-    ('sgc-csd-2460013', 'sgc-csd', '2460013', true),
-    ('sgc-csd-2458227', 'sgc-csd', '2458227', true),
-    ('sgc-csd-2494068', 'sgc-csd', '2494068', true),
-    ('sgc-csd-2410043', 'sgc-csd', '2410043', true),
-    ('sgc-csd-2436033', 'sgc-csd', '2436033', true),
-    ('sgc-csd-2425213', 'sgc-csd', '2425213', true),
-    ('sgc-csd-2443027', 'sgc-csd', '2443027', true),
-    ('sgc-csd-1301006', 'sgc-csd', '1301006', true)
-ON CONFLICT (scheme, identifier) DO UPDATE SET
-    place_id = EXCLUDED.place_id,
-    is_primary = EXCLUDED.is_primary,
-    updated_at = now();
+INSERT INTO place_identifiers (place_id, scheme, vintage, value)
+VALUES
+    ('sgc-pr-24', 'sgc-pr', '2021', '24'),
+    ('sgc-pr-13', 'sgc-pr', '2021', '13'),
+    ('sgc-cd-2481', 'sgc-cd', '2021', '2481'),
+    ('sgc-cd-2437', 'sgc-cd', '2021', '2437'),
+    ('sgc-cd-2460', 'sgc-cd', '2021', '2460'),
+    ('sgc-cd-2458', 'sgc-cd', '2021', '2458'),
+    ('sgc-cd-2494', 'sgc-cd', '2021', '2494'),
+    ('sgc-cd-2410', 'sgc-cd', '2021', '2410'),
+    ('sgc-cd-2436', 'sgc-cd', '2021', '2436'),
+    ('sgc-cd-2425', 'sgc-cd', '2021', '2425'),
+    ('sgc-cd-2443', 'sgc-cd', '2021', '2443'),
+    ('sgc-cd-1301', 'sgc-cd', '2021', '1301'),
+    ('sgc-csd-2481017', 'sgc-csd', '2021', '2481017'),
+    ('sgc-csd-2437067', 'sgc-csd', '2021', '2437067'),
+    ('sgc-csd-2460013', 'sgc-csd', '2021', '2460013'),
+    ('sgc-csd-2458227', 'sgc-csd', '2021', '2458227'),
+    ('sgc-csd-2494068', 'sgc-csd', '2021', '2494068'),
+    ('sgc-csd-2410043', 'sgc-csd', '2021', '2410043'),
+    ('sgc-csd-2436033', 'sgc-csd', '2021', '2436033'),
+    ('sgc-csd-2425213', 'sgc-csd', '2021', '2425213'),
+    ('sgc-csd-2443027', 'sgc-csd', '2021', '2443027'),
+    ('sgc-csd-1301006', 'sgc-csd', '2021', '1301006')
+ON CONFLICT (scheme, vintage, value) DO UPDATE SET
+    place_id = EXCLUDED.place_id;
 
--- Aliases
-INSERT INTO place_aliases (place_id, slug, kind) VALUES
-    ('sgc-csd-2481017', 'gatineau-city-qc', 'legacy'),
-    ('sgc-csd-2437067', 'trois-rivieres-city-qc', 'legacy'),
-    ('sgc-csd-2460013', 'repentigny-city-qc', 'legacy'),
-    ('sgc-csd-2458227', 'longueuil-city-qc', 'legacy'),
-    ('sgc-csd-2494068', 'saguenay-city-qc', 'legacy'),
-    ('sgc-csd-2410043', 'rimouski-city-qc', 'legacy'),
-    ('sgc-csd-2436033', 'shawinigan-city-qc', 'legacy'),
-    ('sgc-csd-2425213', 'levis-city-qc', 'legacy'),
-    ('sgc-csd-2443027', 'sherbrooke-city-qc', 'legacy'),
-    ('sgc-csd-1301006', 'saint-john-city-nb', 'legacy'),
-    ('sgc-csd-1301006', 'saint-john-city', 'legacy'),
-    ('sgc-cd-1301', 'saint-john-nb-1301', 'legacy')
+-- Durable Aliases
+INSERT INTO place_aliases (slug, place_id)
+VALUES
+    ('gatineau-city-qc', 'sgc-csd-2481017'),
+    ('trois-rivieres-city-qc', 'sgc-csd-2437067'),
+    ('repentigny-city-qc', 'sgc-csd-2460013'),
+    ('longueuil-city-qc', 'sgc-csd-2458227'),
+    ('saguenay-city-qc', 'sgc-csd-2494068'),
+    ('rimouski-city-qc', 'sgc-csd-2410043'),
+    ('shawinigan-city-qc', 'sgc-csd-2436033'),
+    ('levis-city-qc', 'sgc-csd-2425213'),
+    ('sherbrooke-city-qc', 'sgc-csd-2443027'),
+    ('saint-john-city-nb', 'sgc-csd-1301006'),
+    ('saint-john-city', 'sgc-csd-1301006'),
+    ('saint-john-nb-1301', 'sgc-cd-1301')
 ON CONFLICT (slug) DO UPDATE SET
-    place_id = EXCLUDED.place_id,
-    kind = EXCLUDED.kind,
-    updated_at = now();
+    place_id = EXCLUDED.place_id;

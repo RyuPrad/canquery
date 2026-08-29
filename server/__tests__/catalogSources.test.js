@@ -497,7 +497,7 @@ describe('configured municipal catalogue sources', () => {
     test('configures Moncton, Guelph, Saanich, and Belleville sources', () => {
         const moncton = getSource('moncton-hub');
         const guelph = getSource('guelph-hub');
-        const侵s = getSource('saanich-hub');
+        const saanich = getSource('saanich-hub');
         const belleville = getSource('belleville-hub');
 
         expect(moncton).toEqual(expect.objectContaining({
@@ -516,11 +516,11 @@ describe('configured municipal catalogue sources', () => {
             placeId: 'sgc-csd-3523008', relationship: 'direct', includesDescendants: false
         }));
 
-        expect(侵s).toEqual(expect.objectContaining({
+        expect(saanich).toEqual(expect.objectContaining({
             kind: 'arcgis-hub',
             upstreamHost: 'opendata-saanich.hub.arcgis.com'
         }));
-        expect(侵s.placeRules[0]).toEqual(expect.objectContaining({
+        expect(saanich.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-5917021', relationship: 'direct', includesDescendants: false
         }));
 
