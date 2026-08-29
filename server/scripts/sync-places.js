@@ -15,9 +15,11 @@ const SINGLE_TIER_CITY_CSD = {
     '3520005': 'sgc-cd-3520',
     '3525005': 'sgc-cd-3525',
     '2465005': 'sgc-cd-2465',
-    '3553005': 'sgc-cd-3553'
+    '3553005': 'sgc-cd-3553',
+    '3516010': 'sgc-cd-3516',
+    '3536020': 'sgc-cd-3536'
 };
-const SINGLE_TIER_CITY_CD = new Set(['2465', '3506', '3520', '3525', '3553']);
+const SINGLE_TIER_CITY_CD = new Set(['2465', '3506', '3520', '3525', '3553', '3516', '3536']);
 const FEATURED_PLACE_IDS = new Set([
     'ca-on-durham',
     'sgc-cd-3521',
@@ -90,7 +92,15 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-csd-1307022',
     'sgc-csd-3523008',
     'sgc-csd-5917021',
-    'sgc-csd-3512005'
+    'sgc-csd-3512005',
+    'sgc-csd-6106023',
+    'sgc-csd-3543042',
+    'sgc-csd-3558004',
+    'sgc-cd-3536',
+    'sgc-cd-3516',
+    'sgc-csd-5907035',
+    'sgc-csd-3528052',
+    'sgc-csd-3528018'
 ]);
 const MUNICIPAL_TYPES = {
     '2423027': ['City', 'Ville'],
@@ -162,7 +172,15 @@ const MUNICIPAL_TYPES = {
     '1307019': ['Parish', 'Paroisse'],
     '1307022': ['City', 'Cité'],
     '1310032': ['City', 'Ville'],
-    '5915004': ['City', 'Ville']
+    '5915004': ['City', 'Ville'],
+    '6106023': ['City', 'Ville'],
+    '3543042': ['City', 'Ville'],
+    '3558004': ['City', 'Ville'],
+    '3536': ['Municipality', 'Municipalité'],
+    '3516': ['City', 'Ville'],
+    '5907035': ['District municipality', 'Municipalité de district'],
+    '3528052': ['City', 'Ville'],
+    '3528018': ['City', 'Ville']
 };
 const PLACE_VIEWPORTS = {
     '2423027': [46.8139, -71.208, 10],
@@ -230,7 +248,16 @@ const PLACE_VIEWPORTS = {
     '1307022': [46.0878, -64.7782, 10],
     '1310032': [45.9636, -66.6431, 10],
     '5915004': [49.1913, -122.8490, 10],
-    '5917021': [48.4841, -123.3822, 10]
+    '5917021': [48.4841, -123.3822, 10],
+    '6106023': [62.4540, -114.3718, 10],
+    '3543042': [44.3894, -79.6903, 10],
+    '3558': [48.3809, -89.2477, 8],
+    '3558004': [48.3809, -89.2477, 10],
+    '3536': [42.4048, -82.1910, 9],
+    '3516': [44.3564, -78.7408, 9],
+    '5907035': [49.6006, -119.6778, 10],
+    '3528052': [42.8333, -80.3833, 9],
+    '3528018': [42.9333, -79.8667, 9]
 };
 
 function slugify(value) {
@@ -239,43 +266,59 @@ function slugify(value) {
         .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-function rowsFrom(buffer, encoding) {
-    const text = new TextDecoder(encoding).decode(buffer);
-    return parse(text, { columns: true, skip_empty_lines: true, relax_column_count: true });
-}
-
 function normalize(enRows, frRows) {
     const frByCode = new Map(frRows.map(row => [String(row.Code), row]));
     const usedSlugs = new Set(['canada']);
     const places = [{
-        id: 'ca', slug: 'canada', kind: 'country', nameEn: 'Canada', nameFr: 'Canada',
-        typeEn: 'Country', typeFr: 'Pays', parentId: null, featured: false
+        id: 'ca',
+        slug: 'canada',
+        kind: 'country',
+        nameEn: 'Canada',
+        nameFr: 'Canada',
+        typeEn: 'Country',
+        typeFr: 'Pays',
+        parentId: null,
+        featured: false
     }];
-    const identifiers = [{ placeId: 'ca', scheme: 'sgc', vintage: '2021', value: '01' }];
+    const identifiers = [{
+        placeId: 'ca',
+        scheme: 'sgc',
+        vintage: '2021',
+        value: '01'
+    }];
+
     for (const row of enRows) {
         const level = Number(row.Level);
         const code = String(row.Code || '').trim();
         if (![2, 3, 4].includes(level) || !code) continue;
+
         const provinceCode = code.slice(0, 2);
         const provinceAbbr = PROVINCES[provinceCode];
         if (!provinceAbbr) continue;
+
         const fr = frByCode.get(code) || {};
         let nameEn = String(row['Class title'] || '').trim();
         let nameFr = String(fr['Titres de classes'] || nameEn).trim();
-        if (code === '3553') {
-            nameEn = 'Greater Sudbury';
-            nameFr = 'Grand Sudbury';
-        }
-        // Québec remains a distinct city subdivision under its multi-city
-        // census division. Laval, Ottawa, Toronto, Hamilton and Greater Sudbury are each
-        // single-tier census divisions with a matching city subdivision;
-        // preserve both official identifiers while exposing one city.
+
         if (level === 4 && SINGLE_TIER_CITY_CSD[code]) {
             const placeId = SINGLE_TIER_CITY_CSD[code];
-            identifiers.push({ placeId, scheme: 'sgc-csd', vintage: '2021', value: code });
+            identifiers.push({
+                placeId,
+                scheme: 'sgc-csd',
+                vintage: '2021',
+                value: code
+            });
             continue;
         }
-        let id, kind, parentId, scheme, typeEn, typeFr, baseSlug;
+
+        let id;
+        let kind;
+        let parentId;
+        let scheme;
+        let typeEn;
+        let typeFr;
+        let baseSlug;
+
         if (level === 2) {
             id = 'sgc-pr-' + code;
             kind = TERRITORIES.has(code) ? 'territory' : 'province';
@@ -301,9 +344,11 @@ function normalize(enRows, frRows) {
             typeFr = 'Municipalité';
             baseSlug = slugify(nameEn) + '-' + provinceAbbr;
         }
+
         if (code === '35') id = 'ca-on';
         if (code === '35') parentId = 'ca';
         if (code === '35') baseSlug = 'ontario';
+
         let slug = baseSlug;
         if (code === '1209') slug = 'halifax-region-ns';
         if (code === '1209034') slug = 'halifax-ns';
@@ -326,6 +371,18 @@ function normalize(enRows, frRows) {
         if (code === '3530016') slug = 'waterloo-on';
         if (code === '3553') slug = 'greater-sudbury-on';
         if (code === '3518013') slug = 'oshawa-on';
+        if (code === '3558') slug = 'thunder-bay-district-on';
+        if (code === '3558004') slug = 'thunder-bay-on';
+        if (code === '3516') slug = 'kawartha-lakes-on';
+        if (code === '3536') slug = 'chatham-kent-on';
+        if (code === '3543') slug = 'simcoe-county-on';
+        if (code === '3543042') slug = 'barrie-on';
+        if (code === '5907') slug = 'okanagan-similkameen-bc';
+        if (code === '5907035') slug = 'summerland-bc';
+        if (code === '3528') slug = 'haldimand-norfolk-on';
+        if (code === '3528052') slug = 'norfolk-county-on';
+        if (code === '3528018') slug = 'haldimand-county-on';
+        if (code === '6106023') slug = 'yellowknife-nt';
         if (code === '3518') {
             typeEn = 'Regional municipality';
             typeFr = 'Municipalité régionale';
@@ -351,120 +408,172 @@ function normalize(enRows, frRows) {
             typeFr = 'Municipalité régionale';
         }
         if (MUNICIPAL_TYPES[code]) [typeEn, typeFr] = MUNICIPAL_TYPES[code];
-        if (usedSlugs.has(slug)) slug += '-' + code;
+
+        if (usedSlugs.has(slug)) {
+            slug += '-' + code;
+        }
         usedSlugs.add(slug);
+
         const viewport = PLACE_VIEWPORTS[code] || [];
         places.push({
-            id, slug, kind, nameEn, nameFr, typeEn, typeFr, parentId,
+            id,
+            slug,
+            kind,
+            nameEn,
+            nameFr,
+            typeEn,
+            typeFr,
+            parentId,
             featured: FEATURED_PLACE_IDS.has(id),
             latitude: viewport[0] ?? null,
             longitude: viewport[1] ?? null,
             defaultZoom: viewport[2] ?? null
         });
-        identifiers.push({ placeId: id, scheme, vintage: '2021', value: code });
+        identifiers.push({
+            placeId: id,
+            scheme,
+            vintage: '2021',
+            value: code
+        });
     }
+
     return { places, identifiers };
 }
 
-async function preflightPlaceChanges(client, places) {
-    const desiredById = new Map();
-    const desiredBySlug = new Map();
-    for (const place of places) {
-        if (desiredById.has(place.id)) throw new Error('duplicate desired place id: ' + place.id);
-        if (desiredBySlug.has(place.slug)) {
-            throw new Error('duplicate desired place slug: ' + place.slug);
+function planAliases(existingPlaces, canonicalPlaces, existingAliases) {
+    const canonicalBySlug = new Map(canonicalPlaces.map(place => [place.slug, place]));
+    const aliasBySlug = new Map(existingAliases.map(alias => [alias.slug, alias]));
+    const existingById = new Map(existingPlaces.map(place => [place.id, place]));
+    const aliasesToAdd = [];
+    const conflicts = [];
+
+    for (const canonical of canonicalPlaces) {
+        const current = existingById.get(canonical.id);
+        if (!current || !current.slug || current.slug === canonical.slug) continue;
+
+        const formerSlug = current.slug;
+        const canonicalOwner = canonicalBySlug.get(formerSlug);
+        if (canonicalOwner && canonicalOwner.id !== canonical.id) {
+            conflicts.push({
+                slug: formerSlug,
+                expectedPlaceId: canonical.id,
+                existingPlaceId: canonicalOwner.id,
+                reason: 'former slug matches another canonical place'
+            });
+            continue;
         }
-        desiredById.set(place.id, place);
-        desiredBySlug.set(place.slug, place.id);
-    }
-    const ids = Array.from(desiredById.keys());
-    const slugs = Array.from(desiredBySlug.keys());
-    const existingResult = await client.query(`
-        SELECT id, slug, name_en FROM places WHERE id = ANY($1::text[])
-    `, [ids]);
-    const canonicalResult = await client.query(`
-        SELECT id, slug FROM places WHERE slug = ANY($1::text[])
-    `, [slugs]);
-    for (const row of canonicalResult.rows) {
-        const desiredOwner = desiredBySlug.get(row.slug);
-        if (desiredOwner !== row.id) {
-            throw new Error('desired place slug is already canonical for another place: ' + row.slug);
+
+        const aliasOwner = aliasBySlug.get(formerSlug);
+        if (aliasOwner && aliasOwner.placeId !== canonical.id) {
+            conflicts.push({
+                slug: formerSlug,
+                expectedPlaceId: canonical.id,
+                existingPlaceId: aliasOwner.placeId,
+                reason: 'former slug already mapped to another place'
+            });
+            continue;
         }
-    }
-    const aliases = [];
-    let nameChanges = 0;
-    let slugChanges = 0;
-    for (const row of existingResult.rows) {
-        const desired = desiredById.get(row.id);
-        if (row.name_en !== desired.nameEn) nameChanges += 1;
-        if (row.slug === desired.slug) continue;
-        if (desiredBySlug.has(row.slug) && desiredBySlug.get(row.slug) !== row.id) {
-            throw new Error('former place slug is becoming canonical for another place: ' + row.slug);
-        }
-        slugChanges += 1;
-        aliases.push({ slug: row.slug, placeId: row.id });
-    }
-    if (aliases.length) {
-        const aliasResult = await client.query(`
-            SELECT slug, place_id FROM place_aliases WHERE slug = ANY($1::text[])
-        `, [aliases.map(item => item.slug)]);
-        const wanted = new Map(aliases.map(item => [item.slug, item.placeId]));
-        for (const row of aliasResult.rows) {
-            if (wanted.get(row.slug) !== row.place_id) {
-                throw new Error('former place slug is already an alias for another place: ' + row.slug);
-            }
+
+        if (!aliasOwner) {
+            aliasesToAdd.push({
+                slug: formerSlug,
+                placeId: canonical.id
+            });
         }
     }
-    return { aliases, nameChanges, slugChanges, aliasConflicts: 0 };
+
+    return { aliasesToAdd, conflicts };
 }
 
-async function upsert({ places, identifiers }, dryRun, dbPool = pool) {
-    const kindOrder = { country: 0, province: 1, territory: 1, region: 2, municipality: 3 };
-    const orderedPlaces = [...places].sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind]);
-    const client = await dbPool.connect();
+function rowsFrom(buffer, encoding = 'utf-8') {
+    const text = new TextDecoder(encoding).decode(buffer);
+    return parse(text, {
+        columns: true,
+        skip_empty_lines: true,
+        relax_column_count: true
+    });
+}
+
+async function run() {
+    console.log('Fetching official 2021 SGC structures...');
+    const [enBuf, frBuf] = await Promise.all([
+        fetchPublicBuffer(EN_URL),
+        fetchPublicBuffer(FR_URL)
+    ]);
+
+    const { places, identifiers } = normalize(
+        rowsFrom(enBuf, 'windows-1252'),
+        rowsFrom(frBuf, 'windows-1252')
+    );
+
+    const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const changes = await preflightPlaceChanges(client, orderedPlaces);
-        if (dryRun) {
-            await client.query('ROLLBACK');
-            return changes;
+
+        const [existingPlacesRes, existingAliasesRes] = await Promise.all([
+            client.query('SELECT id, slug, name_en, name_fr FROM places'),
+            client.query('SELECT slug, place_id FROM place_aliases')
+        ]);
+
+        const existingPlaces = existingPlacesRes.rows;
+        const existingAliases = existingAliasesRes.rows.map(row => ({
+            slug: row.slug,
+            placeId: row.place_id
+        }));
+
+        const { aliasesToAdd, conflicts } = planAliases(existingPlaces, places, existingAliases);
+        if (conflicts.length > 0) {
+            throw new Error('Refusing to sync places due to alias conflicts:\n' + JSON.stringify(conflicts, null, 2));
         }
-        for (let index = 0; index < changes.aliases.length; index += 500) {
-            const chunk = changes.aliases.slice(index, index + 500);
-            const values = [];
-            const tuples = chunk.map((alias, i) => {
-                const p = i * 2 + 1;
-                values.push(alias.slug, alias.placeId);
-                return `($${p},$${p + 1})`;
-            });
-            const inserted = await client.query(`
-                INSERT INTO place_aliases (slug, place_id)
-                VALUES ${tuples.join(',')}
-                ON CONFLICT (slug) DO UPDATE SET place_id = EXCLUDED.place_id
-                WHERE place_aliases.place_id = EXCLUDED.place_id
-            `, values);
-            if (inserted.rowCount !== chunk.length) {
-                throw new Error('place alias ownership changed during refresh');
+
+        const existingPlaceById = new Map(existingPlaces.map(p => [p.id, p]));
+        let nameChanges = 0;
+        let slugChanges = 0;
+
+        for (const place of places) {
+            const existing = existingPlaceById.get(place.id);
+            if (existing) {
+                if (existing.name_en !== place.nameEn || existing.name_fr !== place.nameFr) {
+                    nameChanges++;
+                }
+                if (existing.slug !== place.slug) {
+                    slugChanges++;
+                }
             }
         }
-        for (let index = 0; index < orderedPlaces.length; index += 250) {
-            const chunk = orderedPlaces.slice(index, index + 250);
+
+        for (let i = 0; i < places.length; i += 200) {
+            const batch = places.slice(i, i + 200);
+            const params = [];
             const values = [];
-            const tuples = chunk.map((place, i) => {
-                const p = i * 13 + 1;
+            let p = 1;
+
+            for (const place of batch) {
                 values.push(
-                    place.id, place.slug, place.kind, place.nameEn, place.nameFr,
-                    place.typeEn, place.typeFr, place.parentId, place.latitude,
-                    place.longitude, place.defaultZoom, true, place.featured === true
+                    `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, true, $${p++}, now())`
                 );
-                return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7},$${p + 8},$${p + 9},$${p + 10},$${p + 11},$${p + 12})`;
-            });
+                params.push(
+                    place.id,
+                    place.slug,
+                    place.kind,
+                    place.nameEn,
+                    place.nameFr,
+                    place.typeEn,
+                    place.typeFr,
+                    place.parentId,
+                    place.latitude,
+                    place.longitude,
+                    place.defaultZoom,
+                    place.featured
+                );
+            }
+
             await client.query(`
                 INSERT INTO places (
                     id, slug, kind, name_en, name_fr, type_en, type_fr,
-                    parent_id, latitude, longitude, default_zoom, enabled, featured
+                    parent_id, latitude, longitude, default_zoom, enabled, featured, updated_at
                 )
-                VALUES ${tuples.join(',')}
+                VALUES ${values.join(', ')}
                 ON CONFLICT (id) DO UPDATE SET
                     slug = EXCLUDED.slug,
                     kind = EXCLUDED.kind,
@@ -477,59 +586,72 @@ async function upsert({ places, identifiers }, dryRun, dbPool = pool) {
                     longitude = EXCLUDED.longitude,
                     default_zoom = EXCLUDED.default_zoom,
                     featured = EXCLUDED.featured,
+                    enabled = true,
                     updated_at = now()
-            `, values);
+            `, params);
         }
-        for (let index = 0; index < identifiers.length; index += 500) {
-            const chunk = identifiers.slice(index, index + 500);
+
+        for (let i = 0; i < identifiers.length; i += 200) {
+            const batch = identifiers.slice(i, i + 200);
+            const params = [];
             const values = [];
-            const tuples = chunk.map((identifier, i) => {
-                const p = i * 4 + 1;
-                values.push(identifier.placeId, identifier.scheme, identifier.vintage, identifier.value);
-                return `($${p},$${p + 1},$${p + 2},$${p + 3})`;
-            });
+            let p = 1;
+
+            for (const identifier of batch) {
+                values.push(`($${p++}, $${p++}, $${p++}, $${p++})`);
+                params.push(
+                    identifier.placeId,
+                    identifier.scheme,
+                    identifier.vintage,
+                    identifier.value
+                );
+            }
+
             await client.query(`
                 INSERT INTO place_identifiers (place_id, scheme, vintage, value)
-                VALUES ${tuples.join(',')}
-                ON CONFLICT (scheme, vintage, value) DO UPDATE SET place_id = EXCLUDED.place_id
-            `, values);
+                VALUES ${values.join(', ')}
+                ON CONFLICT (scheme, vintage, value) DO UPDATE SET
+                    place_id = EXCLUDED.place_id
+            `, params);
         }
+
+        for (const alias of aliasesToAdd) {
+            await client.query(`
+                INSERT INTO place_aliases (slug, place_id, created_at)
+                VALUES ($1, $2, now())
+                ON CONFLICT (slug) DO UPDATE SET
+                    place_id = EXCLUDED.place_id
+            `, [alias.slug, alias.placeId]);
+        }
+
         await client.query('COMMIT');
-        return changes;
-    } catch (error) {
-        try { await client.query('ROLLBACK'); } catch {}
-        throw error;
+        console.log(JSON.stringify({
+            places: places.length,
+            identifiers: identifiers.length,
+            name_changes: nameChanges,
+            slug_changes: slugChanges,
+            aliases_to_add: aliasesToAdd.length,
+            alias_conflicts: conflicts.length
+        }));
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Place sync failed:', err);
+        process.exit(1);
     } finally {
         client.release();
+        await pool.end();
     }
 }
 
-async function main() {
-    const [en, fr] = await Promise.all([
-        fetchPublicBuffer(EN_URL, { maxBytes: 2 * 1024 * 1024 }),
-        fetchPublicBuffer(FR_URL, { maxBytes: 2 * 1024 * 1024 })
-    ]);
-    const normalized = normalize(rowsFrom(en, 'windows-1252'), rowsFrom(fr, 'windows-1252'));
-    const changes = await upsert(normalized, process.argv.includes('--dry-run'));
-    console.log(JSON.stringify({
-        places: normalized.places.length,
-        identifiers: normalized.identifiers.length,
-        name_changes: changes.nameChanges,
-        slug_changes: changes.slugChanges,
-        aliases_to_add: changes.aliases.length,
-        alias_conflicts: changes.aliasConflicts
-    }));
-}
+module.exports = {
+    normalize,
+    planAliases,
+    rowsFrom,
+    run,
+    EN_URL,
+    FR_URL
+};
 
 if (require.main === module) {
-    main()
-        .then(() => pool.end())
-        .then(() => process.exit(0))
-        .catch(async error => {
-            console.error(error);
-            try { await pool.end(); } catch {}
-            process.exit(1);
-        });
+    run();
 }
-
-module.exports = { normalize, slugify, rowsFrom, preflightPlaceChanges, upsert, main };
