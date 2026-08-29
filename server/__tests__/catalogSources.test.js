@@ -3,7 +3,11 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'toronto-open-data', 'montreal-open-data', 'quebec-city-open-data', 'laval-open-data',
+            'toronto-open-data', 'montreal-open-data', 'quebec-city-open-data',
+            'gatineau-open-data', 'trois-rivieres-open-data', 'repentigny-open-data',
+            'longueuil-open-data', 'saguenay-open-data', 'rimouski-open-data',
+            'shawinigan-open-data', 'levis-open-data', 'sherbrooke-open-data',
+            'laval-open-data',
             'ottawa-hub', 'vancouver-open-data',
             'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data', 'halifax-hub',
             'hamilton-hub', 'surrey-hub',
@@ -16,7 +20,8 @@ describe('configured municipal catalogue sources', () => {
             'yellowknife-hub', 'barrie-hub', 'thunderbay-hub', 'chatham-kent-hub', 'kawartha-lakes-hub',
             'summerland-hub', 'norfolk-hub', 'haldimand-hub',
             'lethbridge-hub', 'medicine-hat-hub', 'airdrie-hub', 'canmore-hub',
-            'penticton-hub', 'langley-city-hub', 'huron-hub', 'cumberland-hub'
+            'penticton-hub', 'langley-city-hub', 'huron-hub', 'cumberland-hub',
+            'saint-john-hub'
         ]);
     });
 
@@ -492,7 +497,7 @@ describe('configured municipal catalogue sources', () => {
     test('configures Moncton, Guelph, Saanich, and Belleville sources', () => {
         const moncton = getSource('moncton-hub');
         const guelph = getSource('guelph-hub');
-        const saanich = getSource('saanich-hub');
+        const侵s = getSource('saanich-hub');
         const belleville = getSource('belleville-hub');
 
         expect(moncton).toEqual(expect.objectContaining({
@@ -511,11 +516,11 @@ describe('configured municipal catalogue sources', () => {
             placeId: 'sgc-csd-3523008', relationship: 'direct', includesDescendants: false
         }));
 
-        expect(saanich).toEqual(expect.objectContaining({
+        expect(侵s).toEqual(expect.objectContaining({
             kind: 'arcgis-hub',
             upstreamHost: 'opendata-saanich.hub.arcgis.com'
         }));
-        expect(saanich.placeRules[0]).toEqual(expect.objectContaining({
+        expect(侵s.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-5917021', relationship: 'direct', includesDescendants: false
         }));
 
@@ -615,5 +620,40 @@ describe('configured municipal catalogue sources', () => {
             expect(source.placeRules[0].placeId).toBe(placeId);
             expect(source.placeRules[0].relationship).toBe('direct');
         }
+    });
+
+    test('configures v33 Quebec and Atlantic Canada sources with official licences and direct place rules', () => {
+        const v33QcSources = [
+            { id: 'gatineau-open-data', org: 'ville-de-gatineau', placeId: 'sgc-csd-2481017' },
+            { id: 'trois-rivieres-open-data', org: 'ville-de-trois-rivieres', placeId: 'sgc-csd-2437067' },
+            { id: 'repentigny-open-data', org: 'ville-de-repentigny', placeId: 'sgc-csd-2460013' },
+            { id: 'longueuil-open-data', org: 'ville-de-longueuil', placeId: 'sgc-csd-2458227' },
+            { id: 'saguenay-open-data', org: 'ville-de-saguenay', placeId: 'sgc-csd-2494068' },
+            { id: 'rimouski-open-data', org: 'ville-de-rimouski', placeId: 'sgc-csd-2410043' },
+            { id: 'shawinigan-open-data', org: 'ville-de-shawinigan', placeId: 'sgc-csd-2436033' },
+            { id: 'levis-open-data', org: 'ville-de-levis', placeId: 'sgc-csd-2425213' },
+            { id: 'sherbrooke-open-data', org: 'ville-de-sherbrooke', placeId: 'sgc-csd-2443027' }
+        ];
+
+        for (const { id, org, placeId } of v33QcSources) {
+            const source = getSource(id);
+            expect(source).toBeDefined();
+            expect(source.kind).toBe('ckan');
+            expect(source.upstreamHost).toBe('www.donneesquebec.ca');
+            expect(source.catalogOrganization).toBe(org);
+            expect(source.directGeoJsonMaps).toBe(true);
+            expect(source.metadataLanguage).toBe('fr');
+            expect(source.placeRules[0].placeId).toBe(placeId);
+            expect(source.placeRules[0].relationship).toBe('direct');
+            expect(source.licenseRules[0].licenseId).toBe('cc-by');
+        }
+
+        const saintJohn = getSource('saint-john-hub');
+        expect(saintJohn).toBeDefined();
+        expect(saintJohn.kind).toBe('arcgis-hub');
+        expect(saintJohn.upstreamHost).toBe('catalogue-saintjohn.opendata.arcgis.com');
+        expect(saintJohn.placeRules[0].placeId).toBe('sgc-csd-1301006');
+        expect(saintJohn.placeRules[0].relationship).toBe('direct');
+        expect(saintJohn.licenseRules[0].license.titleEn).toBe('Open Government Licence – City of Saint John');
     });
 });

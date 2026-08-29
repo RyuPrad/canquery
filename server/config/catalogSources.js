@@ -441,6 +441,14 @@ const HURON_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes du comté de Huron.'
 };
 
+const SAINT_JOHN_LICENSE = {
+    titleEn: 'Open Government Licence – City of Saint John',
+    titleFr: 'Licence du gouvernement ouvert – Ville de Saint John',
+    url: 'https://catalogue-saintjohn.opendata.arcgis.com/pages/open-government-licence-city-of-saint-john',
+    attributionEn: 'Contains information licensed under the Open Government Licence – City of Saint John.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Saint John.'
+};
+
 const CUMBERLAND_LICENSE = {
     titleEn: 'Municipality of the County of Cumberland Open Data Licence',
     titleFr: 'Licence de données ouvertes de la municipalité du comté de Cumberland',
@@ -612,6 +620,312 @@ const sources = [{
     placeRules: [{
         publisher: /^ville de québec$/i,
         placeId: 'sgc-csd-2423027',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'gatineau-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Gatineau Open Data',
+    nameFr: 'Données ouvertes de la Ville de Gatineau',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-gatineau',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-gatineau',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-gatineau',
+    defaultOrganizationName: 'ville-de-gatineau',
+    defaultOrganizationTitleEn: 'City of Gatineau',
+    defaultOrganizationTitleFr: 'Ville de Gatineau',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de gatineau$/i }],
+    licenseRules: [{
+        publisher: /^ville de gatineau$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de gatineau$/i,
+        placeId: 'sgc-csd-2481017',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'trois-rivieres-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Trois-Rivières Open Data',
+    nameFr: 'Données ouvertes de la Ville de Trois-Rivières',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-trois-rivieres',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-trois-rivieres',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-trois-rivieres',
+    defaultOrganizationName: 'ville-de-trois-rivieres',
+    defaultOrganizationTitleEn: 'City of Trois-Rivières',
+    defaultOrganizationTitleFr: 'Ville de Trois-Rivières',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de trois-rivi[eè]res$/i }],
+    licenseRules: [{
+        publisher: /^ville de trois-rivi[eè]res$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de trois-rivi[eè]res$/i,
+        placeId: 'sgc-csd-2437067',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'repentigny-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Repentigny Open Data',
+    nameFr: 'Données ouvertes de la Ville de Repentigny',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-repentigny',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-repentigny',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-repentigny',
+    defaultOrganizationName: 'ville-de-repentigny',
+    defaultOrganizationTitleEn: 'City of Repentigny',
+    defaultOrganizationTitleFr: 'Ville de Repentigny',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de repentigny$/i }],
+    licenseRules: [{
+        publisher: /^ville de repentigny$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de repentigny$/i,
+        placeId: 'sgc-csd-2460013',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'longueuil-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Longueuil Open Data',
+    nameFr: 'Données ouvertes de la Ville de Longueuil',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-longueuil',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-longueuil',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-longueuil',
+    defaultOrganizationName: 'ville-de-longueuil',
+    defaultOrganizationTitleEn: 'City of Longueuil',
+    defaultOrganizationTitleFr: 'Ville de Longueuil',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de longueuil$/i }],
+    licenseRules: [{
+        publisher: /^ville de longueuil$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de longueuil$/i,
+        placeId: 'sgc-csd-2458227',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'saguenay-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Saguenay Open Data',
+    nameFr: 'Données ouvertes de la Ville de Saguenay',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-saguenay',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-saguenay',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-saguenay',
+    defaultOrganizationName: 'ville-de-saguenay',
+    defaultOrganizationTitleEn: 'City of Saguenay',
+    defaultOrganizationTitleFr: 'Ville de Saguenay',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de saguenay$/i }],
+    licenseRules: [{
+        publisher: /^ville de saguenay$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de saguenay$/i,
+        placeId: 'sgc-csd-2494068',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'rimouski-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Rimouski Open Data',
+    nameFr: 'Données ouvertes de la Ville de Rimouski',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-rimouski',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-rimouski',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-rimouski',
+    defaultOrganizationName: 'ville-de-rimouski',
+    defaultOrganizationTitleEn: 'City of Rimouski',
+    defaultOrganizationTitleFr: 'Ville de Rimouski',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de rimouski$/i }],
+    licenseRules: [{
+        publisher: /^ville de rimouski$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de rimouski$/i,
+        placeId: 'sgc-csd-2410043',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'shawinigan-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Shawinigan Open Data',
+    nameFr: 'Données ouvertes de la Ville de Shawinigan',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-shawinigan',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-shawinigan',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-shawinigan',
+    defaultOrganizationName: 'ville-de-shawinigan',
+    defaultOrganizationTitleEn: 'City of Shawinigan',
+    defaultOrganizationTitleFr: 'Ville de Shawinigan',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de shawinigan$/i }],
+    licenseRules: [{
+        publisher: /^ville de shawinigan$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de shawinigan$/i,
+        placeId: 'sgc-csd-2436033',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'levis-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Lévis Open Data',
+    nameFr: 'Données ouvertes de la Ville de Lévis',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-levis',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-levis',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-levis',
+    defaultOrganizationName: 'ville-de-levis',
+    defaultOrganizationTitleEn: 'City of Lévis',
+    defaultOrganizationTitleFr: 'Ville de Lévis',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de l[eé]vis$/i }],
+    licenseRules: [{
+        publisher: /^ville de l[eé]vis$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de l[eé]vis$/i,
+        placeId: 'sgc-csd-2425213',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
+}, {
+    id: 'sherbrooke-open-data',
+    kind: 'ckan',
+    nameEn: 'City of Sherbrooke Open Data',
+    nameFr: 'Données ouvertes de la Ville de Sherbrooke',
+    homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-sherbrooke',
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-sherbrooke',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-sherbrooke',
+    defaultOrganizationName: 'ville-de-sherbrooke',
+    defaultOrganizationTitleEn: 'City of Sherbrooke',
+    defaultOrganizationTitleFr: 'Ville de Sherbrooke',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de sherbrooke$/i }],
+    licenseRules: [{
+        publisher: /^ville de sherbrooke$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
+    placeRules: [{
+        publisher: /^ville de sherbrooke$/i,
+        placeId: 'sgc-csd-2443027',
         relationship: 'direct',
         includesDescendants: false
     }]
@@ -2298,6 +2612,36 @@ const sources = [{
         relationship: 'direct',
         includesDescendants: true
     }]
+}, {
+    id: 'saint-john-hub',
+    kind: 'arcgis-hub',
+    nameEn: 'City of Saint John Open Data',
+    nameFr: 'Données ouvertes de la Ville de Saint John',
+    homepageUrl: 'https://catalogue-saintjohn.opendata.arcgis.com/',
+    catalogUrl: 'https://catalogue-saintjohn.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'catalogue-saintjohn.opendata.arcgis.com',
+    enabled: true,
+    syncIntervalHours: 24,
+    maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
+    publisherAliases: [
+        { publisher: /^the city of saint john$/i, name: 'City of Saint John' },
+        { publisher: /^city of saint john$/i, name: 'City of Saint John' },
+        { publisher: /^{{source}}$/i, name: 'City of Saint John' }
+    ],
+    authoritativePublishers: [
+        { publisher: /saint john/i },
+        { publisher: /^{{source}}$/i }
+    ],
+    licenseRules: [
+        { publisher: /.*/, license: SAINT_JOHN_LICENSE }
+    ],
+    placeRules: [{
+        publisher: /.*/,
+        placeId: 'sgc-csd-1301006',
+        relationship: 'direct',
+        includesDescendants: false
+    }]
 }
 ];
 
@@ -2364,6 +2708,7 @@ module.exports = {
     LANGLEY_CITY_LICENSE,
     HURON_LICENSE,
     CUMBERLAND_LICENSE,
+    SAINT_JOHN_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,

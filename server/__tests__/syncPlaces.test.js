@@ -786,4 +786,83 @@ describe('Statistics Canada SGC place normalization', () => {
             typeEn: 'County', featured: true, latitude: 45.7500, longitude: -64.0000, defaultZoom: 8
         }));
     });
+
+    test('features Gatineau, Trois-Rivières, Repentigny, Longueuil, Saguenay, Rimouski, Shawinigan, Lévis, Sherbrooke, and Saint John', () => {
+        const en = [
+            { Level: '2', Code: '24', 'Class title': 'Quebec' },
+            { Level: '3', Code: '2481', 'Class title': 'Gatineau' },
+            { Level: '4', Code: '2481017', 'Class title': 'Gatineau' },
+            { Level: '3', Code: '2437', 'Class title': 'Francheville' },
+            { Level: '4', Code: '2437067', 'Class title': 'Trois-Rivières' },
+            { Level: '3', Code: '2460', 'Class title': 'L’Assomption' },
+            { Level: '4', Code: '2460013', 'Class title': 'Repentigny' },
+            { Level: '3', Code: '2458', 'Class title': 'Longueuil' },
+            { Level: '4', Code: '2458227', 'Class title': 'Longueuil' },
+            { Level: '3', Code: '2494', 'Class title': 'Le Saguenay-et-son-Fjord' },
+            { Level: '4', Code: '2494068', 'Class title': 'Saguenay' },
+            { Level: '3', Code: '2410', 'Class title': 'Rimouski-Neigette' },
+            { Level: '4', Code: '2410043', 'Class title': 'Rimouski' },
+            { Level: '3', Code: '2436', 'Class title': 'Shawinigan' },
+            { Level: '4', Code: '2436033', 'Class title': 'Shawinigan' },
+            { Level: '3', Code: '2425', 'Class title': 'Lévis' },
+            { Level: '4', Code: '2425213', 'Class title': 'Lévis' },
+            { Level: '3', Code: '2443', 'Class title': 'Sherbrooke' },
+            { Level: '4', Code: '2443027', 'Class title': 'Sherbrooke' },
+            { Level: '2', Code: '13', 'Class title': 'New Brunswick' },
+            { Level: '3', Code: '1301', 'Class title': 'Saint John' },
+            { Level: '4', Code: '1301006', 'Class title': 'Saint John' }
+        ];
+        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const result = normalize(en, fr);
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2481017')).toEqual(expect.objectContaining({
+            slug: 'gatineau-qc', kind: 'municipality', parentId: 'sgc-cd-2481',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.4765, longitude: -75.7013, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2437067')).toEqual(expect.objectContaining({
+            slug: 'trois-rivieres-qc', kind: 'municipality', parentId: 'sgc-cd-2437',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 46.3432, longitude: -72.5421, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2460013')).toEqual(expect.objectContaining({
+            slug: 'repentigny-qc', kind: 'municipality', parentId: 'sgc-cd-2460',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.7423, longitude: -73.4497, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2458227')).toEqual(expect.objectContaining({
+            slug: 'longueuil-qc', kind: 'municipality', parentId: 'sgc-cd-2458',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.5312, longitude: -73.5181, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2494068')).toEqual(expect.objectContaining({
+            slug: 'saguenay-qc', kind: 'municipality', parentId: 'sgc-cd-2494',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 48.4284, longitude: -71.0684, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2410043')).toEqual(expect.objectContaining({
+            slug: 'rimouski-qc', kind: 'municipality', parentId: 'sgc-cd-2410',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 48.4488, longitude: -68.5240, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2436033')).toEqual(expect.objectContaining({
+            slug: 'shawinigan-qc', kind: 'municipality', parentId: 'sgc-cd-2436',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 46.5667, longitude: -72.7500, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2425213')).toEqual(expect.objectContaining({
+            slug: 'levis-qc', kind: 'municipality', parentId: 'sgc-cd-2425',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 46.8033, longitude: -71.1779, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-2443027')).toEqual(expect.objectContaining({
+            slug: 'sherbrooke-qc', kind: 'municipality', parentId: 'sgc-cd-2443',
+            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.4042, longitude: -71.8929, defaultZoom: 10
+        }));
+
+        expect(result.places.find(place => place.id === 'sgc-csd-1301006')).toEqual(expect.objectContaining({
+            slug: 'saint-john-nb', kind: 'municipality', parentId: 'sgc-cd-1301',
+            typeEn: 'City', typeFr: 'Cité', featured: true, latitude: 45.2733, longitude: -66.0633, defaultZoom: 10
+        }));
+    });
 });

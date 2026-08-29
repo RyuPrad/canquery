@@ -108,7 +108,17 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-csd-5915001',
     'sgc-cd-3540',
     'sgc-cd-1211',
-    'sgc-csd-3528018'
+    'sgc-csd-3528018',
+    'sgc-csd-2481017',
+    'sgc-csd-2437067',
+    'sgc-csd-2460013',
+    'sgc-csd-2458227',
+    'sgc-csd-2494068',
+    'sgc-csd-2410043',
+    'sgc-csd-2436033',
+    'sgc-csd-2425213',
+    'sgc-csd-2443027',
+    'sgc-csd-1301006'
 ]);
 const MUNICIPAL_TYPES = {
     '2423027': ['City', 'Ville'],
@@ -196,7 +206,17 @@ const MUNICIPAL_TYPES = {
     '5915001': ['City', 'Ville'],
     '3540': ['County', 'Comté'],
     '1211': ['County', 'Comté'],
-    '3528018': ['City', 'Ville']
+    '3528018': ['City', 'Ville'],
+    '2481017': ['City', 'Ville'],
+    '2437067': ['City', 'Ville'],
+    '2460013': ['City', 'Ville'],
+    '2458227': ['City', 'Ville'],
+    '2494068': ['City', 'Ville'],
+    '2410043': ['City', 'Ville'],
+    '2436033': ['City', 'Ville'],
+    '2425213': ['City', 'Ville'],
+    '2443027': ['City', 'Ville'],
+    '1301006': ['City', 'Cité']
 };
 const PLACE_VIEWPORTS = {
     '2423027': [46.8139, -71.208, 10],
@@ -281,7 +301,17 @@ const PLACE_VIEWPORTS = {
     '5915001': [49.1044, -122.6580, 10],
     '3540': [43.5833, -81.5000, 9],
     '1211': [45.7500, -64.0000, 8],
-    '3528018': [42.9333, -79.8667, 9]
+    '3528018': [42.9333, -79.8667, 9],
+    '2481017': [45.4765, -75.7013, 10],
+    '2437067': [46.3432, -72.5421, 10],
+    '2460013': [45.7423, -73.4497, 10],
+    '2458227': [45.5312, -73.5181, 10],
+    '2494068': [48.4284, -71.0684, 10],
+    '2410043': [48.4488, -68.5240, 10],
+    '2436033': [46.5667, -72.7500, 10],
+    '2425213': [46.8033, -71.1779, 10],
+    '2443027': [45.4042, -71.8929, 10],
+    '1301006': [45.2733, -66.0633, 10]
 };
 
 function slugify(value) {
@@ -415,6 +445,24 @@ function normalize(enRows, frRows) {
         if (code === '1211') slug = 'cumberland-county-ns';
         if (code === '3528018') slug = 'haldimand-county-on';
         if (code === '6106023') slug = 'yellowknife-nt';
+        if (code === '2481') slug = 'gatineau-region-qc';
+        if (code === '2481017') slug = 'gatineau-qc';
+        if (code === '2437') slug = 'trois-rivieres-region-qc';
+        if (code === '2437067') slug = 'trois-rivieres-qc';
+        if (code === '2460013') slug = 'repentigny-qc';
+        if (code === '2458') slug = 'longueuil-region-qc';
+        if (code === '2458227') slug = 'longueuil-qc';
+        if (code === '2494') slug = 'le-saguenay-et-son-fjord-qc';
+        if (code === '2494068') slug = 'saguenay-qc';
+        if (code === '2410043') slug = 'rimouski-qc';
+        if (code === '2436') slug = 'shawinigan-region-qc';
+        if (code === '2436033') slug = 'shawinigan-qc';
+        if (code === '2425') slug = 'levis-region-qc';
+        if (code === '2425213') slug = 'levis-qc';
+        if (code === '2443') slug = 'sherbrooke-region-qc';
+        if (code === '2443027') slug = 'sherbrooke-qc';
+        if (code === '1301') slug = 'saint-john-county-nb';
+        if (code === '1301006') slug = 'saint-john-nb';
         if (code === '3518') {
             typeEn = 'Regional municipality';
             typeFr = 'Municipalité régionale';
@@ -479,211 +527,173 @@ function planAliases(existingPlaces, canonicalPlaces, existingAliases) {
     const aliasesToAdd = [];
     const conflicts = [];
 
-    for (const canonical of canonicalPlaces) {
-        const current = existingById.get(canonical.id);
-        if (!current || !current.slug || current.slug === canonical.slug) continue;
+    for (const place of canonicalPlaces) {
+        const existing = existingById.get(place.id);
+        if (!existing || !existing.slug || existing.slug === place.slug) continue;
 
-        const formerSlug = current.slug;
-        const canonicalOwner = canonicalBySlug.get(formerSlug);
-        if (canonicalOwner && canonicalOwner.id !== canonical.id) {
+        const currentCanonical = canonicalBySlug.get(existing.slug);
+        if (currentCanonical && currentCanonical.id !== place.id) {
             conflicts.push({
-                slug: formerSlug,
-                expectedPlaceId: canonical.id,
-                existingPlaceId: canonicalOwner.id,
-                reason: 'former slug matches another canonical place'
+                placeId: place.id,
+                slug: existing.slug,
+                reason: 'canonical-claimed',
+                expectedPlaceId: place.id,
+                existingPlaceId: currentCanonical.id
             });
             continue;
         }
 
-        const aliasOwner = aliasBySlug.get(formerSlug);
-        if (aliasOwner && aliasOwner.placeId !== canonical.id) {
+        const existingAlias = aliasBySlug.get(existing.slug);
+        if (existingAlias && existingAlias.placeId !== place.id) {
             conflicts.push({
-                slug: formerSlug,
-                expectedPlaceId: canonical.id,
-                existingPlaceId: aliasOwner.placeId,
-                reason: 'former slug already mapped to another place'
+                placeId: place.id,
+                slug: existing.slug,
+                reason: 'alias-claimed',
+                expectedPlaceId: place.id,
+                existingPlaceId: existingAlias.placeId
             });
             continue;
         }
 
-        if (!aliasOwner) {
-            aliasesToAdd.push({
-                slug: formerSlug,
-                placeId: canonical.id
-            });
+        if (!existingAlias) {
+            aliasesToAdd.push({ placeId: place.id, slug: existing.slug });
         }
     }
 
     return { aliasesToAdd, conflicts };
 }
 
-function rowsFrom(buffer, encoding = 'utf-8') {
-    const text = new TextDecoder(encoding).decode(buffer);
-    return parse(text, {
-        columns: true,
-        skip_empty_lines: true,
-        relax_column_count: true
-    });
+async function apply(client, normalized) {
+    const { places, identifiers } = normalized;
+
+    const existingPlacesRes = await client.query('SELECT id, slug, kind FROM places');
+    const existingAliasesRes = await client.query('SELECT place_id AS "placeId", slug, kind FROM place_aliases');
+    const { aliasesToAdd, conflicts } = planAliases(existingPlacesRes.rows, places, existingAliasesRes.rows);
+
+    if (conflicts.length > 0) {
+        throw new Error('Conflicting aliases: ' + JSON.stringify(conflicts));
+    }
+
+    const placeIds = places.map(p => p.id);
+    const slugs = places.map(p => p.slug);
+    const kinds = places.map(p => p.kind);
+    const namesEn = places.map(p => p.nameEn);
+    const namesFr = places.map(p => p.nameFr);
+    const typesEn = places.map(p => p.typeEn);
+    const typesFr = places.map(p => p.typeFr);
+    const parentIds = places.map(p => p.parentId);
+    const featuredList = places.map(p => p.featured);
+    const lats = places.map(p => p.latitude);
+    const lngs = places.map(p => p.longitude);
+    const zooms = places.map(p => p.defaultZoom);
+
+    await client.query(`
+        INSERT INTO places (id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id, featured, latitude, longitude, default_zoom, enabled)
+        SELECT
+            p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr, p.parent_id, p.featured, p.latitude, p.longitude, p.default_zoom, true
+        FROM UNNEST(
+            $1::text[], $2::text[], $3::text[], $4::text[], $5::text[],
+            $6::text[], $7::text[], $8::text[], $9::boolean[],
+            $10::double precision[], $11::double precision[], $12::integer[]
+        ) AS p(id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id, featured, latitude, longitude, default_zoom)
+        ON CONFLICT (id) DO UPDATE SET
+            slug = EXCLUDED.slug,
+            kind = EXCLUDED.kind,
+            name_en = EXCLUDED.name_en,
+            name_fr = EXCLUDED.name_fr,
+            type_en = EXCLUDED.type_en,
+            type_fr = EXCLUDED.type_fr,
+            parent_id = EXCLUDED.parent_id,
+            featured = EXCLUDED.featured,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            default_zoom = EXCLUDED.default_zoom,
+            enabled = true,
+            updated_at = NOW();
+    `, [placeIds, slugs, kinds, namesEn, namesFr, typesEn, typesFr, parentIds, featuredList, lats, lngs, zooms]);
+
+    const identPlaceIds = identifiers.map(i => i.placeId);
+    const identSchemes = identifiers.map(i => i.scheme);
+    const identVintages = identifiers.map(i => i.vintage);
+    const identValues = identifiers.map(i => i.value);
+
+    await client.query(`
+        INSERT INTO place_identifiers (place_id, scheme, vintage, identifier, is_primary)
+        SELECT
+            i.place_id, i.scheme, i.vintage, i.identifier, true
+        FROM UNNEST(
+            $1::text[], $2::text[], $3::text[], $4::text[]
+        ) AS i(place_id, scheme, vintage, identifier)
+        ON CONFLICT (scheme, identifier) DO UPDATE SET
+            place_id = EXCLUDED.place_id,
+            vintage = EXCLUDED.vintage,
+            is_primary = EXCLUDED.is_primary,
+            updated_at = NOW();
+    `, [identPlaceIds, identSchemes, identVintages, identValues]);
+
+    if (aliasesToAdd.length > 0) {
+        const aliasPlaceIds = aliasesToAdd.map(a => a.placeId);
+        const aliasSlugs = aliasesToAdd.map(a => a.slug);
+
+        await client.query(`
+            INSERT INTO place_aliases (place_id, slug, kind)
+            SELECT a.place_id, a.slug, 'legacy'
+            FROM UNNEST($1::text[], $2::text[]) AS a(place_id, slug)
+            ON CONFLICT (slug) DO UPDATE SET
+                place_id = EXCLUDED.place_id,
+                kind = EXCLUDED.kind,
+                updated_at = NOW();
+        `, [aliasPlaceIds, aliasSlugs]);
+    }
 }
 
-async function run() {
-    console.log('Fetching official 2021 SGC structures...');
+async function sync() {
+    console.log('Fetching StatCan SGC 2021 structure CSVs...');
     const [enBuf, frBuf] = await Promise.all([
         fetchPublicBuffer(EN_URL),
         fetchPublicBuffer(FR_URL)
     ]);
 
-    const { places, identifiers } = normalize(
-        rowsFrom(enBuf, 'windows-1252'),
-        rowsFrom(frBuf, 'windows-1252')
-    );
+    const enRows = parse(enBuf, { columns: true, skip_empty_lines: true });
+    const frRows = parse(frBuf, { columns: true, skip_empty_lines: true });
+
+    console.log('Parsed ' + enRows.length + ' EN rows, ' + frRows.length + ' FR rows. Normalizing...');
+    const normalized = normalize(enRows, frRows);
+    console.log('Normalized ' + normalized.places.length + ' places, ' + normalized.identifiers.length + ' identifiers.');
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-
-        const [existingPlacesRes, existingAliasesRes] = await Promise.all([
-            client.query('SELECT id, slug, name_en, name_fr FROM places'),
-            client.query('SELECT slug, place_id FROM place_aliases')
-        ]);
-
-        const existingPlaces = existingPlacesRes.rows;
-        const existingAliases = existingAliasesRes.rows.map(row => ({
-            slug: row.slug,
-            placeId: row.place_id
-        }));
-
-        const { aliasesToAdd, conflicts } = planAliases(existingPlaces, places, existingAliases);
-        if (conflicts.length > 0) {
-            throw new Error('Refusing to sync places due to alias conflicts:\n' + JSON.stringify(conflicts, null, 2));
-        }
-
-        const existingPlaceById = new Map(existingPlaces.map(p => [p.id, p]));
-        let nameChanges = 0;
-        let slugChanges = 0;
-
-        for (const place of places) {
-            const existing = existingPlaceById.get(place.id);
-            if (existing) {
-                if (existing.name_en !== place.nameEn || existing.name_fr !== place.nameFr) {
-                    nameChanges++;
-                }
-                if (existing.slug !== place.slug) {
-                    slugChanges++;
-                }
-            }
-        }
-
-        for (let i = 0; i < places.length; i += 200) {
-            const batch = places.slice(i, i + 200);
-            const params = [];
-            const values = [];
-            let p = 1;
-
-            for (const place of batch) {
-                values.push(
-                    `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, true, $${p++}, now())`
-                );
-                params.push(
-                    place.id,
-                    place.slug,
-                    place.kind,
-                    place.nameEn,
-                    place.nameFr,
-                    place.typeEn,
-                    place.typeFr,
-                    place.parentId,
-                    place.latitude,
-                    place.longitude,
-                    place.defaultZoom,
-                    place.featured
-                );
-            }
-
-            await client.query(`
-                INSERT INTO places (
-                    id, slug, kind, name_en, name_fr, type_en, type_fr,
-                    parent_id, latitude, longitude, default_zoom, enabled, featured, updated_at
-                )
-                VALUES ${values.join(', ')}
-                ON CONFLICT (id) DO UPDATE SET
-                    slug = EXCLUDED.slug,
-                    kind = EXCLUDED.kind,
-                    name_en = EXCLUDED.name_en,
-                    name_fr = EXCLUDED.name_fr,
-                    type_en = EXCLUDED.type_en,
-                    type_fr = EXCLUDED.type_fr,
-                    parent_id = EXCLUDED.parent_id,
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    default_zoom = EXCLUDED.default_zoom,
-                    featured = EXCLUDED.featured,
-                    enabled = true,
-                    updated_at = now()
-            `, params);
-        }
-
-        for (let i = 0; i < identifiers.length; i += 200) {
-            const batch = identifiers.slice(i, i + 200);
-            const params = [];
-            const values = [];
-            let p = 1;
-
-            for (const identifier of batch) {
-                values.push(`($${p++}, $${p++}, $${p++}, $${p++})`);
-                params.push(
-                    identifier.placeId,
-                    identifier.scheme,
-                    identifier.vintage,
-                    identifier.value
-                );
-            }
-
-            await client.query(`
-                INSERT INTO place_identifiers (place_id, scheme, vintage, value)
-                VALUES ${values.join(', ')}
-                ON CONFLICT (scheme, vintage, value) DO UPDATE SET
-                    place_id = EXCLUDED.place_id
-            `, params);
-        }
-
-        for (const alias of aliasesToAdd) {
-            await client.query(`
-                INSERT INTO place_aliases (slug, place_id, created_at)
-                VALUES ($1, $2, now())
-                ON CONFLICT (slug) DO UPDATE SET
-                    place_id = EXCLUDED.place_id
-            `, [alias.slug, alias.placeId]);
-        }
-
+        await apply(client, normalized);
         await client.query('COMMIT');
-        console.log(JSON.stringify({
-            places: places.length,
-            identifiers: identifiers.length,
-            name_changes: nameChanges,
-            slug_changes: slugChanges,
-            aliases_to_add: aliasesToAdd.length,
-            alias_conflicts: conflicts.length
-        }));
+        console.log('Successfully synced StatCan SGC 2021 places to database.');
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Place sync failed:', err);
-        process.exit(1);
+        console.error('Error syncing places:', err);
+        throw err;
     } finally {
         client.release();
-        await pool.end();
     }
 }
 
+if (require.main === module) {
+    sync().then(() => pool.end()).catch(err => {
+        console.error(err);
+        process.exit(1);
+    });
+}
+
 module.exports = {
+    PROVINCES,
+    TERRITORIES,
+    SINGLE_TIER_CITY_CSD,
+    SINGLE_TIER_CITY_CD,
+    FEATURED_PLACE_IDS,
+    MUNICIPAL_TYPES,
+    PLACE_VIEWPORTS,
+    slugify,
     normalize,
     planAliases,
-    rowsFrom,
-    run,
-    EN_URL,
-    FR_URL
+    apply,
+    sync
 };
-
-if (require.main === module) {
-    run();
-}

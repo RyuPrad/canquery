@@ -251,5 +251,14 @@ describe('generic CKAN source adapter', () => {
         expect(lavalResult.value.places[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-2465'
         }));
+
+        const gatineau = getSource('gatineau-open-data');
+        const gatineauResult = await adapter.enrichRecord({ ...record,
+            id: 'gatineau-record',
+            organization: { id: 'ville-de-gatineau', name: 'ville-de-gatineau', title: 'Ville de Gatineau' }
+        }, gatineau);
+        expect(gatineauResult.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-2481017'
+        }));
     });
 });
