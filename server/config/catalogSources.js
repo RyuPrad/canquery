@@ -1,77 +1,49 @@
-const TORONTO_PUBLISHERS = [
-    /^city of toronto$/i,
-    /^city of toronto;\s*city clerk's office;\s*corporate records and information management$/i,
-    /^city of toronto;\s*city planning;\s*policy and research$/i,
-    /^city of toronto;\s*corporate services;\s*customer experience$/i,
-    /^city of toronto;\s*corporate services;\s*technology and innovation$/i,
-    /^city of toronto;\s*corporate services;\s*technology and transformation$/i,
-    /^city of toronto;\s*corporate services;\s*technology &\s*transformation$/i,
-    /^city of toronto;\s*economic development and culture;\s*arts and culture$/i,
-    /^city of toronto;\s*economic development and culture;\s*business growth and services$/i,
-    /^city of toronto;\s*economic development and culture;\s*program support$/i,
-    /^city of toronto;\s*employment and social services;\s*social policy, analysis and research$/i,
-    /^city of toronto;\s*environment and climate;\s*environment and energy$/i,
-    /^city of toronto;\s*engineering and construction services;\s*engineering review$/i,
-    /^city of toronto;\s*fire services;\s*professional development and accreditation$/i,
-    /^city of toronto;\s*housing secretariat;\s*housing development and improvement$/i,
-    /^city of toronto;\s*municipal licensing and standards;\s*policy and strategic support$/i,
-    /^city of toronto;\s*parks, forestry and recreation;\s*management services$/i,
-    /^city of toronto;\s*parks, forestry and recreation;\s*parks$/i,
-    /^city of toronto;\s*parks, forestry and recreation;\s*policy, strategy and innovation$/i,
-    /^city of toronto;\s*parks, forestry and recreation;\s*urban forestry$/i,
-    /^city of toronto;\s*shelter, support and housing administration;\s*homelessness initiatives and prevention services$/i,
-    /^city of toronto;\s*social development, finance and administration;\s*community resources$/i,
-    /^city of toronto;\s*social development, finance and administration;\s*financial planning and management$/i,
-    /^city of toronto;\s*social development, finance and administration;\s*policy, planning and research$/i,
-    /^city of toronto;\s*social development, finance and administration;\s*social policy, analysis and research$/i,
-    /^city of toronto;\s*toronto building;\s*customer service$/i,
-    /^city of toronto;\s*toronto public health;\s*health protection$/i,
-    /^city of toronto;\s*toronto public health;\s*office of the medical officer of health$/i,
-    /^city of toronto;\s*toronto public health;\s*strategy and preventative health$/i,
-    /^city of toronto;\s*toronto public library$/i,
-    /^city of toronto;\s*toronto water;\s*business and customer services$/i,
-    /^city of toronto;\s*toronto water;\s*operational support$/i,
-    /^city of toronto;\s*transportation services;\s*cycling and pedestrian projects$/i,
-    /^city of toronto;\s*transportation services;\s*infrastructure and policy$/i,
-    /^city of toronto;\s*transportation services;\s*operations and maintenance$/i,
-    /^city of toronto;\s*transportation services;\s*permits and enforcement$/i,
-    /^city of toronto;\s*transportation services;\s*policy and innovation$/i,
-    /^city of toronto;\s*transportation services;\s*traffic management$/i,
-    /^city of toronto;\s*transportation services;\s*traffic operations$/i,
-    /^city of toronto;\s*transportation services;\s*transportation infrastructure management$/i,
-    /^city of toronto;\s*transportation services;\s*work zone coordination and traffic mitigation$/i
-];
+const OSHAWA_LICENSE = {
+    titleEn: 'Open Government Licence – The Corporation of the City of Oshawa',
+    titleFr: 'Licence du gouvernement ouvert – The Corporation of the City of Oshawa',
+    url: 'https://map.oshawa.ca/OpenData/Open%20Government%20Licence%20version%202.0%20-%20Oshawa.pdf',
+    attributionEn: 'Contains information licensed under the Open Government Licence – The Corporation of the City of Oshawa.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – The Corporation of the City of Oshawa.'
+};
+
+const DURHAM_LICENSE = {
+    titleEn: 'Region of Durham Open Data Licence v1.0',
+    titleFr: 'Licence de données ouvertes de la région de Durham v1.0',
+    url: 'https://www.durham.ca/regional-government/access-to-information/open-data/',
+    attributionEn: "Contains public sector information made available under The Regional Municipality of Durham's Open Data Licence.",
+    attributionFr: "Contient des renseignements du secteur public fournis selon la licence de données ouvertes de la municipalité régionale de Durham."
+};
 
 const AJAX_LICENSE = {
     titleEn: 'Town of Ajax Open Data Licence',
     titleFr: 'Licence de données ouvertes de la Ville d’Ajax',
-    url: 'https://open-data-ajax.opendata.arcgis.com/pages/licence-agreement',
+    url: 'https://townofajax.maps.arcgis.com/sharing/rest/content/items/22e2d8e248724d7cb0310dc2db675abd/data',
     attributionEn: 'Contains information made available under the Town of Ajax Open Data Licence.',
     attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville d’Ajax.'
 };
 
 const PICKERING_LICENSE = {
-    titleEn: 'City of Pickering Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Pickering',
-    url: 'https://data.pickering.ca/pages/license-agreement',
+    titleEn: 'City of Pickering Open Data Licence v1.0',
+    titleFr: 'Licence de données ouvertes de la Ville de Pickering v1.0',
+    url: 'https://www.pickering.ca/media/depbgebg/opendatalicencepickeringv1_acc.pdf',
     attributionEn: 'Contains information made available under the City of Pickering Open Data Licence.',
     attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Pickering.'
 };
 
 const WHITBY_LICENSE = {
-    titleEn: 'Town of Whitby Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Whitby',
-    url: 'https://opendata.whitby.ca/pages/license-agreement',
-    attributionEn: 'Contains information made available under the Town of Whitby Open Data Licence.',
-    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Whitby.'
+    titleEn: 'The Corporation of the Town of Whitby Open Government Licence',
+    titleFr: 'Licence du gouvernement ouvert de la Corporation de la Ville de Whitby',
+    url: 'https://whitby.maps.arcgis.com/sharing/rest/content/items/223810efc31c40b3aff99dd74f809a97/data',
+    attributionEn: 'Contains information licensed under The Corporation of the Town of Whitby Open Government Licence.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert de la Corporation de la Ville de Whitby.'
 };
 
 const CLOCA_LICENSE = {
-    titleEn: 'Central Lake Ontario Conservation Authority Open Data Licence',
-    titleFr: 'Licence de données ouvertes de l’Office de protection de la nature de Central Lake Ontario',
-    url: 'https://cloca-opendata-cloca.hub.arcgis.com/pages/license-agreement',
-    attributionEn: 'Contains information made available under the Central Lake Ontario Conservation Authority Open Data Licence.',
-    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de l’Office de protection de la nature de Central Lake Ontario.'
+    titleEn: 'CLOCA Open Data Licence v1',
+    titleFr: 'Licence de données ouvertes de la CLOCA v1',
+    url: 'https://www.arcgis.com/home/item.html?id=20586dab57ce40fd9b102d97c144302c',
+    attributionEn: 'Contains information made available under the CLOCA Open Data Licence v1.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la CLOCA v1.'
 };
 
 const ONTARIO_LICENSE = {
@@ -90,36 +62,12 @@ const TORONTO_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Toronto.'
 };
 
-const MONTREAL_LICENSE = {
-    titleEn: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    titleFr: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    url: 'https://creativecommons.org/licenses/by/4.0/',
-    attributionEn: 'Contains information licensed under Creative Commons Attribution 4.0 International.',
-    attributionFr: 'Contient des renseignements visés par la licence Creative Commons Attribution 4.0 International.'
-};
-
-const QUEBEC_CITY_LICENSE = {
-    titleEn: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    titleFr: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    url: 'https://creativecommons.org/licenses/by/4.0/',
-    attributionEn: 'Contains information licensed under Creative Commons Attribution 4.0 International (Ville de Québec).',
-    attributionFr: 'Contient des renseignements visés par la licence Creative Commons Attribution 4.0 International (Ville de Québec).'
-};
-
-const LAVAL_LICENSE = {
-    titleEn: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    titleFr: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    url: 'https://creativecommons.org/licenses/by/4.0/',
-    attributionEn: 'Contains information licensed under Creative Commons Attribution 4.0 International (Ville de Laval).',
-    attributionFr: 'Contient des renseignements visés par la licence Creative Commons Attribution 4.0 International (Ville de Laval).'
-};
-
 const OTTAWA_LICENSE = {
     titleEn: 'Open Government Licence – City of Ottawa',
     titleFr: 'Licence du gouvernement ouvert – Ville d’Ottawa',
-    url: 'https://open.ottawa.ca/pages/open-data-licence',
+    url: 'https://ottawa.ca/en/city-hall/open-transparent-and-accountable-government/open-data/open-data-licence-version-20',
     attributionEn: 'Contains information licensed under the Open Government Licence – City of Ottawa.',
-    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville d’Ottawa.'
+    attributionFr: 'Contient de l’information visée par la Licence du gouvernement ouvert – Ville d’Ottawa.'
 };
 
 const OTTAWA_POLICE_LICENSE = {
@@ -127,7 +75,7 @@ const OTTAWA_POLICE_LICENSE = {
     titleFr: 'Licence du gouvernement ouvert – Service de police d’Ottawa',
     url: 'https://data.ottawapolice.ca/pages/open-data-licence',
     attributionEn: 'Contains information licensed under the Open Government Licence – Ottawa Police Service.',
-    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Service de police d’Ottawa.'
+    attributionFr: 'Contient de l’information visée par la Licence du gouvernement ouvert – Service de police d’Ottawa.'
 };
 
 const VANCOUVER_LICENSE = {
@@ -139,35 +87,35 @@ const VANCOUVER_LICENSE = {
 };
 
 const CALGARY_LICENSE = {
-    titleEn: 'Open Government Licence – City of Calgary',
-    titleFr: 'Licence du gouvernement ouvert – Ville de Calgary',
-    url: 'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/e65p-hxjp',
+    titleEn: 'Open Government Licence – City of Calgary v2.1',
+    titleFr: 'Licence du gouvernement ouvert – Ville de Calgary v2.1',
+    url: 'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/u45n-7awa/',
     attributionEn: 'Contains information licensed under the Open Government Licence – City of Calgary.',
     attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Calgary.'
 };
 
 const EDMONTON_LICENSE = {
-    titleEn: 'Open Data City of Edmonton Terms of Use',
-    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville d’Edmonton',
-    url: 'https://data.edmonton.ca/stories/s/Open-Data-City-of-Edmonton-Terms-of-Use/5p2x-q4i2',
-    attributionEn: 'Contains information licensed under the Open Data City of Edmonton Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les Conditions d’utilisation des données ouvertes de la Ville d’Edmonton.'
+    titleEn: 'Open Government Licence – Edmonton',
+    titleFr: 'Licence du gouvernement ouvert – Edmonton',
+    url: 'https://data.edmonton.ca/stories/s/City-of-Edmonton-Open-Data-Terms-of-Use/msh8-if28/',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Edmonton.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Edmonton.'
 };
 
 const WINNIPEG_LICENSE = {
-    titleEn: 'City of Winnipeg Open Data Licence Agreement',
-    titleFr: 'Entente de licence de données ouvertes de la Ville de Winnipeg',
-    url: 'https://data.winnipeg.ca/stories/s/Open-Data-Licence-Agreement/264p-4ph5',
-    attributionEn: 'Contains information licensed under the City of Winnipeg Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Entente de licence de données ouvertes de la Ville de Winnipeg.'
+    titleEn: 'Open Government Licence – Winnipeg',
+    titleFr: 'Licence du gouvernement ouvert – Winnipeg',
+    url: 'https://data.winnipeg.ca/open-data-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Winnipeg.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Winnipeg.'
 };
 
 const HALIFAX_LICENSE = {
-    titleEn: 'Open Data Terms of Use – Halifax Regional Municipality',
-    titleFr: 'Conditions d’utilisation des données ouvertes – Municipalité régionale d’Halifax',
-    url: 'https://www.halifax.ca/home/open-data/open-data-terms-use',
-    attributionEn: 'Contains information licensed under the Open Data Terms of Use – Halifax Regional Municipality.',
-    attributionFr: 'Contient des renseignements visés par les Conditions d’utilisation des données ouvertes – Municipalité régionale d’Halifax.'
+    titleEn: 'Open Government Licence – Halifax',
+    titleFr: 'Licence du gouvernement ouvert – Halifax',
+    url: 'https://data-hrm.hub.arcgis.com/pages/open-data-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Halifax.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Halifax.'
 };
 
 const HAMILTON_LICENSE = {
@@ -179,233 +127,220 @@ const HAMILTON_LICENSE = {
 };
 
 const SURREY_LICENSE = {
-    titleEn: 'City of Surrey Open Government Licence',
-    titleFr: 'Licence du gouvernement ouvert de la Ville de Surrey',
-    url: 'https://cosmos.surrey.ca/data/Open_Government_License.html',
-    attributionEn: 'Contains information licensed under the City of Surrey Open Government Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert de la Ville de Surrey.'
+    titleEn: 'Open Government License – Surrey',
+    titleFr: 'Licence du gouvernement ouvert – Surrey',
+    url: 'https://opendata-surrey.hub.arcgis.com/pages/55089a19491a4fe59a41e059fd8af708',
+    attributionEn: 'Contains information licensed under the Open Government License – City of Surrey.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Surrey.'
 };
 
-const MISSISSAUGA_LICENSE = {
-    titleEn: 'City of Mississauga Open Data Terms of Use',
-    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
-    url: 'https://data.mississauga.ca/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the City of Mississauga Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la Ville de Mississauga.'
-};
-
-const CC_BY_4_LICENSE = {
-    titleEn: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    titleFr: 'Creative Commons Attribution 4.0 International (CC BY 4.0)',
-    url: 'https://creativecommons.org/licenses/by/4.0/',
-    attributionEn: 'Contains information licensed under Creative Commons Attribution 4.0 International.',
-    attributionFr: 'Contient des renseignements visés par la licence Creative Commons Attribution 4.0 International.'
-};
-
-const OGL_CANADA_LICENSE = {
-    titleEn: 'Open Government Licence – Canada',
-    titleFr: 'Licence du gouvernement ouvert – Canada',
-    url: 'https://open.canada.ca/en/open-government-licence-canada',
-    attributionEn: 'Contains information licensed under the Open Government Licence – Canada.',
-    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Canada.'
-};
-
-const STATCAN_LICENSE = {
-    titleEn: 'Statistics Canada Open Licence',
-    titleFr: 'Licence ouverte de Statistique Canada',
-    url: 'https://www.statcan.gc.ca/en/reference/licence',
-    attributionEn: 'Contains information licensed under the Statistics Canada Open Licence.',
-    attributionFr: 'Contient des renseignements visés par la licence ouverte de Statistique Canada.'
-};
-
-const PEEL_LICENSE = {
-    titleEn: 'Region of Peel Open Data Terms of Use',
-    titleFr: 'Conditions d’utilisation des données ouvertes de la région de Peel',
-    url: 'https://data.peelregion.ca/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the Region of Peel Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la région de Peel.'
-};
-
+// The feed currently publishes the City itself plus these exact department
+// paths. Keep the allowlist fail-closed: an unfamiliar publisher string must be
+// reviewed before portal-wide City terms can be applied to it.
 const VICTORIA_LICENSE = {
-    titleEn: 'Open Data Licence Agreement – City of Victoria',
-    titleFr: 'Accord de licence de données ouvertes – Ville de Victoria',
+    titleEn: 'Open Data Licence – City of Victoria',
+    titleFr: 'Licence de données ouvertes – Ville de Victoria',
     url: 'https://opendata.victoria.ca/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under the Open Data Licence Agreement – City of Victoria.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes – Ville de Victoria.'
+    attributionEn: 'Contains information licensed under the Open Data Licence – City of Victoria.',
+    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes – Ville de Victoria.'
 };
 
 const WATERLOO_REGION_LICENSE = {
-    titleEn: 'Region of Waterloo Open Data Licence Agreement',
-    titleFr: 'Accord de licence de données ouvertes de la Région de Waterloo',
-    url: 'https://rowopendata-rmw.opendata.arcgis.com/pages/licence-agreement',
-    attributionEn: 'Contains information licensed under the Region of Waterloo Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes de la Région de Waterloo.'
+    titleEn: 'Region of Waterloo Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la municipalité régionale de Waterloo',
+    url: 'https://www.regionofwaterloo.ca/en/regional-government/open-data.aspx#Open-Data-Licence',
+    attributionEn: 'Contains public sector information made available under The Regional Municipality of Waterloo’s Open Data Licence.',
+    attributionFr: 'Contient des renseignements du secteur public fournis selon la licence de données ouvertes de la municipalité régionale de Waterloo.'
+};
+
+const KITCHENER_LICENSE = {
+    titleEn: 'City of Kitchener Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville de Kitchener',
+    url: 'https://open-kitchenergis.opendata.arcgis.com/pages/licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence - The Corporation of the City of Kitchener.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert - The Corporation of the City of Kitchener.'
+};
+
+const CAMBRIDGE_LICENSE = {
+    titleEn: 'City of Cambridge Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville de Cambridge',
+    url: 'https://www.cambridge.ca/en/your-city/open-data.aspx',
+    attributionEn: 'Contains information made available under the City of Cambridge Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Cambridge.'
+};
+
+const WATERLOO_CITY_LICENSE = {
+    titleEn: 'City of Waterloo Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville de Waterloo',
+    url: 'https://data.waterloo.ca/pages/open-data-licence',
+    attributionEn: 'Contains information made available under the City of Waterloo Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Waterloo.'
 };
 
 const LONDON_LICENSE = {
     titleEn: 'City of London Open Data Licence',
     titleFr: 'Licence de données ouvertes de la Ville de London',
     url: 'https://open.london.ca/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under the City of London Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de London.'
+    attributionEn: 'Contains information made available under the City of London Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de London.'
 };
 
 const KELOWNA_LICENSE = {
-    titleEn: 'City of Kelowna Open Data Terms of Use',
-    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Kelowna',
-    url: 'https://opendata.kelowna.ca/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the City of Kelowna Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la Ville de Kelowna.'
+    titleEn: 'Open Government Licence – City of Kelowna',
+    titleFr: 'Licence du gouvernement ouvert – Ville de Kelowna',
+    url: 'https://www.kelowna.ca/city-hall/open-data/open-government-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – City of Kelowna.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Kelowna.'
 };
 
 const FREDERICTON_LICENSE = {
     titleEn: 'Open Data Licence – City of Fredericton',
     titleFr: 'Licence de données ouvertes – Ville de Fredericton',
-    url: 'http://fredericton.ca/en/open-data-licence',
-    attributionEn: 'Contains information licensed under the Open Data Licence – City of Fredericton.',
+    url: 'https://data-fredericton.opendata.arcgis.com/pages/open-data-licence',
+    attributionEn: 'Contains information made available under the Open Data Licence – City of Fredericton.',
     attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes – Ville de Fredericton.'
 };
 
 const BURLINGTON_LICENSE = {
     titleEn: 'City of Burlington Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Burlington',
-    url: 'https://navburl-burlington.opendata.arcgis.com/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the City of Burlington Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la Ville de Burlington.'
+    url: 'https://opendata.burlington.ca/opendata-terms-of-use/City%20of%20Burlington%20-%20Open%20Data%20Terms%20of%20Use.pdf',
+    attributionEn: 'Contains information made available under the City of Burlington Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Burlington.'
 };
 
 const OAKVILLE_LICENSE = {
-    titleEn: 'Town of Oakville Open Data Licence Agreement',
-    titleFr: 'Accord de licence de données ouvertes de la Ville d’Oakville',
-    url: 'https://oakville.opendata.arcgis.com/pages/licence-agreement',
-    attributionEn: 'Contains information licensed under the Town of Oakville Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes de la Ville d’Oakville.'
+    titleEn: 'Town of Oakville Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville d’Oakville',
+    url: 'https://www.oakville.ca/town-hall/town-studies-plans-projects/town-initiatives/open-data/open-data-licence/',
+    attributionEn: 'Contains information made available under the Town of Oakville Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville d’Oakville.'
 };
 
 const MILTON_LICENSE = {
-    titleEn: 'Town of Milton Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Milton',
-    url: 'https://data-milton.opendata.arcgis.com/pages/license',
-    attributionEn: 'Contains information licensed under the Town of Milton Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Milton.'
+    titleEn: 'Open Government Licence – Milton',
+    titleFr: 'Licence du gouvernement ouvert – Milton',
+    url: 'https://discover-milton.hub.arcgis.com/pages/disclaimer-and-terms-of-use',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Milton.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Milton.'
 };
 
 const SUDBURY_LICENSE = {
-    titleEn: 'City of Greater Sudbury Open Data Policy and Licence',
-    titleFr: 'Politique et licence de données ouvertes de la Ville du Grand Sudbury',
-    url: 'https://opendata.greatersudbury.ca/pages/open-data-policy',
-    attributionEn: 'Contains information licensed under the City of Greater Sudbury Open Data Policy and Licence.',
-    attributionFr: 'Contient des renseignements visés par la Politique et licence de données ouvertes de la Ville du Grand Sudbury.'
+    titleEn: 'City of Greater Sudbury Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville du Grand Sudbury',
+    url: 'https://www.greatersudbury.ca/inside-city-hall/open-data/policy/',
+    attributionEn: 'Contains information made available under the City of Greater Sudbury Open Data Policy and Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la politique et la licence de données ouvertes de la Ville du Grand Sudbury.'
 };
 
 const BURNABY_LICENSE = {
-    titleEn: 'City of Burnaby Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Burnaby',
-    url: 'https://data.burnaby.ca/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under the City of Burnaby Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Burnaby.'
+    titleEn: 'Open Government Licence – City of Burnaby',
+    titleFr: 'Licence du gouvernement ouvert – Ville de Burnaby',
+    url: 'https://data.burnaby.ca/pages/open-government-licence',
+    attributionEn: 'Contains information licensed under the Open Government Licence – City of Burnaby.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Ville de Burnaby.'
 };
 
 const SASKATOON_LICENSE = {
-    titleEn: 'City of Saskatoon Open Data Licence Agreement',
-    titleFr: 'Accord de licence de données ouvertes de la Ville de Saskatoon',
-    url: 'https://open-data-saskatoon.hub.arcgis.com/pages/licence',
-    attributionEn: 'Contains information licensed under the City of Saskatoon Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes de la Ville de Saskatoon.'
+    titleEn: 'City of Saskatoon Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville de Saskatoon',
+    url: 'https://www.saskatoon.ca/city-hall/open-data/open-data-licence',
+    attributionEn: 'Contains information made available under the City of Saskatoon Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Saskatoon.'
 };
 
 const YORK_REGION_LICENSE = {
-    titleEn: 'The Regional Municipality of York Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la municipalité régionale de York',
-    url: 'https://york-region-open-data-yorkgis.hub.arcgis.com/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under The Regional Municipality of York Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la municipalité régionale de York.'
+    titleEn: 'York Region Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la région de York',
+    url: 'https://www.york.ca/about-york-region/open-data',
+    attributionEn: 'Contains information made available under the York Region Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la région de York.'
 };
 
 const MARKHAM_LICENSE = {
-    titleEn: 'City of Markham Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Markham',
-    url: 'https://data-markham.opendata.arcgis.com/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under the City of Markham Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Markham.'
+    titleEn: 'City of Markham Open Data Terms',
+    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Markham',
+    url: 'https://data-markham.opendata.arcgis.com/',
+    attributionEn: 'Contains information made available under the City of Markham Open Data Terms.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Markham.'
 };
 
 const NEWMARKET_LICENSE = {
     titleEn: 'Town of Newmarket Open Data Licence',
     titleFr: 'Licence de données ouvertes de la Ville de Newmarket',
-    url: 'https://data-newmarket.opendata.arcgis.com/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under the Town of Newmarket Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Newmarket.'
+    url: 'https://navigate-newmarket.hub.arcgis.com/',
+    attributionEn: 'Contains information made available under the Town of Newmarket Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Newmarket.'
 };
 
 const NIAGARA_FALLS_LICENSE = {
-    titleEn: 'City of Niagara Falls Open Data Licence Agreement',
-    titleFr: 'Accord de licence de données ouvertes de la Ville de Niagara Falls',
-    url: 'https://open.niagarafalls.ca/pages/licence-agreement',
-    attributionEn: 'Contains information licensed under the City of Niagara Falls Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes de la Ville de Niagara Falls.'
+    titleEn: 'City of Niagara Falls Open Data Terms of Use',
+    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Niagara Falls',
+    url: 'https://open.niagarafalls.ca/pages/terms-of-use',
+    attributionEn: 'Contains information made available under the City of Niagara Falls Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Niagara Falls.'
 };
 
 const WELLAND_LICENSE = {
-    titleEn: 'City of Welland Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Welland',
-    url: 'https://open-welland.opendata.arcgis.com/pages/licence',
-    attributionEn: 'Contains information licensed under the City of Welland Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Welland.'
+    titleEn: 'City of Welland Open Data Terms of Use',
+    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Welland',
+    url: 'https://open.welland.ca/pages/terms-of-use',
+    attributionEn: 'Contains information made available under the City of Welland Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Welland.'
 };
 
 const MONCTON_LICENSE = {
-    titleEn: 'City of Moncton Open Data Licence',
-    titleFr: 'Licence de données ouvertes de la Ville de Moncton',
-    url: 'https://open-data-cityofmoncton.hub.arcgis.com/pages/open-data-licence',
-    attributionEn: 'Contains information licensed under the City of Moncton Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Moncton.'
+    titleEn: 'City of Moncton Open Data Terms of Use',
+    titleFr: 'Conditions d’utilisations des ensembles de données de la Ville de Moncton',
+    url: 'https://www5.moncton.ca/docs/Open_Data_Terms_of_Use.pdf',
+    attributionEn: 'Contains information made available under the City of Moncton Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisations des ensembles de données de la Ville de Moncton.'
 };
 
 const GUELPH_LICENSE = {
-    titleEn: 'City of Guelph Open Data Licence Agreement',
-    titleFr: 'Accord de licence de données ouvertes de la Ville de Guelph',
-    url: 'https://open-guelph.opendata.arcgis.com/pages/licence-agreement',
-    attributionEn: 'Contains information licensed under the City of Guelph Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes de la Ville de Guelph.'
+    titleEn: 'City of Guelph Open Data License',
+    titleFr: 'Licence de données ouvertes de la Ville de Guelph',
+    url: 'https://explore.guelph.ca/pages/open-data-license',
+    attributionEn: 'Contains information made available under the City of Guelph Open Data License.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Guelph.'
 };
 
 const SAANICH_LICENSE = {
-    titleEn: 'District of Saanich Open Data Licence',
-    titleFr: 'Licence de données ouvertes du district de Saanich',
-    url: 'https://data-saanich.opendata.arcgis.com/pages/licence',
-    attributionEn: 'Contains information licensed under the District of Saanich Open Data Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes du district de Saanich.'
+    titleEn: 'Open Government Licence – District of Saanich',
+    titleFr: 'Licence du gouvernement ouvert – District of Saanich',
+    url: 'https://opendata-saanich.hub.arcgis.com/',
+    attributionEn: 'Contains information licensed under the Open Government Licence – District of Saanich.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – District of Saanich.'
 };
 
 const BELLEVILLE_LICENSE = {
-    titleEn: 'City of Belleville Open Data Licence Agreement',
-    titleFr: 'Accord de licence de données ouvertes de la Ville de Belleville',
-    url: 'https://data-cityofbelleville.opendata.arcgis.com/pages/licence-agreement',
-    attributionEn: 'Contains information licensed under the City of Belleville Open Data Licence Agreement.',
-    attributionFr: 'Contient des renseignements visés par l’Accord de licence de données ouvertes de la Ville de Belleville.'
+    titleEn: 'City of Belleville Open Data Licence',
+    titleFr: 'Licence de données ouvertes de la Ville de Belleville',
+    url: 'https://opendata-bellevillegis.hub.arcgis.com/',
+    attributionEn: 'Contains information made available under the City of Belleville Open Data Licence.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la Ville de Belleville.'
 };
 
 const YELLOWKNIFE_LICENSE = {
     titleEn: 'City of Yellowknife Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Yellowknife',
-    url: 'https://data-yellowknife.hub.arcgis.com/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the City of Yellowknife Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la Ville de Yellowknife.'
+    url: 'https://data-yellowknife.hub.arcgis.com/',
+    attributionEn: 'Contains information made available under the City of Yellowknife Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Yellowknife.'
 };
 
 const BARRIE_LICENSE = {
-    titleEn: 'The Corporation of the City of Barrie Open Data Terms of Use',
-    titleFr: 'Conditions d’utilisation des données ouvertes de la Corporation de la Ville de Barrie',
-    url: 'https://opendata.barrie.ca/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under The Corporation of the City of Barrie Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la Corporation de la Ville de Barrie.'
+    titleEn: 'City of Barrie Open Data Terms of Use',
+    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Barrie',
+    url: 'https://opendata.barrie.ca/',
+    attributionEn: 'Contains information made available under the City of Barrie Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Barrie.'
 };
 
 const THUNDER_BAY_LICENSE = {
     titleEn: 'City of Thunder Bay Open Data Licence',
     titleFr: 'Licence de données ouvertes de la Ville de Thunder Bay',
-    url: 'https://opendata-thunderbay.hub.arcgis.com/pages/licence',
+    url: 'https://www.thunderbay.ca/en/city-services/resources/City-of-Thunder-Bay-Open-Data-Licence.pdf',
     attributionEn: 'Contains information licensed under the City of Thunder Bay Open Data Licence.',
     attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la Ville de Thunder Bay.'
 };
@@ -413,33 +348,33 @@ const THUNDER_BAY_LICENSE = {
 const CHATHAM_KENT_LICENSE = {
     titleEn: 'Municipality of Chatham-Kent Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes de la municipalité de Chatham-Kent',
-    url: 'https://opendata.chatham-kent.ca/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the Municipality of Chatham-Kent Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la municipalité de Chatham-Kent.'
+    url: 'https://opendata.chatham-kent.ca/',
+    attributionEn: 'Contains information made available under the Municipality of Chatham-Kent Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la municipalité de Chatham-Kent.'
 };
 
 const KAWARTHA_LAKES_LICENSE = {
-    titleEn: 'City of Kawartha Lakes Open Data Terms of Use',
-    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Kawartha Lakes',
-    url: 'https://open-data-kawartha.hub.arcgis.com/pages/terms-of-use',
-    attributionEn: 'Contains information licensed under the City of Kawartha Lakes Open Data Terms of Use.',
-    attributionFr: 'Contient des renseignements visés par les conditions d’utilisation des données ouvertes de la Ville de Kawartha Lakes.'
+    titleEn: 'City of Kawartha Lakes Open Data Terms',
+    titleFr: 'Conditions des données ouvertes de la Ville de Kawartha Lakes',
+    url: 'https://open-data-kawartha.hub.arcgis.com/',
+    attributionEn: 'Contains information licensed by the City of Kawartha Lakes.',
+    attributionFr: 'Contient des renseignements fournis par la Ville de Kawartha Lakes.'
 };
 
 const SUMMERLAND_LICENSE = {
-    titleEn: 'The Corporation of the District of Summerland Open Government Licence',
-    titleFr: 'Licence du gouvernement ouvert de la Corporation du district de Summerland',
-    url: 'https://open-data-summerland.hub.arcgis.com/pages/open-government-licence',
-    attributionEn: 'Contains information licensed under The Corporation of the District of Summerland Open Government Licence.',
-    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert de la Corporation du district de Summerland.'
+    titleEn: 'District of Summerland Open Government Licence',
+    titleFr: 'Licence du gouvernement ouvert du district de Summerland',
+    url: 'https://www.summerland.ca/docs/default-source/gis/summerland-open-government-licence.pdf',
+    attributionEn: 'Contains information licensed under the District of Summerland Open Government Licence.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert du district de Summerland.'
 };
 
 const NORFOLK_LICENSE = {
     titleEn: 'Norfolk County Open Data Terms of Use',
     titleFr: 'Conditions d’utilisation des données ouvertes du comté de Norfolk',
-    url: 'https://data-norfolk.opendata.arcgis.com/pages/terms-of-use',
-    attributionEn: 'Contains information licensed by The Corporation of Norfolk County.',
-    attributionFr: 'Contient des renseignements fournis par la Corporation du comté de Norfolk.'
+    url: 'https://data-norfolk.opendata.arcgis.com/',
+    attributionEn: 'Contains information licensed by Norfolk County.',
+    attributionFr: 'Contient des renseignements fournis par le comté de Norfolk.'
 };
 
 const HALDIMAND_LICENSE = {
@@ -514,138 +449,168 @@ const CUMBERLAND_LICENSE = {
     attributionFr: 'Contient des renseignements visés par la Licence de données ouvertes de la municipalité du comté de Cumberland.'
 };
 
-const DURHAM_PUBLISHER = /^regional municipality of durham$/i;
-const HALTON_PUBLISHER = /^regional municipality of halton$/i;
-
-// Match Hamilton Open Data publisher names while ignoring internal and external partner
-// paths. Keep the allowlist fail-closed: an unfamiliar publisher string must be
-// reviewed before portal-wide City terms can be applied to it.
 const HAMILTON_PUBLISHER_PATTERNS = [
     /^city of hamilton$/i,
     /^city of hamilton;\s*corporate services;\s*information technology$/i,
     /^city of hamilton;\s*planning and economic development;\s*planning$/i,
-    /^city of hamilton;\s*planning and economic development;\s*growth management$/i,
-    /^city of hamilton;\s*planning and economic development;\s*development planning$/i,
-    /^city of hamilton;\s*planning and economic development;\s*transportation planning$/i,
-    /^city of hamilton;\s*public works;\s*transit$/i,
-    /^city of hamilton;\s*public works;\s*water and wastewater$/i,
-    /^city of hamilton;\s*public works;\s*roads and traffic$/i,
-    /^city of hamilton;\s*public works;\s*waste management$/i,
-    /^city of hamilton;\s*healthy and safe communities;\s*public health services$/i,
-    /^city of hamilton;\s*healthy and safe communities;\s*housing services$/i,
-    /^city of hamilton;\s*healthy and safe communities;\s*recreation$/i
+    /^city of hamilton;\s*public works;\s*transportation operations & maintenance$/i,
+    /^city of hamilton,\s*corporate services,\s*information technology,\s*business applications,\s*spatial solutions and data services$/i,
+    /^city of hamilton;\s*public works;\s*hamilton water$/i,
+    /^city of hamilton;\s*public works;\s*engineering services$/i,
+    /^city of hamilton;\s*planning and economic development;\s*transportation planning and parking$/i,
+    /^city of hamilton;\s*public works;\s*environmental services$/i,
+    /^city of hamilton;\s*planning and economic development;\s*parking and by-law services$/i,
+    /^city of hamilton;;$/i
 ];
 
+const MISSISSAUGA_LICENSE = {
+    titleEn: 'City of Mississauga Open Data Terms of Use',
+    titleFr: 'Conditions d’utilisation des données ouvertes de la Ville de Mississauga',
+    url: 'https://www.mississauga.ca/file/COM/CityOfMississaugaTermsOfUse.pdf',
+    attributionEn: 'Contains information made available under the City of Mississauga Open Data Terms of Use.',
+    attributionFr: 'Contient des renseignements fournis selon les conditions d’utilisation des données ouvertes de la Ville de Mississauga.'
+};
+
+const CC_BY_4_LICENSE = {
+    titleEn: 'Creative Commons Attribution 4.0 International',
+    titleFr: 'Creative Commons Attribution 4.0 International',
+    url: 'https://creativecommons.org/licenses/by/4.0/',
+    attributionEn: 'Licensed under Creative Commons Attribution 4.0 International.',
+    attributionFr: 'Sous licence Creative Commons Attribution 4.0 International.'
+};
+
+const OGL_CANADA_LICENSE = {
+    titleEn: 'Open Government Licence – Canada',
+    titleFr: 'Licence du gouvernement ouvert – Canada',
+    url: 'https://open.canada.ca/en/open-government-licence-canada',
+    attributionEn: 'Contains information licensed under the Open Government Licence – Canada.',
+    attributionFr: 'Contient des renseignements visés par la Licence du gouvernement ouvert – Canada.'
+};
+
+const STATCAN_LICENSE = {
+    titleEn: 'Statistics Canada Open Licence',
+    titleFr: 'Licence ouverte de Statistique Canada',
+    url: 'https://www.statcan.gc.ca/en/reference/licence',
+    attributionEn: 'Contains information licensed under the Statistics Canada Open Licence.',
+    attributionFr: 'Contient des renseignements visés par la Licence ouverte de Statistique Canada.'
+};
+
+const PEEL_LICENSE = {
+    titleEn: 'Open Data Licence for The Regional Municipality of Peel v1.0',
+    titleFr: 'Licence de données ouvertes de la municipalité régionale de Peel v1.0',
+    url: 'https://data.peelregion.ca/pages/license',
+    attributionEn: 'Contains information made available under the Open Data Licence for The Regional Municipality of Peel.',
+    attributionFr: 'Contient des renseignements fournis selon la licence de données ouvertes de la municipalité régionale de Peel.'
+};
+
+const DURHAM_PUBLISHER = /(regional municipality of durham|region of durham)/i;
+const ONTARIO_PUBLISHER = /(ontario|ministry of natural resources|aviation, forest fire)/i;
+const CONSERVATION_PUBLISHER = /(conservation ontario|central lake ontario)/i;
+
+const regionalRules = {
+    licenseRules: [
+        { publisher: DURHAM_PUBLISHER, license: DURHAM_LICENSE },
+        { publisher: /township of (brock|scugog|uxbridge)/i, license: DURHAM_LICENSE },
+        { publisher: CONSERVATION_PUBLISHER, license: CLOCA_LICENSE },
+        { publisher: ONTARIO_PUBLISHER, license: ONTARIO_LICENSE }
+    ],
+    placeRules: [
+        { publisher: DURHAM_PUBLISHER, placeId: 'ca-on-durham', relationship: 'coverage', includesDescendants: true },
+        { publisher: CONSERVATION_PUBLISHER, placeId: 'ca-on-durham', relationship: 'coverage', includesDescendants: true },
+        { publisher: ONTARIO_PUBLISHER, placeId: 'ca-on', relationship: 'coverage', includesDescendants: true }
+    ]
+};
+
+// Daily sync order is intentional. Within each regional cluster, municipal
+// portals run before the regional portal so a future shared ArcGIS item keeps
+// the authoritative regional metadata while retaining every provenance row.
 const sources = [{
     id: 'toronto-open-data',
     kind: 'ckan',
     nameEn: 'City of Toronto Open Data',
     nameFr: 'Données ouvertes de la Ville de Toronto',
     homepageUrl: 'https://open.toronto.ca/',
-    catalogUrl: 'https://ckan0.cf.opendata.inter.prod-toronto.ca',
+    catalogUrl: 'https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action',
+    upstreamHost: 'ckan0.cf.opendata.inter.prod-toronto.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: TORONTO_PUBLISHERS.map(pattern => ({
-        publisher: pattern,
-        name: 'City of Toronto'
-    })),
-    authoritativePublishers: TORONTO_PUBLISHERS.map(pattern => ({
-        publisher: pattern
-    })),
-    licenseRules: TORONTO_PUBLISHERS.map(pattern => ({
-        publisher: pattern,
-        license: TORONTO_LICENSE
-    })),
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-cd-3520',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeId: 'sgc-cd-3520',
+    metadataLanguage: 'en',
+    defaultOrganizationId: 'city-of-toronto',
+    defaultOrganizationName: 'city-of-toronto',
+    defaultOrganizationTitleEn: 'City of Toronto',
+    defaultOrganizationTitleFr: 'Ville de Toronto',
+    defaultLicenseTitleEn: TORONTO_LICENSE.titleEn,
+    defaultLicenseTitleFr: TORONTO_LICENSE.titleFr,
+    defaultLicenseUrl: TORONTO_LICENSE.url,
+    defaultAttributionEn: TORONTO_LICENSE.attributionEn,
+    defaultAttributionFr: TORONTO_LICENSE.attributionFr
 }, {
     id: 'montreal-open-data',
     kind: 'ckan',
-    nameEn: 'Données ouvertes – Ville de Montréal',
-    nameFr: 'Données ouvertes – Ville de Montréal',
+    nameEn: 'Montréal Open Data',
+    nameFr: 'Données ouvertes de la Ville de Montréal',
     homepageUrl: 'https://donnees.montreal.ca/',
-    catalogUrl: 'https://donnees.montreal.ca',
+    catalogUrl: 'https://donnees.montreal.ca/api/3/action',
+    upstreamHost: 'donnees.montreal.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^ville de montréal$/i, name: 'Ville de Montréal' },
-        { publisher: /^ville de montreal$/i, name: 'Ville de Montréal' },
-        { publisher: /^city of montreal$/i, name: 'Ville de Montréal' },
-        { publisher: /^{{source}}$/i, name: 'Ville de Montréal' }
-    ],
-    authoritativePublishers: [
-        { publisher: /^ville de montréal$/i },
-        { publisher: /^ville de montreal$/i },
-        { publisher: /^city of montreal$/i },
-        { publisher: /^{{source}}$/i }
-    ],
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-montreal',
+    defaultOrganizationName: 'ville-de-montreal',
+    defaultOrganizationTitleFr: 'Ville de Montréal',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de montréal$/i }],
     licenseRules: [
-        { publisher: /^ville de montréal$/i, license: MONTREAL_LICENSE },
-        { publisher: /^ville de montreal$/i, license: MONTREAL_LICENSE },
-        { publisher: /^city of montreal$/i, license: MONTREAL_LICENSE },
-        { publisher: /^{{source}}$/i, license: MONTREAL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', license: MONTREAL_LICENSE },
-        { licenseUrl: 'http://creativecommons.org/licenses/by/4.0/', license: MONTREAL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/deed.fr', license: MONTREAL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/deed.en', license: MONTREAL_LICENSE },
-        { licenseTitle: /^cc-by$/i, license: MONTREAL_LICENSE },
-        { licenseTitle: /^cc by 4\.0$/i, license: MONTREAL_LICENSE },
-        { licenseTitle: /^creative commons attribution 4\.0/i, license: MONTREAL_LICENSE },
-        { licenseTitle: /^attribution 4\.0 international/i, license: MONTREAL_LICENSE }
+        { licenseId: /^cc-by$/i, license: CC_BY_4_LICENSE },
+        { licenseId: /^ogl-canada-2\.0$/i, license: OGL_CANADA_LICENSE }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-2466023',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        {
+            publisher: /^ville de montréal$/i,
+            placeId: 'sgc-csd-2466023',
+            relationship: 'direct',
+            includesDescendants: false
+        },
+        {
+            placeId: 'sgc-csd-2466023',
+            relationship: 'coverage',
+            includesDescendants: false
+        }
+    ]
 }, {
     id: 'quebec-city-open-data',
     kind: 'ckan',
-    nameEn: 'Données ouvertes – Ville de Québec',
-    nameFr: 'Données ouvertes – Ville de Québec',
+    nameEn: 'Québec City Open Data',
+    nameFr: 'Données ouvertes de la Ville de Québec',
     homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-quebec',
-    catalogUrl: 'https://www.donneesquebec.ca/recherche',
-    catalogFilter: {
-        owner_org: 'ville-de-quebec'
-    },
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-quebec',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^ville de québec$/i, name: 'Ville de Québec' },
-        { publisher: /^ville de quebec$/i, name: 'Ville de Québec' },
-        { publisher: /^city of quebec$/i, name: 'Ville de Québec' },
-        { publisher: /^{{source}}$/i, name: 'Ville de Québec' }
-    ],
-    authoritativePublishers: [
-        { publisher: /^ville de québec$/i },
-        { publisher: /^ville de quebec$/i },
-        { publisher: /^city of quebec$/i },
-        { publisher: /^{{source}}$/i }
-    ],
-    licenseRules: [
-        { publisher: /^ville de québec$/i, license: QUEBEC_CITY_LICENSE },
-        { publisher: /^ville de quebec$/i, license: QUEBEC_CITY_LICENSE },
-        { publisher: /^city of quebec$/i, license: QUEBEC_CITY_LICENSE },
-        { publisher: /^{{source}}$/i, license: QUEBEC_CITY_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', license: QUEBEC_CITY_LICENSE },
-        { licenseUrl: 'http://creativecommons.org/licenses/by/4.0/', license: QUEBEC_CITY_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/deed.fr', license: QUEBEC_CITY_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/deed.en', license: QUEBEC_CITY_LICENSE },
-        { licenseTitle: /^cc-by$/i, license: QUEBEC_CITY_LICENSE },
-        { licenseTitle: /^cc by 4\.0$/i, license: QUEBEC_CITY_LICENSE },
-        { licenseTitle: /^creative commons attribution 4\.0/i, license: QUEBEC_CITY_LICENSE },
-        { licenseTitle: /^attribution 4\.0 international/i, license: QUEBEC_CITY_LICENSE }
-    ],
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-quebec',
+    defaultOrganizationName: 'ville-de-quebec',
+    defaultOrganizationTitleEn: 'Québec City',
+    defaultOrganizationTitleFr: 'Ville de Québec',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de québec$/i }],
+    licenseRules: [{
+        publisher: /^ville de québec$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^ville de québec$/i,
         placeId: 'sgc-csd-2423027',
         relationship: 'direct',
         includesDescendants: false
@@ -653,41 +618,33 @@ const sources = [{
 }, {
     id: 'laval-open-data',
     kind: 'ckan',
-    nameEn: 'Données ouvertes – Ville de Laval',
-    nameFr: 'Données ouvertes – Ville de Laval',
+    nameEn: 'City of Laval Open Data',
+    nameFr: 'Données ouvertes de la Ville de Laval',
     homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/ville-de-laval',
-    catalogUrl: 'https://www.donneesquebec.ca/recherche',
-    catalogFilter: {
-        owner_org: 'ville-de-laval'
-    },
+    datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+    catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+    upstreamHost: 'www.donneesquebec.ca',
+    catalogOrganization: 'ville-de-laval',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^ville de laval$/i, name: 'Ville de Laval' },
-        { publisher: /^city of laval$/i, name: 'Ville de Laval' },
-        { publisher: /^{{source}}$/i, name: 'Ville de Laval' }
-    ],
-    authoritativePublishers: [
-        { publisher: /^ville de laval$/i },
-        { publisher: /^city of laval$/i },
-        { publisher: /^{{source}}$/i }
-    ],
-    licenseRules: [
-        { publisher: /^ville de laval$/i, license: LAVAL_LICENSE },
-        { publisher: /^city of laval$/i, license: LAVAL_LICENSE },
-        { publisher: /^{{source}}$/i, license: LAVAL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', license: LAVAL_LICENSE },
-        { licenseUrl: 'http://creativecommons.org/licenses/by/4.0/', license: LAVAL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/deed.fr', license: LAVAL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/deed.en', license: LAVAL_LICENSE },
-        { licenseTitle: /^cc-by$/i, license: LAVAL_LICENSE },
-        { licenseTitle: /^cc by 4\.0$/i, license: LAVAL_LICENSE },
-        { licenseTitle: /^creative commons attribution 4\.0/i, license: LAVAL_LICENSE },
-        { licenseTitle: /^attribution 4\.0 international/i, license: LAVAL_LICENSE }
-    ],
+    metadataLanguage: 'fr',
+    directGeoJsonMaps: true,
+    defaultOrganizationId: 'ville-de-laval',
+    defaultOrganizationName: 'ville-de-laval',
+    defaultOrganizationTitleEn: 'City of Laval',
+    defaultOrganizationTitleFr: 'Ville de Laval',
+    licenseMode: 'record-explicit',
+    authoritativePublishers: [{ publisher: /^ville de laval$/i }],
+    licenseRules: [{
+        publisher: /^ville de laval$/i,
+        licenseId: 'cc-by',
+        licenseTitle: 'Attribution (CC-BY 4.0)',
+        licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by',
+        license: CC_BY_4_LICENSE
+    }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^ville de laval$/i,
         placeId: 'sgc-cd-2465',
         relationship: 'direct',
         includesDescendants: false
@@ -714,10 +671,10 @@ const sources = [{
         { publisher: /^{{source}}$/i }
     ],
     licenseRules: [
-        { publisher: /^city of ottawa$/i, license: OTTAWA_LICENSE },
-        { publisher: /^{{source}}$/i, license: OTTAWA_LICENSE },
         { publisher: /^ottawa police service$/i, license: OTTAWA_POLICE_LICENSE },
-        { licensePattern: /data\.ottawapolice\.ca\/pages\/open-data-licence/i, license: OTTAWA_POLICE_LICENSE }
+        { licensePattern: /data\.ottawapolice\.ca\/pages\/open-data-licence/i, license: OTTAWA_POLICE_LICENSE },
+        { publisher: /^city of ottawa$/i, license: OTTAWA_LICENSE },
+        { publisher: /^{{source}}$/i, license: OTTAWA_LICENSE }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -735,20 +692,24 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^city of vancouver$/i, name: 'City of Vancouver' },
-        { publisher: /^{{source}}$/i, name: 'City of Vancouver' }
-    ],
+    metadataLanguage: 'en',
+    licenseMode: 'record-explicit',
+    timezone: 'America/Vancouver',
+    upstreamHost: 'opendata.vancouver.ca',
     authoritativePublishers: [
         { publisher: /^city of vancouver$/i },
         { publisher: /^{{source}}$/i }
     ],
-    licenseRules: [
-        { publisher: /^city of vancouver$/i, license: VANCOUVER_LICENSE },
-        { publisher: /^{{source}}$/i, license: VANCOUVER_LICENSE },
-        { licenseUrl: 'https://opendata.vancouver.ca/pages/licence/', license: VANCOUVER_LICENSE },
-        { licenseTitle: /^open government licence\s*[-–—]\s*vancouver$/i, license: VANCOUVER_LICENSE }
+    publisherAliases: [
+        { publisher: /^city of vancouver$/i, name: 'City of Vancouver' },
+        { publisher: /^{{source}}$/i, name: 'City of Vancouver' }
     ],
+    licenseRules: [{
+        publisher: /^city of vancouver$/i,
+        licenseTitle: /^open government licence\s*[-–—]\s*vancouver$/i,
+        licenseUrl: /^https?:\/\/opendata\.vancouver\.ca\/pages\/licence\/?$/i,
+        license: VANCOUVER_LICENSE
+    }],
     placeRules: [{
         publisher: /.*/,
         placeId: 'sgc-csd-5915022',
@@ -759,33 +720,43 @@ const sources = [{
     id: 'calgary-open-data',
     kind: 'socrata',
     nameEn: 'Open Calgary',
-    nameFr: 'Données ouvertes de Calgary',
+    nameFr: 'Données ouvertes de la Ville de Calgary',
     homepageUrl: 'https://data.calgary.ca/',
     catalogUrl: 'https://data.calgary.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^city of calgary$/i, name: 'City of Calgary' },
-        { publisher: /^{{source}}$/i, name: 'City of Calgary' }
-    ],
-    authoritativePublishers: [
-        { publisher: /^city of calgary$/i },
-        { publisher: /^{{source}}$/i }
-    ],
-    licenseRules: [
-        { publisher: /^city of calgary$/i, license: CALGARY_LICENSE },
-        { publisher: /^{{source}}$/i, license: CALGARY_LICENSE },
-        { licenseUrl: 'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/e65p-hxjp', license: CALGARY_LICENSE },
-        { licenseTitle: /^open calgary terms of use$/i, license: CALGARY_LICENSE },
-        { licenseTitle: /^open government licence\s*[-–—]\s*city of calgary$/i, license: CALGARY_LICENSE }
-    ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-4806016',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeId: 'sgc-csd-4806016',
+    metadataLanguage: 'en',
+    defaultOrganizationId: 'city-of-calgary',
+    defaultOrganizationName: 'city-of-calgary',
+    defaultOrganizationTitleEn: 'City of Calgary',
+    defaultOrganizationTitleFr: 'Ville de Calgary',
+    defaultLicenseTitleEn: CALGARY_LICENSE.titleEn,
+    defaultLicenseTitleFr: CALGARY_LICENSE.titleFr,
+    defaultLicenseUrl: CALGARY_LICENSE.url,
+    defaultAttributionEn: CALGARY_LICENSE.attributionEn,
+    defaultAttributionFr: CALGARY_LICENSE.attributionFr,
+    socrataPolicy: {
+        publisher: {
+            mode: 'custom-field',
+            section: 'Open Calgary',
+            field: 'Publishing Department',
+            allowed: ['The City of Calgary']
+        },
+        license: {
+            mode: 'custom-field',
+            section: 'Open Calgary',
+            field: 'Terms of Use',
+            comparison: 'url',
+            allowed: [
+                'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/u45n-7awa/',
+                'https://data.calgary.ca/stories/s/Open-Calgary-Terms-of-Use/u45n-7awa',
+                'https://data.calgary.ca/stories/s/Open-Data-Terms-of-Use/mhr5-yyvw',
+                'https://data.calgary.ca/stories/s/Open-Data-Terms-of-Use/mhr5-yyvw/'
+            ]
+        }
+    }
 }, {
     id: 'edmonton-open-data',
     kind: 'socrata',
@@ -796,27 +767,32 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^city of edmonton$/i, name: 'City of Edmonton' },
-        { publisher: /^{{source}}$/i, name: 'City of Edmonton' }
-    ],
-    authoritativePublishers: [
-        { publisher: /^city of edmonton$/i },
-        { publisher: /^{{source}}$/i }
-    ],
-    licenseRules: [
-        { publisher: /^city of edmonton$/i, license: EDMONTON_LICENSE },
-        { publisher: /^{{source}}$/i, license: EDMONTON_LICENSE },
-        { licenseUrl: 'https://data.edmonton.ca/stories/s/Open-Data-City-of-Edmonton-Terms-of-Use/5p2x-q4i2', license: EDMONTON_LICENSE },
-        { licenseTitle: /^open data city of edmonton terms of use$/i, license: EDMONTON_LICENSE },
-        { licenseTitle: /^open government licence\s*[-–—]\s*city of edmonton$/i, license: EDMONTON_LICENSE }
-    ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-4811061',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeId: 'sgc-csd-4811061',
+    metadataLanguage: 'en',
+    defaultOrganizationId: 'city-of-edmonton',
+    defaultOrganizationName: 'city-of-edmonton',
+    defaultOrganizationTitleEn: 'City of Edmonton',
+    defaultOrganizationTitleFr: 'Ville d’Edmonton',
+    defaultLicenseTitleEn: EDMONTON_LICENSE.titleEn,
+    defaultLicenseTitleFr: EDMONTON_LICENSE.titleFr,
+    defaultLicenseUrl: EDMONTON_LICENSE.url,
+    defaultAttributionEn: EDMONTON_LICENSE.attributionEn,
+    defaultAttributionFr: EDMONTON_LICENSE.attributionFr,
+    socrataPolicy: {
+        publisher: {
+            mode: 'attribution',
+            allowed: [
+                'City of Edmonton',
+                'The City of Edmonton'
+            ]
+        },
+        license: {
+            mode: 'view-license-name',
+            allowed: [
+                'See Terms of Use'
+            ]
+        }
+    }
 }, {
     id: 'winnipeg-open-data',
     kind: 'socrata',
@@ -827,53 +803,79 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        { publisher: /^city of winnipeg$/i, name: 'City of Winnipeg' },
-        { publisher: /^{{source}}$/i, name: 'City of Winnipeg' }
-    ],
-    authoritativePublishers: [
-        { publisher: /^city of winnipeg$/i },
-        { publisher: /^{{source}}$/i }
-    ],
-    licenseRules: [
-        { publisher: /^city of winnipeg$/i, license: WINNIPEG_LICENSE },
-        { publisher: /^{{source}}$/i, license: WINNIPEG_LICENSE },
-        { licenseUrl: 'https://data.winnipeg.ca/stories/s/Open-Data-Licence-Agreement/264p-4ph5', license: WINNIPEG_LICENSE },
-        { licenseTitle: /^open data licence agreement$/i, license: WINNIPEG_LICENSE },
-        { licenseTitle: /^city of winnipeg open data licence agreement$/i, license: WINNIPEG_LICENSE }
-    ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-4611040',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeId: 'sgc-csd-4611040',
+    metadataLanguage: 'en',
+    defaultOrganizationId: 'city-of-winnipeg',
+    defaultOrganizationName: 'city-of-winnipeg',
+    defaultOrganizationTitleEn: 'City of Winnipeg',
+    defaultOrganizationTitleFr: 'Ville de Winnipeg',
+    defaultLicenseTitleEn: WINNIPEG_LICENSE.titleEn,
+    defaultLicenseTitleFr: WINNIPEG_LICENSE.titleFr,
+    defaultLicenseUrl: WINNIPEG_LICENSE.url,
+    defaultAttributionEn: WINNIPEG_LICENSE.attributionEn,
+    defaultAttributionFr: WINNIPEG_LICENSE.attributionFr,
+    socrataPolicy: {
+        publisher: {
+            mode: 'attribution',
+            allowBlank: true,
+            allowed: [
+                'City of Winnipeg',
+                'Winnipeg Transit'
+            ]
+        },
+        license: {
+            mode: 'custom-field',
+            section: 'Licence',
+            field: 'Licence',
+            allowed: [
+                'Open Government Licence - Winnipeg'
+            ]
+        }
+    }
 }, {
     id: 'halifax-hub',
     kind: 'arcgis-hub',
     nameEn: 'Halifax Open Data',
-    nameFr: 'Données ouvertes d’Halifax',
-    homepageUrl: 'https://catalogue-hrm.opendata.arcgis.com/',
-    catalogUrl: 'https://catalogue-hrm.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'catalogue-hrm.opendata.arcgis.com',
+    nameFr: 'Données ouvertes de la Ville d’Halifax',
+    homepageUrl: 'https://data-hrm.hub.arcgis.com/',
+    catalogUrl: 'https://data-hrm.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'data-hrm.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^halifax regional municipality$/i, name: 'Halifax Regional Municipality' },
-        { publisher: /^hrm$/i, name: 'Halifax Regional Municipality' },
-        { publisher: /^{{source}}$/i, name: 'Halifax Regional Municipality' }
+        { publisher: /^halifax$/i, name: 'Halifax Regional Municipality' },
+        { publisher: /^hrm$/i, name: 'Halifax Regional Municipality' }
     ],
     authoritativePublishers: [
         { publisher: /^halifax regional municipality$/i },
+        { publisher: /^halifax$/i },
         { publisher: /^hrm$/i }
     ],
-    licenseRules: [
-        { publisher: /^halifax regional municipality$/i, license: HALIFAX_LICENSE },
-        { publisher: /^hrm$/i, license: HALIFAX_LICENSE }
-    ],
+    licenseRules: [{
+        publisher: /^halifax regional municipality$/i,
+        license: HALIFAX_LICENSE
+    }, {
+        publisher: /^halifax$/i,
+        license: HALIFAX_LICENSE
+    }, {
+        publisher: /^hrm$/i,
+        license: HALIFAX_LICENSE
+    }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^halifax regional municipality$/i,
+        placeId: 'sgc-csd-1209034',
+        relationship: 'direct',
+        includesDescendants: false
+    }, {
+        publisher: /^halifax$/i,
+        placeId: 'sgc-csd-1209034',
+        relationship: 'direct',
+        includesDescendants: false
+    }, {
+        publisher: /^hrm$/i,
         placeId: 'sgc-csd-1209034',
         relationship: 'direct',
         includesDescendants: false
@@ -889,21 +891,18 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
-    publisherAliases: [
-        ...HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
-            publisher: pattern,
-            name: 'City of Hamilton'
-        })),
-        { publisher: /^{{source}}$/i, name: 'City of Hamilton' }
-    ],
-    authoritativePublishers: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({ publisher: pattern })),
-    licenseRules: [
-        ...HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
-            publisher: pattern,
-            license: HAMILTON_LICENSE
-        })),
-        { publisher: /^{{source}}$/i, license: HAMILTON_LICENSE }
-    ],
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
+    publisherAliases: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
+        publisher: pattern,
+        name: 'City of Hamilton'
+    })),
+    authoritativePublishers: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
+        publisher: pattern
+    })),
+    licenseRules: HAMILTON_PUBLISHER_PATTERNS.map(pattern => ({
+        publisher: pattern,
+        license: HAMILTON_LICENSE
+    })),
     placeRules: [{
         publisher: /.*/,
         placeId: 'sgc-cd-3525',
@@ -916,23 +915,24 @@ const sources = [{
     nameEn: 'City of Surrey Open Data',
     nameFr: 'Données ouvertes de la Ville de Surrey',
     homepageUrl: 'https://data.surrey.ca/',
-    catalogUrl: 'https://data.surrey.ca/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'data.surrey.ca',
+    catalogUrl: 'https://opendata-surrey.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata-surrey.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^city of surrey$/i, name: 'City of Surrey' },
-        { publisher: /^{{source}}$/i, name: 'City of Surrey' }
+        { publisher: /^city of surrey$/i, name: 'City of Surrey' }
     ],
     authoritativePublishers: [
         { publisher: /^city of surrey$/i }
     ],
-    licenseRules: [
-        { publisher: /^city of surrey$/i, license: SURREY_LICENSE }
-    ],
+    licenseRules: [{
+        publisher: /^city of surrey$/i,
+        license: SURREY_LICENSE
+    }],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^city of surrey$/i,
         placeId: 'sgc-csd-5915004',
         relationship: 'direct',
         includesDescendants: false
@@ -948,24 +948,25 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^city of oshawa$/i, name: 'City of Oshawa' },
-        { publisher: /^{{source}}$/i, name: 'City of Oshawa' }
+        { publisher: /^(the corporation of the )?city of oshawa$/i, name: 'City of Oshawa' },
+        { publisher: /^oshawa$/i, name: 'City of Oshawa' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of oshawa$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^(the corporation of the )?city of oshawa$/i },
+        { publisher: /^oshawa$/i }
     ],
     licenseRules: [
-        { publisher: /^city of oshawa$/i, license: ONTARIO_LICENSE },
-        { publisher: /^{{source}}$/i, license: ONTARIO_LICENSE }
+        { publisher: /^(the corporation of the )?city of oshawa$/i, license: OSHAWA_LICENSE },
+        { publisher: /^oshawa$/i, license: OSHAWA_LICENSE },
+        ...regionalRules.licenseRules
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3518013',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        { publisher: /^(the corporation of the )?city of oshawa$/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
+        { publisher: /^oshawa$/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
+        ...regionalRules.placeRules
+    ]
 }, {
     id: 'ajax-hub',
     kind: 'arcgis-hub',
@@ -977,24 +978,25 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^town of ajax$/i, name: 'Town of Ajax' },
-        { publisher: /^{{source}}$/i, name: 'Town of Ajax' }
+        { publisher: /^ajax$/i, name: 'Town of Ajax' }
     ],
     authoritativePublishers: [
         { publisher: /^town of ajax$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^ajax$/i }
     ],
     licenseRules: [
         { publisher: /^town of ajax$/i, license: AJAX_LICENSE },
-        { publisher: /^{{source}}$/i, license: AJAX_LICENSE }
+        { publisher: /^ajax$/i, license: AJAX_LICENSE },
+        ...regionalRules.licenseRules
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3518005',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        { publisher: /^town of ajax$/i, placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false },
+        { publisher: /^ajax$/i, placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false },
+        ...regionalRules.placeRules
+    ]
 }, {
     id: 'pickering-hub',
     kind: 'arcgis-hub',
@@ -1006,24 +1008,25 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: /^city of pickering$/i, name: 'City of Pickering' },
-        { publisher: /^{{source}}$/i, name: 'City of Pickering' }
+        { publisher: /^(the corporation of the )?city of pickering$/i, name: 'City of Pickering' },
+        { publisher: /^pickering$/i, name: 'City of Pickering' }
     ],
     authoritativePublishers: [
-        { publisher: /^city of pickering$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^(the corporation of the )?city of pickering$/i },
+        { publisher: /^pickering$/i }
     ],
     licenseRules: [
-        { publisher: /^city of pickering$/i, license: PICKERING_LICENSE },
-        { publisher: /^{{source}}$/i, license: PICKERING_LICENSE }
+        { publisher: /^(the corporation of the )?city of pickering$/i, license: PICKERING_LICENSE },
+        { publisher: /^pickering$/i, license: PICKERING_LICENSE },
+        ...regionalRules.licenseRules
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3518001',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        { publisher: /^(the corporation of the )?city of pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
+        { publisher: /^pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
+        ...regionalRules.placeRules
+    ]
 }, {
     id: 'whitby-hub',
     kind: 'arcgis-hub',
@@ -1035,17 +1038,21 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    licenseMode: 'record-explicit',
+    restrictedLicensePatterns: [/custom\s+license/i, /terms\s+of\s+use/i, /copyright/i],
     publisherAliases: [
-        { publisher: /^town of whitby$/i, name: 'Town of Whitby' },
-        { publisher: /^{{source}}$/i, name: 'Town of Whitby' }
+        { publisher: /^(the corporation of the )?town of whitby$/i, name: 'Town of Whitby' },
+        { publisher: /^whitby$/i, name: 'Town of Whitby' }
     ],
     authoritativePublishers: [
-        { publisher: /^town of whitby$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^(the corporation of the )?town of whitby$/i },
+        { publisher: /^whitby$/i }
     ],
     licenseRules: [
-        { publisher: /^town of whitby$/i, license: WHITBY_LICENSE },
-        { publisher: /^{{source}}$/i, license: WHITBY_LICENSE }
+        {
+            licensePattern: /open\s+government\s+licen[cs]e/i,
+            license: WHITBY_LICENSE
+        }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1064,30 +1071,45 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
-        { publisher: DURHAM_PUBLISHER, name: 'Regional Municipality of Durham' },
+        { publisher: DURHAM_PUBLISHER, name: 'Region of Durham' },
+        { publisher: /^(the corporation of the )?city of oshawa$/i, name: 'City of Oshawa' },
         { publisher: /^town of ajax$/i, name: 'Town of Ajax' },
-        { publisher: /^city of pickering$/i, name: 'City of Pickering' },
-        { publisher: /^central lake ontario conservation authority$/i, name: 'Central Lake Ontario Conservation Authority' },
-        { publisher: /^{{source}}$/i, name: 'Regional Municipality of Durham' }
+        { publisher: /^(the corporation of the )?city of pickering$/i, name: 'City of Pickering' },
+        { publisher: /^(the corporation of the )?town of whitby$/i, name: 'Town of Whitby' },
+        { publisher: /^municipality of clarington$/i, name: 'Municipality of Clarington' },
+        { publisher: /^township of scugog$/i, name: 'Township of Scugog' },
+        { publisher: /^township of uxbridge$/i, name: 'Township of Uxbridge' },
+        { publisher: /^township of brock$/i, name: 'Township of Brock' },
+        { publisher: CONSERVATION_PUBLISHER, name: 'Central Lake Ontario Conservation Authority' }
     ],
     authoritativePublishers: [
         { publisher: DURHAM_PUBLISHER },
-        { publisher: /^{{source}}$/i }
+        { publisher: /township of (brock|scugog|uxbridge)/i }
     ],
     licenseRules: [
-        { publisher: DURHAM_PUBLISHER, license: ONTARIO_LICENSE },
+        { publisher: DURHAM_PUBLISHER, license: DURHAM_LICENSE },
+        { publisher: /^(the corporation of the )?city of oshawa$/i, license: OSHAWA_LICENSE },
         { publisher: /^town of ajax$/i, license: AJAX_LICENSE },
-        { publisher: /^city of pickering$/i, license: PICKERING_LICENSE },
-        { publisher: /^central lake ontario conservation authority$/i, license: CLOCA_LICENSE },
-        { publisher: /^{{source}}$/i, license: ONTARIO_LICENSE }
+        { publisher: /^(the corporation of the )?city of pickering$/i, license: PICKERING_LICENSE },
+        { publisher: /^(the corporation of the )?town of whitby$/i, license: WHITBY_LICENSE },
+        { publisher: /township of (brock|scugog|uxbridge)/i, license: DURHAM_LICENSE },
+        { publisher: CONSERVATION_PUBLISHER, license: CLOCA_LICENSE },
+        { publisher: ONTARIO_PUBLISHER, license: ONTARIO_LICENSE }
     ],
     placeRules: [
-        { publisher: DURHAM_PUBLISHER, placeId: 'sgc-cd-3518', relationship: 'direct', includesDescendants: true },
+        { publisher: DURHAM_PUBLISHER, placeId: 'ca-on-durham', relationship: 'direct', includesDescendants: true },
+        { publisher: /^(the corporation of the )?city of oshawa$/i, placeId: 'ca-on-oshawa', relationship: 'direct', includesDescendants: false },
         { publisher: /^town of ajax$/i, placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false },
-        { publisher: /^city of pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
-        { publisher: /^central lake ontario conservation authority$/i, placeId: 'sgc-cd-3518', relationship: 'direct', includesDescendants: true },
-        { publisher: /.*/, placeId: 'sgc-cd-3518', relationship: 'direct', includesDescendants: true }
+        { publisher: /^(the corporation of the )?city of pickering$/i, placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false },
+        { publisher: /^(the corporation of the )?town of whitby$/i, placeId: 'sgc-csd-3518009', relationship: 'direct', includesDescendants: false },
+        { publisher: /^municipality of clarington$/i, placeId: 'sgc-csd-3518017', relationship: 'direct', includesDescendants: false },
+        { publisher: /^township of scugog$/i, placeId: 'sgc-csd-3518020', relationship: 'direct', includesDescendants: false },
+        { publisher: /^township of uxbridge$/i, placeId: 'sgc-csd-3518029', relationship: 'direct', includesDescendants: false },
+        { publisher: /^township of brock$/i, placeId: 'sgc-csd-3518039', relationship: 'direct', includesDescendants: false },
+        { publisher: CONSERVATION_PUBLISHER, placeId: 'ca-on-durham', relationship: 'direct', includesDescendants: true },
+        { publisher: ONTARIO_PUBLISHER, placeId: 'ca-on', relationship: 'coverage', includesDescendants: true }
     ]
 }, {
     id: 'mississauga-hub',
@@ -1100,19 +1122,24 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    restrictedLicensePatterns: [/non.?commercial/i, /personal use only/i],
     publisherAliases: [
         { publisher: /^city of mississauga$/i, name: 'City of Mississauga' },
-        { publisher: /^{{source}}$/i, name: 'City of Mississauga' }
+        { publisher: /^mississauga$/i, name: 'City of Mississauga' }
     ],
     authoritativePublishers: [
         { publisher: /^city of mississauga$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^mississauga$/i }
     ],
     licenseRules: [
-        { licenseUrl: 'https://www.statcan.gc.ca/en/reference/licence', license: STATCAN_LICENSE },
-        { licenseTitle: /^statistics canada open licence/i, license: STATCAN_LICENSE },
-        { publisher: /^city of mississauga$/i, license: MISSISSAUGA_LICENSE },
-        { publisher: /^{{source}}$/i, license: MISSISSAUGA_LICENSE }
+        {
+            licensePattern: /statistics\s+canada/i,
+            license: STATCAN_LICENSE
+        },
+        {
+            publisher: /.*/,
+            license: MISSISSAUGA_LICENSE
+        }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1123,27 +1150,33 @@ const sources = [{
 }, {
     id: 'brampton-hub',
     kind: 'arcgis-hub',
-    nameEn: 'City of Brampton Open Data',
-    nameFr: 'Données ouvertes de la Ville de Brampton',
+    nameEn: 'City of Brampton Open Data (GeoHub)',
+    nameFr: 'Données ouvertes de la Ville de Brampton (GeoHub)',
     homepageUrl: 'https://geohub.brampton.ca/',
     catalogUrl: 'https://geohub.brampton.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'geohub.brampton.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    licenseMode: 'record-explicit',
+    restrictedLicensePatterns: [/custom\s+license/i, /terms\s+of\s+use/i, /copyright/i],
     publisherAliases: [
         { publisher: /^city of brampton$/i, name: 'City of Brampton' },
-        { publisher: /^{{source}}$/i, name: 'City of Brampton' }
+        { publisher: /^brampton$/i, name: 'City of Brampton' }
     ],
     authoritativePublishers: [
         { publisher: /^city of brampton$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^brampton$/i }
     ],
     licenseRules: [
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', license: CC_BY_4_LICENSE },
-        { licenseUrl: 'https://www.statcan.gc.ca/en/reference/licence', license: STATCAN_LICENSE },
-        { licenseTitle: /^creative commons attribution 4\.0/i, license: CC_BY_4_LICENSE },
-        { licenseTitle: /^statistics canada open licence/i, license: STATCAN_LICENSE }
+        {
+            licensePattern: /creative\s+commons/i,
+            license: CC_BY_4_LICENSE
+        },
+        {
+            licensePattern: /open\s+government\s+licen[cs]e/i,
+            license: STATCAN_LICENSE
+        }
     ],
     placeRules: [{
         publisher: /.*/,
@@ -1162,36 +1195,34 @@ const sources = [{
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
+    licenseMode: 'record-explicit',
+    restrictedLicensePatterns: [/custom\s+license/i, /terms\s+of\s+use/i, /copyright/i],
     publisherAliases: [
-        { publisher: /^regional municipality of peel$/i, name: 'Regional Municipality of Peel' },
-        { publisher: /^region of peel$/i, name: 'Regional Municipality of Peel' },
-        { publisher: /^city of brampton$/i, name: 'City of Brampton' },
-        { publisher: /^city of mississauga$/i, name: 'City of Mississauga' },
-        { publisher: /^town of caledon$/i, name: 'Town of Caledon' },
-        { publisher: /^{{source}}$/i, name: 'Regional Municipality of Peel' }
+        { publisher: /^region of peel$/i, name: 'Region of Peel' },
+        { publisher: /^regional municipality of peel$/i, name: 'Region of Peel' },
+        { publisher: /^peel$/i, name: 'Region of Peel' }
     ],
     authoritativePublishers: [
-        { publisher: /^regional municipality of peel$/i },
         { publisher: /^region of peel$/i },
-        { publisher: /^{{source}}$/i }
+        { publisher: /^regional municipality of peel$/i },
+        { publisher: /^peel$/i }
     ],
     licenseRules: [
-        { publisher: /^regional municipality of peel$/i, license: PEEL_LICENSE },
-        { publisher: /^region of peel$/i, license: PEEL_LICENSE },
-        { publisher: /^{{source}}$/i, license: PEEL_LICENSE },
-        { licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', license: CC_BY_4_LICENSE },
-        { licenseUrl: 'https://open.canada.ca/en/open-government-licence-canada', license: OGL_CANADA_LICENSE },
-        { licenseUrl: 'https://www.statcan.gc.ca/en/reference/licence', license: STATCAN_LICENSE },
-        { licenseTitle: /^creative commons attribution 4\.0/i, license: CC_BY_4_LICENSE },
-        { licenseTitle: /^open government licence\s*[-–—]\s*canada$/i, license: OGL_CANADA_LICENSE },
-        { licenseTitle: /^statistics canada open licence/i, license: STATCAN_LICENSE }
+        {
+            licensePattern: /open\s+data\s+licen[cs]e/i,
+            license: PEEL_LICENSE
+        },
+        {
+            licensePattern: /open\s+government\s+licen[cs]e/i,
+            license: OGL_CANADA_LICENSE
+        }
     ],
-    placeRules: [
-        { publisher: /^city of mississauga$/i, placeId: 'sgc-csd-3521005', relationship: 'direct', includesDescendants: false },
-        { publisher: /^city of brampton$/i, placeId: 'sgc-csd-3521010', relationship: 'direct', includesDescendants: false },
-        { publisher: /^town of caledon$/i, placeId: 'sgc-csd-3521024', relationship: 'direct', includesDescendants: false },
-        { publisher: /.*/, placeId: 'sgc-cd-3521', relationship: 'direct', includesDescendants: true }
-    ]
+    placeRules: [{
+        publisher: /.*/,
+        placeId: 'sgc-cd-3521',
+        relationship: 'direct',
+        includesDescendants: true
+    }]
 }, {
     id: 'victoria-hub',
     kind: 'arcgis-hub',
@@ -1251,9 +1282,9 @@ const sources = [{
     licenseRules: [
         { publisher: /^regional municipality of waterloo$/i, license: WATERLOO_REGION_LICENSE },
         { publisher: /^region of waterloo$/i, license: WATERLOO_REGION_LICENSE },
-        { publisher: /^city of kitchener$/i, license: WATERLOO_REGION_LICENSE },
-        { publisher: /^city of cambridge$/i, license: WATERLOO_REGION_LICENSE },
-        { publisher: /^city of waterloo$/i, license: WATERLOO_REGION_LICENSE },
+        { publisher: /^city of kitchener$/i, license: KITCHENER_LICENSE },
+        { publisher: /^city of cambridge$/i, license: CAMBRIDGE_LICENSE },
+        { publisher: /^city of waterloo$/i, license: WATERLOO_CITY_LICENSE },
         { publisher: /^{{source}}$/i, license: WATERLOO_REGION_LICENSE }
     ],
     placeRules: [
@@ -1268,8 +1299,8 @@ const sources = [{
     nameEn: 'City of London Open Data',
     nameFr: 'Données ouvertes de la Ville de London',
     homepageUrl: 'https://open.london.ca/',
-    catalogUrl: 'https://open.london.ca/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open.london.ca',
+    catalogUrl: 'https://open-london.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'open-london.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1383,9 +1414,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'Town of Oakville Open Data',
     nameFr: 'Données ouvertes de la Ville d’Oakville',
-    homepageUrl: 'https://oakville.opendata.arcgis.com/',
-    catalogUrl: 'https://oakville.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'oakville.opendata.arcgis.com',
+    homepageUrl: 'https://portal-exploreoakville.opendata.arcgis.com/',
+    catalogUrl: 'https://portal-exploreoakville.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'portal-exploreoakville.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1412,9 +1443,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'Town of Milton Open Data',
     nameFr: 'Données ouvertes de la Ville de Milton',
-    homepageUrl: 'https://data-milton.opendata.arcgis.com/',
-    catalogUrl: 'https://data-milton.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'data-milton.opendata.arcgis.com',
+    homepageUrl: 'https://discover-milton.hub.arcgis.com/',
+    catalogUrl: 'https://discover-milton.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'discover-milton.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1499,9 +1530,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'City of Saskatoon Open Data',
     nameFr: 'Données ouvertes de la Ville de Saskatoon',
-    homepageUrl: 'https://open-data-saskatoon.hub.arcgis.com/',
-    catalogUrl: 'https://open-data-saskatoon.hub.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open-data-saskatoon.hub.arcgis.com',
+    homepageUrl: 'https://opendata.saskatoon.ca/',
+    catalogUrl: 'https://opendata.saskatoon.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata.saskatoon.ca',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1536,30 +1567,36 @@ const sources = [{
     maxDeleteFraction: 0.1,
     publisherAliases: [
         { publisher: /^city of markham$/i, name: 'City of Markham' },
+        { publisher: /^regional municipality of york$/i, name: 'York Region' },
+        { publisher: /^york region$/i, name: 'York Region' },
         { publisher: /^{{source}}$/i, name: 'City of Markham' }
     ],
     authoritativePublishers: [
         { publisher: /^city of markham$/i },
+        { publisher: /^regional municipality of york$/i },
+        { publisher: /^york region$/i },
         { publisher: /^{{source}}$/i }
     ],
     licenseRules: [
         { publisher: /^city of markham$/i, license: MARKHAM_LICENSE },
+        { publisher: /^regional municipality of york$/i, license: YORK_REGION_LICENSE },
+        { publisher: /^york region$/i, license: YORK_REGION_LICENSE },
         { publisher: /^{{source}}$/i, license: MARKHAM_LICENSE }
     ],
-    placeRules: [{
-        publisher: /.*/,
-        placeId: 'sgc-csd-3519036',
-        relationship: 'direct',
-        includesDescendants: false
-    }]
+    placeRules: [
+        { publisher: /^city of markham$/i, placeId: 'sgc-csd-3519036', relationship: 'direct', includesDescendants: false },
+        { publisher: /^regional municipality of york$/i, placeId: 'sgc-cd-3519', relationship: 'direct', includesDescendants: true },
+        { publisher: /^york region$/i, placeId: 'sgc-cd-3519', relationship: 'direct', includesDescendants: true },
+        { publisher: /.*/, placeId: 'sgc-csd-3519036', relationship: 'direct', includesDescendants: false }
+    ]
 }, {
     id: 'newmarket-hub',
     kind: 'arcgis-hub',
     nameEn: 'Town of Newmarket Open Data',
     nameFr: 'Données ouvertes de la Ville de Newmarket',
-    homepageUrl: 'https://data-newmarket.opendata.arcgis.com/',
-    catalogUrl: 'https://data-newmarket.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'data-newmarket.opendata.arcgis.com',
+    homepageUrl: 'https://navigate-newmarket.hub.arcgis.com/',
+    catalogUrl: 'https://navigate-newmarket.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'navigate-newmarket.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1615,9 +1652,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'City of Welland Open Data',
     nameFr: 'Données ouvertes de la Ville de Welland',
-    homepageUrl: 'https://open-welland.opendata.arcgis.com/',
-    catalogUrl: 'https://open-welland.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open-welland.opendata.arcgis.com',
+    homepageUrl: 'https://open.welland.ca/',
+    catalogUrl: 'https://open.welland.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'open-welland.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1635,7 +1672,7 @@ const sources = [{
     ],
     placeRules: [{
         publisher: /.*/,
-        placeId: 'sgc-csd-3526065',
+        placeId: 'sgc-csd-3526032',
         relationship: 'direct',
         includesDescendants: false
     }]
@@ -1673,9 +1710,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'City of Guelph Open Data',
     nameFr: 'Données ouvertes de la Ville de Guelph',
-    homepageUrl: 'https://open-guelph.opendata.arcgis.com/',
-    catalogUrl: 'https://open-guelph.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'open-guelph.opendata.arcgis.com',
+    homepageUrl: 'https://explore.guelph.ca/',
+    catalogUrl: 'https://explore.guelph.ca/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'geodatahub-cityofguelph.opendata.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1702,9 +1739,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'District of Saanich Open Data',
     nameFr: 'Données ouvertes du district de Saanich',
-    homepageUrl: 'https://data-saanich.opendata.arcgis.com/',
-    catalogUrl: 'https://data-saanich.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'data-saanich.opendata.arcgis.com',
+    homepageUrl: 'https://opendata-saanich.hub.arcgis.com/',
+    catalogUrl: 'https://opendata-saanich.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata-saanich.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1731,9 +1768,9 @@ const sources = [{
     kind: 'arcgis-hub',
     nameEn: 'City of Belleville Open Data',
     nameFr: 'Données ouvertes de la Ville de Belleville',
-    homepageUrl: 'https://data-cityofbelleville.opendata.arcgis.com/',
-    catalogUrl: 'https://data-cityofbelleville.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
-    upstreamHost: 'data-cityofbelleville.opendata.arcgis.com',
+    homepageUrl: 'https://opendata-bellevillegis.hub.arcgis.com/',
+    catalogUrl: 'https://opendata-bellevillegis.hub.arcgis.com/api/feed/dcat-us/1.1.json',
+    upstreamHost: 'opendata-bellevillegis.hub.arcgis.com',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -1796,17 +1833,14 @@ const sources = [{
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     publisherAliases: [
-        { publisher: /^the corporation of the city of barrie$/i, name: 'City of Barrie' },
         { publisher: /^city of barrie$/i, name: 'City of Barrie' },
         { publisher: /^{{source}}$/i, name: 'City of Barrie' }
     ],
     authoritativePublishers: [
-        { publisher: /^the corporation of the city of barrie$/i },
         { publisher: /^city of barrie$/i },
         { publisher: /^{{source}}$/i }
     ],
     licenseRules: [
-        { publisher: /^the corporation of the city of barrie$/i, license: BARRIE_LICENSE },
         { publisher: /^city of barrie$/i, license: BARRIE_LICENSE },
         { publisher: /^{{source}}$/i, license: BARRIE_LICENSE }
     ],
@@ -2248,8 +2282,7 @@ const sources = [{
         relationship: 'direct',
         includesDescendants: true
     }]
-}
-];
+}];
 
 function getSource(id) {
     return sources.find(source => source.id === id) || null;
@@ -2258,25 +2291,11 @@ function getSource(id) {
 module.exports = {
     sources,
     getSource,
-    AJAX_LICENSE,
-    PICKERING_LICENSE,
-    WHITBY_LICENSE,
-    CLOCA_LICENSE,
-    ONTARIO_LICENSE,
-    TORONTO_LICENSE,
-    MONTREAL_LICENSE,
-    QUEBEC_CITY_LICENSE,
-    LAVAL_LICENSE,
-    OTTAWA_LICENSE,
-    OTTAWA_POLICE_LICENSE,
-    VANCOUVER_LICENSE,
-    CALGARY_LICENSE,
-    EDMONTON_LICENSE,
-    WINNIPEG_LICENSE,
-    HALIFAX_LICENSE,
-    HAMILTON_LICENSE,
     VICTORIA_LICENSE,
     WATERLOO_REGION_LICENSE,
+    KITCHENER_LICENSE,
+    CAMBRIDGE_LICENSE,
+    WATERLOO_CITY_LICENSE,
     LONDON_LICENSE,
     KELOWNA_LICENSE,
     FREDERICTON_LICENSE,
@@ -2312,6 +2331,22 @@ module.exports = {
     HURON_LICENSE,
     CUMBERLAND_LICENSE,
     SURREY_LICENSE,
+    HAMILTON_LICENSE,
+    HALIFAX_LICENSE,
+    WINNIPEG_LICENSE,
+    EDMONTON_LICENSE,
+    CALGARY_LICENSE,
+    VANCOUVER_LICENSE,
+    OTTAWA_LICENSE,
+    OTTAWA_POLICE_LICENSE,
+    TORONTO_LICENSE,
+    ONTARIO_LICENSE,
+    OSHAWA_LICENSE,
+    DURHAM_LICENSE,
+    AJAX_LICENSE,
+    PICKERING_LICENSE,
+    WHITBY_LICENSE,
+    CLOCA_LICENSE,
     MISSISSAUGA_LICENSE,
     CC_BY_4_LICENSE,
     OGL_CANADA_LICENSE,
