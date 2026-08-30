@@ -1,5 +1,4 @@
 const { parse } = require('csv-parse/sync');
-const { Pool } = require('pg');
 const { fetchPublicBuffer } = require('../utils/fetch');
 const pool = require('../db/pool');
 
@@ -101,7 +100,8 @@ const FEATURED_PLACE_IDS = new Set([
     'sgc-cd-3516',
     'sgc-csd-5907035',
     'sgc-csd-3528052',
-    'sgc-csd-4802012',
+    '4802012': 'sgc-csd-4802012',
+    'sgc-csd-4802012': 'sgc-csd-4802012',
     'sgc-csd-4801006',
     'sgc-csd-4806021',
     'sgc-csd-4815023',
@@ -384,11 +384,11 @@ function normalize(enRows, frRows) {
             continue;
         }
 
-        let kind = null;
-        let parentId = null;
-        let typeEn = null;
-        let typeFr = null;
-        let baseSlug = '';
+        let kind;
+        let parentId;
+        let typeEn;
+        let typeFr;
+        let baseSlug;
 
         if (level === '2') {
             kind = TERRITORIES.has(code) ? 'territory' : 'province';
