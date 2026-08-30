@@ -1,7 +1,10 @@
 # CanQuery v35 recovery and high-volume source runbook
 
-Status: release candidate validated locally on August 30, 2026. This document
-does not claim that v35 has been deployed to production.
+Status: v35 deployed and publicly verified on August 30, 2026 at
+https://canquery.com. Production is running merged commit
+`d04803e893e45524d375778fc8eb7e022d3d78c4` (PRs #31 and #32). The final
+telemetry and backup record is in Section 40.5 of the private technical
+documentation.
 
 This release repairs the incomplete v34 implementation, activates the live v33
 and v34 catalogues that can still be verified, adds ten v35 sources, applies
@@ -73,7 +76,7 @@ npm --prefix server run verify
 git diff --check
 ```
 
-The August 30 release candidate passed 59 server suites (481 tests), 27 client
+The August 30 release candidate passed 59 server suites (482 tests), 27 client
 suites (109 tests), both ESLint passes, and the Vite production build. The normal
 Jest run skips the PostGIS integration suite unless a database is supplied, so
 also validate all migrations against a disposable PostgreSQL 16/PostGIS 3.5
