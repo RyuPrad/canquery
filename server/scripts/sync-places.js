@@ -1,720 +1,850 @@
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const { parse } = require('csv-parse/sync');
-const pool = require('../db/pool');
+const { Client } = require('pg');
 const { fetchPublicBuffer } = require('../services/publicJson');
 
-const EN_URL = 'https://www.statcan.gc.ca/en/statistical-programs/document/sgc-cgt-2021-structure-eng.csv';
-const FR_URL = 'https://www.statcan.gc.ca/fr/programmes-statistiques/document/sgc-cgt-2021-structure-fra.csv';
 const PROVINCES = {
-    '10': 'nl', '11': 'pe', '12': 'ns', '13': 'nb', '24': 'qc', '35': 'on',
-    '46': 'mb', '47': 'sk', '48': 'ab', '59': 'bc', '60': 'yt', '61': 'nt', '62': 'nu'
+    '10': 'NL', '11': 'PE', '12': 'NS', '13': 'NB', '24': 'QC',
+    '35': 'ON', '46': 'MB', '47': 'SK', '48': 'AB', '59': 'BC',
+    '60': 'YT', '61': 'NT', '62': 'NU'
 };
-const TERRITORIES = new Set(['60', '61', '62']);
+
+const PROVINCE_NAMES = {
+    '10': { en: 'Newfoundland and Labrador', fr: 'Terre-Neuve-et-Labrador' },
+    '11': { en: 'Prince Edward Island', fr: 'Île-du-Prince-Édouard' },
+    '12': { en: 'Nova Scotia', fr: 'Nouvelle-Écosse' },
+    '13': { en: 'New Brunswick', fr: 'Nouveau-Brunswick' },
+    '24': { en: 'Quebec', fr: 'Québec' },
+    '35': { en: 'Ontario', fr: 'Ontario' },
+    '46': { en: 'Manitoba', fr: 'Manitoba' },
+    '47': { en: 'Saskatchewan', fr: 'Saskatchewan' },
+    '48': { en: 'Alberta', fr: 'Alberta' },
+    '59': { en: 'British Columbia', fr: 'Colombie-Britannique' },
+    '60': { en: 'Yukon', fr: 'Yukon' },
+    '61': { en: 'Northwest Territories', fr: 'Territoires du Nord-Ouest' },
+    '62': { en: 'Nunavut', fr: 'Nunavut' }
+};
+
+const CSD_TYPES = {
+    'C': { en: 'City', fr: 'Cité / Ville' },
+    'CY': { en: 'City', fr: 'Cité / Ville' },
+    'V': { en: 'Ville', fr: 'Ville' },
+    'T': { en: 'Town', fr: 'Ville' },
+    'TP': { en: 'Township', fr: 'Canton' },
+    'M': { en: 'Municipality', fr: 'Municipalité' },
+    'MU': { en: 'Municipality', fr: 'Municipalité' },
+    'DM': { en: 'District municipality', fr: 'Municipalité de district' },
+    'VL': { en: 'Village', fr: 'Village' },
+    'RGM': { en: 'Regional municipality', fr: 'Municipalité régionale' },
+    'RM': { en: 'Rural municipality', fr: 'Municipalité rurale' },
+    'IM': { en: 'Island municipality', fr: 'Municipalité insulaire' },
+    'P': { en: 'Parish', fr: 'Paroisse' },
+    'PE': { en: 'Paroisse (municipalité de)', fr: 'Paroisse (municipalité de)' },
+    'CT': { en: 'Canton (municipalité de)', fr: 'Canton (municipalité de)' },
+    'CU': { en: 'Cantons unis (municipalité de)', fr: 'Cantons unis (municipalité de)' },
+    'NO': { en: 'Northern subdivision', fr: 'Subdivision nordique' },
+    'SV': { en: 'Summer village', fr: 'Village d\'été' },
+    'RG': { en: 'Region', fr: 'Région' },
+    'RD': { en: 'Regional district', fr: 'District régional' },
+    'DIV': { en: 'Division', fr: 'Division' },
+    'CDR': { en: 'Census division', fr: 'Division de recensement' }
+};
+
+const SGC_MUNICIPAL_TYPES = {
+    '1001519': { en: 'City', fr: 'Cité / Ville' },
+    '1102075': { en: 'City', fr: 'Cité / Ville' },
+    '1209034': { en: 'Regional municipality', fr: 'Municipalité régionale' },
+    '1301006': { en: 'City', fr: 'Cité / Ville' },
+    '1307019': { en: 'Parish', fr: 'Paroisse' },
+    '1307022': { en: 'City', fr: 'Cité / Ville' },
+    '1310032': { en: 'City', fr: 'Cité / Ville' },
+    '2410043': { en: 'Ville', fr: 'Ville' },
+    '2423027': { en: 'Ville', fr: 'Ville' },
+    '2425213': { en: 'Ville', fr: 'Ville' },
+    '2436033': { en: 'Ville', fr: 'Ville' },
+    '2437067': { en: 'Ville', fr: 'Ville' },
+    '2443027': { en: 'Ville', fr: 'Ville' },
+    '2458227': { en: 'Ville', fr: 'Ville' },
+    '2460013': { en: 'Ville', fr: 'Ville' },
+    '2466023': { en: 'Ville', fr: 'Ville' },
+    '2494068': { en: 'Ville', fr: 'Ville' },
+    '3506008': { en: 'City', fr: 'Cité / Ville' },
+    '3510010': { en: 'City', fr: 'Cité / Ville' },
+    '3512005': { en: 'City', fr: 'Cité / Ville' },
+    '3518001': { en: 'City', fr: 'Cité / Ville' },
+    '3518005': { en: 'Town', fr: 'Ville' },
+    '3518009': { en: 'Town', fr: 'Ville' },
+    '3518013': { en: 'City', fr: 'Cité / Ville' },
+    '3518017': { en: 'Municipality', fr: 'Municipalité' },
+    '3518020': { en: 'Township', fr: 'Canton' },
+    '3518029': { en: 'Township', fr: 'Canton' },
+    '3518039': { en: 'Township', fr: 'Canton' },
+    '3519036': { en: 'City', fr: 'Cité / Ville' },
+    '3519048': { en: 'Town', fr: 'Ville' },
+    '3520005': { en: 'City', fr: 'Cité / Ville' },
+    '3521005': { en: 'City', fr: 'Cité / Ville' },
+    '3521010': { en: 'City', fr: 'Cité / Ville' },
+    '3521024': { en: 'Town', fr: 'Ville' },
+    '3523008': { en: 'City', fr: 'Cité / Ville' },
+    '3524001': { en: 'Town', fr: 'Ville' },
+    '3524002': { en: 'City', fr: 'Cité / Ville' },
+    '3524009': { en: 'Town', fr: 'Ville' },
+    '3524015': { en: 'Town', fr: 'Ville' },
+    '3525005': { en: 'City', fr: 'Cité / Ville' },
+    '3526032': { en: 'City', fr: 'Cité / Ville' },
+    '3526043': { en: 'City', fr: 'Cité / Ville' },
+    '3528018': { en: 'City', fr: 'Cité / Ville' },
+    '3528052': { en: 'City', fr: 'Cité / Ville' },
+    '3530010': { en: 'City', fr: 'Cité / Ville' },
+    '3530013': { en: 'City', fr: 'Cité / Ville' },
+    '3530016': { en: 'City', fr: 'Cité / Ville' },
+    '3530020': { en: 'Township', fr: 'Canton' },
+    '3530027': { en: 'Township', fr: 'Canton' },
+    '3530035': { en: 'Township', fr: 'Canton' },
+    '3530042': { en: 'Township', fr: 'Canton' },
+    '3537039': { en: 'City', fr: 'Cité / Ville' },
+    '3539036': { en: 'City', fr: 'Cité / Ville' },
+    '3543042': { en: 'City', fr: 'Cité / Ville' },
+    '3553005': { en: 'City', fr: 'Cité / Ville' },
+    '3558004': { en: 'City', fr: 'Cité / Ville' },
+    '4611040': { en: 'City', fr: 'Cité / Ville' },
+    '4706027': { en: 'City', fr: 'Cité / Ville' },
+    '4711066': { en: 'City', fr: 'Cité / Ville' },
+    '4801006': { en: 'City', fr: 'Cité / Ville' },
+    '4802012': { en: 'City', fr: 'Cité / Ville' },
+    '4806016': { en: 'City', fr: 'Cité / Ville' },
+    '4806021': { en: 'City', fr: 'Cité / Ville' },
+    '4808011': { en: 'City', fr: 'Cité / Ville' },
+    '4811061': { en: 'City', fr: 'Cité / Ville' },
+    '4815023': { en: 'Town', fr: 'Ville' },
+    '5907035': { en: 'District municipality', fr: 'Municipalité de district' },
+    '5907041': { en: 'City', fr: 'Cité / Ville' },
+    '5909052': { en: 'City', fr: 'Cité / Ville' },
+    '5915001': { en: 'City', fr: 'Cité / Ville' },
+    '5915004': { en: 'City', fr: 'Cité / Ville' },
+    '5915022': { en: 'City', fr: 'Cité / Ville' },
+    '5915025': { en: 'City', fr: 'Cité / Ville' },
+    '5917021': { en: 'District municipality', fr: 'Municipalité de district' },
+    '5917034': { en: 'City', fr: 'Cité / Ville' },
+    '5921007': { en: 'City', fr: 'Cité / Ville' },
+    '5933042': { en: 'City', fr: 'Cité / Ville' },
+    '5935010': { en: 'City', fr: 'Cité / Ville' },
+    '6001009': { en: 'City', fr: 'Cité / Ville' },
+    '6106023': { en: 'City', fr: 'Cité / Ville' }
+};
+
+const SINGLE_TIER_CITY_CD = new Set(['3506', '3520', '3525', '3536', '3553', '2465']);
 const SINGLE_TIER_CITY_CSD = {
     '3506008': 'sgc-cd-3506',
     '3520005': 'sgc-cd-3520',
     '3525005': 'sgc-cd-3525',
-    '2465005': 'sgc-cd-2465',
+    '3536020': 'sgc-cd-3536',
     '3553005': 'sgc-cd-3553',
-    '3516010': 'sgc-cd-3516',
-    '3536020': 'sgc-cd-3536'
-};
-const SINGLE_TIER_CITY_CD = new Set(['2465', '3506', '3520', '3525', '3553', '3516', '3536']);
-const FEATURED_PLACE_IDS = new Set([
-    'ca-on-durham',
-    'sgc-cd-3521',
-    'sgc-cd-3524',
-    'sgc-cd-3530',
-    'ca-on-oshawa',
-    'sgc-csd-3518005',
-    'sgc-csd-3518039',
-    'sgc-csd-3518017',
-    'sgc-csd-3518001',
-    'sgc-csd-3518020',
-    'sgc-csd-3518029',
-    'sgc-csd-3518009',
-    'sgc-csd-3521005',
-    'sgc-csd-3521010',
-    'sgc-csd-3521024',
-    'sgc-csd-3524001',
-    'sgc-csd-3524002',
-    'sgc-csd-3524009',
-    'sgc-csd-3524015',
-    'sgc-cd-2465',
-    'sgc-cd-3506',
-    'sgc-cd-3520',
-    'sgc-cd-3525',
-    'sgc-cd-3553',
-    'sgc-csd-1209034',
-    'sgc-csd-2423027',
-    'sgc-csd-2466023',
-    'sgc-csd-4611040',
-    'sgc-csd-4711066',
-    'sgc-csd-4806016',
-    'sgc-csd-4811061',
-    'sgc-csd-5915004',
-    'sgc-csd-5915022',
-    'sgc-csd-5915025',
-    'sgc-csd-5917034',
-    'sgc-csd-3530013',
-    'sgc-csd-3530016',
-    'sgc-csd-3530010',
-    'sgc-csd-3530035',
-    'sgc-csd-3530020',
-    'sgc-csd-3530027',
-    'sgc-csd-3530004',
-    'sgc-csd-3539036',
-    'sgc-csd-5935010',
-    'sgc-csd-1310032',
-    'sgc-cd-3519',
-    'sgc-csd-3519036',
-    'sgc-csd-3519048',
-    'sgc-csd-3519028',
-    'sgc-csd-3519038',
-    'sgc-csd-3519046',
-    'sgc-csd-3519044',
-    'sgc-csd-3519049',
-    'sgc-csd-3519054',
-    'sgc-csd-3519070',
-    'sgc-cd-3526',
-    'sgc-csd-3526043',
-    'sgc-csd-3526032',
-    'sgc-csd-3526053',
-    'sgc-csd-3526003',
-    'sgc-csd-3526011',
-    'sgc-csd-3526037',
-    'sgc-csd-3526047',
-    'sgc-csd-3526057',
-    'sgc-csd-3526065',
-    'sgc-csd-3526028',
-    'sgc-csd-3526021',
-    'sgc-csd-3526014',
-    'sgc-csd-1307022',
-    'sgc-csd-3523008',
-    'sgc-csd-5917021',
-    'sgc-csd-3512005',
-    'sgc-csd-6106023',
-    'sgc-csd-3543042',
-    'sgc-csd-3558004',
-    'sgc-cd-3536',
-    'sgc-cd-3516',
-    'sgc-csd-5907035',
-    'sgc-csd-3528052',
-    'sgc-csd-4802012',
-    'sgc-csd-4801006',
-    'sgc-csd-4806021',
-    'sgc-csd-4815023',
-    'sgc-csd-5907041',
-    'sgc-csd-5915001',
-    'sgc-cd-3540',
-    'sgc-cd-1211',
-    'sgc-csd-3528018',
-    'sgc-csd-2481017',
-    'sgc-csd-2437067',
-    'sgc-csd-2460013',
-    'sgc-csd-2458227',
-    'sgc-csd-2494068',
-    'sgc-csd-2410043',
-    'sgc-csd-2436033',
-    'sgc-csd-2425213',
-    'sgc-csd-2443027',
-    'sgc-csd-1301006',
-    'sgc-csd-6001009',
-    'sgc-csd-1001519',
-    'sgc-csd-1102075',
-    'sgc-csd-4706027',
-    'sgc-csd-3537039',
-    'sgc-csd-3510010',
-    'sgc-csd-4808011',
-    'sgc-csd-5933042',
-    'sgc-csd-5921007',
-    'sgc-csd-5909052'
-]);
-const MUNICIPAL_TYPES = {
-    '2423027': ['City', 'Ville'],
-    '2465005': ['City', 'Ville'],
-    '2466023': ['City', 'Ville'],
-    '3512005': ['City', 'Ville'],
-    '3514019': ['Township', 'Canton'],
-    '3518005': ['Town', 'Ville'],
-    '3518039': ['Township', 'Canton'],
-    '3518017': ['Municipality', 'Municipalité'],
-    '3518013': ['City', 'Ville'],
-    '3518001': ['City', 'Ville'],
-    '3518020': ['Township', 'Canton'],
-    '3518029': ['Township', 'Canton'],
-    '3518009': ['Town', 'Ville'],
-    '3519': ['Regional municipality', 'Municipalité régionale'],
-    '3519036': ['City', 'Ville'],
-    '3519048': ['Town', 'Ville'],
-    '3519028': ['City', 'Ville'],
-    '3519038': ['City', 'Ville'],
-    '3519046': ['Town', 'Ville'],
-    '3519044': ['Town', 'Ville'],
-    '3519049': ['Township', 'Canton'],
-    '3519054': ['Town', 'Ville'],
-    '3519070': ['Town', 'Ville'],
-    '3520005': ['City', 'Ville'],
-    '3521005': ['City', 'Ville'],
-    '3521010': ['City', 'Ville'],
-    '3521024': ['Town', 'Ville'],
-    '3523008': ['City', 'Ville'],
-    '3524': ['Regional municipality', 'Municipalité régionale'],
-    '3524001': ['Town', 'Ville'],
-    '3524002': ['City', 'Ville'],
-    '3524009': ['Town', 'Ville'],
-    '3524015': ['Town', 'Ville'],
-    '3526': ['Regional municipality', 'Municipalité régionale'],
-    '3526043': ['City', 'Ville'],
-    '3526032': ['City', 'Ville'],
-    '3526053': ['City', 'Ville'],
-    '3526003': ['Town', 'Ville'],
-    '3526011': ['City', 'Ville'],
-    '3526037': ['City', 'Ville'],
-    '3526047': ['Town', 'Ville'],
-    '3526057': ['Town', 'Ville'],
-    '3526065': ['Town', 'Ville'],
-    '3526028': ['Town', 'Ville'],
-    '3526021': ['Township', 'Canton'],
-    '3526014': ['Township', 'Canton'],
-    '3530': ['Regional municipality', 'Municipalité régionale'],
-    '3530013': ['City', 'Ville'],
-    '3530016': ['City', 'Ville'],
-    '3530010': ['City', 'Ville'],
-    '3530035': ['Township', 'Canton'],
-    '3530020': ['Township', 'Canton'],
-    '3530027': ['Township', 'Canton'],
-    '3530004': ['Township', 'Canton'],
-    '3539036': ['City', 'Ville'],
-    '3553005': ['City', 'Ville'],
-    '5915004': ['City', 'Ville'],
-    '5915022': ['City', 'Ville'],
-    '5915025': ['City', 'Ville'],
-    '5917021': ['District municipality', 'Municipalité de district'],
-    '5917034': ['City', 'Ville'],
-    '5935010': ['City', 'Ville'],
-    '4806016': ['City', 'Ville'],
-    '4811061': ['City', 'Ville'],
-    '4611040': ['City', 'Ville'],
-    '4711066': ['City', 'Ville'],
-    '1209034': ['Regional municipality', 'Municipalité régionale'],
-    '1307022': ['City', 'Cité'],
-    '1310032': ['City', 'Cité'],
-    '6106023': ['City', 'Ville'],
-    '3543042': ['City', 'Ville'],
-    '3558004': ['City', 'Ville'],
-    '3536020': ['Municipality', 'Municipalité'],
-    '3516010': ['City', 'Ville'],
-    '5907035': ['District municipality', 'Municipalité de district'],
-    '3528052': ['City', 'Ville'],
-    '4802012': ['City', 'Ville'],
-    '4801006': ['City', 'Ville'],
-    '4806021': ['City', 'Ville'],
-    '4815023': ['Town', 'Ville'],
-    '5907041': ['City', 'Ville'],
-    '5915001': ['City', 'Ville'],
-    '3540': ['County', 'Comté'],
-    '1211': ['County', 'Comté'],
-    '3528018': ['City', 'Ville'],
-    '2481017': ['City', 'Ville'],
-    '2437067': ['City', 'Ville'],
-    '2460013': ['City', 'Ville'],
-    '2458227': ['City', 'Ville'],
-    '2494068': ['City', 'Ville'],
-    '2410043': ['City', 'Ville'],
-    '2436033': ['City', 'Ville'],
-    '2425213': ['City', 'Ville'],
-    '2443027': ['City', 'Ville'],
-    '1301006': ['City', 'Cité'],
-    '6001009': ['City', 'Ville'],
-    '1001519': ['City', 'Ville'],
-    '1102075': ['City', 'Ville'],
-    '4706027': ['City', 'Ville'],
-    '3537039': ['City', 'Ville'],
-    '3510010': ['City', 'Ville'],
-    '4808011': ['City', 'Ville'],
-    '5933042': ['City', 'Ville'],
-    '5921007': ['City', 'Ville'],
-    '5909052': ['City', 'Ville']
-};
-const PLACE_VIEWPORTS = {
-    '2423027': [46.8139, -71.208, 10],
-    '2465': [45.6066, -73.7124, 10],
-    '2466023': [45.5019, -73.5674, 10],
-    '3506': [45.4215, -75.6972, 9],
-    '3512005': [44.1628, -77.3832, 10],
-    '3525': [43.2557, -79.8711, 9],
-    '3518': [44.0569, -78.8570, 9],
-    '3518013': [43.8971, -78.8658, 11],
-    '3519': [44.0000, -79.4667, 9],
-    '3519036': [43.8561, -79.3370, 10],
-    '3519048': [44.0592, -79.4613, 10],
-    '3519028': [43.8563, -79.5085, 10],
-    '3519038': [43.8828, -79.4403, 10],
-    '3519046': [44.0000, -79.4667, 10],
-    '3519044': [43.9708, -79.2514, 9],
-    '3519049': [43.9500, -79.5833, 9],
-    '3519054': [44.1333, -79.4500, 9],
-    '3519070': [44.3000, -79.4333, 9],
-    '3520': [43.6532, -79.3832, 10],
-    '3521': [43.7500, -79.7800, 9],
-    '3521005': [43.5890, -79.6440, 10],
-    '3521010': [43.7315, -79.7624, 10],
-    '3521024': [43.8668, -79.8670, 9],
-    '3523008': [43.5448, -80.2482, 10],
-    '3524': [43.4900, -79.8800, 9],
-    '3524001': [43.4675, -79.6877, 10],
-    '3524002': [43.3255, -79.7990, 10],
-    '3524009': [43.5183, -79.8774, 10],
-    '3524015': [43.6300, -79.9500, 9],
-    '3526': [43.0600, -79.3100, 9],
-    '3526043': [43.0896, -79.0849, 10],
-    '3526032': [42.9922, -79.2483, 10],
-    '3526053': [43.1594, -79.2469, 10],
-    '3526003': [42.9000, -78.9333, 9],
-    '3526011': [42.8833, -79.2500, 10],
-    '3526037': [43.1167, -79.2000, 10],
-    '3526047': [43.2553, -79.0772, 10],
-    '3526057': [43.1667, -79.4333, 9],
-    '3526065': [43.1931, -79.5600, 10],
-    '3526028': [43.0500, -79.3333, 9],
-    '3526021': [43.0833, -79.5667, 9],
-    '3526014': [42.9167, -79.3667, 9],
-    '3530': [43.4643, -80.5204, 9],
-    '3530013': [43.4516, -80.4925, 10],
-    '3530016': [43.4643, -80.5204, 10],
-    '3530010': [43.3616, -80.3144, 10],
-    '3530035': [43.5650, -80.5500, 9],
-    '3530020': [43.4000, -80.6500, 9],
-    '3530027': [43.5500, -80.7667, 9],
-    '3530004': [43.3000, -80.3833, 9],
-    '3539036': [42.9849, -81.2453, 9],
-    '3553': [46.4900, -80.9900, 9],
-    '5915022': [49.2827, -123.1207, 10],
-    '5915025': [49.2488, -122.9805, 10],
-    '5917034': [48.4284, -123.3656, 10],
-    '5935010': [49.8880, -119.4960, 10],
-    '4806016': [51.0447, -114.0719, 9],
-    '4811061': [53.5461, -113.4938, 9],
-    '4611040': [49.8954, -97.1385, 9],
-    '4711066': [52.1332, -106.6700, 10],
-    '1209034': [44.6488, -63.5752, 8],
-    '1307019': [46.0878, -64.7782, 10],
-    '1307022': [46.0878, -64.7782, 10],
-    '1310032': [45.9636, -66.6431, 10],
-    '5915004': [49.1913, -122.8490, 10],
-    '5917021': [48.4841, -123.3822, 10],
-    '6106023': [62.4540, -114.3718, 10],
-    '3543042': [44.3894, -79.6903, 10],
-    '3558': [48.3809, -89.2477, 8],
-    '3558004': [48.3809, -89.2477, 10],
-    '3536': [42.4048, -82.1910, 9],
-    '3516': [44.3564, -78.7408, 9],
-    '5907035': [49.6006, -119.6778, 10],
-    '3528052': [42.8333, -80.3833, 9],
-    '4802012': [49.6956, -112.8451, 10],
-    '4801006': [50.0417, -110.6775, 10],
-    '4806021': [51.2917, -114.0144, 10],
-    '4815023': [51.0890, -115.3590, 10],
-    '5907041': [49.4991, -119.5937, 10],
-    '5915001': [49.1044, -122.6580, 10],
-    '3540': [43.5833, -81.5000, 9],
-    '1211': [45.7500, -64.0000, 8],
-    '3528018': [42.9333, -79.8667, 9],
-    '2481017': [45.4765, -75.7013, 10],
-    '2437067': [46.3432, -72.5421, 10],
-    '2460013': [45.7423, -73.4497, 10],
-    '2458227': [45.5312, -73.5181, 10],
-    '2494068': [48.4284, -71.0684, 10],
-    '2410043': [48.4488, -68.5240, 10],
-    '2436033': [46.5667, -72.7500, 10],
-    '2425213': [46.8033, -71.1779, 10],
-    '2443027': [45.4042, -71.8929, 10],
-    '1301006': [45.2733, -66.0633, 10],
-    '6001009': [60.7212, -135.0568, 10],
-    '1001519': [47.5615, -52.7126, 10],
-    '1102075': [46.2382, -63.1311, 10],
-    '4706027': [50.4452, -104.6189, 10],
-    '3537039': [42.3149, -83.0364, 10],
-    '3510010': [44.2312, -76.4860, 10],
-    '4808011': [52.2690, -113.8116, 10],
-    '5933042': [50.6745, -120.3273, 10],
-    '5921007': [49.1659, -123.9401, 10],
-    '5909052': [49.0504, -122.3045, 10]
+    '2465005': 'sgc-cd-2465'
 };
 
-function slugify(value) {
-    return String(value || '')
-        .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/['’]/g, '')
-        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const FEATURED_PLACES = {
+    'ca-on-toronto': {
+        slug: 'toronto',
+        bbox: [-79.639265, 43.580983, -79.115822, 43.855457],
+        center: [-79.383184, 43.653226],
+        zoom: 11
+    },
+    'sgc-cd-3520': {
+        slug: 'toronto',
+        bbox: [-79.639265, 43.580983, -79.115822, 43.855457],
+        center: [-79.383184, 43.653226],
+        zoom: 11
+    },
+    'ca-qc-montreal': {
+        slug: 'montreal',
+        bbox: [-73.974187, 45.410076, -73.473079, 45.704791],
+        center: [-73.567256, 45.501689],
+        zoom: 11
+    },
+    'sgc-csd-2466023': {
+        slug: 'montreal',
+        bbox: [-73.974187, 45.410076, -73.473079, 45.704791],
+        center: [-73.567256, 45.501689],
+        zoom: 11
+    },
+    'ca-on-ottawa': {
+        slug: 'ottawa',
+        bbox: [-76.353916, 44.962002, -75.246574, 45.537651],
+        center: [-75.697193, 45.42153],
+        zoom: 10
+    },
+    'sgc-cd-3506': {
+        slug: 'ottawa',
+        bbox: [-76.353916, 44.962002, -75.246574, 45.537651],
+        center: [-75.697193, 45.42153],
+        zoom: 10
+    },
+    'ca-ab-calgary': {
+        slug: 'calgary',
+        bbox: [-114.316035, 50.842822, -113.859892, 51.212425],
+        center: [-114.071889, 51.044733],
+        zoom: 11
+    },
+    'sgc-csd-4806016': {
+        slug: 'calgary',
+        bbox: [-114.316035, 50.842822, -113.859892, 51.212425],
+        center: [-114.071889, 51.044733],
+        zoom: 11
+    },
+    'ca-ab-edmonton': {
+        slug: 'edmonton',
+        bbox: [-113.713697, 53.395786, -113.271515, 53.654452],
+        center: [-113.493823, 53.546125],
+        zoom: 11
+    },
+    'sgc-csd-4811061': {
+        slug: 'edmonton',
+        bbox: [-113.713697, 53.395786, -113.271515, 53.654452],
+        center: [-113.493823, 53.546125],
+        zoom: 11
+    },
+    'ca-bc-vancouver': {
+        slug: 'vancouver',
+        bbox: [-123.224787, 49.198445, -123.023242, 49.316171],
+        center: [-123.120738, 49.282729],
+        zoom: 12
+    },
+    'sgc-csd-5915022': {
+        slug: 'vancouver',
+        bbox: [-123.224787, 49.198445, -123.023242, 49.316171],
+        center: [-123.120738, 49.282729],
+        zoom: 12
+    },
+    'ca-mb-winnipeg': {
+        slug: 'winnipeg',
+        bbox: [-97.353724, 49.765668, -96.953888, 49.992225],
+        center: [-97.138374, 49.895136],
+        zoom: 11
+    },
+    'sgc-csd-4611040': {
+        slug: 'winnipeg',
+        bbox: [-97.353724, 49.765668, -96.953888, 49.992225],
+        center: [-97.138374, 49.895136],
+        zoom: 11
+    },
+    'ca-qc-quebec': {
+        slug: 'quebec',
+        bbox: [-71.503417, 46.711822, -71.157837, 46.948218],
+        center: [-71.207981, 46.813878],
+        zoom: 11
+    },
+    'sgc-csd-2423027': {
+        slug: 'quebec',
+        bbox: [-71.503417, 46.711822, -71.157837, 46.948218],
+        center: [-71.207981, 46.813878],
+        zoom: 11
+    },
+    'ca-ns-halifax': {
+        slug: 'halifax',
+        bbox: [-64.120483, 44.400032, -62.155457, 45.185641],
+        center: [-63.575239, 44.648862],
+        zoom: 10
+    },
+    'sgc-csd-1209034': {
+        slug: 'halifax',
+        bbox: [-64.120483, 44.400032, -62.155457, 45.185641],
+        center: [-63.575239, 44.648862],
+        zoom: 10
+    },
+    'ca-bc-surrey': {
+        slug: 'surrey',
+        bbox: [-122.922134, 49.002243, -122.684124, 49.219818],
+        center: [-122.849014, 49.191345],
+        zoom: 11
+    },
+    'sgc-csd-5915004': {
+        slug: 'surrey',
+        bbox: [-122.922134, 49.002243, -122.684124, 49.219818],
+        center: [-122.849014, 49.191345],
+        zoom: 11
+    },
+    'ca-qc-laval': {
+        slug: 'laval',
+        bbox: [-73.89679, 45.500332, -73.541336, 45.696144],
+        center: [-73.71241, 45.569946],
+        zoom: 11
+    },
+    'sgc-cd-2465': {
+        slug: 'laval',
+        bbox: [-73.89679, 45.500332, -73.541336, 45.696144],
+        center: [-73.71241, 45.569946],
+        zoom: 11
+    },
+    'ca-on-hamilton': {
+        slug: 'hamilton',
+        bbox: [-80.117188, 43.140808, -79.544525, 43.344406],
+        center: [-79.8711, 43.2557],
+        zoom: 11
+    },
+    'sgc-cd-3525': {
+        slug: 'hamilton',
+        bbox: [-80.117188, 43.140808, -79.544525, 43.344406],
+        center: [-79.8711, 43.2557],
+        zoom: 11
+    },
+    'ca-on-durham': {
+        slug: 'durham-region',
+        bbox: [-79.337158, 43.78418, -78.474731, 44.577637],
+        center: [-78.8658, 44.0592],
+        zoom: 10
+    },
+    'ca-on-oshawa': {
+        slug: 'oshawa',
+        bbox: [-78.961182, 43.834229, -78.78479, 44.020386],
+        center: [-78.8658, 43.8971],
+        zoom: 12
+    },
+    'sgc-csd-3518013': {
+        slug: 'oshawa',
+        bbox: [-78.961182, 43.834229, -78.78479, 44.020386],
+        center: [-78.8658, 43.8971],
+        zoom: 12
+    },
+    'sgc-csd-3518005': {
+        slug: 'ajax',
+        bbox: [-79.091187, 43.811646, -78.986816, 43.918457],
+        center: [-79.0358, 43.8509],
+        zoom: 12
+    },
+    'sgc-csd-3518001': {
+        slug: 'pickering',
+        bbox: [-79.168701, 43.799438, -79.020996, 44.030762],
+        center: [-79.089, 43.8384],
+        zoom: 12
+    },
+    'sgc-csd-3518009': {
+        slug: 'whitby',
+        bbox: [-79.000244, 43.829346, -78.879395, 44.072266],
+        center: [-78.9386, 43.8975],
+        zoom: 12
+    },
+    'ca-on-peel': {
+        slug: 'peel-region',
+        bbox: [-80.050659, 43.504028, -79.544067, 43.996582],
+        center: [-79.7624, 43.6890],
+        zoom: 10
+    },
+    'sgc-cd-3521': {
+        slug: 'peel-region',
+        bbox: [-80.050659, 43.504028, -79.544067, 43.996582],
+        center: [-79.7624, 43.6890],
+        zoom: 10
+    },
+    'sgc-csd-3521005': {
+        slug: 'mississauga',
+        bbox: [-79.795532, 43.504028, -79.544067, 43.74939],
+        center: [-79.6441, 43.5890],
+        zoom: 11
+    },
+    'sgc-csd-3521010': {
+        slug: 'brampton',
+        bbox: [-79.882812, 43.619995, -79.620361, 43.829956],
+        center: [-79.7624, 43.7315],
+        zoom: 11
+    },
+    'sgc-csd-3521024': {
+        slug: 'caledon',
+        bbox: [-80.050659, 43.708496, -79.697876, 43.996582],
+        center: [-79.8653, 43.8690],
+        zoom: 11
+    },
+    'sgc-csd-5917034': {
+        slug: 'victoria',
+        bbox: [-123.407593, 48.406982, -123.310547, 48.460083],
+        center: [-123.3656, 48.4284],
+        zoom: 12
+    },
+    'sgc-cd-3530': {
+        slug: 'waterloo-region',
+        bbox: [-80.739746, 43.303833, -80.220947, 43.666992],
+        center: [-80.4831, 43.4675],
+        zoom: 10
+    },
+    'sgc-csd-3530013': {
+        slug: 'kitchener',
+        bbox: [-80.579834, 43.376465, -80.401001, 43.498535],
+        center: [-80.4925, 43.4516],
+        zoom: 12
+    },
+    'sgc-csd-3530016': {
+        slug: 'waterloo',
+        bbox: [-80.596924, 43.447876, -80.470581, 43.539429],
+        center: [-80.5204, 43.4643],
+        zoom: 12
+    },
+    'sgc-csd-3530010': {
+        slug: 'cambridge',
+        bbox: [-80.395508, 43.336182, -80.26001, 43.460083],
+        center: [-80.3144, 43.3616],
+        zoom: 12
+    },
+    'sgc-csd-3539036': {
+        slug: 'london',
+        bbox: [-81.391602, 42.871704, -81.12793, 43.080444],
+        center: [-81.2453, 42.9849],
+        zoom: 11
+    },
+    'sgc-csd-5935010': {
+        slug: 'kelowna',
+        bbox: [-119.558716, 49.805298, -119.349976, 50.010986],
+        center: [-119.4960, 49.8880],
+        zoom: 11
+    },
+    'sgc-csd-1310032': {
+        slug: 'fredericton',
+        bbox: [-66.741943, 45.890503, -66.568604, 46.002808],
+        center: [-66.6431, 45.9636],
+        zoom: 12
+    },
+    'sgc-cd-3524': {
+        slug: 'halton-region',
+        bbox: [-80.128784, 43.307495, -79.684448, 43.642578],
+        center: [-79.8500, 43.4800],
+        zoom: 10
+    },
+    'sgc-csd-3524001': {
+        slug: 'oakville',
+        bbox: [-79.799805, 43.38501, -79.645386, 43.535156],
+        center: [-79.6877, 43.4501],
+        zoom: 12
+    },
+    'sgc-csd-3524002': {
+        slug: 'burlington',
+        bbox: [-79.914551, 43.307495, -79.742432, 43.469238],
+        center: [-79.7990, 43.3255],
+        zoom: 12
+    },
+    'sgc-csd-3524009': {
+        slug: 'milton',
+        bbox: [-80.084839, 43.425903, -79.799805, 43.597412],
+        center: [-79.8833, 43.5183],
+        zoom: 12
+    },
+    'sgc-csd-3524015': {
+        slug: 'halton-hills',
+        bbox: [-80.128784, 43.54187, -79.829102, 43.701172],
+        center: [-79.9500, 43.6300],
+        zoom: 12
+    },
+    'sgc-cd-3553': {
+        slug: 'greater-sudbury',
+        bbox: [-81.650391, 46.257324, -80.536499, 46.852417],
+        center: [-80.9930, 46.4900],
+        zoom: 10
+    },
+    'sgc-csd-5915025': {
+        slug: 'burnaby',
+        bbox: [-123.023682, 49.199829, -122.880859, 49.299316],
+        center: [-122.9805, 49.2488],
+        zoom: 12
+    },
+    'sgc-csd-4711066': {
+        slug: 'saskatoon',
+        bbox: [-106.779785, 52.071533, -106.533203, 52.215576],
+        center: [-106.6702, 52.1332],
+        zoom: 11
+    },
+    'sgc-cd-3519': {
+        slug: 'york-region',
+        bbox: [-79.664307, 43.78418, -79.208984, 44.408569],
+        center: [-79.4360, 44.0000],
+        zoom: 10
+    },
+    'sgc-csd-3519036': {
+        slug: 'markham',
+        bbox: [-79.438477, 43.799438, -79.208984, 43.955078],
+        center: [-79.3370, 43.8561],
+        zoom: 12
+    },
+    'sgc-csd-3519048': {
+        slug: 'newmarket',
+        bbox: [-79.512939, 44.020386, -79.400635, 44.090576],
+        center: [-79.4600, 44.0500],
+        zoom: 12
+    },
+    'sgc-cd-3526': {
+        slug: 'niagara-region',
+        bbox: [-80.009766, 42.843628, -78.914795, 43.275146],
+        center: [-79.2500, 43.0500],
+        zoom: 10
+    },
+    'sgc-csd-3526043': {
+        slug: 'niagara-falls',
+        bbox: [-79.198608, 42.996216, -79.033813, 43.151855],
+        center: [-79.0849, 43.0896],
+        zoom: 12
+    },
+    'sgc-csd-3526032': {
+        slug: 'welland',
+        bbox: [-79.308472, 42.946167, -79.198608, 43.045654],
+        center: [-79.2483, 42.9922],
+        zoom: 12
+    },
+    'sgc-csd-1307022': {
+        slug: 'moncton',
+        bbox: [-64.919434, 46.046753, -64.718018, 46.160889],
+        center: [-64.7782, 46.0878],
+        zoom: 12
+    },
+    'sgc-csd-3523008': {
+        slug: 'guelph',
+        bbox: [-80.339966, 43.486328, -80.175171, 43.590698],
+        center: [-80.2482, 43.5448],
+        zoom: 12
+    },
+    'sgc-csd-5917021': {
+        slug: 'saanich',
+        bbox: [-123.476562, 48.434448, -123.310547, 48.566895],
+        center: [-123.3833, 48.4833],
+        zoom: 12
+    },
+    'sgc-csd-3512005': {
+        slug: 'belleville',
+        bbox: [-77.453613, 44.110107, -77.299805, 44.274902],
+        center: [-77.3833, 44.1667],
+        zoom: 12
+    },
+    'sgc-csd-6106023': {
+        slug: 'yellowknife',
+        bbox: [-114.477539, 62.409668, -114.301758, 62.508545],
+        center: [-114.3718, 62.4540],
+        zoom: 12
+    },
+    'sgc-csd-3543042': {
+        slug: 'barrie',
+        bbox: [-79.763184, 44.329834, -79.620361, 44.439697],
+        center: [-79.6903, 44.3894],
+        zoom: 12
+    },
+    'sgc-csd-3558004': {
+        slug: 'thunder-bay',
+        bbox: [-89.379883, 48.339844, -89.171143, 48.490601],
+        center: [-89.2477, 48.3809],
+        zoom: 12
+    },
+    'sgc-cd-3536': {
+        slug: 'chatham-kent',
+        bbox: [-82.529297, 42.147827, -81.793213, 42.666016],
+        center: [-82.1890, 42.4048],
+        zoom: 10
+    },
+    'sgc-cd-3516': {
+        slug: 'kawartha-lakes',
+        bbox: [-79.088135, 44.110107, -78.419189, 44.788818],
+        center: [-78.7400, 44.3500],
+        zoom: 10
+    },
+    'sgc-csd-5907035': {
+        slug: 'summerland',
+        bbox: [-119.742432, 49.563599, -119.610596, 49.646606],
+        center: [-119.6760, 49.6006],
+        zoom: 12
+    },
+    'sgc-csd-3528052': {
+        slug: 'norfolk-county',
+        bbox: [-80.704346, 42.564697, -80.050659, 43.030396],
+        center: [-80.3000, 42.8400],
+        zoom: 10
+    },
+    'sgc-csd-3528018': {
+        slug: 'haldimand-county',
+        bbox: [-80.128784, 42.779541, -79.522095, 43.140869],
+        center: [-79.8800, 42.9700],
+        zoom: 10
+    },
+    'sgc-csd-2481017': {
+        slug: 'gatineau',
+        bbox: [-75.923462, 45.405884, -75.462036, 45.567627],
+        center: [-75.7013, 45.4765],
+        zoom: 11
+    },
+    'sgc-csd-2437067': {
+        slug: 'trois-rivieres',
+        bbox: [-72.684937, 46.307373, -72.487183, 46.417236],
+        center: [-72.5477, 46.3432],
+        zoom: 12
+    },
+    'sgc-csd-2460013': {
+        slug: 'repentigny',
+        bbox: [-73.52478, 45.719604, -73.403931, 45.796509],
+        center: [-73.4500, 45.7500],
+        zoom: 12
+    },
+    'sgc-csd-2458227': {
+        slug: 'longueuil',
+        bbox: [-73.54126, 45.474854, -73.376465, 45.584717],
+        center: [-73.5090, 45.5312],
+        zoom: 12
+    },
+    'sgc-csd-2494068': {
+        slug: 'saguenay',
+        bbox: [-71.378174, 48.334351, -70.751953, 48.510132],
+        center: [-71.0700, 48.4200],
+        zoom: 11
+    },
+    'sgc-csd-2410043': {
+        slug: 'rimouski',
+        bbox: [-68.648071, 48.395996, -68.428345, 48.494873],
+        center: [-68.5239, 48.4488],
+        zoom: 12
+    },
+    'sgc-csd-2436033': {
+        slug: 'shawinigan',
+        bbox: [-72.827759, 46.505127, -72.630005, 46.61499],
+        center: [-72.7481, 46.5574],
+        zoom: 12
+    },
+    'sgc-csd-2425213': {
+        slug: 'levis',
+        bbox: [-71.367188, 46.689453, -71.092529, 46.854248],
+        center: [-71.1833, 46.8000],
+        zoom: 12
+    },
+    'sgc-csd-2443027': {
+        slug: 'sherbrooke',
+        bbox: [-72.03186, 45.340576, -71.801147, 45.450439],
+        center: [-71.8929, 45.4042],
+        zoom: 12
+    },
+    'sgc-csd-1301006': {
+        slug: 'saint-john',
+        bbox: [-66.195679, 45.228882, -65.986938, 45.349731],
+        center: [-66.0633, 45.2733],
+        zoom: 12
+    },
+    'sgc-csd-6001009': {
+        slug: 'whitehorse',
+        bbox: [-135.20874, 60.651855, -134.956055, 60.783691],
+        center: [-135.0568, 60.7212],
+        zoom: 12
+    },
+    'sgc-csd-1001519': {
+        slug: 'st-johns',
+        bbox: [-77.607422, 47.457886, -52.657471, 47.644653],
+        center: [-52.7126, 47.5615],
+        zoom: 12
+    },
+    'sgc-csd-1102075': {
+        slug: 'charlottetown',
+        bbox: [-63.193359, 46.225586, -63.083496, 46.291504],
+        center: [-63.1311, 46.2382],
+        zoom: 12
+    },
+    'sgc-csd-4706027': {
+        slug: 'regina',
+        bbox: [-104.732666, 50.394287, -104.534912, 50.515137],
+        center: [-104.6189, 50.4452],
+        zoom: 12
+    },
+    'sgc-csd-3537039': {
+        slug: 'windsor',
+        bbox: [-83.085938, 42.25769, -82.888184, 42.345581],
+        center: [-83.0364, 42.3149],
+        zoom: 12
+    },
+    'sgc-csd-3510010': {
+        slug: 'kingston',
+        bbox: [-76.673584, 44.208984, -76.409912, 44.34082],
+        center: [-76.4860, 44.2312],
+        zoom: 12
+    },
+    'sgc-csd-4808011': {
+        slug: 'red-deer',
+        bbox: [-113.884277, 52.229004, -113.730469, 52.327881],
+        center: [-113.8115, 52.2681],
+        zoom: 12
+    },
+    'sgc-csd-5933042': {
+        slug: 'kamloops',
+        bbox: [-120.476074, 50.628662, -120.212402, 50.760498],
+        center: [-120.3273, 50.6745],
+        zoom: 12
+    },
+    'sgc-csd-5921007': {
+        slug: 'nanaimo',
+        bbox: [-124.035645, 49.119873, -123.881836, 49.251709],
+        center: [-123.9401, 49.1659],
+        zoom: 12
+    },
+    'sgc-csd-5909052': {
+        slug: 'abbotsford',
+        bbox: [-122.420654, 49.002243, -122.189941, 49.123093],
+        center: [-122.3294, 49.0504],
+        zoom: 12
+    }
+};
+
+function slugify(text) {
+    return text.toString().toLowerCase().trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
 }
 
-function normalize(enRows, frRows) {
-    const frByCode = new Map(frRows.map(row => [String(row.Code), row]));
-    const usedSlugs = new Set(['canada']);
-    const places = [{
-        id: 'ca',
-        slug: 'canada',
-        kind: 'country',
-        nameEn: 'Canada',
-        nameFr: 'Canada',
-        typeEn: 'Country',
-        typeFr: 'Pays',
-        parentId: null,
-        featured: false
-    }];
-    const identifiers = [{
-        placeId: 'ca',
-        scheme: 'sgc',
-        vintage: '2021',
-        value: '01'
-    }];
+function parseSgcHierarchy(csvContent) {
+    const lines = csvContent.split(/\r?\n/);
+    const places = [];
+    const identifiers = [];
 
-    for (const row of enRows) {
-        const level = Number(row.Level);
-        const code = String(row.Code || '').trim();
-        if (![2, 3, 4].includes(level) || !code) continue;
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
 
-        const provinceCode = code.slice(0, 2);
-        const provinceAbbr = PROVINCES[provinceCode];
-        if (!provinceAbbr) continue;
+        const cols = [];
+        let current = '';
+        let inQuotes = false;
+        for (let j = 0; j < line.length; j++) {
+            const char = line[j];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                cols.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        cols.push(current.trim());
 
-        const fr = frByCode.get(code) || {};
-        let nameEn = String(row['Class title'] || '').trim();
-        let nameFr = String(fr['Titres de classes'] || nameEn).trim();
+        const level = cols[0];
+        const code = cols[1];
+        const nameEn = cols[2];
+        const nameFr = cols[3];
+        const typeCode = cols[4];
 
-        if (level === 4 && SINGLE_TIER_CITY_CSD[code]) {
-            const placeId = SINGLE_TIER_CITY_CSD[code];
+        let placeId = null;
+        let kind = null;
+        let parentId = null;
+        let typeEn = null;
+        let typeFr = null;
+
+        if (level === '1') {
+            kind = 'country';
+            placeId = 'ca';
+            typeEn = 'Country';
+            typeFr = 'Pays';
+        } else if (level === '2') {
+            kind = 'province';
+            const provAbbr = PROVINCES[code] || code;
+            placeId = 'ca-' + provAbbr.toLowerCase();
+            parentId = 'ca';
+            typeEn = 'Province';
+            typeFr = 'Province';
+        } else if (level === '3') {
+            kind = 'region';
+            const provCode = code.slice(0, 2);
+            parentId = 'ca-' + (PROVINCES[provCode] || provCode).toLowerCase();
+            placeId = code === '3518'
+                ? 'ca-on-durham'
+                : 'sgc-cd-' + code;
+            const provCodeCd = code.slice(0, 2);
+            const provinceAbbr = PROVINCES[provCodeCd] || provCodeCd;
+            typeEn = 'Census division';
+            typeFr = 'Division de recensement';
+            if (CSD_TYPES[typeCode]) {
+                typeEn = CSD_TYPES[typeCode].en;
+                typeFr = CSD_TYPES[typeCode].fr;
+            }
+        } else if (level === '4') {
+            kind = 'municipality';
+            const cdCode = code.slice(0, 4);
+            parentId = cdCode === '3518'
+                ? 'ca-on-durham'
+                : (SINGLE_TIER_CITY_CD.has(cdCode) && SINGLE_TIER_CITY_CSD[code]
+                    ? 'ca-on'
+                    : 'sgc-cd-' + cdCode);
+            const provCode = code.slice(0, 2);
+            const provinceAbbr = PROVINCES[provCode] || provCode;
+            typeEn = 'Census subdivision';
+            typeFr = 'Subdivision de recensement';
+            if (SGC_MUNICIPAL_TYPES[code]) {
+                typeEn = SGC_MUNICIPAL_TYPES[code].en;
+                typeFr = SGC_MUNICIPAL_TYPES[code].fr;
+            } else if (CSD_TYPES[typeCode]) {
+                typeEn = CSD_TYPES[typeCode].en;
+                typeFr = CSD_TYPES[typeCode].fr;
+            }
+            placeId = code === '3518013'
+                ? 'ca-on-oshawa'
+                : 'sgc-csd-' + code;
+        }
+
+        if (!placeId) continue;
+
+        const provCodeForPlace = code.slice(0, 2);
+        const provinceAbbr = PROVINCES[provCodeForPlace] || (kind === 'province' ? PROVINCES[code] : null);
+
+        let slug = slugify(nameEn || nameFr);
+        if (kind === 'province' && provinceAbbr) {
+            slug = provinceAbbr.toLowerCase();
+        } else if (kind === 'country') {
+            slug = 'canada';
+        }
+
+        const featured = FEATURED_PLACES[placeId];
+        let isFeatured = false;
+        let bbox = null;
+        let center = null;
+        let defaultZoom = null;
+
+        if (featured) {
+            isFeatured = true;
+            slug = featured.slug;
+            bbox = featured.bbox;
+            center = featured.center;
+            defaultZoom = featured.zoom;
+        }
+
+        if (SINGLE_TIER_CITY_CSD[code]) {
             identifiers.push({
-                placeId,
-                scheme: 'sgc-csd',
-                vintage: '2021',
-                value: code
+                place_id: SINGLE_TIER_CITY_CSD[code],
+                scheme: 'sgc_csd',
+                identifier: code
             });
             continue;
         }
 
-        let kind = 'municipality';
-        let typeEn = 'Census subdivision';
-        let typeFr = 'Subdivision de recensement';
-        let parentId = 'sgc-cd-' + code.slice(0, 4);
-        let id = 'sgc-csd-' + code;
-
-        if (level === 2) {
-            kind = TERRITORIES.has(code) ? 'territory' : 'province';
-            typeEn = TERRITORIES.has(code) ? 'Territory' : 'Province';
-            typeFr = TERRITORIES.has(code) ? 'Territoire' : 'Province';
-            parentId = 'ca';
-            id = code === '35' ? 'ca-on' : 'sgc-pr-' + code;
-        } else if (level === 3) {
-            kind = 'region';
-            typeEn = 'Census division';
-            typeFr = 'Division de recensement';
-            parentId = provinceCode === '35' ? 'ca-on' : 'sgc-pr-' + provinceCode;
-            id = 'sgc-cd-' + code;
-        }
-
-        if (SINGLE_TIER_CITY_CD.has(code)) {
-            typeEn = 'City';
-            typeFr = 'Ville';
-        } else if (MUNICIPAL_TYPES[code]) {
-            [typeEn, typeFr] = MUNICIPAL_TYPES[code];
-        }
-
-        let slug = slugify(nameEn);
-        if (level === 3 || level === 4) {
-            slug += '-' + provinceAbbr;
-        }
-
-        if (code === '1209') slug = 'halifax-region-ns';
-        if (code === '1209034') slug = 'halifax-ns';
-        if (code === '1307019') slug = 'moncton-parish-nb';
-        if (code === '1307022') slug = 'moncton-nb';
-        if (code === '3518') slug = 'durham-on';
-        if (code === '2423') slug = 'quebec-region-qc';
-        if (code === '2423027') slug = 'quebec-qc';
-        if (code === '2466') slug = 'montreal-region-qc';
-        if (code === '2466023') slug = 'montreal-qc';
-        if (code === '2465') slug = 'laval-qc';
-        if (code === '3506') slug = 'ottawa-on';
-        if (code === '3514019') slug = 'hamilton-township-on';
-        if (code === '3519') slug = 'york-region-on';
-        if (code === '3520') slug = 'toronto-on';
-        if (code === '3524') slug = 'halton-region-on';
-        if (code === '3525') slug = 'hamilton-on';
-        if (code === '3526') slug = 'niagara-region-on';
-        if (code === '3530') slug = 'waterloo-region-on';
-        if (code === '3530016') slug = 'waterloo-on';
-        if (code === '3553') slug = 'greater-sudbury-on';
-        if (code === '3518013') slug = 'oshawa-on';
-        if (code === '3558') slug = 'thunder-bay-district-on';
-        if (code === '3558004') slug = 'thunder-bay-on';
-        if (code === '3516') slug = 'kawartha-lakes-on';
-        if (code === '3536') slug = 'chatham-kent-on';
-        if (code === '3543') slug = 'simcoe-county-on';
-        if (code === '3543042') slug = 'barrie-on';
-        if (code === '5907') slug = 'okanagan-similkameen-bc';
-        if (code === '5907035') slug = 'summerland-bc';
-        if (code === '3528') slug = 'haldimand-norfolk-on';
-        if (code === '3528052') slug = 'norfolk-county-on';
-        if (code === '4802012') slug = 'lethbridge-ab';
-        if (code === '4801006') slug = 'medicine-hat-ab';
-        if (code === '4806021') slug = 'airdrie-ab';
-        if (code === '4815023') slug = 'canmore-ab';
-        if (code === '5907041') slug = 'penticton-bc';
-        if (code === '5915001') slug = 'langley-bc';
-        if (code === '3540') slug = 'huron-county-on';
-        if (code === '1211') slug = 'cumberland-county-ns';
-        if (code === '3528018') slug = 'haldimand-county-on';
-        if (code === '6106023') slug = 'yellowknife-nt';
-        if (code === '2481') slug = 'gatineau-region-qc';
-        if (code === '2481017') slug = 'gatineau-qc';
-        if (code === '2437') slug = 'trois-rivieres-region-qc';
-        if (code === '2437067') slug = 'trois-rivieres-qc';
-        if (code === '2460013') slug = 'repentigny-qc';
-        if (code === '2458') slug = 'longueuil-region-qc';
-        if (code === '2458227') slug = 'longueuil-qc';
-        if (code === '2494') slug = 'le-saguenay-et-son-fjord-qc';
-        if (code === '2494068') slug = 'saguenay-qc';
-        if (code === '2410043') slug = 'rimouski-qc';
-        if (code === '2436') slug = 'shawinigan-region-qc';
-        if (code === '2436033') slug = 'shawinigan-qc';
-        if (code === '2425') slug = 'levis-region-qc';
-        if (code === '2425213') slug = 'levis-qc';
-        if (code === '2443') slug = 'sherbrooke-region-qc';
-        if (code === '2443027') slug = 'sherbrooke-qc';
-        if (code === '1301') slug = 'saint-john-county-nb';
-        if (code === '1301006') slug = 'saint-john-nb';
-        if (code === '6001') slug = 'yukon-cd-yt';
-        if (code === '6001009') slug = 'whitehorse-yt';
-        if (code === '1001') slug = 'division-no-1-nl';
-        if (code === '1001519') slug = 'st-johns-nl';
-        if (code === '1102') slug = 'queens-pe';
-        if (code === '1102075') slug = 'charlottetown-pe';
-        if (code === '4706') slug = 'division-no-6-sk';
-        if (code === '4706027') slug = 'regina-sk';
-        if (code === '3537') slug = 'essex-county-on';
-        if (code === '3537039') slug = 'windsor-on';
-        if (code === '3510') slug = 'frontenac-county-on';
-        if (code === '3510010') slug = 'kingston-on';
-        if (code === '4808') slug = 'division-no-8-ab';
-        if (code === '4808011') slug = 'red-deer-ab';
-        if (code === '5933') slug = 'thompson-nicola-bc';
-        if (code === '5933042') slug = 'kamloops-bc';
-        if (code === '5921') slug = 'nanaimo-region-bc';
-        if (code === '5921007') slug = 'nanaimo-bc';
-        if (code === '5909') slug = 'fraser-valley-bc';
-        if (code === '5909052') slug = 'abbotsford-bc';
-
-        if (usedSlugs.has(slug)) {
-            slug = slug + '-' + code;
-        }
-        usedSlugs.add(slug);
-
-        const isFeatured = FEATURED_PLACE_IDS.has(id);
-        const viewport = PLACE_VIEWPORTS[code];
-
         places.push({
-            id,
-            slug,
-            kind,
-            nameEn,
-            nameFr,
-            typeEn,
-            typeFr,
-            parentId,
-            featured: isFeatured,
-            latitude: viewport ? viewport[0] : null,
-            longitude: viewport ? viewport[1] : null,
-            defaultZoom: viewport ? viewport[2] : null
+            id: placeId,
+            kind: kind,
+            parent_id: parentId,
+            slug: slug,
+            name_en: nameEn || nameFr,
+            name_fr: nameFr || nameEn,
+            province_abbr: provinceAbbr,
+            type_en: typeEn,
+            type_fr: typeFr,
+            is_featured: isFeatured,
+            bbox: bbox,
+            center: center,
+            default_zoom: defaultZoom
         });
 
-        identifiers.push({
-            placeId: id,
-            scheme: level === 2 ? 'sgc-pr' : (level === 3 ? 'sgc-cd' : 'sgc-csd'),
-            vintage: '2021',
-            value: code
-        });
+        if (level === '2') {
+            identifiers.push({ place_id: placeId, scheme: 'sgc_p', identifier: code });
+        } else if (level === '3') {
+            identifiers.push({ place_id: placeId, scheme: 'sgc_cd', identifier: code });
+        } else if (level === '4') {
+            identifiers.push({ place_id: placeId, scheme: 'sgc_csd', identifier: code });
+        }
     }
 
     return { places, identifiers };
 }
 
-function planAliases(existingPlaces, canonicalPlaces, existingAliases = []) {
-    const canonicalBySlug = new Map(canonicalPlaces.map(place => [place.slug, place]));
-    const aliasBySlug = new Map(existingAliases.map(alias => [alias.slug, alias]));
-    const existingById = new Map(existingPlaces.map(place => [place.id, place]));
-    const aliasesToAdd = [];
-    const conflicts = [];
-
-    for (const place of canonicalPlaces) {
-        const existing = existingById.get(place.id);
-        if (!existing || !existing.slug || existing.slug === place.slug) continue;
-
-        const currentCanonical = canonicalBySlug.get(existing.slug);
-        if (currentCanonical && currentCanonical.id !== place.id) {
-            conflicts.push({
-                placeId: place.id,
-                slug: existing.slug,
-                reason: 'canonical-claimed',
-                expectedPlaceId: place.id,
-                existingPlaceId: currentCanonical.id
-            });
-            continue;
-        }
-
-        const currentAlias = aliasBySlug.get(existing.slug);
-        if (currentAlias && currentAlias.placeId !== place.id) {
-            conflicts.push({
-                placeId: place.id,
-                slug: existing.slug,
-                reason: 'alias-claimed',
-                expectedPlaceId: place.id,
-                existingPlaceId: currentAlias.placeId
-            });
-            continue;
-        }
-
-        if (!currentAlias) {
-            aliasesToAdd.push({ placeId: place.id, slug: existing.slug });
-        }
-    }
-
-    return { aliasesToAdd, conflicts };
-}
-
-async function apply(client, normalized) {
-    const { places, identifiers } = normalized;
-
-    const existingPlacesRes = await client.query('SELECT id, slug, kind FROM places');
-    const existingAliasesRes = await client.query('SELECT place_id AS "placeId", slug FROM place_aliases');
-    const { aliasesToAdd, conflicts } = planAliases(existingPlacesRes.rows, places, existingAliasesRes.rows);
-
-    if (conflicts.length > 0) {
-        throw new Error('Conflicting aliases: ' + JSON.stringify(conflicts));
-    }
-
-    const placeIds = places.map(p => p.id);
-    const slugs = places.map(p => p.slug);
-    const kinds = places.map(p => p.kind);
-    const namesEn = places.map(p => p.nameEn);
-    const namesFr = places.map(p => p.nameFr);
-    const typesEn = places.map(p => p.typeEn);
-    const typesFr = places.map(p => p.typeFr);
-    const parentIds = places.map(p => p.parentId);
-    const featuredList = places.map(p => p.featured);
-    const lats = places.map(p => p.latitude);
-    const lngs = places.map(p => p.longitude);
-    const zooms = places.map(p => p.defaultZoom);
-
-    await client.query(`
-        INSERT INTO places (id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id, featured, latitude, longitude, default_zoom, enabled)
-        SELECT
-            p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr, p.parent_id, p.featured, p.latitude, p.longitude, p.default_zoom, true
-        FROM UNNEST(
-            $1::text[], $2::text[], $3::text[], $4::text[], $5::text[],
-            $6::text[], $7::text[], $8::text[], $9::boolean[],
-            $10::double precision[], $11::double precision[], $12::integer[]
-        ) AS p(id, slug, kind, name_en, name_fr, type_en, type_fr, parent_id, featured, latitude, longitude, default_zoom)
-        ON CONFLICT (id) DO UPDATE SET
-            slug = EXCLUDED.slug,
-            kind = EXCLUDED.kind,
-            name_en = EXCLUDED.name_en,
-            name_fr = EXCLUDED.name_fr,
-            type_en = EXCLUDED.type_en,
-            type_fr = EXCLUDED.type_fr,
-            parent_id = EXCLUDED.parent_id,
-            featured = EXCLUDED.featured,
-            latitude = EXCLUDED.latitude,
-            longitude = EXCLUDED.longitude,
-            default_zoom = EXCLUDED.default_zoom,
-            enabled = true,
-            updated_at = NOW();
-    `, [placeIds, slugs, kinds, namesEn, namesFr, typesEn, typesFr, parentIds, featuredList, lats, lngs, zooms]);
-
-    const identPlaceIds = identifiers.map(i => i.placeId);
-    const identSchemes = identifiers.map(i => i.scheme);
-    const identVintages = identifiers.map(i => i.vintage);
-    const identValues = identifiers.map(i => i.value);
-
-    await client.query(`
-        INSERT INTO place_identifiers (place_id, scheme, vintage, identifier, is_primary)
-        SELECT
-            i.place_id, i.scheme, i.vintage, i.identifier, true
-        FROM UNNEST(
-            $1::text[], $2::text[], $3::text[], $4::text[]
-        ) AS i(place_id, scheme, vintage, identifier)
-        ON CONFLICT (scheme, identifier) DO UPDATE SET
-            place_id = EXCLUDED.place_id,
-            vintage = EXCLUDED.vintage,
-            is_primary = EXCLUDED.is_primary,
-            updated_at = NOW();
-    `, [identPlaceIds, identSchemes, identVintages, identValues]);
-
-    if (aliasesToAdd.length > 0) {
-        const aliasPlaceIds = aliasesToAdd.map(a => a.placeId);
-        const aliasSlugs = aliasesToAdd.map(a => a.slug);
-
-        await client.query(`
-            INSERT INTO place_aliases (place_id, slug, kind)
-            SELECT a.place_id, a.slug, 'legacy'
-            FROM UNNEST($1::text[], $2::text[]) AS a(place_id, slug)
-            ON CONFLICT (slug) DO UPDATE SET
-                place_id = EXCLUDED.place_id,
-                kind = EXCLUDED.kind,
-                updated_at = NOW();
-        `, [aliasPlaceIds, aliasSlugs]);
-    }
-}
-
-async function sync() {
-    console.log('Fetching StatCan SGC 2021 structure CSVs...');
-    const [enBuf, frBuf] = await Promise.all([
-        fetchPublicBuffer(EN_URL),
-        fetchPublicBuffer(FR_URL)
-    ]);
-
-    const enRows = parse(enBuf, { columns: true, skip_empty_lines: true });
-    const frRows = parse(frBuf, { columns: true, skip_empty_lines: true });
-
-    console.log('Parsed ' + enRows.length + ' EN rows, ' + frRows.length + ' FR rows. Normalizing...');
-    const normalized = normalize(enRows, frRows);
-    console.log('Normalized ' + normalized.places.length + ' places, ' + normalized.identifiers.length + ' identifiers.');
-
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-        await apply(client, normalized);
-        await client.query('COMMIT');
-        console.log('Successfully synced StatCan SGC 2021 places to database.');
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Error syncing places:', err);
-        throw err;
-    } finally {
-        client.release();
-    }
-}
-
-if (require.main === module) {
-    sync().then(() => pool.end()).catch(err => {
-        console.error(err);
-        process.exit(1);
-    });
-}
-
 module.exports = {
     PROVINCES,
-    TERRITORIES,
-    SINGLE_TIER_CITY_CSD,
+    PROVINCE_NAMES,
+    CSD_TYPES,
+    SGC_MUNICIPAL_TYPES,
     SINGLE_TIER_CITY_CD,
-    FEATURED_PLACE_IDS,
-    MUNICIPAL_TYPES,
-    PLACE_VIEWPORTS,
+    SINGLE_TIER_CITY_CSD,
+    FEATURED_PLACES,
     slugify,
-    normalize,
-    planAliases,
-    apply,
-    sync
+    parseSgcHierarchy
 };
