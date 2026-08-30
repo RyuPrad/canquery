@@ -1,4 +1,5 @@
 const WORKER_LOCK_KEYS = [1667329649, 1835102829]; // "canq" / "maps"
+const SOURCE_RETRY_CODE = 'MAP_SOURCE_UNAVAILABLE';
 
 async function upsertMapCandidates(db, candidatesRaw) {
     const candidates = Array.from(new Map((candidatesRaw || []).map(row => [row.resourceId, row])).values());
@@ -51,6 +52,16 @@ async function upsertMapCandidates(db, candidatesRaw) {
                         THEN map_index_jobs.error
                     ELSE NULL
                 END,
+                next_attempt_at = CASE
+                    WHEN map_index_jobs.desired_version = EXCLUDED.desired_version
+                        THEN map_index_jobs.next_attempt_at
+                    ELSE now()
+                END,
+                failure_code = CASE
+                    WHEN map_index_jobs.desired_version = EXCLUDED.desired_version
+                        THEN map_index_jobs.failure_code
+                    ELSE NULL
+                END,
                 updated_at = now()
         `, values);
     }
@@ -96,6 +107,8 @@ async function recoverOrphanedJobs(db, maxAttempts = 3) {
                     THEN 'map worker terminated during indexing after ' || attempts || ' attempts'
                 ELSE 'requeued after map worker restart'
             END,
+            next_attempt_at = now(),
+            failure_code = NULL,
             updated_at = now()
         WHERE status = 'running'
         RETURNING resource_id, status
@@ -121,6 +134,7 @@ async function reconcileMissingFeatures(db) {
                 SET status = 'pending', indexed_version = NULL, attempts = 0,
                     worker_id = NULL, claimed_at = NULL, heartbeat_at = NULL,
                     finished_at = NULL, error = 'map data absent after restore; queued for rebuild',
+                    next_attempt_at = now(), failure_code = NULL,
                     updated_at = now()
                 WHERE resource_id = ANY($1::text[])
             `, [ids]);
@@ -140,28 +154,41 @@ async function claimJob(db, workerId, resourceId = null) {
         UPDATE map_index_jobs
         SET status = 'running', attempts = attempts + 1, worker_id = $1,
             claimed_at = now(), heartbeat_at = now(), finished_at = NULL,
-            error = NULL, updated_at = now()
+            error = NULL, failure_code = NULL, next_attempt_at = now(), updated_at = now()
         WHERE resource_id = (
-            SELECT resource_id FROM map_index_jobs
-            WHERE status = 'pending'
-              AND ($2::text IS NULL OR resource_id = $2)
+            SELECT j.resource_id FROM map_index_jobs j
+            JOIN resources candidate_resource ON candidate_resource.id = j.resource_id
+            WHERE j.status = 'pending'
+              AND j.next_attempt_at <= now()
+              AND ($2::text IS NULL OR j.resource_id = $2)
+              AND (
+                  j.failure_code = $3
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM map_index_jobs blocker
+                      JOIN resources blocker_resource ON blocker_resource.id = blocker.resource_id
+                      WHERE blocker.status = 'pending'
+                        AND blocker.failure_code = $3
+                        AND blocker_resource.raw->>'source_id' = candidate_resource.raw->>'source_id'
+                  )
+              )
             ORDER BY
                 CASE
-                    WHEN candidate->>'expectedBytes' ~ '^[0-9]+$'
-                        THEN (candidate->>'expectedBytes')::numeric
+                    WHEN j.candidate->>'expectedBytes' ~ '^[0-9]+$'
+                        THEN (j.candidate->>'expectedBytes')::numeric
                     ELSE NULL
                 END NULLS LAST,
                 CASE
-                    WHEN candidate->>'expectedRows' ~ '^[0-9]+$'
-                        THEN (candidate->>'expectedRows')::numeric
+                    WHEN j.candidate->>'expectedRows' ~ '^[0-9]+$'
+                        THEN (j.candidate->>'expectedRows')::numeric
                     ELSE NULL
                 END NULLS LAST,
-                updated_at, resource_id
+                j.updated_at, j.resource_id
             LIMIT 1 FOR UPDATE SKIP LOCKED
         )
         RETURNING resource_id, desired_version AS claimed_version,
                   candidate, attempts
-    `, [workerId, resourceId]);
+    `, [workerId, resourceId, SOURCE_RETRY_CODE]);
     return result.rows[0] || null;
 }
 
@@ -173,7 +200,7 @@ async function heartbeatJob(db, resourceId, workerId) {
     return result.rowCount === 1;
 }
 
-async function finishJob(db, job, workerId, status, metrics = {}, error = null) {
+async function finishJob(db, job, workerId, status, metrics = {}, error = null, failureCode = null) {
     const result = await db.query(`
         UPDATE map_index_jobs
         SET status = CASE
@@ -186,6 +213,8 @@ async function finishJob(db, job, workerId, status, metrics = {}, error = null) 
             error = CASE WHEN desired_version <> $3 AND $4 = 'ready'
                          THEN 'source changed during indexing; queued latest version'
                          ELSE $5 END,
+            next_attempt_at = now(),
+            failure_code = CASE WHEN desired_version <> $3 AND $4 = 'ready' THEN NULL ELSE $9 END,
             feature_count = $6, vertex_count = $7, downloaded_bytes = $8,
             updated_at = now()
         WHERE resource_id = $1 AND status = 'running' AND worker_id = $2
@@ -194,34 +223,62 @@ async function finishJob(db, job, workerId, status, metrics = {}, error = null) 
         job.resource_id, workerId, job.claimed_version, status, error,
         metrics.featureCount == null ? null : metrics.featureCount,
         metrics.vertexCount == null ? null : metrics.vertexCount,
-        metrics.downloadedBytes == null ? null : metrics.downloadedBytes
+        metrics.downloadedBytes == null ? null : metrics.downloadedBytes,
+        failureCode
     ]);
     return result.rows[0] || null;
 }
 
-async function requeueJob(db, job, workerId, error) {
+async function requeueJob(db, job, workerId, error, nextAttemptAt = null, failureCode = null) {
     const result = await db.query(`
         UPDATE map_index_jobs
         SET status = 'pending', worker_id = NULL, claimed_at = NULL,
-            heartbeat_at = NULL, finished_at = NULL, error = $4, updated_at = now()
+            heartbeat_at = NULL, finished_at = NULL, error = $4,
+            next_attempt_at = COALESCE($5::timestamptz, now()), failure_code = $6,
+            updated_at = now()
         WHERE resource_id = $1 AND status = 'running' AND worker_id = $2
           AND desired_version = $3
-    `, [job.resource_id, workerId, job.claimed_version, error]);
+    `, [job.resource_id, workerId, job.claimed_version, error, nextAttemptAt, failureCode]);
     return result.rowCount === 1;
+}
+
+async function failPendingSourceJobs(db, sourceId, error, failureCode = SOURCE_RETRY_CODE) {
+    if (!sourceId) return 0;
+    const result = await db.query(`
+        UPDATE map_index_jobs j
+        SET status = 'failed', worker_id = NULL, claimed_at = NULL, heartbeat_at = NULL,
+            finished_at = now(), error = $2, failure_code = $3,
+            next_attempt_at = now(), updated_at = now()
+        FROM resources r
+        WHERE j.resource_id = r.id
+          AND j.status = 'pending'
+          AND r.raw->>'source_id' = $1
+    `, [sourceId, error, failureCode]);
+    return result.rowCount;
 }
 
 async function getMapQueueHealth(db) {
     const result = await db.query(`
-        SELECT count(*) FILTER (WHERE status = 'pending')::int AS pending,
-               count(*) FILTER (WHERE status = 'running')::int AS running,
-               count(*) FILTER (WHERE status = 'ready')::int AS ready,
-               count(*) FILTER (WHERE status = 'skipped')::int AS skipped,
-               count(*) FILTER (WHERE status = 'failed')::int AS failed,
-               min(updated_at) FILTER (WHERE status = 'pending') AS oldest_pending_at,
-               min(heartbeat_at) FILTER (WHERE status = 'running') AS oldest_running_at,
-               max(finished_at) FILTER (WHERE status = 'ready') AS last_indexed_at
-        FROM map_index_jobs
-    `);
+        SELECT count(*) FILTER (WHERE j.status = 'pending')::int AS pending,
+               count(*) FILTER (WHERE j.status = 'pending' AND j.next_attempt_at > now())::int AS deferred,
+               count(*) FILTER (WHERE j.status = 'running')::int AS running,
+               count(*) FILTER (WHERE j.status = 'ready')::int AS ready,
+               count(*) FILTER (WHERE j.status = 'skipped')::int AS skipped,
+               count(*) FILTER (WHERE j.status = 'failed')::int AS failed,
+               count(DISTINCT r.raw->>'source_id') FILTER (
+                   WHERE j.status = 'pending' AND j.failure_code = $1
+               )::int AS retrying_sources,
+               min(j.updated_at) FILTER (
+                   WHERE j.status = 'pending' AND j.next_attempt_at <= now()
+               ) AS oldest_pending_at,
+               min(j.next_attempt_at) FILTER (
+                   WHERE j.status = 'pending' AND j.next_attempt_at > now()
+               ) AS next_retry_at,
+               min(j.heartbeat_at) FILTER (WHERE j.status = 'running') AS oldest_running_at,
+               max(j.finished_at) FILTER (WHERE j.status = 'ready') AS last_indexed_at
+        FROM map_index_jobs j
+        LEFT JOIN resources r ON r.id = j.resource_id
+    `, [SOURCE_RETRY_CODE]);
     return result.rows[0];
 }
 
@@ -272,7 +329,8 @@ async function requeueMissingPmtilesMaps(db, resourceIds) {
                 SET status = 'pending', indexed_version = NULL, attempts = 0,
                     worker_id = NULL, claimed_at = NULL, heartbeat_at = NULL,
                     finished_at = NULL,
-                    error = 'PMTiles object absent; queued for rebuild', updated_at = now()
+                    error = 'PMTiles object absent; queued for rebuild',
+                    next_attempt_at = now(), failure_code = NULL, updated_at = now()
                 WHERE resource_id = ANY($1::text[])
             `, [ids]);
         }
@@ -315,6 +373,7 @@ async function queryLocalMap(db, { resourceId, bbox, tolerance, limit }) {
 
 module.exports = {
     WORKER_LOCK_KEYS,
+    SOURCE_RETRY_CODE,
     upsertMapCandidates,
     sweepMapCandidates,
     acquireWorkerLock,
@@ -325,6 +384,7 @@ module.exports = {
     heartbeatJob,
     finishJob,
     requeueJob,
+    failPendingSourceJobs,
     getMapQueueHealth,
     getReadyMapState,
     listPmtilesMapObjects,

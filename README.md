@@ -73,7 +73,7 @@ psql canquery -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
 cd server
 npm install
 cp .env.example .env              # set DATABASE_URL (and optional S3_* for PMTiles)
-npm run migrate                   # apply migrations (runs 001..029)
+npm run migrate                   # apply migrations (runs 001..030)
 npm run sync:places               # populate the 2021 SGC hierarchy
 
 # sync the federal catalogue (batched harvest, chunks of 50)
@@ -96,6 +96,8 @@ npm run sync:source -- --source=durham-hub --dry-run
 npm run sync:source -- --source=peel-hub --dry-run
 npm run sync:municipal                    # sync every enabled local source
 npm run maps:drain                        # build all queued local map indexes
+npm run maps:retry-source -- --source=<source-id>  # inspect failed maps (read-only)
+npm run maps:retry-source -- --source=<source-id> --apply  # requeue after a verified probe
 npm run dev                   # API on :3100
 
 # 3. Client (separate terminal)

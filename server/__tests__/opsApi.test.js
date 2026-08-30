@@ -113,4 +113,21 @@ describe('ops API', () => {
             ready: 180, skipped: 7, status: 'stale'
         }));
     });
+
+    it('exposes deferred retries and source circuits as degraded map health', async () => {
+        const now = new Date();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [], evictLastOkAt: null,
+            mapQueue: {
+                pending: 3, deferred: 3, running: 0, ready: 180, skipped: 7, failed: 0,
+                retrying_sources: 1, next_retry_at: new Date(Date.now() + 60_000).toISOString(),
+                last_indexed_at: now.toISOString()
+            }
+        });
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(503);
+        expect(res.body.data.maps).toEqual(expect.objectContaining({
+            deferred: 3, retrying_sources: 1, status: 'degraded'
+        }));
+    });
 });

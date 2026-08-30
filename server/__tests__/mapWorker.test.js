@@ -16,7 +16,7 @@ jest.mock('../db/mapIndexQueries', () => ({
     acquireWorkerLock: jest.fn(), releaseWorkerLock: jest.fn(),
     recoverOrphanedJobs: jest.fn(), reconcileMissingFeatures: jest.fn(),
     claimJob: jest.fn(), heartbeatJob: jest.fn().mockResolvedValue(true),
-    finishJob: jest.fn(), requeueJob: jest.fn(), getReadyMapState: jest.fn(),
+    finishJob: jest.fn(), requeueJob: jest.fn(), failPendingSourceJobs: jest.fn(), getReadyMapState: jest.fn(),
     listPmtilesMapObjects: jest.fn(), deletePmtilesMapMetadata: jest.fn(),
     requeueMissingPmtilesMaps: jest.fn()
 }));
@@ -178,12 +178,53 @@ describe('map worker transitions', () => {
             probeGeometry: async () => { throw new Error('temporary upstream failure'); }
         };
         await processJob(job, '00000000-0000-4000-8000-000000000001', options);
-        expect(mapQueries.requeueJob).toHaveBeenCalledWith(pool, job, expect.any(String), 'temporary upstream failure');
+        expect(mapQueries.requeueJob).toHaveBeenCalledWith(
+            pool, job, expect.any(String), 'temporary upstream failure', expect.any(Date), null
+        );
 
         const finalJob = { ...job, attempts: 3 };
         await processJob(finalJob, '00000000-0000-4000-8000-000000000001', options);
         expect(mapQueries.finishJob).toHaveBeenCalledWith(
             pool, finalJob, expect.any(String), 'failed', {}, 'temporary upstream failure'
+        );
+    });
+
+    test('isolates an unavailable source and bulk-fails its queue after the probe limit', async () => {
+        const error = Object.assign(new Error('connection stalled'), { code: 'DOWNLOAD_RESPONSE_STALL' });
+        const options = {
+            getResourceById: async () => resource,
+            probeGeometry: async () => { throw error; }
+        };
+        await processJob(job, '00000000-0000-4000-8000-000000000001', options);
+        expect(mapQueries.requeueJob).toHaveBeenCalledWith(
+            pool, job, expect.any(String), expect.stringContaining('DOWNLOAD_RESPONSE_STALL'),
+            expect.any(Date), 'MAP_SOURCE_UNAVAILABLE'
+        );
+
+        const finalJob = { ...job, attempts: 3 };
+        mapQueries.finishJob.mockResolvedValue({ status: 'failed' });
+        await processJob(finalJob, '00000000-0000-4000-8000-000000000001', options);
+        expect(mapQueries.finishJob).toHaveBeenCalledWith(
+            pool, finalJob, expect.any(String), 'failed', {},
+            'DOWNLOAD_RESPONSE_STALL: connection stalled', 'MAP_SOURCE_UNAVAILABLE'
+        );
+        expect(mapQueries.failPendingSourceJobs).toHaveBeenCalledWith(
+            pool, 'toronto-open-data', 'DOWNLOAD_RESPONSE_STALL: connection stalled', 'MAP_SOURCE_UNAVAILABLE'
+        );
+    });
+
+    test('retries asynchronous exports without blocking the source', async () => {
+        const error = Object.assign(new Error('export pending'), {
+            code: 'DOWNLOAD_PENDING', retryAfterMs: 3000
+        });
+        await processJob(job, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => resource,
+            probeGeometry: async () => ({ total: 1, fields: [{ id: 'geometry' }] }),
+            indexMapResource: async () => { throw error; }
+        });
+        expect(mapQueries.requeueJob).toHaveBeenCalledWith(
+            pool, job, expect.any(String), 'DOWNLOAD_PENDING: export pending',
+            expect.any(Date), 'DOWNLOAD_PENDING'
         );
     });
 

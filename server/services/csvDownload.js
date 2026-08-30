@@ -175,6 +175,15 @@ function responseHeader(response, name) {
     return Array.isArray(value) ? value[0] : value;
 }
 
+function retryAfterMs(value, now = Date.now()) {
+    if (value == null || value === '') return null;
+    const text = String(value).trim();
+    if (/^\d+$/.test(text)) return Number(text) * 1000;
+    const timestamp = Date.parse(text);
+    if (!Number.isFinite(timestamp)) return null;
+    return Math.max(0, timestamp - now);
+}
+
 function destroyResponse(response) {
     if (response && typeof response.destroy === 'function') response.destroy();
     else if (response && response.body && typeof response.body.cancel === 'function') {
@@ -359,16 +368,33 @@ async function downloadToTempFile(url, {
         res = opened.response;
     } catch (err) {
         disarm();
-        if (stalled) throw new Error('download stalled (no response within ' + stallMs + 'ms)', { cause: err });
+        if (stalled) {
+            const stalledError = downloadError(
+                'download stalled (no response within ' + stallMs + 'ms)',
+                'DOWNLOAD_RESPONSE_STALL'
+            );
+            stalledError.cause = err;
+            throw stalledError;
+        }
         throw err;
     }
     const status = Number(injectedFetch ? res.status : res.statusCode);
     const responseBody = injectedFetch ? res.body : res;
+    if (status === 202) {
+        const retryAfter = retryAfterMs(responseHeader(res, 'retry-after'));
+        disarm();
+        destroyResponse(res);
+        const err = downloadError('download is still being prepared (HTTP 202)', 'DOWNLOAD_PENDING');
+        err.retryAfterMs = retryAfter;
+        throw err;
+    }
     if (status < 200 || status >= 300 || !responseBody) {
+        const retryAfter = retryAfterMs(responseHeader(res, 'retry-after'));
         disarm();
         destroyResponse(res);
         const err = downloadError('download failed: HTTP ' + status, 'DOWNLOAD_HTTP');
         err.httpStatus = status;
+        err.retryAfterMs = retryAfter;
         throw err;
     }
     const contentLength = Number(responseHeader(res, 'content-length'));
@@ -418,7 +444,12 @@ async function downloadToTempFile(url, {
             // ignore
         }
         if (stalled && err && err.code !== 'CAP_FILE') {
-            throw new Error('download stalled (no data within ' + stallMs + 'ms)', { cause: err });
+            const stalledError = downloadError(
+                'download stalled (no data within ' + stallMs + 'ms)',
+                'DOWNLOAD_BODY_STALL'
+            );
+            stalledError.cause = err;
+            throw stalledError;
         }
         throw err;
     }
@@ -478,5 +509,6 @@ module.exports = {
     validateDownloadUrl,
     isPublicAddress,
     resolvePublicTarget,
-    openValidatedResponse
+    openValidatedResponse,
+    retryAfterMs
 };

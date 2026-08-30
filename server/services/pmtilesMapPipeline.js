@@ -343,6 +343,7 @@ async function commitPmtilesMap({ db, resource, job, workerId, result, archive, 
                 finished_at = CASE WHEN desired_version = $3 THEN now() ELSE NULL END,
                 error = CASE WHEN desired_version = $3 THEN NULL
                              ELSE 'source changed during indexing; queued latest version' END,
+                next_attempt_at = now(), failure_code = NULL,
                 feature_count = $4, vertex_count = $5, downloaded_bytes = $6,
                 updated_at = now()
             WHERE resource_id = $1 AND status = 'running' AND worker_id = $2

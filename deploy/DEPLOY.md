@@ -147,6 +147,9 @@ sudo -u canquery node /home/canquery/canquery/server/scripts/catalog-sync.js    
 sudo -u canquery npm run sync:places --prefix /home/canquery/canquery/server
 sudo -u canquery npm run sync:municipal --prefix /home/canquery/canquery/server
 sudo -u canquery npm run maps:drain --prefix /home/canquery/canquery/server
+# Inspect failed map jobs for one source; add --apply only after its upstream
+# endpoint has been verified from the production host.
+sudo -u canquery npm run maps:retry-source --prefix /home/canquery/canquery/server -- --source=<source-id>
 ```
 
 Use `npm run sync:source -- --source=<source-id> --dry-run` before enabling a new

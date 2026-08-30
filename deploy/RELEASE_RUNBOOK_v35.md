@@ -4,8 +4,9 @@ Status: release candidate validated locally on August 30, 2026. This document
 does not claim that v35 has been deployed to production.
 
 This release repairs the incomplete v34 implementation, activates the live v33
-and v34 catalogues that can still be verified, adds ten v35 sources, and applies
-migration `029_recovery_and_high_volume_places.sql`. The source registry contains
+and v34 catalogues that can still be verified, adds ten v35 sources, applies
+migrations `029_recovery_and_high_volume_places.sql` and
+`030_map_queue_resilience.sql`, and hardens local map retries. The source registry contains
 85 local definitions: 82 enabled and three retained but disabled fail-closed.
 Including the federal mirror, the application exposes 83 active catalogue
 sources. `/api/v1/ops` registers 82 `source:*` jobs; the federal mirror is
@@ -17,12 +18,17 @@ The following are live upstream dry-run observations, not permanent count
 assertions. Repeat the dry-runs immediately before deployment because upstream
 catalogues can change.
 
-| Wave | Active sources | Discovered | Admitted | Excluded | Mappable | Failed |
+| Wave | Active sources | Discovered | Admitted | Excluded | Mappable (raw dry-run) | Failed |
 |---|---:|---:|---:|---:|---:|---:|
 | v33 Quebec and Saint John | 10 | 869 | 647 | 222 | 532 | 0 |
 | v34 currently available catalogues | 7 | 2,566 | 2,438 | 128 | 841 | 0 |
 | v35 NWT, BC, and Quebec | 10 | 1,420 | 1,276 | 144 | 707 | 0 |
 | Total | 27 | 4,855 | 4,361 | 494 | 2,080 | 0 |
+
+The raw mappable total includes the 19 Shawinigan and 26 Saint-Hyacinthe
+GeoJSON candidates that are deliberately fail-closed in the production
+source configuration; the production queue must therefore exclude those 45
+candidates until a reviewed probe confirms recovery.
 
 The v35 source-level snapshot is:
 
@@ -37,13 +43,18 @@ The v35 source-level snapshot is:
 | `maple-ridge-hub` | 67 | 64 | 3 | 48 |
 | `port-coquitlam-hub` | 62 | 59 | 3 | 41 |
 | `sherbrooke-geomatics-open-data` | 30 | 30 | 0 | 30 |
-| `saint-hyacinthe-open-data` | 27 | 27 | 0 | 26 |
+| `saint-hyacinthe-open-data` | 27 | 27 | 0 | 0 (fail-closed) |
 
 `whitehorse-hub`, `st-johns-hub`, and `charlottetown-hub` are intentionally
 disabled. Their documented ArcGIS feeds are unavailable, and no equivalent
 machine-readable municipal catalogue with verified open-data terms was found.
 Do not enable them merely to make the configured count match an older release
 document.
+
+Shawinigan and Saint-Hyacinthe remain catalogue-enabled, but direct-file map
+admission is fail-closed because their advertised map hosts timed out from the
+production VPS during the v35 closeout. Their datasets and resources remain
+available as download-only records until a reviewed probe confirms recovery.
 
 Abbotsford intentionally excludes 28 records whose advertised service URLs are
 under the inaccessible `maps.abbotsford.ca/arcgis/rest/services/GeocortexExt/`
@@ -62,7 +73,7 @@ npm --prefix server run verify
 git diff --check
 ```
 
-The August 30 release candidate passed 58 server suites (472 tests), 27 client
+The August 30 release candidate passed 59 server suites (481 tests), 27 client
 suites (109 tests), both ESLint passes, and the Vite production build. The normal
 Jest run skips the PostGIS integration suite unless a database is supplied, so
 also validate all migrations against a disposable PostgreSQL 16/PostGIS 3.5
@@ -74,9 +85,10 @@ SPATIAL_TEST_DATABASE_URL=<disposable-postgis-url> \
   npm --prefix server test -- --runInBand __tests__/spatialIntegration.test.js
 ```
 
-Migration `029` is additive and idempotent. It repairs partial v33/v34 place
+Migrations `029` and `030` are additive and idempotent. Migration `029` repairs partial v33/v34 place
 state and damaged Unicode, then adds the v35 ancestry, identifiers, aliases, and
-featured municipalities. Do not rewrite already-applied migrations `001`–`028`.
+featured municipalities. Migration `030` adds durable map retry scheduling and
+typed source-failure state. Do not rewrite already-applied migrations `001`–`029`.
 
 ## 3. Repeat upstream dry-runs
 
@@ -302,13 +314,17 @@ sudo systemctl status opencanada-map-worker --no-pager
 sudo journalctl -u opencanada-map-worker --since '10 minutes ago' --no-pager
 
 psql -d opencanada -c \
-  "SELECT status, count(*) AS jobs, coalesce(sum(feature_count), 0) AS features
+  "SELECT status, count(*) AS jobs, coalesce(sum(feature_count), 0) AS features,
+          count(*) FILTER (WHERE status = 'pending' AND next_attempt_at > now()) AS deferred
    FROM map_index_jobs GROUP BY status ORDER BY status;"
 ```
 
 Continue monitoring the service journal, local disk, PostgreSQL, private-R2
-budget, and the queue counts until `pending` and `running` reach zero. Review
-every new `failed` or unexpected `skipped` job. If map processing regresses,
+budget, and the queue counts until `pending` and `running` reach zero. A
+temporary export response (`202`) is retried with bounded job-local backoff;
+source connectivity failures defer only that source while unrelated sources
+continue. Review every new `failed` or unexpected `skipped` job. If map
+processing regresses,
 follow the map-only rollback boundary in section 10; the catalogue and API can
 remain live.
 
@@ -345,8 +361,9 @@ deployed database.
 
 ## 10. Rollback boundaries
 
-Migration `029` is additive and compatible with the pre-release application, so
-leave it applied during any code rollback. Never reverse it with ad hoc SQL.
+Migrations `029` and `030` are additive and compatible with the pre-release
+application, so leave them applied during any code rollback. Never reverse them
+with ad hoc SQL.
 
 ### Before the first source write
 
@@ -394,3 +411,12 @@ Keep the API and successfully written catalogue live. The queue is durable; fix
 the map regression, review `running`, `pending`, `failed`, and `skipped` rows,
 then restart exactly one systemd map worker. Do not launch `maps:drain` alongside
 the service.
+
+When an upstream source has recovered, inspect its failed map rows before using
+the explicit recovery command. The command is read-only unless `--apply` is
+present:
+
+```bash
+npm run maps:retry-source -- --source=<source-id>
+npm run maps:retry-source -- --source=<source-id> --apply
+```
