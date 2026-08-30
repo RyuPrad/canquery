@@ -2,12 +2,14 @@ const arcgisHub = require('./arcgisHubAdapter');
 const ckanSource = require('./ckanSourceAdapter');
 const opendatasoft = require('./opendatasoftAdapter');
 const socrata = require('./socrataAdapter');
+const redDeer = require('./redDeerAdapter');
 
 const adapters = new Map([
     ['arcgis-hub', arcgisHub],
     ['ckan', ckanSource],
     ['opendatasoft', opendatasoft],
-    ['socrata', socrata]
+    ['socrata', socrata],
+    ['red-deer', redDeer]
 ]);
 
 function getSourceAdapter(kind) {

@@ -3,11 +3,7 @@ const { sources, getSource } = require('../config/catalogSources');
 describe('configured municipal catalogue sources', () => {
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
-            'toronto-open-data', 'montreal-open-data', 'quebec-city-open-data',
-            'gatineau-open-data', 'trois-rivieres-open-data', 'repentigny-open-data',
-            'longueuil-open-data', 'saguenay-open-data', 'rimouski-open-data',
-            'shawinigan-open-data', 'levis-open-data', 'sherbrooke-open-data',
-            'laval-open-data',
+            'toronto-open-data', 'montreal-open-data', 'quebec-city-open-data', 'laval-open-data',
             'ottawa-hub', 'vancouver-open-data',
             'calgary-open-data', 'edmonton-open-data', 'winnipeg-open-data', 'halifax-hub',
             'hamilton-hub', 'surrey-hub',
@@ -21,11 +17,30 @@ describe('configured municipal catalogue sources', () => {
             'summerland-hub', 'norfolk-hub', 'haldimand-hub',
             'lethbridge-hub', 'medicine-hat-hub', 'airdrie-hub', 'canmore-hub',
             'penticton-hub', 'langley-city-hub', 'huron-hub', 'cumberland-hub',
-            'saint-john-hub',
+            'gatineau-open-data', 'trois-rivieres-open-data', 'repentigny-open-data',
+            'longueuil-open-data', 'saguenay-open-data', 'rimouski-open-data',
+            'shawinigan-open-data', 'levis-open-data', 'sherbrooke-open-data', 'saint-john-hub',
             'whitehorse-hub', 'st-johns-hub', 'charlottetown-hub', 'regina-hub',
             'windsor-hub', 'kingston-hub', 'red-deer-hub', 'kamloops-hub',
-            'nanaimo-hub', 'abbotsford-hub'
+            'nanaimo-hub', 'abbotsford-hub',
+            'northwest-territories-open-data', 'coquitlam-hub', 'prince-george-hub',
+            'new-westminster-hub', 'port-moody-hub', 'squamish-hub', 'maple-ridge-hub',
+            'port-coquitlam-hub', 'sherbrooke-geomatics-open-data', 'saint-hyacinthe-open-data'
         ]);
+    });
+
+    test('keeps every source identity unique and every enabled catalogue on its exact HTTPS host', () => {
+        expect(sources).toHaveLength(85);
+        expect(new Set(sources.map(source => source.id))).toHaveProperty('size', 85);
+        expect(sources.filter(source => source.enabled)).toHaveLength(82);
+
+        for (const source of sources.filter(source => source.enabled)) {
+            const catalog = new URL(source.catalogUrl);
+            expect(catalog.protocol).toBe('https:');
+            expect(catalog.hostname).toBe(source.upstreamHost);
+            expect(source.syncIntervalHours).toBe(24);
+            expect(source.maxDeleteFraction).toBeLessThanOrEqual(0.1);
+        }
     });
 
     test('configures Victoria as an exact-publisher ArcGIS source under its portal licence', () => {
@@ -61,8 +76,8 @@ describe('configured municipal catalogue sources', () => {
         expect(waterloo.placeRules).toEqual(expect.arrayContaining([
             expect.objectContaining({ placeId: 'sgc-cd-3530', relationship: 'direct', includesDescendants: true }),
             expect.objectContaining({ placeId: 'sgc-csd-3530013', relationship: 'direct', includesDescendants: false }),
-            expect.objectContaining({ placeId: 'sgc-csd-3530016', relationship: 'direct', includesDescendants: false }),
-            expect.objectContaining({ placeId: 'sgc-csd-3530010', relationship: 'direct', includesDescendants: false })
+            expect.objectContaining({ placeId: 'sgc-csd-3530010', relationship: 'direct', includesDescendants: false }),
+            expect.objectContaining({ placeId: 'sgc-csd-3530016', relationship: 'direct', includesDescendants: false })
         ]));
     });
 
@@ -72,11 +87,15 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'open-london.opendata.arcgis.com',
             catalogUrl: 'https://open-london.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
         }));
-        expect(london.publisherAliases).toEqual(expect.arrayContaining([
-            expect.objectContaining({ name: 'City of London' })
-        ]));
+        expect(london.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://open.london.ca/pages/open-data-licence'
+            })
+        })]);
         expect(london.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-3539036', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-csd-3539036', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
 
@@ -86,8 +105,15 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'opendata.kelowna.ca',
             catalogUrl: 'https://opendata.kelowna.ca/api/feed/dcat-us/1.1.json'
         }));
+        expect(kelowna.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                titleEn: 'Open Government Licence – City of Kelowna'
+            })
+        })]);
         expect(kelowna.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5935010', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-csd-5935010', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
 
@@ -97,10 +123,18 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'data-fredericton.opendata.arcgis.com',
             catalogUrl: 'https://data-fredericton.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
         }));
+        expect(fredericton.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://data-fredericton.opendata.arcgis.com/pages/open-data-licence'
+            })
+        })]);
         expect(fredericton.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-1310032', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-csd-1310032', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
+
 
     test('configures Halifax as an exact-publisher ArcGIS source under its portal licence', () => {
         const halifax = getSource('halifax-hub');
@@ -108,8 +142,18 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'data-hrm.hub.arcgis.com',
             catalogUrl: 'https://data-hrm.hub.arcgis.com/api/feed/dcat-us/1.1.json'
         }));
+        expect(halifax.restrictedLicensePatterns).toEqual(expect.arrayContaining([
+            expect.any(RegExp)
+        ]));
+        expect(halifax.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://data-hrm.hub.arcgis.com/pages/open-data-licence'
+            })
+        })]);
         expect(halifax.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-1209034', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-csd-1209034', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
 
@@ -117,22 +161,52 @@ describe('configured municipal catalogue sources', () => {
         const calgary = getSource('calgary-open-data');
         expect(calgary).toEqual(expect.objectContaining({
             kind: 'socrata', upstreamHost: 'data.calgary.ca',
-            catalogUrl: 'https://data.calgary.ca/api/catalog/v1'
+            placeId: 'sgc-csd-4806016',
+            defaultLicenseUrl: expect.stringContaining('Open-Calgary-Terms-of-Use')
         }));
-        expect(calgary.placeId).toBe('sgc-csd-4806016');
+        expect(calgary.socrataPolicy).toEqual({
+            publisher: expect.objectContaining({
+                mode: 'custom-field', allowed: ['The City of Calgary']
+            }),
+            license: expect.objectContaining({
+                mode: 'custom-field', comparison: 'url',
+                allowed: expect.arrayContaining([expect.stringContaining('Open-Data-Terms')])
+            })
+        });
     });
 
     test('configures Edmonton and Winnipeg with independent fail-closed Socrata policies', () => {
         const edmonton = getSource('edmonton-open-data');
         const winnipeg = getSource('winnipeg-open-data');
+
         expect(edmonton).toEqual(expect.objectContaining({
-            kind: 'socrata', upstreamHost: 'data.edmonton.ca'
+            kind: 'socrata', upstreamHost: 'data.edmonton.ca',
+            placeId: 'sgc-csd-4811061',
+            defaultLicenseUrl: expect.stringContaining('City-of-Edmonton-Open-Data-Terms-of-Use')
         }));
+        expect(edmonton.socrataPolicy).toEqual({
+            publisher: expect.objectContaining({
+                mode: 'attribution',
+                allowed: ['City of Edmonton', 'The City of Edmonton']
+            }),
+            license: expect.objectContaining({
+                mode: 'view-license-name', allowed: ['See Terms of Use']
+            })
+        });
+
         expect(winnipeg).toEqual(expect.objectContaining({
-            kind: 'socrata', upstreamHost: 'data.winnipeg.ca'
+            kind: 'socrata', upstreamHost: 'data.winnipeg.ca',
+            placeId: 'sgc-csd-4611040',
+            defaultLicenseUrl: 'https://data.winnipeg.ca/open-data-licence'
         }));
-        expect(edmonton.placeId).toBe('sgc-csd-4811061');
-        expect(winnipeg.placeId).toBe('sgc-csd-4611040');
+        expect(winnipeg.socrataPolicy.publisher).toEqual(expect.objectContaining({
+            mode: 'attribution', allowBlank: true,
+            allowed: expect.arrayContaining(['City of Winnipeg', 'Winnipeg Transit'])
+        }));
+        expect(winnipeg.socrataPolicy.license).toEqual(expect.objectContaining({
+            mode: 'custom-field', section: 'Licence', field: 'Licence',
+            allowed: ['Open Government Licence - Winnipeg']
+        }));
     });
 
     test('configures Hamilton as an allowlisted City publisher under its portal licence', () => {
@@ -141,32 +215,64 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'open.hamilton.ca',
             catalogUrl: 'https://open.hamilton.ca/api/feed/dcat-us/1.1.json'
         }));
+        expect(hamilton.publisherAliases).toHaveLength(11);
+        expect(hamilton.restrictedLicensePatterns).toEqual(expect.arrayContaining([
+            expect.any(RegExp)
+        ]));
+        expect(hamilton.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: expect.stringContaining('/open-data-licence-terms-and-conditions'),
+                attributionEn: 'Contains public sector Data made available under the City of Hamilton’s Open Data Licence'
+            })
+        })]);
         expect(hamilton.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-cd-3525', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-cd-3525', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
 
     test('configures Vancouver as a record-licensed Opendatasoft city source', () => {
         const vancouver = getSource('vancouver-open-data');
         expect(vancouver).toEqual(expect.objectContaining({
-            kind: 'opendatasoft', upstreamHost: 'opendata.vancouver.ca',
-            catalogUrl: 'https://opendata.vancouver.ca/api/explore/v2.1'
+            kind: 'opendatasoft', metadataLanguage: 'en',
+            licenseMode: 'record-explicit', timezone: 'America/Vancouver',
+            upstreamHost: 'opendata.vancouver.ca'
         }));
+        expect(vancouver.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            licenseTitle: expect.any(RegExp),
+            licenseUrl: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://opendata.vancouver.ca/pages/licence/'
+            })
+        })]);
         expect(vancouver.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5915022', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-csd-5915022', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
 
     test('configures Ottawa as a canonical city with Police licence precedence', () => {
         const ottawa = getSource('ottawa-hub');
         expect(ottawa).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'open.ottawa.ca',
-            catalogUrl: 'https://open.ottawa.ca/api/feed/dcat-us/1.1.json'
+            kind: 'arcgis-hub', upstreamHost: 'open.ottawa.ca'
         }));
-        expect(ottawa.licenseRules.length).toBeGreaterThan(0);
-        expect(ottawa.placeRules).toEqual([expect.objectContaining({
+        expect(ottawa.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-3506', relationship: 'direct', includesDescendants: false
-        })]);
+        }));
+        expect(ottawa.licenseRules[0]).toEqual(expect.objectContaining({
+            licensePattern: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://data.ottawapolice.ca/pages/open-data-licence'
+            })
+        }));
+        expect(ottawa.licenseRules[1]).toEqual(expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: expect.stringContaining('/open-data-licence-version-20')
+            })
+        }));
     });
 
     test('configures Surrey as an exact-publisher ArcGIS source under its portal licence', () => {
@@ -175,93 +281,108 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'opendata-surrey.hub.arcgis.com',
             catalogUrl: 'https://opendata-surrey.hub.arcgis.com/api/feed/dcat-us/1.1.json'
         }));
-        expect(surrey.licenseRules).toEqual(expect.arrayContaining([
-            expect.objectContaining({
-                publisher: expect.any(RegExp),
-                license: expect.objectContaining({
-                    url: 'https://opendata-surrey.hub.arcgis.com/pages/open-data-licence'
-                })
-            })
+        expect(surrey.restrictedLicensePatterns).toEqual(expect.arrayContaining([
+            expect.any(RegExp)
         ]));
+        expect(surrey.licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp),
+            license: expect.objectContaining({
+                titleEn: 'Open Government License – Surrey',
+                url: expect.stringContaining('/pages/55089a19491a4fe59a41e059fd8af708'),
+                attributionEn: 'Contains information licensed under the Open Government License – City of Surrey.'
+            })
+        })]);
         expect(surrey.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5915004', relationship: 'direct', includesDescendants: false
+            placeId: 'sgc-csd-5915004', relationship: 'direct',
+            includesDescendants: false
         })]);
     });
 
     test('configures Toronto as an authoritative CKAN city source', () => {
-        const toronto = getSource('toronto-open-data');
-        expect(toronto).toEqual(expect.objectContaining({
-            kind: 'ckan', upstreamHost: 'ckan0.cf.opendata.inter.prod-toronto.ca',
-            catalogUrl: 'https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action'
+        expect(getSource('toronto-open-data')).toEqual(expect.objectContaining({
+            kind: 'ckan', placeId: 'sgc-cd-3520',
+            defaultLicenseUrl: 'https://open.toronto.ca/open-data-licence/'
         }));
-        expect(toronto.placeId).toBe('sgc-cd-3520');
     });
 
     test('configures Montréal as a French-first, record-licensed CKAN source', () => {
         const montreal = getSource('montreal-open-data');
         expect(montreal).toEqual(expect.objectContaining({
-            kind: 'ckan', upstreamHost: 'donnees.montreal.ca',
-            catalogUrl: 'https://donnees.montreal.ca/api/3/action'
+            kind: 'ckan', metadataLanguage: 'fr', licenseMode: 'record-explicit',
+            upstreamHost: 'donnees.montreal.ca', directGeoJsonMaps: true
         }));
-        expect(montreal.placeRules).toEqual(expect.arrayContaining([expect.objectContaining({
-            placeId: 'sgc-csd-2466023', relationship: 'direct', includesDescendants: false
-        })]));
+        expect(montreal.licenseRules.map(rule => rule.license.url)).toEqual([
+            'https://creativecommons.org/licenses/by/4.0/',
+            'https://open.canada.ca/en/open-government-licence-canada'
+        ]);
+        expect(montreal.placeRules).toEqual([
+            expect.objectContaining({
+                placeId: 'sgc-csd-2466023', relationship: 'direct',
+                publisher: expect.any(RegExp)
+            }),
+            expect.objectContaining({
+                placeId: 'sgc-csd-2466023', relationship: 'coverage'
+            })
+        ]);
     });
 
     test('configures Québec City and Laval as filtered shared CKAN sources', () => {
-        const quebec = getSource('quebec-city-open-data');
-        const laval = getSource('laval-open-data');
-        expect(quebec).toEqual(expect.objectContaining({
-            kind: 'ckan', upstreamHost: 'www.donneesquebec.ca'
-        }));
-        expect(laval).toEqual(expect.objectContaining({
-            kind: 'ckan', upstreamHost: 'www.donneesquebec.ca'
-        }));
-        expect(quebec.placeRules[0].placeId).toBe('sgc-csd-2423027');
-        expect(laval.placeRules[0].placeId).toBe('sgc-cd-2465');
+        for (const [id, organization, publisher, placeId] of [
+            ['quebec-city-open-data', 'ville-de-quebec', 'Ville de Québec', 'sgc-csd-2423027'],
+            ['laval-open-data', 'ville-de-laval', 'Ville de Laval', 'sgc-cd-2465']
+        ]) {
+            const source = getSource(id);
+            expect(source).toEqual(expect.objectContaining({
+                kind: 'ckan', metadataLanguage: 'fr', directGeoJsonMaps: true,
+                upstreamHost: 'www.donneesquebec.ca',
+                catalogUrl: 'https://www.donneesquebec.ca/recherche/api/3/action',
+                catalogOrganization: organization,
+                datasetBaseUrl: 'https://www.donneesquebec.ca/recherche/dataset',
+                licenseMode: 'record-explicit'
+            }));
+            expect(source.authoritativePublishers).toEqual([
+                { publisher: expect.any(RegExp) }
+            ]);
+            expect(source.licenseRules).toEqual([expect.objectContaining({
+                publisher: expect.any(RegExp), licenseId: 'cc-by',
+                licenseTitle: 'Attribution (CC-BY 4.0)',
+                licenseUrl: 'https://www.donneesquebec.ca/licence/#cc-by'
+            })]);
+            expect(source.placeRules).toEqual([expect.objectContaining({
+                placeId, relationship: 'direct', includesDescendants: false
+            })]);
+            expect(source.authoritativePublishers[0].publisher.test(publisher)).toBe(true);
+        }
     });
 
     test('covers each direct feed without inventing a Clarington source', () => {
-        const oshawa = getSource('oshawa-hub');
-        const ajax = getSource('ajax-hub');
-        const pickering = getSource('pickering-hub');
-        const whitby = getSource('whitby-hub');
-        const durham = getSource('durham-hub');
-
-        expect(oshawa).toBeDefined();
-        expect(ajax).toBeDefined();
-        expect(pickering).toBeDefined();
-        expect(whitby).toBeDefined();
-        expect(durham).toBeDefined();
-
+        expect(getSource('ajax-hub').placeRules[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-3518005', relationship: 'direct'
+        }));
+        expect(getSource('pickering-hub').placeRules[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-3518001', relationship: 'direct'
+        }));
+        expect(getSource('whitby-hub').placeRules[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-3518009', relationship: 'direct'
+        }));
         expect(getSource('clarington-hub')).toBeNull();
-
-        expect(oshawa.placeRules[0].placeId).toBe('ca-on-oshawa');
-        expect(ajax.placeRules[0].placeId).toBe('sgc-csd-3518005');
-        expect(pickering.placeRules[0].placeId).toBe('sgc-csd-3518001');
-        expect(whitby.placeRules[0].placeId).toBe('sgc-csd-3518009');
-        expect(durham.placeRules[0].placeId).toBe('ca-on-durham');
-        expect(durham.placeRules[0].includesDescendants).toBe(true);
     });
 
     test('keeps Whitby fail-closed and requires explicit open-licence evidence', () => {
         const whitby = getSource('whitby-hub');
-        expect(whitby.licenseRules.length).toBeGreaterThan(0);
-        expect(whitby.restrictedLicensePatterns.length).toBeGreaterThan(0);
+        expect(whitby.licenseMode).toBe('record-explicit');
+        expect(whitby.restrictedLicensePatterns).toHaveLength(1);
+        expect(whitby.licenseRules[0].licensePattern).toBeInstanceOf(RegExp);
     });
 
     test('configures the Peel cluster with direct city and descendant regional coverage', () => {
-        const mississauga = getSource('mississauga-hub');
-        const brampton = getSource('brampton-hub');
-        const peel = getSource('peel-hub');
-
-        expect(mississauga.placeRules[0]).toEqual(expect.objectContaining({
+        expect(getSource('mississauga-hub').placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3521005', relationship: 'direct', includesDescendants: false
         }));
-        expect(brampton.placeRules[0]).toEqual(expect.objectContaining({
+        expect(getSource('brampton-hub').placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3521010', relationship: 'direct', includesDescendants: false
         }));
-        expect(peel.placeRules[0]).toEqual(expect.objectContaining({
+        expect(getSource('peel-hub').placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-3521', relationship: 'direct', includesDescendants: true
         }));
     });
@@ -271,9 +392,19 @@ describe('configured municipal catalogue sources', () => {
         const brampton = getSource('brampton-hub');
         const peel = getSource('peel-hub');
 
-        expect(mississauga.licenseRules.length).toBeGreaterThan(0);
-        expect(brampton.licenseRules.length).toBeGreaterThan(0);
-        expect(peel.licenseRules.length).toBeGreaterThan(0);
+        expect(mississauga.licenseRules[1]).toEqual(expect.objectContaining({
+            publisher: expect.any(RegExp), license: expect.objectContaining({
+                url: 'https://www.mississauga.ca/file/COM/CityOfMississaugaTermsOfUse.pdf'
+            })
+        }));
+        expect(brampton).toEqual(expect.objectContaining({
+            licenseMode: 'record-explicit', restrictedLicensePatterns: expect.any(Array)
+        }));
+        expect(peel).toEqual(expect.objectContaining({
+            licenseMode: 'record-explicit', restrictedLicensePatterns: expect.any(Array)
+        }));
+        expect(brampton.licenseRules.some(rule => rule.license.url === 'https://creativecommons.org/licenses/by/4.0/')).toBe(true);
+        expect(peel.licenseRules.some(rule => rule.license.url === 'https://data.peelregion.ca/pages/license')).toBe(true);
     });
 
     test('configures Burlington, Oakville, and Milton within Halton Region', () => {
@@ -281,11 +412,25 @@ describe('configured municipal catalogue sources', () => {
         const oakville = getSource('oakville-hub');
         const milton = getSource('milton-hub');
 
+        expect(burlington).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'navburl-burlington.opendata.arcgis.com'
+        }));
         expect(burlington.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3524002', relationship: 'direct', includesDescendants: false
         }));
+
+        expect(oakville).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'portal-exploreoakville.opendata.arcgis.com'
+        }));
         expect(oakville.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3524001', relationship: 'direct', includesDescendants: false
+        }));
+
+        expect(milton).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'discover-milton.hub.arcgis.com'
         }));
         expect(milton.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3524009', relationship: 'direct', includesDescendants: false
@@ -295,7 +440,8 @@ describe('configured municipal catalogue sources', () => {
     test('configures Greater Sudbury as a single-tier city source', () => {
         const sudbury = getSource('sudbury-hub');
         expect(sudbury).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'opendata.greatersudbury.ca'
+            kind: 'arcgis-hub',
+            upstreamHost: 'opendata.greatersudbury.ca'
         }));
         expect(sudbury.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-3553', relationship: 'direct', includesDescendants: false
@@ -306,8 +452,17 @@ describe('configured municipal catalogue sources', () => {
         const burnaby = getSource('burnaby-hub');
         const saskatoon = getSource('saskatoon-hub');
 
+        expect(burnaby).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'data.burnaby.ca'
+        }));
         expect(burnaby.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-5915025', relationship: 'direct', includesDescendants: false
+        }));
+
+        expect(saskatoon).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'opendata.saskatoon.ca'
         }));
         expect(saskatoon.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-4711066', relationship: 'direct', includesDescendants: false
@@ -318,24 +473,43 @@ describe('configured municipal catalogue sources', () => {
         const markham = getSource('markham-hub');
         const newmarket = getSource('newmarket-hub');
 
-        expect(markham.placeRules).toEqual(expect.arrayContaining([expect.objectContaining({
-            placeId: 'sgc-csd-3519036', relationship: 'direct', includesDescendants: false
-        })]));
-        expect(newmarket.placeRules).toEqual(expect.arrayContaining([expect.objectContaining({
+        expect(markham).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'data-markham.opendata.arcgis.com'
+        }));
+        expect(markham.placeRules).toEqual(expect.arrayContaining([
+            expect.objectContaining({ placeId: 'sgc-csd-3519036', relationship: 'direct', includesDescendants: false }),
+            expect.objectContaining({ placeId: 'sgc-cd-3519', relationship: 'direct', includesDescendants: true })
+        ]));
+
+        expect(newmarket).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'navigate-newmarket.hub.arcgis.com'
+        }));
+        expect(newmarket.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3519048', relationship: 'direct', includesDescendants: false
-        })]));
+        }));
     });
 
     test('configures Niagara Falls and Welland within Niagara Region', () => {
         const niagaraFalls = getSource('niagara-falls-hub');
         const welland = getSource('welland-hub');
 
-        expect(niagaraFalls.placeRules).toEqual(expect.arrayContaining([expect.objectContaining({
+        expect(niagaraFalls).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'open.niagarafalls.ca'
+        }));
+        expect(niagaraFalls.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3526043', relationship: 'direct', includesDescendants: false
-        })]));
-        expect(welland.placeRules).toEqual(expect.arrayContaining([expect.objectContaining({
+        }));
+
+        expect(welland).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub',
+            upstreamHost: 'open-welland.hub.arcgis.com'
+        }));
+        expect(welland.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3526032', relationship: 'direct', includesDescendants: false
-        })]));
+        }));
     });
 
     test('configures Moncton, Guelph, Saanich, and Belleville sources', () => {
@@ -381,71 +555,63 @@ describe('configured municipal catalogue sources', () => {
         const yellowknife = getSource('yellowknife-hub');
         const barrie = getSource('barrie-hub');
         const thunderbay = getSource('thunderbay-hub');
-        const chathamKent = getSource('chatham-kent-hub');
-        const kawarthaLakes = getSource('kawartha-lakes-hub');
+        const chatham = getSource('chatham-kent-hub');
+        const kawartha = getSource('kawartha-lakes-hub');
         const summerland = getSource('summerland-hub');
         const norfolk = getSource('norfolk-hub');
         const haldimand = getSource('haldimand-hub');
 
         expect(yellowknife).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'data-yellowknife.hub.arcgis.com'
+            kind: 'arcgis-hub', upstreamHost: 'data-yellowknife.hub.arcgis.com'
         }));
         expect(yellowknife.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-6106023', relationship: 'direct', includesDescendants: false
         }));
 
         expect(barrie).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'opendata.barrie.ca'
+            kind: 'arcgis-hub', upstreamHost: 'opendata.barrie.ca'
         }));
         expect(barrie.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3543042', relationship: 'direct', includesDescendants: false
         }));
 
         expect(thunderbay).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'opendata-thunderbay.hub.arcgis.com'
+            kind: 'arcgis-hub', upstreamHost: 'opendata-thunderbay.hub.arcgis.com'
         }));
         expect(thunderbay.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3558004', relationship: 'direct', includesDescendants: false
         }));
 
-        expect(chathamKent).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'opendata.chatham-kent.ca'
+        expect(chatham).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub', upstreamHost: 'opendata.chatham-kent.ca'
         }));
-        expect(chathamKent.placeRules[0]).toEqual(expect.objectContaining({
+        expect(chatham.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-3536', relationship: 'direct', includesDescendants: false
         }));
 
-        expect(kawarthaLakes).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'open-data-kawartha.hub.arcgis.com'
+        expect(kawartha).toEqual(expect.objectContaining({
+            kind: 'arcgis-hub', upstreamHost: 'open-data-kawartha.hub.arcgis.com'
         }));
-        expect(kawarthaLakes.placeRules[0]).toEqual(expect.objectContaining({
+        expect(kawartha.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-3516', relationship: 'direct', includesDescendants: false
         }));
 
         expect(summerland).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'open-data-summerland.hub.arcgis.com'
+            kind: 'arcgis-hub', upstreamHost: 'open-data-summerland.hub.arcgis.com'
         }));
         expect(summerland.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-5907035', relationship: 'direct', includesDescendants: false
         }));
 
         expect(norfolk).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'data-norfolk.opendata.arcgis.com'
+            kind: 'arcgis-hub', upstreamHost: 'data-norfolk.opendata.arcgis.com'
         }));
         expect(norfolk.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3528052', relationship: 'direct', includesDescendants: false
         }));
 
         expect(haldimand).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub',
-            upstreamHost: 'opendata-haldimand.hub.arcgis.com'
+            kind: 'arcgis-hub', upstreamHost: 'opendata-haldimand.hub.arcgis.com'
         }));
         expect(haldimand.placeRules[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-3528018', relationship: 'direct', includesDescendants: false
@@ -453,203 +619,145 @@ describe('configured municipal catalogue sources', () => {
     });
 
     test('configures v32 multi-province sources with official licences and direct place rules', () => {
-        const lethbridge = getSource('lethbridge-hub');
-        const medicineHat = getSource('medicine-hat-hub');
-        const airdrie = getSource('airdrie-hub');
-        const canmore = getSource('canmore-hub');
-        const penticton = getSource('penticton-hub');
-        const langleyCity = getSource('langley-city-hub');
-        const huron = getSource('huron-hub');
-        const cumberland = getSource('cumberland-hub');
-
-        expect(lethbridge).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'opendata.lethbridge.ca',
-            catalogUrl: 'https://opendata.lethbridge.ca/api/feed/dcat-us/1.1.json'
-        }));
-        expect(lethbridge.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-4802012', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(medicineHat).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'opendata.medicinehat.ca',
-            catalogUrl: 'https://opendata.medicinehat.ca/api/feed/dcat-us/1.1.json'
-        }));
-        expect(medicineHat.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-4801006', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(airdrie).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-airdrie.opendata.arcgis.com',
-            catalogUrl: 'https://data-airdrie.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(airdrie.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-4806021', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(canmore).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'opendata-canmore.opendata.arcgis.com',
-            catalogUrl: 'https://opendata-canmore.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(canmore.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-4815023', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(penticton).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'open.penticton.ca',
-            catalogUrl: 'https://open.penticton.ca/api/feed/dcat-us/1.1.json'
-        }));
-        expect(penticton.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5907041', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(langleyCity).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-langleycity.opendata.arcgis.com',
-            catalogUrl: 'https://data-langleycity.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(langleyCity.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5915001', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(huron).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-huron.opendata.arcgis.com',
-            catalogUrl: 'https://data-huron.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(huron.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-cd-3540', relationship: 'direct', includesDescendants: true
-        })]);
-
-        expect(cumberland).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-cumberlandns.opendata.arcgis.com',
-            catalogUrl: 'https://data-cumberlandns.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(cumberland.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-cd-1211', relationship: 'direct', includesDescendants: true
-        })]);
-    });
-
-    test('configures v33 Quebec and Atlantic Canada sources with official licences and direct place rules', () => {
-        const expectedSources = [
-            { id: 'gatineau-open-data', org: 'ville-de-gatineau', placeId: 'sgc-csd-2481017' },
-            { id: 'trois-rivieres-open-data', org: 'ville-de-trois-rivieres', placeId: 'sgc-csd-2437067' },
-            { id: 'repentigny-open-data', org: 'ville-de-repentigny', placeId: 'sgc-csd-2460013' },
-            { id: 'longueuil-open-data', org: 'ville-de-longueuil', placeId: 'sgc-csd-2458227' },
-            { id: 'saguenay-open-data', org: 'ville-de-saguenay', placeId: 'sgc-csd-2494068' },
-            { id: 'rimouski-open-data', org: 'ville-de-rimouski', placeId: 'sgc-csd-2410043' },
-            { id: 'shawinigan-open-data', org: 'ville-de-shawinigan', placeId: 'sgc-csd-2436033' },
-            { id: 'levis-open-data', org: 'ville-de-levis', placeId: 'sgc-csd-2425213' },
-            { id: 'sherbrooke-open-data', org: 'ville-de-sherbrooke', placeId: 'sgc-csd-2443027' }
+        const v32Sources = [
+            { id: 'lethbridge-hub', host: 'opendata.lethbridge.ca', placeId: 'sgc-csd-4802012' },
+            { id: 'medicine-hat-hub', host: 'opendata.medicinehat.ca', placeId: 'sgc-csd-4801006' },
+            { id: 'airdrie-hub', host: 'data-airdrie.opendata.arcgis.com', placeId: 'sgc-csd-4806021' },
+            { id: 'canmore-hub', host: 'opendata-canmore.opendata.arcgis.com', placeId: 'sgc-csd-4815023' },
+            { id: 'penticton-hub', host: 'open.penticton.ca', placeId: 'sgc-csd-5907041' },
+            { id: 'langley-city-hub', host: 'data-langleycity.opendata.arcgis.com', placeId: 'sgc-csd-5915001' },
+            { id: 'huron-hub', host: 'data-huron.opendata.arcgis.com', placeId: 'sgc-cd-3540' },
+            { id: 'cumberland-hub', host: 'data-cumberlandns.opendata.arcgis.com', placeId: 'sgc-cd-1211' }
         ];
 
-        for (const item of expectedSources) {
-            const source = getSource(item.id);
+        for (const { id, host, placeId } of v32Sources) {
+            const source = getSource(id);
             expect(source).toBeDefined();
-            expect(source.kind).toBe('ckan');
-            expect(source.upstreamHost).toBe('www.donneesquebec.ca');
-            expect(source.catalogOrganization).toBe(item.org);
-            expect(source.placeRules[0].placeId).toBe(item.placeId);
+            expect(source.kind).toBe('arcgis-hub');
+            expect(source.upstreamHost).toBe(host);
+            expect(source.placeRules[0].placeId).toBe(placeId);
             expect(source.placeRules[0].relationship).toBe('direct');
-            expect(source.defaultOrganizationTitleFr).toBeDefined();
         }
-
-        const saintJohn = getSource('saint-john-hub');
-        expect(saintJohn).toBeDefined();
-        expect(saintJohn.kind).toBe('arcgis-hub');
-        expect(saintJohn.upstreamHost).toBe('catalogue-saintjohn.opendata.arcgis.com');
-        expect(saintJohn.placeRules[0].placeId).toBe('sgc-csd-1301006');
-        expect(saintJohn.placeRules[0].relationship).toBe('direct');
-        expect(saintJohn.licenseRules[0].license.titleEn).toBe('Open Government Licence – City of Saint John');
     });
 
-    test('configures v34 capital cities and municipal expansion sources with official licences and direct place rules', () => {
-        const whitehorse = getSource('whitehorse-hub');
-        const stJohns = getSource('st-johns-hub');
-        const charlottetown = getSource('charlottetown-hub');
-        const regina = getSource('regina-hub');
-        const windsor = getSource('windsor-hub');
-        const kingston = getSource('kingston-hub');
-        const redDeer = getSource('red-deer-hub');
-        const kamloops = getSource('kamloops-hub');
-        const nanaimo = getSource('nanaimo-hub');
-        const abbotsford = getSource('abbotsford-hub');
+    test('configures the Données Québec expansion as organization-scoped and record-licensed', () => {
+        const expected = [
+            ['gatineau-open-data', 'ville-de-gatineau', 'sgc-csd-2481017'],
+            ['trois-rivieres-open-data', 'ville-de-trois-rivieres', 'sgc-csd-2437067'],
+            ['repentigny-open-data', 'ville-de-repentigny', 'sgc-csd-2460013'],
+            ['longueuil-open-data', 'ville-de-longueuil', 'sgc-csd-2458227'],
+            ['saguenay-open-data', 'ville-de-saguenay', 'sgc-csd-2494068'],
+            ['rimouski-open-data', 'ville-de-rimouski', 'sgc-csd-2410043'],
+            ['shawinigan-open-data', 'ville-de-shawinigan', 'sgc-csd-2436033'],
+            ['levis-open-data', 'ville-de-levis', 'sgc-csd-2425213'],
+            ['sherbrooke-open-data', 'ville-de-sherbrooke', 'sgc-csd-2443027'],
+            ['sherbrooke-geomatics-open-data', 'ville-de-sherbrooke-donnees-geomatiques', 'sgc-csd-2443027'],
+            ['saint-hyacinthe-open-data', 'ville-de-saint-hyacinthe', 'sgc-csd-2454048']
+        ];
 
-        expect(whitehorse).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-whitehorse.opendata.arcgis.com',
-            catalogUrl: 'https://data-whitehorse.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
+        for (const [id, organization, placeId] of expected) {
+            const source = getSource(id);
+            expect(source).toEqual(expect.objectContaining({
+                kind: 'ckan', enabled: true, metadataLanguage: 'fr',
+                catalogOrganization: organization, directGeoJsonMaps: true,
+                licenseMode: 'record-explicit', upstreamHost: 'www.donneesquebec.ca'
+            }));
+            expect(source.licenseRules).toEqual([expect.objectContaining({
+                licenseId: expect.any(RegExp),
+                license: expect.objectContaining({ url: 'https://creativecommons.org/licenses/by/4.0/' })
+            })]);
+            expect(source.placeRules).toEqual([expect.objectContaining({
+                placeId, relationship: 'direct', includesDescendants: false
+            })]);
+        }
+    });
+
+    test('uses the live v34 catalogues and keeps unavailable municipalities disabled', () => {
+        for (const id of ['whitehorse-hub', 'st-johns-hub', 'charlottetown-hub']) {
+            expect(getSource(id)).toEqual(expect.objectContaining({
+                enabled: false,
+                disabledReason: expect.any(String),
+                licenseRules: []
+            }));
+        }
+
+        expect(getSource('regina-hub')).toEqual(expect.objectContaining({
+            kind: 'ckan', upstreamHost: 'openregina.ca',
+            catalogUrl: 'https://openregina.ca/api/3/action',
+            catalogOrganization: 'city-of-regina',
+            licenseMode: 'record-explicit'
         }));
-        expect(whitehorse.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-6001009', relationship: 'direct', includesDescendants: false
+        expect(getSource('regina-hub').licenseRules).toEqual([expect.objectContaining({
+            publisher: expect.any(RegExp), licenseId: expect.any(RegExp),
+            licenseTitle: expect.any(RegExp),
+            license: expect.objectContaining({ url: expect.stringContaining('/open-government-licence/') })
+        })]);
+        expect(getSource('red-deer-hub')).toEqual(expect.objectContaining({
+            kind: 'red-deer', upstreamHost: 'data.reddeer.ca',
+            catalogUrl: 'https://data.reddeer.ca/api/datasets',
+            placeId: 'sgc-csd-4808011'
+        }));
+
+        const arcgis = [
+            ['windsor-hub', 'open-data-portal-citywindsor.hub.arcgis.com', 'sgc-csd-3537039'],
+            ['kingston-hub', 'opendatakingston.cityofkingston.ca', 'sgc-csd-3510010'],
+            ['kamloops-hub', 'mydata-kamloops.opendata.arcgis.com', 'sgc-csd-5933042'],
+            ['nanaimo-hub', 'gisdata.nanaimo.ca', 'sgc-csd-5921007'],
+            ['abbotsford-hub', 'opendata-abbotsford.hub.arcgis.com', 'sgc-csd-5909052']
+        ];
+        for (const [id, host, placeId] of arcgis) {
+            const source = getSource(id);
+            expect(source).toEqual(expect.objectContaining({
+                kind: 'arcgis-hub', enabled: true, upstreamHost: host,
+                catalogUrl: `https://${host}/api/feed/dcat-us/1.1.json`
+            }));
+            expect(source.placeRules).toEqual([expect.objectContaining({ placeId })]);
+        }
+        expect(getSource('abbotsford-hub').unavailableServicePatterns).toEqual([
+            expect.any(RegExp)
+        ]);
+        expect(getSource('abbotsford-hub').unavailableServicePatterns[0].test(
+            'https://maps.abbotsford.ca/arcgis/rest/services/GeocortexExt/Public/MapServer/2'
+        )).toBe(true);
+    });
+
+    test('configures the v35 Northwest Territories and British Columbia sources fail-closed', () => {
+        const gnwt = getSource('northwest-territories-open-data');
+        expect(gnwt).toEqual(expect.objectContaining({
+            kind: 'ckan', upstreamHost: 'opendata.gov.nt.ca',
+            licenseMode: 'record-explicit', enabled: true
+        }));
+        expect(gnwt.licenseRules).toEqual([expect.objectContaining({
+            licenseId: expect.any(RegExp),
+            license: expect.objectContaining({
+                url: 'https://www.gov.nt.ca/en/open-government-licence-northwest-territories'
+            })
+        })]);
+        expect(gnwt.placeRules).toEqual([expect.objectContaining({
+            placeId: 'sgc-pr-61', relationship: 'direct', includesDescendants: true
         })]);
 
-        expect(stJohns).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'map-stjohns.opendata.arcgis.com',
-            catalogUrl: 'https://map-stjohns.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(stJohns.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-1001519', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(charlottetown).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'city-charlottetown.opendata.arcgis.com',
-            catalogUrl: 'https://city-charlottetown.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(charlottetown.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-1102075', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(regina).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'open-regina.hub.arcgis.com',
-            catalogUrl: 'https://open-regina.hub.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(regina.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-4706027', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(windsor).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'opendata.citywindsor.ca',
-            catalogUrl: 'https://opendata.citywindsor.ca/api/feed/dcat-us/1.1.json'
-        }));
-        expect(windsor.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-3537039', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(kingston).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data.cityofkingston.ca',
-            catalogUrl: 'https://data.cityofkingston.ca/api/feed/dcat-us/1.1.json'
-        }));
-        expect(kingston.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-3510010', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(redDeer).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-reddeer.opendata.arcgis.com',
-            catalogUrl: 'https://data-reddeer.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(redDeer.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-4808011', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(kamloops).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-kamloops.opendata.arcgis.com',
-            catalogUrl: 'https://data-kamloops.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(kamloops.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5933042', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(nanaimo).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-nanaimo.opendata.arcgis.com',
-            catalogUrl: 'https://data-nanaimo.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(nanaimo.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5921007', relationship: 'direct', includesDescendants: false
-        })]);
-
-        expect(abbotsford).toEqual(expect.objectContaining({
-            kind: 'arcgis-hub', upstreamHost: 'data-abbotsford.opendata.arcgis.com',
-            catalogUrl: 'https://data-abbotsford.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
-        }));
-        expect(abbotsford.placeRules).toEqual([expect.objectContaining({
-            placeId: 'sgc-csd-5909052', relationship: 'direct', includesDescendants: false
-        })]);
+        const bc = [
+            ['coquitlam-hub', 'data.coquitlam.ca', 'sgc-csd-5915034'],
+            ['prince-george-hub', 'data-cityofpg.opendata.arcgis.com', 'sgc-csd-5953023'],
+            ['new-westminster-hub', 'opendata.newwestcity.ca', 'sgc-csd-5915029'],
+            ['port-moody-hub', 'data.portmoody.ca', 'sgc-csd-5915043'],
+            ['squamish-hub', 'data.squamish.ca', 'sgc-csd-5931006'],
+            ['maple-ridge-hub', 'opengov.mapleridge.ca', 'sgc-csd-5915075'],
+            ['port-coquitlam-hub', 'data-poco.hub.arcgis.com', 'sgc-csd-5915039']
+        ];
+        for (const [id, host, placeId] of bc) {
+            const source = getSource(id);
+            expect(source).toEqual(expect.objectContaining({
+                kind: 'arcgis-hub', upstreamHost: host, enabled: true,
+                placeholderPublisher: expect.any(String)
+            }));
+            expect(source.placeRules).toEqual([expect.objectContaining({
+                placeId, relationship: 'direct', includesDescendants: false
+            })]);
+            expect(source.restrictedLicensePatterns.length).toBeGreaterThanOrEqual(3);
+        }
+        expect(getSource('maple-ridge-hub').restrictedLicensePatterns.some(pattern => pattern.test('TransLink terms'))).toBe(true);
+        expect(getSource('port-coquitlam-hub').restrictedLicensePatterns.some(pattern => pattern.test('PoCoMap'))).toBe(true);
     });
 });

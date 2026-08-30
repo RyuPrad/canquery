@@ -642,4 +642,79 @@ spatialDescribe('PostGIS viewport integration', () => {
         `, [orgId, datasetId]);
         expect(references.rows).toEqual([{ place_id: 'sgc-cd-2465', dataset_moved: true }]);
     });
+
+    test('migration 029 repairs partial rollout state and seeds v35 idempotently', async () => {
+        await client.query("UPDATE places SET name_fr = 'QuÃ©bec' WHERE id = 'sgc-pr-24'");
+        await client.query(`
+            UPDATE places
+            SET slug = 'coquitlam-bc-broken', type_en = 'Municipality',
+                featured = false, latitude = NULL, longitude = NULL
+            WHERE id = 'sgc-csd-5915034'
+        `);
+        await client.query(`
+            DELETE FROM place_aliases
+            WHERE slug IN ('coquitlam-city-bc', 'regina-city-sk')
+        `);
+
+        const migration = fs.readFileSync(path.join(
+            __dirname, '..', 'sql', 'migrations', '029_recovery_and_high_volume_places.sql'
+        ), 'utf8');
+        await client.query(migration);
+        await client.query(migration);
+
+        const places = await client.query(`
+            SELECT id, slug, kind, parent_id, type_en, type_fr, featured,
+                   latitude, longitude, default_zoom
+            FROM places
+            WHERE id IN (
+                'sgc-pr-61', 'sgc-csd-5915034', 'sgc-csd-5953023',
+                'sgc-csd-5915029', 'sgc-csd-5915043', 'sgc-csd-5931006',
+                'sgc-csd-5915075', 'sgc-csd-5915039', 'sgc-csd-2454048'
+            )
+            ORDER BY id
+        `);
+        expect(places.rows).toHaveLength(9);
+        expect(places.rows.find(row => row.id === 'sgc-pr-61')).toEqual(expect.objectContaining({
+            slug: 'northwest-territories', kind: 'territory',
+            parent_id: 'ca', featured: false
+        }));
+        expect(places.rows.find(row => row.id === 'sgc-csd-5915034')).toEqual(expect.objectContaining({
+            slug: 'coquitlam-bc', kind: 'municipality', parent_id: 'sgc-cd-5915',
+            type_en: 'City', type_fr: 'Ville', featured: true,
+            latitude: 49.2838, longitude: -122.7932, default_zoom: 10
+        }));
+        expect(places.rows.filter(row => row.id.startsWith('sgc-csd-')).every(row => row.featured)).toBe(true);
+
+        const identifiers = await client.query(`
+            SELECT count(*)::int AS count
+            FROM place_identifiers
+            WHERE vintage = '2021' AND (
+                (scheme = 'sgc-pr' AND value = '61') OR
+                (scheme = 'sgc-csd' AND value IN (
+                    '5915034', '5953023', '5915029', '5915043',
+                    '5931006', '5915075', '5915039', '2454048'
+                ))
+            )
+        `);
+        expect(identifiers.rows[0].count).toBe(9);
+
+        const aliases = await client.query(`
+            SELECT slug, place_id FROM place_aliases
+            WHERE slug IN ('coquitlam-city-bc', 'regina-city-sk')
+            ORDER BY slug
+        `);
+        expect(aliases.rows).toEqual([
+            { slug: 'coquitlam-city-bc', place_id: 'sgc-csd-5915034' },
+            { slug: 'regina-city-sk', place_id: 'sgc-csd-4706027' }
+        ]);
+
+        const unicode = await client.query(`
+            SELECT name_fr,
+                   (SELECT count(*)::int FROM places
+                    WHERE name_en LIKE '%' || U&'\\FFFD' || '%'
+                       OR name_fr LIKE '%' || U&'\\FFFD' || '%') AS damaged
+            FROM places WHERE id = 'sgc-pr-24'
+        `);
+        expect(unicode.rows).toEqual([{ name_fr: 'Québec', damaged: 0 }]);
+    });
 });

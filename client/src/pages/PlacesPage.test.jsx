@@ -3,12 +3,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import PlacesPage from './PlacesPage.jsx';
 
-vi.mock('../api/catalog.js', () => ({ fetchPlaces: vi.fn() }));
-import { fetchPlaces } from '../api/catalog.js';
+vi.mock('../api/catalog.js', () => ({ fetchFeaturedPlaces: vi.fn(), fetchPlaces: vi.fn() }));
+import { fetchFeaturedPlaces, fetchPlaces } from '../api/catalog.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fetchPlaces.mockResolvedValue({ data: [
+  const response = { data: [
     {
       id: 'ca-on-durham', slug: 'durham-on', kind: 'region',
       name: { en: 'Durham' }, type: { en: 'Regional municipality' },
@@ -110,7 +110,9 @@ beforeEach(() => {
       parent: { id: 'sgc-cd-5915', name: { en: 'Greater Vancouver', fr: 'Greater Vancouver' } },
       dataset_count: 216, direct_dataset_count: 216, mappable_resource_count: 180
     }
-  ] });
+  ] };
+  fetchFeaturedPlaces.mockResolvedValue(response);
+  fetchPlaces.mockResolvedValue(response);
 });
 
 describe('PlacesPage', () => {
@@ -137,15 +139,12 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();
     expect(screen.getAllByText('Broader-area coverage')).toHaveLength(2);
-    await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith({
-      q: undefined, featured: true, limit: 100
-    }));
+    await waitFor(() => expect(fetchFeaturedPlaces).toHaveBeenCalledTimes(1));
+    expect(fetchPlaces).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Find a city, region or province...' }), {
       target: { value: 'Toronto' }
     });
-    await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith({
-      q: 'Toronto', featured: undefined, limit: 100
-    }));
+    await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith({ q: 'Toronto', limit: 100 }));
   });
 });

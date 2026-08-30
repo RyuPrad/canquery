@@ -59,6 +59,26 @@ describe('ops API', () => {
         expect(res.body.data.ok).toBe(true);
     });
 
+    it('registers every enabled source job and omits fail-closed disabled sources', async () => {
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [], evictLastOkAt: null, mapQueue: {}
+        });
+        const res = await request(app).get('/api/v1/ops');
+        const sourceJobs = Object.keys(res.body.data.jobs).filter(name => name.startsWith('source:'));
+
+        expect(res.status).toBe(200);
+        expect(sourceJobs).toHaveLength(82);
+        expect(sourceJobs).toEqual(expect.arrayContaining([
+            'source:regina-hub',
+            'source:red-deer-hub',
+            'source:northwest-territories-open-data',
+            'source:saint-hyacinthe-open-data'
+        ]));
+        expect(sourceJobs).not.toContain('source:whitehorse-hub');
+        expect(sourceJobs).not.toContain('source:st-johns-hub');
+        expect(sourceJobs).not.toContain('source:charlottetown-hub');
+    });
+
     it('keeps the newest source success across legacy and current run kinds', async () => {
         const now = new Date();
         const legacy = new Date(Date.now() - 72 * 3600 * 1000).toISOString();

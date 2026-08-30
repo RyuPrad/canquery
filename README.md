@@ -16,19 +16,20 @@ upstream APIs (such as CKAN's DataStore or Socrata), while most are published as
 | 2 - load | tabular file <= 50 MB | streams into local PostgreSQL on demand; same `/query` response shape |
 | 3 - honest fallback | anything else | metadata + the download link, labeled `file-only` (422 on `/query`) |
 
-The catalogue combines the federal CKAN portal with source adapters for local
-publishers across sixty-five municipal and regional portals (sixty-six total catalogue sources)
-spanning all ten Canadian provinces and the Northwest Territories. Dataset provenance and
-licensing stay attached per source. A versioned Statistics Canada SGC hierarchy powers
-place-first discovery across seventy-three canonical featured jurisdictions, and
-spatial resources can be explored through bounded maps before their CSV snapshot
-is loaded.
+The catalogue combines the federal CKAN portal with a fail-closed registry of 85
+municipal, regional, provincial, and territorial source definitions. Eighty-two
+local sources are currently enabled, for 83 active catalogue sources including
+the federal mirror. Dataset provenance and licensing stay attached per source.
+A versioned Statistics Canada SGC hierarchy powers place-first discovery across
+116 configured featured browse destinations, and spatial resources can be
+explored through bounded maps before their CSV snapshot is loaded.
 
 Technology adapters preserve per-portal provenance and licensing:
-- **Shared & Municipal CKAN**: Toronto, Montréal, and the centralized Données Québec CKAN
+- **Shared & Municipal CKAN**: Toronto, Montréal, Regina, the Government of the Northwest
+  Territories, and the centralized Données Québec CKAN
   engine serving Québec City, Laval, Gatineau, Trois-Rivières, Repentigny, Longueuil,
-  Saguenay, Rimouski, Shawinigan, Lévis, and Sherbrooke with French-first metadata and
-  record-explicit CC BY 4.0 terms.
+  Saguenay, Rimouski, Shawinigan, Lévis, Sherbrooke, Sherbrooke geomatics, and
+  Saint-Hyacinthe with French-first metadata and record-explicit CC BY 4.0 terms.
 - **Opendatasoft**: City of Vancouver with English-first metadata, record-explicit Open
   Government Licence – Vancouver terms, and validated GeoJSON exports in the local PostGIS index.
 - **Socrata**: Calgary, Edmonton, and Winnipeg with config-driven publisher/licence admission
@@ -37,11 +38,18 @@ Technology adapters preserve per-portal provenance and licensing:
   Greater Sudbury, Burnaby, Saskatoon, Moncton, Guelph, Saanich, Belleville, Yellowknife (NT),
   Barrie, Thunder Bay, Chatham-Kent, Kawartha Lakes, Summerland, Norfolk County, Haldimand County,
   Lethbridge, Medicine Hat, Airdrie, Canmore, Penticton, Langley City, Huron County, Cumberland County,
-  Saint John (NB), and the Durham, Peel, Halton, York, Niagara, and Waterloo regional clusters
+  Saint John (NB), Windsor, Kingston, Kamloops, Nanaimo, Abbotsford, Coquitlam, Prince George,
+  New Westminster, Port Moody, Squamish, Maple Ridge, Port Coquitlam, and the Durham, Peel,
+  Halton, York, Niagara, and Waterloo regional clusters
   with bounded live ArcGIS map viewports and strict publisher-scoped open licences.
+- **Municipal JSON catalogue**: Red Deer, normalized through its official dataset API and
+  portal-wide Open Government Licence.
 
 Each portal is gated to its recognized open licences, so generic website terms, blank licence
 records where no portal-wide grant applies, and non-commercial data stay excluded.
+The Whitehorse, St. John's, and Charlottetown source identities remain configured but disabled:
+their previously documented ArcGIS feeds are unavailable and no equivalent machine-readable
+catalogue with verified open-data terms is currently admissible.
 
 ## Layout
 
@@ -65,13 +73,13 @@ psql canquery -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
 cd server
 npm install
 cp .env.example .env              # set DATABASE_URL (and optional S3_* for PMTiles)
-npm run migrate                   # apply migrations (runs 001..028)
+npm run migrate                   # apply migrations (runs 001..029)
 npm run sync:places               # populate the 2021 SGC hierarchy
 
 # sync the federal catalogue (batched harvest, chunks of 50)
-npm run sync                      # full harvest (~50k datasets)
+node scripts/catalog-sync.js      # full harvest (~50k datasets)
 # or test against a small sample:
-npm run sync -- --limit=100
+node scripts/catalog-sync.js --limit=100
 
 # or harvest a standalone municipal/regional source (dry-run or real)
 npm run sync:source -- --source=toronto-open-data --dry-run
@@ -217,7 +225,7 @@ remain in PostGIS.
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
-(All Canada remains the default). Its grouped selector shows seventy-three canonical
+(All Canada remains the default). Its grouped selector shows 116 configured canonical
 featured jurisdictions, including standalone cities (Calgary, Edmonton, Fredericton, Gatineau,
 Greater Sudbury, Guelph, Halifax, Hamilton, Kelowna, Laval, Lévis, London, Longueuil, Moncton,
 Montréal, Ottawa, Québec City, Repentigny, Rimouski, Saanich, Saguenay, Saint John, Saskatoon,
@@ -241,8 +249,7 @@ sparklines. English/French throughout.
 ## Tests & lint
 
 ```bash
-cd server && npm test && npm run lint
-cd client && npm test && npm run lint && npm run build
+npm --prefix server run verify
 ```
 
 Coverage includes CKAN, ArcGIS Hub, Opendatasoft and Socrata source adapters, place hierarchy and APIs, streaming direct
@@ -253,7 +260,7 @@ concurrent job-lease heartbeats, store/map-budget eviction, and client UI routin
 ## Deployment
 
 Dedicated VPS `canquery-prod-01` at Little Creek Hosting (IPv4 `38.45.71.90`).
-Deployed through `git pull` on `main` under user `canquery`; managed as systemd
-services `canquery-api.service`, `canquery-worker.service`, and `canquery-map-worker.service`
-behind a Caddy reverse proxy that terminates TLS with automatic Let's Encrypt certificates.
-See `deploy/DEPLOY.md` for runbooks.
+Production retains the legacy systemd names `opencanada-api`, `opencanada-worker`,
+and `opencanada-map-worker` behind a Caddy reverse proxy. The generic deployment
+templates use `canquery-*` names for new installations. See `deploy/DEPLOY.md` and
+`deploy/RELEASE_RUNBOOK_v35.md` for runbooks.

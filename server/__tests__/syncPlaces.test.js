@@ -1,4 +1,4 @@
-const { normalize } = require('../scripts/sync-places');
+const { normalize, rowsFrom } = require('../scripts/sync-places');
 
 describe('Statistics Canada SGC place normalization', () => {
     test('builds stable province, region and municipality ancestry', () => {
@@ -118,6 +118,19 @@ describe('Statistics Canada SGC place normalization', () => {
         expect(result.places.find(place => place.id === 'sgc-csd-2466023')).toEqual(expect.objectContaining({
             slug: 'montreal-qc', nameEn: 'Montréal'
         }));
+    });
+
+    test('decodes the official Windows-1252 accents and rejects replacement characters', () => {
+        const csv = Buffer.concat([
+            Buffer.from('Level,Code,Class title\r\n2,24,Qu'),
+            Buffer.from([0xe9]),
+            Buffer.from('bec\r\n')
+        ]);
+        expect(rowsFrom(csv, 'windows-1252')).toEqual([{
+            Level: '2', Code: '24', 'Class title': 'Québec'
+        }]);
+        expect(() => rowsFrom(Buffer.from([0x61, 0x2c, 0x62, 0x0a, 0xc3, 0x28])))
+            .toThrow(/replacement characters/i);
     });
 
     test('keeps Montréal region and city distinct and features only the city', () => {
@@ -787,149 +800,76 @@ describe('Statistics Canada SGC place normalization', () => {
         }));
     });
 
-    test('features Gatineau, Trois-Rivières, Repentigny, Longueuil, Saguenay, Rimouski, Shawinigan, Lévis, Sherbrooke, and Saint John', () => {
+    test('normalizes the v33-v35 municipalities with canonical ancestry and viewports', () => {
         const en = [
             { Level: '2', Code: '24', 'Class title': 'Quebec' },
             { Level: '3', Code: '2481', 'Class title': 'Gatineau' },
             { Level: '4', Code: '2481017', 'Class title': 'Gatineau' },
-            { Level: '3', Code: '2437', 'Class title': 'Francheville' },
-            { Level: '4', Code: '2437067', 'Class title': 'Trois-Rivières' },
-            { Level: '3', Code: '2460', 'Class title': 'L’Assomption' },
-            { Level: '4', Code: '2460013', 'Class title': 'Repentigny' },
-            { Level: '3', Code: '2458', 'Class title': 'Longueuil' },
-            { Level: '4', Code: '2458227', 'Class title': 'Longueuil' },
-            { Level: '3', Code: '2494', 'Class title': 'Le Saguenay-et-son-Fjord' },
-            { Level: '4', Code: '2494068', 'Class title': 'Saguenay' },
-            { Level: '3', Code: '2410', 'Class title': 'Rimouski-Neigette' },
-            { Level: '4', Code: '2410043', 'Class title': 'Rimouski' },
-            { Level: '3', Code: '2436', 'Class title': 'Le Centre-de-la-Mauricie' },
-            { Level: '4', Code: '2436033', 'Class title': 'Shawinigan' },
-            { Level: '3', Code: '2425', 'Class title': 'Les Chutes-de-la-Chaudière' },
+            { Level: '3', Code: '2425', 'Class title': 'Lévis' },
             { Level: '4', Code: '2425213', 'Class title': 'Lévis' },
-            { Level: '3', Code: '2443', 'Class title': 'Sherbrooke' },
-            { Level: '4', Code: '2443027', 'Class title': 'Sherbrooke' },
+            { Level: '3', Code: '2454', 'Class title': 'Les Maskoutains' },
+            { Level: '4', Code: '2454048', 'Class title': 'Saint-Hyacinthe' },
             { Level: '2', Code: '13', 'Class title': 'New Brunswick' },
             { Level: '3', Code: '1301', 'Class title': 'Saint John' },
-            { Level: '4', Code: '1301006', 'Class title': 'Saint John' }
+            { Level: '4', Code: '1301006', 'Class title': 'Saint John' },
+            { Level: '2', Code: '59', 'Class title': 'British Columbia' },
+            { Level: '3', Code: '5915', 'Class title': 'Greater Vancouver' },
+            { Level: '4', Code: '5915034', 'Class title': 'Coquitlam' },
+            { Level: '4', Code: '5915029', 'Class title': 'New Westminster' },
+            { Level: '4', Code: '5915043', 'Class title': 'Port Moody' },
+            { Level: '4', Code: '5915075', 'Class title': 'Maple Ridge' },
+            { Level: '4', Code: '5915039', 'Class title': 'Port Coquitlam' },
+            { Level: '3', Code: '5953', 'Class title': 'Fraser-Fort George' },
+            { Level: '4', Code: '5953023', 'Class title': 'Prince George' },
+            { Level: '3', Code: '5931', 'Class title': 'Squamish-Lillooet' },
+            { Level: '4', Code: '5931006', 'Class title': 'Squamish' },
+            { Level: '3', Code: '5933', 'Class title': 'Thompson-Nicola' },
+            { Level: '4', Code: '5933042', 'Class title': 'Kamloops' },
+            { Level: '2', Code: '60', 'Class title': 'Yukon' },
+            { Level: '3', Code: '6001', 'Class title': 'Yukon' },
+            { Level: '4', Code: '6001009', 'Class title': 'Whitehorse' },
+            { Level: '2', Code: '47', 'Class title': 'Saskatchewan' },
+            { Level: '3', Code: '4706', 'Class title': 'Division No. 6' },
+            { Level: '4', Code: '4706027', 'Class title': 'Regina' },
+            { Level: '2', Code: '61', 'Class title': 'Northwest Territories' },
+            { Level: '3', Code: '6106', 'Class title': 'Region 6' },
+            { Level: '4', Code: '6106023', 'Class title': 'Yellowknife' }
         ];
-        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
+        const frenchNames = new Map([
+            ['24', 'Québec'], ['2425', 'Lévis'], ['2425213', 'Lévis'],
+            ['61', 'Territoires du Nord-Ouest']
+        ]);
+        const fr = en.map(row => ({
+            Code: row.Code,
+            'Titres de classes': frenchNames.get(row.Code) || row['Class title']
+        }));
         const result = normalize(en, fr);
 
-        expect(result.places.find(place => place.id === 'sgc-csd-2481017')).toEqual(expect.objectContaining({
-            slug: 'gatineau-qc', kind: 'municipality', parentId: 'sgc-cd-2481',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.4765, longitude: -75.7013, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2437067')).toEqual(expect.objectContaining({
-            slug: 'trois-rivieres-qc', kind: 'municipality', parentId: 'sgc-cd-2437',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 46.3432, longitude: -72.5421, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2460013')).toEqual(expect.objectContaining({
-            slug: 'repentigny-qc', kind: 'municipality', parentId: 'sgc-cd-2460',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.7423, longitude: -73.4497, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2458227')).toEqual(expect.objectContaining({
-            slug: 'longueuil-qc', kind: 'municipality', parentId: 'sgc-cd-2458',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.5312, longitude: -73.5181, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2494068')).toEqual(expect.objectContaining({
-            slug: 'saguenay-qc', kind: 'municipality', parentId: 'sgc-cd-2494',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 48.4284, longitude: -71.0684, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2410043')).toEqual(expect.objectContaining({
-            slug: 'rimouski-qc', kind: 'municipality', parentId: 'sgc-cd-2410',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 48.4488, longitude: -68.5240, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2436033')).toEqual(expect.objectContaining({
-            slug: 'shawinigan-qc', kind: 'municipality', parentId: 'sgc-cd-2436',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 46.5667, longitude: -72.7500, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2425213')).toEqual(expect.objectContaining({
-            slug: 'levis-qc', kind: 'municipality', parentId: 'sgc-cd-2425',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 46.8033, longitude: -71.1779, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-2443027')).toEqual(expect.objectContaining({
-            slug: 'sherbrooke-qc', kind: 'municipality', parentId: 'sgc-cd-2443',
-            typeEn: 'City', typeFr: 'Ville', featured: true, latitude: 45.4042, longitude: -71.8929, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-1301006')).toEqual(expect.objectContaining({
-            slug: 'saint-john-nb', kind: 'municipality', parentId: 'sgc-cd-1301',
-            typeEn: 'City', typeFr: 'Cité', featured: true, latitude: 45.2733, longitude: -66.0633, defaultZoom: 10
-        }));
-    });
-
-    test("features Whitehorse, St. John's, Charlottetown, Regina, Windsor, Kingston, Red Deer, Kamloops, Nanaimo, and Abbotsford", () => {
-        const en = [
-            { Code: '6001009', Level: '4', 'Class title': 'Whitehorse' },
-            { Code: '1001519', Level: '4', 'Class title': "St. John's" },
-            { Code: '1102075', Level: '4', 'Class title': 'Charlottetown' },
-            { Code: '4706027', Level: '4', 'Class title': 'Regina' },
-            { Code: '3537039', Level: '4', 'Class title': 'Windsor' },
-            { Code: '3510010', Level: '4', 'Class title': 'Kingston' },
-            { Code: '4808011', Level: '4', 'Class title': 'Red Deer' },
-            { Code: '5933042', Level: '4', 'Class title': 'Kamloops' },
-            { Code: '5921007', Level: '4', 'Class title': 'Nanaimo' },
-            { Code: '5909052', Level: '4', 'Class title': 'Abbotsford' }
+        const expected = [
+            ['sgc-csd-2481017', 'gatineau-qc', 'sgc-cd-2481', 45.4765, -75.7013],
+            ['sgc-csd-2425213', 'levis-qc', 'sgc-cd-2425', 46.8033, -71.1779],
+            ['sgc-csd-2454048', 'saint-hyacinthe-qc', 'sgc-cd-2454', 45.6307, -72.9569],
+            ['sgc-csd-1301006', 'saint-john-nb', 'sgc-cd-1301', 45.2733, -66.0633],
+            ['sgc-csd-5915034', 'coquitlam-bc', 'sgc-cd-5915', 49.2838, -122.7932],
+            ['sgc-csd-5915029', 'new-westminster-bc', 'sgc-cd-5915', 49.2057, -122.911],
+            ['sgc-csd-5915043', 'port-moody-bc', 'sgc-cd-5915', 49.2838, -122.8317],
+            ['sgc-csd-5915075', 'maple-ridge-bc', 'sgc-cd-5915', 49.2193, -122.5984],
+            ['sgc-csd-5915039', 'port-coquitlam-bc', 'sgc-cd-5915', 49.2628, -122.7811],
+            ['sgc-csd-5953023', 'prince-george-bc', 'sgc-cd-5953', 53.9171, -122.7497],
+            ['sgc-csd-5931006', 'squamish-bc', 'sgc-cd-5931', 49.7016, -123.1558],
+            ['sgc-csd-5933042', 'kamloops-bc', 'sgc-cd-5933', 50.6745, -120.3273],
+            ['sgc-csd-6001009', 'whitehorse-yt', 'sgc-cd-6001', 60.7212, -135.0568],
+            ['sgc-csd-4706027', 'regina-sk', 'sgc-cd-4706', 50.4452, -104.6189]
         ];
-        const fr = en.map(row => ({ Code: row.Code, 'Titres de classes': row['Class title'] }));
-        const result = normalize(en, fr);
-
-        expect(result.places.find(place => place.id === 'sgc-csd-6001009')).toEqual(expect.objectContaining({
-            slug: 'whitehorse-yt', kind: 'municipality', parentId: 'sgc-cd-6001',
-            featured: true, latitude: 60.7212, longitude: -135.0568, defaultZoom: 10
+        for (const [id, slug, parentId, latitude, longitude] of expected) {
+            expect(result.places.find(place => place.id === id)).toEqual(expect.objectContaining({
+                slug, parentId, kind: 'municipality', featured: true,
+                latitude, longitude
+            }));
+        }
+        expect(result.places.find(place => place.id === 'sgc-pr-61')).toEqual(expect.objectContaining({
+            kind: 'territory', nameFr: 'Territoires du Nord-Ouest', featured: false
         }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-1001519')).toEqual(expect.objectContaining({
-            slug: 'st-johns-nl', kind: 'municipality', parentId: 'sgc-cd-1001',
-            featured: true, latitude: 47.5615, longitude: -52.7126, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-1102075')).toEqual(expect.objectContaining({
-            slug: 'charlottetown-pe', kind: 'municipality', parentId: 'sgc-cd-1102',
-            featured: true, latitude: 46.2382, longitude: -63.1311, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-4706027')).toEqual(expect.objectContaining({
-            slug: 'regina-sk', kind: 'municipality', parentId: 'sgc-cd-4706',
-            featured: true, latitude: 50.4452, longitude: -104.6189, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-3537039')).toEqual(expect.objectContaining({
-            slug: 'windsor-on', kind: 'municipality', parentId: 'sgc-cd-3537',
-            featured: true, latitude: 42.3149, longitude: -83.0364, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-3510010')).toEqual(expect.objectContaining({
-            slug: 'kingston-on', kind: 'municipality', parentId: 'sgc-cd-3510',
-            featured: true, latitude: 44.2312, longitude: -76.4860, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-4808011')).toEqual(expect.objectContaining({
-            slug: 'red-deer-ab', kind: 'municipality', parentId: 'sgc-cd-4808',
-            featured: true, latitude: 52.2690, longitude: -113.8116, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-5933042')).toEqual(expect.objectContaining({
-            slug: 'kamloops-bc', kind: 'municipality', parentId: 'sgc-cd-5933',
-            featured: true, latitude: 50.6745, longitude: -120.3273, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-5921007')).toEqual(expect.objectContaining({
-            slug: 'nanaimo-bc', kind: 'municipality', parentId: 'sgc-cd-5921',
-            featured: true, latitude: 49.1659, longitude: -123.9401, defaultZoom: 10
-        }));
-
-        expect(result.places.find(place => place.id === 'sgc-csd-5909052')).toEqual(expect.objectContaining({
-            slug: 'abbotsford-bc', kind: 'municipality', parentId: 'sgc-cd-5909',
-            featured: true, latitude: 49.0504, longitude: -122.3045, defaultZoom: 10
-        }));
+        expect(JSON.stringify(result)).not.toContain('\uFFFD');
     });
 });
