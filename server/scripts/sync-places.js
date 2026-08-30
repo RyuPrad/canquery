@@ -1,10 +1,10 @@
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { parse } = require('csv-parse/sync');
-const { fetchPublicBuffer } = require('../utils/fetch');
 const pool = require('../db/pool');
+const { fetchPublicBuffer } = require('../services/publicJson');
 
-const EN_URL = 'https://www.statcan.gc.ca/en/statistical-programs/document/SGC-CGT-2021-CSV-EN.zip';
-const FR_URL = 'https://www.statcan.gc.ca/fr/programmes-statistiques/document/SGC-CGT-2021-CSV-FR.zip';
-
+const EN_URL = 'https://www.statcan.gc.ca/en/statistical-programs/document/sgc-cgt-2021-structure-eng.csv';
+const FR_URL = 'https://www.statcan.gc.ca/fr/programmes-statistiques/document/sgc-cgt-2021-structure-fra.csv';
 const PROVINCES = {
     '10': 'nl', '11': 'pe', '12': 'ns', '13': 'nb', '24': 'qc', '35': 'on',
     '46': 'mb', '47': 'sk', '48': 'ab', '59': 'bc', '60': 'yt', '61': 'nt', '62': 'nu'
@@ -371,58 +371,62 @@ function normalize(enRows, frRows) {
         value: '01'
     }];
 
-    for (const enRow of enRows) {
-        const code = String(enRow.Code || '').trim();
-        const level = String(enRow.Level || '').trim();
-        const frRow = frByCode.get(code);
+    for (const row of enRows) {
+        const level = Number(row.Level);
+        const code = String(row.Code || '').trim();
+        if (![2, 3, 4].includes(level) || !code) continue;
 
-        const nameEn = String(enRow['Class title'] || '').trim();
-        const nameFr = String((frRow && frRow['Titres de classes']) || nameEn).trim();
+        const provinceCode = code.slice(0, 2);
+        const provinceAbbr = PROVINCES[provinceCode];
+        if (!provinceAbbr) continue;
 
-        if (level === '1') {
+        const fr = frByCode.get(code) || {};
+        let nameEn = String(row['Class title'] || '').trim();
+        let nameFr = String(fr['Titres de classes'] || nameEn).trim();
+
+        if (level === 4 && SINGLE_TIER_CITY_CSD[code]) {
+            const placeId = SINGLE_TIER_CITY_CSD[code];
+            identifiers.push({
+                placeId,
+                scheme: 'sgc-csd',
+                vintage: '2021',
+                value: code
+            });
             continue;
         }
 
-        let kind;
-        let parentId;
-        let typeEn;
-        let typeFr;
-        let baseSlug;
+        let kind = 'municipality';
+        let typeEn = 'Census subdivision';
+        let typeFr = 'Subdivision de recensement';
+        let parentId = 'sgc-cd-' + code.slice(0, 4);
+        let id = 'sgc-csd-' + code;
 
-        if (level === '2') {
+        if (level === 2) {
             kind = TERRITORIES.has(code) ? 'territory' : 'province';
-            parentId = 'ca';
             typeEn = TERRITORIES.has(code) ? 'Territory' : 'Province';
             typeFr = TERRITORIES.has(code) ? 'Territoire' : 'Province';
-            baseSlug = slugify(nameEn);
-        } else if (level === '3') {
+            parentId = 'ca';
+            id = code === '35' ? 'ca-on' : 'sgc-pr-' + code;
+        } else if (level === 3) {
             kind = 'region';
-            const provCode = code.slice(0, 2);
-            parentId = provCode === '35' ? 'ca-on' : 'sgc-pr-' + provCode;
-            const provinceAbbr = PROVINCES[provCode] || provCode;
             typeEn = 'Census division';
             typeFr = 'Division de recensement';
-            baseSlug = slugify(nameEn) + '-' + provinceAbbr;
-        } else if (level === '4') {
-            kind = 'municipality';
-            const cdCode = code.slice(0, 4);
-            parentId = SINGLE_TIER_CITY_CD.has(cdCode) && SINGLE_TIER_CITY_CSD[code]
-                ? 'ca-on'
-                : 'sgc-cd-' + cdCode;
-            const provCode = code.slice(0, 2);
-            const provinceAbbr = PROVINCES[provCode] || provCode;
-            typeEn = 'Census subdivision';
-            typeFr = 'Subdivision de recensement';
-            baseSlug = slugify(nameEn) + '-' + provinceAbbr;
-        } else {
-            continue;
+            parentId = provinceCode === '35' ? 'ca-on' : 'sgc-pr-' + provinceCode;
+            id = 'sgc-cd-' + code;
         }
 
-        let id = level === '2'
-            ? (code === '35' ? 'ca-on' : 'sgc-pr-' + code)
-            : (level === '3' ? 'sgc-cd-' + code : 'sgc-csd-' + code);
+        if (SINGLE_TIER_CITY_CD.has(code)) {
+            typeEn = 'City';
+            typeFr = 'Ville';
+        } else if (MUNICIPAL_TYPES[code]) {
+            [typeEn, typeFr] = MUNICIPAL_TYPES[code];
+        }
 
-        let slug = baseSlug;
+        let slug = slugify(nameEn);
+        if (level === 3 || level === 4) {
+            slug += '-' + provinceAbbr;
+        }
+
         if (code === '1209') slug = 'halifax-region-ns';
         if (code === '1209034') slug = 'halifax-ns';
         if (code === '1307019') slug = 'moncton-parish-nb';
@@ -502,43 +506,6 @@ function normalize(enRows, frRows) {
         if (code === '5921007') slug = 'nanaimo-bc';
         if (code === '5909') slug = 'fraser-valley-bc';
         if (code === '5909052') slug = 'abbotsford-bc';
-        if (code === '3518') {
-            typeEn = 'Regional municipality';
-            typeFr = 'Municipalité régionale';
-        }
-        if (code === '3519') {
-            typeEn = 'Regional municipality';
-            typeFr = 'Municipalité régionale';
-        }
-        if (code === '3521') {
-            typeEn = 'Regional municipality';
-            typeFr = 'Municipalité régionale';
-        }
-        if (code === '3524') {
-            typeEn = 'Regional municipality';
-            typeFr = 'Municipalité régionale';
-        }
-        if (code === '3526') {
-            typeEn = 'Regional municipality';
-            typeFr = 'Municipalité régionale';
-        }
-        if (code === '3530') {
-            typeEn = 'Regional municipality';
-            typeFr = 'Municipalité régionale';
-        }
-        if (code === '3553') {
-            typeEn = 'City';
-            typeFr = 'Ville';
-        }
-
-        if (SINGLE_TIER_CITY_CSD[code]) {
-            continue;
-        }
-
-        if (MUNICIPAL_TYPES[code]) {
-            typeEn = MUNICIPAL_TYPES[code][0];
-            typeFr = MUNICIPAL_TYPES[code][1];
-        }
 
         if (usedSlugs.has(slug)) {
             slug = slug + '-' + code;
@@ -565,7 +532,7 @@ function normalize(enRows, frRows) {
 
         identifiers.push({
             placeId: id,
-            scheme: level === '2' ? 'sgc-pr' : (level === '3' ? 'sgc-cd' : 'sgc-csd'),
+            scheme: level === 2 ? 'sgc-pr' : (level === 3 ? 'sgc-cd' : 'sgc-csd'),
             vintage: '2021',
             value: code
         });
@@ -672,14 +639,17 @@ async function apply(client, normalized) {
     const identValues = identifiers.map(i => i.value);
 
     await client.query(`
-        INSERT INTO place_identifiers (place_id, scheme, vintage, value)
+        INSERT INTO place_identifiers (place_id, scheme, vintage, identifier, is_primary)
         SELECT
-            i.place_id, i.scheme, i.vintage, i.value
+            i.place_id, i.scheme, i.vintage, i.identifier, true
         FROM UNNEST(
             $1::text[], $2::text[], $3::text[], $4::text[]
-        ) AS i(place_id, scheme, vintage, value)
-        ON CONFLICT (scheme, vintage, value) DO UPDATE SET
-            place_id = EXCLUDED.place_id;
+        ) AS i(place_id, scheme, vintage, identifier)
+        ON CONFLICT (scheme, identifier) DO UPDATE SET
+            place_id = EXCLUDED.place_id,
+            vintage = EXCLUDED.vintage,
+            is_primary = EXCLUDED.is_primary,
+            updated_at = NOW();
     `, [identPlaceIds, identSchemes, identVintages, identValues]);
 
     if (aliasesToAdd.length > 0) {
@@ -687,12 +657,14 @@ async function apply(client, normalized) {
         const aliasSlugs = aliasesToAdd.map(a => a.slug);
 
         await client.query(`
-            INSERT INTO place_aliases (slug, place_id)
-            SELECT a.slug, a.place_id
-            FROM UNNEST($1::text[], $2::text[]) AS a(slug, place_id)
+            INSERT INTO place_aliases (place_id, slug, kind)
+            SELECT a.place_id, a.slug, 'legacy'
+            FROM UNNEST($1::text[], $2::text[]) AS a(place_id, slug)
             ON CONFLICT (slug) DO UPDATE SET
-                place_id = EXCLUDED.place_id;
-        `, [aliasSlugs, aliasPlaceIds]);
+                place_id = EXCLUDED.place_id,
+                kind = EXCLUDED.kind,
+                updated_at = NOW();
+        `, [aliasPlaceIds, aliasSlugs]);
     }
 }
 
@@ -742,7 +714,6 @@ module.exports = {
     PLACE_VIEWPORTS,
     slugify,
     normalize,
-    normalizePlaces: normalize,
     planAliases,
     apply,
     sync
