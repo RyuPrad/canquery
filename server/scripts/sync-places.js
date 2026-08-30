@@ -5,6 +5,12 @@ const { fetchPublicBuffer } = require('../services/publicJson');
 
 const EN_URL = 'https://www.statcan.gc.ca/en/statistical-programs/document/sgc-cgt-2021-structure-eng.csv';
 const FR_URL = 'https://www.statcan.gc.ca/fr/programmes-statistiques/document/sgc-cgt-2021-structure-fra.csv';
+const PLACE_ALIAS_UPSERT_SQL = `
+    INSERT INTO place_aliases (slug, place_id)
+    VALUES ($1, $2)
+    ON CONFLICT (slug) DO UPDATE SET
+        place_id = EXCLUDED.place_id
+`;
 const PROVINCES = {
     '10': 'nl', '11': 'pe', '12': 'ns', '13': 'nb', '24': 'qc', '35': 'on',
     '46': 'mb', '47': 'sk', '48': 'ab', '59': 'bc', '60': 'yt', '61': 'nt', '62': 'nu'
@@ -788,12 +794,7 @@ async function run() {
         }
 
         for (const alias of aliasesToAdd) {
-            await client.query(`
-                INSERT INTO place_aliases (slug, place_id, created_at)
-                VALUES ($1, $2, now())
-                ON CONFLICT (slug) DO UPDATE SET
-                    place_id = EXCLUDED.place_id
-            `, [alias.slug, alias.placeId]);
+            await client.query(PLACE_ALIAS_UPSERT_SQL, [alias.slug, alias.placeId]);
         }
 
         await client.query('COMMIT');
@@ -821,7 +822,8 @@ module.exports = {
     rowsFrom,
     run,
     EN_URL,
-    FR_URL
+    FR_URL,
+    PLACE_ALIAS_UPSERT_SQL
 };
 
 if (require.main === module) {
