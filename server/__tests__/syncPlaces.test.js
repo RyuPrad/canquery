@@ -1,6 +1,11 @@
-const { normalize, rowsFrom } = require('../scripts/sync-places');
+const { normalize, rowsFrom, PLACE_ALIAS_UPSERT_SQL } = require('../scripts/sync-places');
 
 describe('Statistics Canada SGC place normalization', () => {
+    test('upserts aliases against the migration 006 schema', () => {
+        expect(PLACE_ALIAS_UPSERT_SQL).toContain('INSERT INTO place_aliases (slug, place_id)');
+        expect(PLACE_ALIAS_UPSERT_SQL).not.toContain('created_at');
+    });
+
     test('builds stable province, region and municipality ancestry', () => {
         const en = [
             { Level: '2', Code: '35', 'Class title': 'Ontario' },
