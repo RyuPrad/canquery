@@ -174,28 +174,14 @@ function knownLicense(raw) {
 
 function resolveLicense(candidates, source, namespace, publisher) {
     const candidateTexts = candidates.map(collapse).filter(Boolean);
-    const restrictedPatterns = [
-        /\bnon-commercial\b/i,
-        /\bpersonal use only\b/i,
-        /\bacademic use only\b/i,
-        /\bterms of use\b/i,
-        /\bprivacy\b/i,
-        /\bcopyright\b/i,
-        /\ball rights reserved\b/i
-    ];
-    for (const text of candidateTexts) {
-        if (restrictedPatterns.some(pattern => pattern.test(text))) {
-            return { status: 'restricted-license', license: null };
-        }
-    }
+    const restricted = candidateTexts.some(text => (source.restrictedLicensePatterns || []).some(re => re.test(text)));
+    if (restricted) return { status: 'restricted-license', license: null };
     for (const text of candidateTexts) {
         const direct = knownLicense(text);
         if (direct) return { status: 'known', license: direct };
     }
     const rule = matchRule(source.licenseRules, namespace, publisher);
-    if (rule && rule.license) {
-        return { status: 'source-rule', license: rule.license };
-    }
+    if (rule) return { status: 'source-rule', license: rule.license };
     return { status: 'unlicensed', license: null };
 }
 
@@ -206,11 +192,9 @@ function slugKey(value) {
 function selectedFields(metadata) {
     const fields = Array.isArray(metadata && metadata.fields) ? metadata.fields : [];
     const wanted = [];
-    const seen = new Set();
     const add = name => {
         const clean = collapse(name);
-        if (!clean || seen.has(clean.toLowerCase())) return;
-        seen.add(clean.toLowerCase());
+        if (!clean || wanted.includes(clean)) return;
         wanted.push(clean);
     };
     add(metadata && metadata.objectIdField);
