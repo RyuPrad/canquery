@@ -1,100 +1,80 @@
 # canquery
 
-One consistent query API + web UI across Canadian federal and local open data.
+A fast, unified query API and web interface over Canada's federal and municipal open data catalogues.
 
-**Live:** https://canquery.com
+https://canquery.com
 
-[open.canada.ca](https://open.canada.ca/data/) catalogues ~50,000 datasets, but only
-~1,000 resources are loaded into CKAN's DataStore and therefore queryable through the
-official `datastore_search` API. The other ~98% are bare file downloads. **canquery**
-makes the whole catalogue feel queryable through one endpoint:
+## How it works
+
+Canada's open data catalogues are fragmented: some resources are loaded into
+upstream APIs (such as CKAN's DataStore or Socrata), while most are published as static CSV, Excel, or GeoJSON files.
+`canquery` unifies these into three access tiers:
 
 | Tier | When | What happens |
 |---|---|---|
-| 1 - proxy | resource has `datastore_active: true` | upstream `datastore_search` is proxied and cached (5 min TTL) |
-| 2 - ingest | it's a CSV/XLSX/XLS under the caps | `POST /ingest` streams it into our Postgres `store` schema; the same `/query` endpoint then serves it locally - **identical response shape** |
+| 1 - proxy | upstream API active | transparently proxy `/query` to the upstream API (cached 5 min) |
+| 2 - load | tabular file <= 50 MB | streams into local PostgreSQL on demand; same `/query` response shape |
 | 3 - honest fallback | anything else | metadata + the download link, labeled `file-only` (422 on `/query`) |
 
 The catalogue combines the federal CKAN portal with source adapters for local
-publishers. Dataset provenance and licensing stay attached per source. A
-versioned Statistics Canada SGC hierarchy powers place-first discovery, and
+publishers across sixty-five municipal and regional portals (sixty-six total catalogue sources)
+spanning all ten Canadian provinces and the Northwest Territories. Dataset provenance and
+licensing stay attached per source. A versioned Statistics Canada SGC hierarchy powers
+place-first discovery across seventy-three canonical featured jurisdictions, and
 spatial resources can be explored through bounded maps before their CSV snapshot
-is loaded. Toronto's official CKAN catalogue is included as one canonical city,
-with its GeoJSON DataStore layers rebuilt into a local PostGIS viewport index.
-Québec City and Laval use the official shared Données Québec CKAN catalogue
-with exact organization and licence evidence, French-first metadata, and
-selected direct GeoJSON resources indexed locally.
-Ottawa's official ArcGIS catalogue is included as a second standalone city, with
-the City portal-wide licence and explicit Ottawa Police licensing preserved, plus
-live maps served through bounded upstream viewports. Montréal's official CKAN
-catalogue is included as a French-first standalone city: record-level CC BY 4.0
-and Open Government Licence - Canada terms are preserved, while selected direct
-GeoJSON files are streamed and reprojected into the local PostGIS index. The
-City of Vancouver's official Opendatasoft catalogue is included as an English-first
-standalone city. Its record-explicit Open Government Licence - Vancouver metadata
-is preserved, CSV exports remain loadable only within the shared row cap, and all
-eligible spatial datasets use separately validated GeoJSON exports in the local
-PostGIS index. The City of Calgary's official Socrata catalogue is included as another standalone
-city. Only records that explicitly name The City of Calgary and the approved
-Open Government Licence - City of Calgary terms are admitted. Geometry tables
-within the shared row cap are built as immutable PMTiles in private object
-storage and served through same-origin vector tiles. Edmonton and Winnipeg use
-the same bounded Socrata path as separate featured cities. Edmonton admits only
-records explicitly attributed to the City under its portal terms. Winnipeg
-requires its record-specific Open Government Licence - Winnipeg evidence, admits
-recognized City units, and permits missing attribution only alongside that exact
-licence evidence. Records attributed to external governments or agencies remain
-excluded. Halifax Regional Municipality's official ArcGIS catalogue adds the
-first Atlantic standalone destination. The portal-wide Open Government Licence -
-Halifax applies only to exact Halifax Regional Municipality publisher evidence;
-placeholder, external, and explicitly restricted records remain excluded, while
-eligible spatial layers use the existing bounded ArcGIS viewport path. The City
-of Hamilton's official ArcGIS catalogue uses the same bounded map path. Its
-portal-wide City of Hamilton Open Data Licence applies only to the configured
-City and department publisher strings; unfamiliar, placeholder, external, and
-restricted publishers fail closed. Hamilton's census-division and subdivision
-identities are merged into one featured city, while the unrelated Northumberland
-municipality remains available as Hamilton Township. The City of Surrey's
-official ArcGIS catalogue is also included. Surrey's
-portal-wide Open Government License applies only to exact City of Surrey
-publisher evidence; external and explicitly restricted records fail closed,
-while eligible spatial layers use the existing bounded ArcGIS viewport path.
-Surrey remains a distinct featured city beneath Greater Vancouver in the SGC
-hierarchy. The featured local directory also covers Durham Region and all eight
-lower-tier municipalities, with direct feeds from Durham, Ajax, Oshawa, Pickering and the
-explicitly open-licensed subset of Whitby.
-Clarington is represented through Durham’s regional coverage only: its current
-public web-map terms are personal/non-commercial, so no direct adapter is enabled.
-Peel Region is included alongside direct Mississauga and Brampton feeds; Caledon
-is represented honestly through Peel's regional coverage. Each portal is gated
-to its recognized open licences, so generic website terms, blank licence records
-where no portal-wide grant applies, and non-commercial data stay excluded.
+is loaded.
+
+Technology adapters preserve per-portal provenance and licensing:
+- **Shared & Municipal CKAN**: Toronto, Montréal, and the centralized Données Québec CKAN
+  engine serving Québec City, Laval, Gatineau, Trois-Rivières, Repentigny, Longueuil,
+  Saguenay, Rimouski, Shawinigan, Lévis, and Sherbrooke with French-first metadata and
+  record-explicit CC BY 4.0 terms.
+- **Opendatasoft**: City of Vancouver with English-first metadata, record-explicit Open
+  Government Licence – Vancouver terms, and validated GeoJSON exports in the local PostGIS index.
+- **Socrata**: Calgary, Edmonton, and Winnipeg with config-driven publisher/licence admission
+  and private Cloudflare R2 PMTiles vector-tile pipelines built by pinned Tippecanoe.
+- **ArcGIS Hub**: Ottawa, Halifax, Hamilton, Surrey, Victoria, London, Kelowna, Fredericton,
+  Greater Sudbury, Burnaby, Saskatoon, Moncton, Guelph, Saanich, Belleville, Yellowknife (NT),
+  Barrie, Thunder Bay, Chatham-Kent, Kawartha Lakes, Summerland, Norfolk County, Haldimand County,
+  Lethbridge, Medicine Hat, Airdrie, Canmore, Penticton, Langley City, Huron County, Cumberland County,
+  Saint John (NB), and the Durham, Peel, Halton, York, Niagara, and Waterloo regional clusters
+  with bounded live ArcGIS map viewports and strict publisher-scoped open licences.
+
+Each portal is gated to its recognized open licences, so generic website terms, blank licence
+records where no portal-wide grant applies, and non-commercial data stay excluded.
 
 ## Layout
 
 ```
-server/   Express 5 API + pipelines (routes → controllers → services → db, no ORM)
-client/   React 19 + Vite + Tailwind 4 + daisyUI SPA
-deploy/   systemd units, cron drop-in, Caddy snippet, DEPLOY.md guide
+canquery/
+├── server/     # Node.js + Express API, harvest pipelines, workers, PostgreSQL
+└── client/     # React SPA (Vite + Tailwind CSS + DaisyUI)
 ```
 
-## Local setup
+## Quickstart
 
-Prereqs: Node 20+, PostgreSQL 16, PostGIS 3.
+Requirements: Node 20+, PostgreSQL 16 with PostGIS 3.5.
 
 ```bash
 # 1. Database
-sudo -u postgres psql -c "CREATE ROLE canquery LOGIN PASSWORD 'canquery_dev'" \
-                      -c "CREATE DATABASE canquery OWNER canquery"
-sudo -u postgres psql -d canquery -c "CREATE EXTENSION postgis"
+createdb canquery
+psql canquery -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+psql canquery -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
 
 # 2. Server
 cd server
-cp .env.example .env          # fill in CANQUERY_DATABASE_URL etc.
 npm install
-npm run migrate               # idempotent, applies sql/migrations/*.sql
-node scripts/catalog-sync.js --limit 200   # small real harvest (~2 min, polite)
-npm run sync:places                       # Statistics Canada SGC hierarchy
+cp .env.example .env              # set DATABASE_URL (and optional S3_* for PMTiles)
+npm run migrate                   # apply migrations (runs 001..028)
+npm run sync:places               # populate the 2021 SGC hierarchy
+
+# sync the federal catalogue (batched harvest, chunks of 50)
+npm run sync                      # full harvest (~50k datasets)
+# or test against a small sample:
+npm run sync -- --limit=100
+
+# or harvest a standalone municipal/regional source (dry-run or real)
+npm run sync:source -- --source=toronto-open-data --dry-run
 npm run sync:source -- --source=montreal-open-data --dry-run
 npm run sync:source -- --source=quebec-city-open-data --dry-run
 npm run sync:source -- --source=laval-open-data --dry-run
@@ -237,11 +217,13 @@ remain in PostGIS.
 ## Web UI
 
 The SPA (`client/`) starts with a search plus an optional remembered place
-(All Canada remains the default). Its grouped selector shows featured regions,
-their municipalities, and standalone featured cities such as Calgary, Montréal,
-Québec City, Laval, Edmonton, Halifax, Hamilton, Ottawa, Surrey, Toronto,
-Vancouver and Winnipeg;
-search on `/places` still reaches the complete Canadian SGC hierarchy. Place
+(All Canada remains the default). Its grouped selector shows seventy-three canonical
+featured jurisdictions, including standalone cities (Calgary, Edmonton, Fredericton, Gatineau,
+Greater Sudbury, Guelph, Halifax, Hamilton, Kelowna, Laval, Lévis, London, Longueuil, Moncton,
+Montréal, Ottawa, Québec City, Repentigny, Rimouski, Saanich, Saguenay, Saint John, Saskatoon,
+Shawinigan, Sherbrooke, Surrey, Toronto, Trois-Rivières, Vancouver, Victoria, Winnipeg, Yellowknife,
+and more), regional clusters (Durham, Halton, Niagara, Peel, Waterloo Region, and York Region),
+and their lower-tier municipalities; search on `/places` reaches the complete Canadian SGC hierarchy. Place
 pages combine directly local datasets with records whose parent jurisdiction
 explicitly covers that place, and label regional-only coverage instead of
 implying a municipal feed exists. Source filters remain secondary, and every
@@ -266,32 +248,12 @@ cd client && npm test && npm run lint && npm run build
 Coverage includes CKAN, ArcGIS Hub, Opendatasoft and Socrata source adapters, place hierarchy and APIs, streaming direct
 GeoJSON plus projected-CRS map conversion, private-R2 PMTiles generation/range reads, bounded map
 queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
-SSRF/redirect/DNS-pinning checks, bounded caches, spreadsheet-safe streaming CSV
-exports, Excel archive caps, lease recovery, lossless incremental sync, strict
-eviction budget honoring, the stable envelope shape, the column-profile endpoint,
-and the auto-insights column classifier. The server
-suite mocks the database, so it runs without Postgres (this is what CI runs).
+concurrent job-lease heartbeats, store/map-budget eviction, and client UI routing, tables, and charts.
 
 ## Deployment
 
-See [`deploy/DEPLOY.md`](deploy/DEPLOY.md) for a generic single-server setup:
-Postgres, `.env`, systemd units, the cron schedule, and a reverse-proxy (Caddy)
-example. In production the API process serves the built SPA, so the only
-public-facing piece is a TLS-terminating reverse proxy in front of `:3100`.
-
-## Contributing
-
-Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for setup and
-the PR checklist, and [SECURITY.md](SECURITY.md) to report vulnerabilities
-privately.
-
-## License & attribution
-
-Code: **MIT** - see [LICENSE](LICENSE). Data remains under each publisher's
-licence; canquery exposes that licence and attribution on the corresponding
-dataset/resource. Federal records use the
-[Open Government Licence - Canada](https://open.canada.ca/en/open-government-licence-canada).
-This project is independent and is not affiliated with any government publisher.
-
-Built by [@RyuPrad](https://github.com/RyuPrad) ·
-[github.com/RyuPrad/canquery](https://github.com/RyuPrad/canquery)
+Dedicated VPS `canquery-prod-01` at Little Creek Hosting (IPv4 `38.45.71.90`).
+Deployed through `git pull` on `main` under user `canquery`; managed as systemd
+services `canquery-api.service`, `canquery-worker.service`, and `canquery-map-worker.service`
+behind a Caddy reverse proxy that terminates TLS with automatic Let's Encrypt certificates.
+See `deploy/DEPLOY.md` for runbooks.

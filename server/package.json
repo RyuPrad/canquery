@@ -28,7 +28,8 @@
         "gsc:authorize": "node scripts/authorize-search-console.js",
         "gsc:sync": "node scripts/sync-search-console.js",
         "gsc:report": "node scripts/build-search-growth-report.js",
-        "lint": "eslint ."
+        "lint": "eslint .",
+        "verify": "bash ../scripts/verify-release.sh"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "3.1118.0",
