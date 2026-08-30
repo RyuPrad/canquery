@@ -81,6 +81,10 @@ function retryLimit(error) {
     return error && error.code === 'DOWNLOAD_PENDING' ? MAX_PENDING_ATTEMPTS : MAX_ATTEMPTS;
 }
 
+function isExhaustedPending(error, attempts) {
+    return error && error.code === 'DOWNLOAD_PENDING' && attempts >= retryLimit(error);
+}
+
 function retryDelayMs(error, attempts) {
     const retryAfter = Number(error && error.retryAfterMs);
     if (Number.isFinite(retryAfter) && retryAfter > 0) {
@@ -233,12 +237,17 @@ async function processJob(job, workerId, options = {}) {
             ' features, ' + result.vertexCount + ' vertices');
         return result;
     } catch (error) {
-        const skipped = error instanceof MapSkipError || ['CAP_FILE'].includes(error && error.code)
+        const pendingExhausted = isExhaustedPending(error, job.attempts);
+        const skipped = pendingExhausted || error instanceof MapSkipError || ['CAP_FILE'].includes(error && error.code)
             || isPermanentMissingDownload(error);
         const detail = error && error.code ? error.code + ': ' + error.message : error.message;
         console.error('[map ' + job.resource_id + '] ' + (skipped ? 'skipped' : 'failed') + ': ' + detail);
         if (skipped) {
-            await finishJob(pool, job, workerId, 'skipped', {}, detail);
+            if (pendingExhausted) {
+                await finishJob(pool, job, workerId, 'skipped', {}, detail, 'DOWNLOAD_PENDING');
+            } else {
+                await finishJob(pool, job, workerId, 'skipped', {}, detail);
+            }
         } else if (job.attempts >= retryLimit(error)) {
             const sourceRetry = isSourceRetryable(error) && sourceIdFor(resource);
             const finished = sourceRetry
@@ -343,5 +352,5 @@ if (require.main === module) {
 module.exports = {
     main, processJob, probeGeometry, ckanTarget, validateDirectGeoJson,
     reconcileMissingPmtiles, requestStop, waitForPoll,
-    isSourceRetryable, retryLimit, retryDelayMs, retryAt, sourceIdFor
+    isSourceRetryable, retryLimit, isExhaustedPending, retryDelayMs, retryAt, sourceIdFor
 };
