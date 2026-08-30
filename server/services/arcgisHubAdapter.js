@@ -1,262 +1,253 @@
-const { fetchPublicJson } = require('../utils/fetch');
-const { htmlToText } = require('../utils/text');
+const { fetchPublicJson } = require('./publicJson');
 
-const PLACEHOLDER_PUBLISHER_RE = /^(?:city|town|region|county|district|municipality|government|null|undefined|{{source}})$/i;
+const ITEM_RE = /[?&]id=([0-9a-f]{32})(?:&|$)/i;
+const LAYER_RE = /[?&](?:sublayer|layers)=([0-9]+)(?:&|$)/i;
 const GEO_TYPES = {
     esriGeometryPoint: 'point',
     esriGeometryMultipoint: 'multipoint',
-    esriGeometryPolyline: 'linestring',
+    esriGeometryPolyline: 'polyline',
     esriGeometryPolygon: 'polygon'
 };
 
 function collapse(value) {
-    if (typeof value !== 'string') return '';
-    return value.trim().replace(/\s+/g, ' ');
-}
-
-function slugKey(value) {
-    return collapse(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-function array(value) {
-    if (value == null) return [];
-    return Array.isArray(value) ? value : [value];
+    return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
 }
 
 function isPlaceholder(value) {
     const text = collapse(value);
-    if (!text) return true;
-    return PLACEHOLDER_PUBLISHER_RE.test(text);
+    return !text || /^\{\{[^}]+\}\}$/.test(text) || /^\$\{[^}]+\}$/.test(text);
 }
 
-function parseLayerId(url) {
-    if (!url) return null;
-    const match = url.match(/(?:FeatureServer|MapServer)\/(\d+)(?:\/|\?|$)/i);
-    return match ? parseInt(match[1], 10) : null;
+function timestamp(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = typeof value === 'number' || /^\d{11,}$/.test(String(value))
+        ? Number(value)
+        : null;
+    const date = new Date(numeric == null ? value : numeric);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function parseSpatial(spatial) {
-    if (!spatial) return null;
-    const text = collapse(spatial);
-    const coords = text.split(/[,\s]+/).map(Number);
-    if (coords.length === 4 && coords.every(n => Number.isFinite(n))) {
-        return coords;
-    }
-    return null;
+function decodeEntities(value) {
+    return value
+        .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'");
 }
 
-function extentFrom(layerMetadata, record) {
-    if (layerMetadata && layerMetadata.extent) {
-        const { xmin, ymin, xmax, ymax, spatialReference } = layerMetadata.extent;
-        if (
-            Number.isFinite(xmin) && Number.isFinite(ymin) &&
-            Number.isFinite(xmax) && Number.isFinite(ymax) &&
-            (!spatialReference || spatialReference.wkid === 4326 || spatialReference.latestWkid === 4326)
-        ) {
-            return [xmin, ymin, xmax, ymax];
-        }
-    }
-    return parseSpatial(record && record.spatial);
+function htmlToText(value) {
+    const text = String(value == null ? '' : value)
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<br\s*\/?>|<\/p>|<\/div>|<\/li>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ');
+    return decodeEntities(text).replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
 }
 
-function selectedFields(layerMetadata) {
-    if (!layerMetadata || !Array.isArray(layerMetadata.fields)) return [];
-    return layerMetadata.fields
-        .filter(f => f && f.name && !['esriFieldTypeGeometry', 'esriFieldTypeBlob', 'esriFieldTypeRaster'].includes(f.type))
-        .map(f => ({
-            name: f.name,
-            alias: f.alias || f.name,
-            type: f.type || 'esriFieldTypeString'
-        }));
+function array(value) {
+    if (Array.isArray(value)) return value;
+    return value == null ? [] : [value];
 }
 
-function serviceIsLeaf(layerMetadata) {
-    if (!layerMetadata) return true;
-    if (layerMetadata.type === 'Feature Layer' || layerMetadata.type === 'Table') return true;
-    if (Array.isArray(layerMetadata.layers) && layerMetadata.layers.length > 0) return false;
-    return true;
-}
-
-function parseItemId(url) {
-    if (!url) return null;
-    const match = url.match(/[?&]id=([0-9a-fA-F]{32})/);
-    return match ? match[1] : null;
-}
-
-function identityFor(record) {
-    const directId = record && record.identifier && collapse(record.identifier);
-    const landingPage = collapse(record && record.landingPage);
-    const distributions = array(record && record.distribution);
-    const distUrls = distributions.map(d => collapse(d && (d.accessURL || d.downloadURL)));
-    const allUrls = [landingPage, ...distUrls].filter(Boolean);
-
-    let itemId = null;
-    if (directId && /^[0-9a-fA-F]{32}$/.test(directId)) {
-        itemId = directId;
-    }
-    if (!itemId) {
-        for (const url of allUrls) {
-            itemId = parseItemId(url);
-            if (itemId) break;
-        }
-    }
-    if (!itemId) {
-        for (const url of allUrls) {
-            const match = url.match(/\/items\/([0-9a-fA-F]{32})/);
-            if (match) {
-                itemId = match[1];
-                break;
-            }
-        }
-    }
-    if (!itemId) return null;
-
-    let layerId = null;
-    for (const url of allUrls) {
-        layerId = parseLayerId(url);
-        if (layerId != null) break;
-    }
-
-    return { itemId, layerId };
+function distribution(record, format) {
+    return array(record.distribution).find(item => collapse(item && item.format).toLowerCase() === format.toLowerCase()) || null;
 }
 
 function namespaceFor(record) {
-    const landingPage = collapse(record && record.landingPage);
-    if (!landingPage) return null;
-    try {
-        const parsed = new URL(landingPage);
-        const host = parsed.hostname.toLowerCase();
-        const parts = host.split('.');
-        return parts.length >= 3 ? parts[0] : host;
-    } catch {
-        return null;
-    }
+    const landing = collapse(record.landingPage);
+    const match = landing.match(/\/datasets\/([^/:]+)::/i);
+    return match ? match[1].toLowerCase() : null;
+}
+
+function identityFor(record) {
+    const identifier = collapse(record.identifier);
+    const itemMatch = identifier.match(ITEM_RE);
+    if (!itemMatch) return null;
+    const layerMatch = identifier.match(LAYER_RE);
+    return { itemId: itemMatch[1].toLowerCase(), layerId: layerMatch ? Number(layerMatch[1]) : null };
 }
 
 function canonicalKey(identity) {
-    if (!identity) return null;
-    return identity.layerId == null ? identity.itemId : identity.itemId + ':' + identity.layerId;
+    return identity.itemId + ':' + (identity.layerId == null ? 'item' : identity.layerId);
 }
 
 function idsFor(identity) {
-    const key = canonicalKey(identity).replace(':', '-');
+    const suffix = identity.layerId == null ? 'item' : String(identity.layerId);
     return {
-        datasetId: 'arcgis-' + key,
-        resourceId: 'arcgis-' + key + '-data'
+        datasetId: 'arcgis-' + identity.itemId + '-' + suffix,
+        resourceId: 'arcgis-' + identity.itemId + '-' + suffix + '-data'
     };
 }
 
-function canonicalPublisher(source, suppliedPublisher) {
-    const raw = collapse(suppliedPublisher);
-    if (Array.isArray(source.publisherAliases)) {
-        for (const entry of source.publisherAliases) {
-            if (entry.publisher.test(raw)) {
-                return entry.name;
-            }
-        }
-    }
-    if (!raw || isPlaceholder(raw)) {
-        return source.nameEn;
-    }
-    return raw;
+function parseSpatial(value) {
+    const parts = String(value || '').split(',').map(Number);
+    if (parts.length !== 4 || parts.some(number => !Number.isFinite(number))) return null;
+    const [west, south, east, north] = parts;
+    if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) return null;
+    return [west, south, east, north];
 }
 
-function authoritativePublisher(source, publisher) {
-    if (!Array.isArray(source.authoritativePublishers)) return true;
-    for (const entry of source.authoritativePublishers) {
-        if (entry.publisher.test(publisher)) {
-            return true;
-        }
-    }
-    return false;
+function mercatorToLonLat(x, y) {
+    const longitude = x / 20037508.34 * 180;
+    const latitude = Math.atan(Math.exp(y / 20037508.34 * Math.PI)) * 360 / Math.PI - 90;
+    return [Math.max(-180, Math.min(180, longitude)), Math.max(-90, Math.min(90, latitude))];
 }
 
-function publisherName(record, item, source) {
-    const supplied = collapse(record.publisher && record.publisher.name);
-    if (supplied) {
-        return canonicalPublisher(source, supplied);
+function extentFrom(metadata, record) {
+    const spatial = parseSpatial(record && record.spatial);
+    if (spatial) return spatial;
+    const extent = metadata && metadata.extent;
+    if (!extent) return null;
+    const wkid = extent.spatialReference && (extent.spatialReference.latestWkid || extent.spatialReference.wkid);
+    if (wkid === 4326 && [extent.xmin, extent.ymin, extent.xmax, extent.ymax].every(Number.isFinite)) {
+        return parseSpatial([extent.xmin, extent.ymin, extent.xmax, extent.ymax].join(','));
     }
-    const itemOwner = collapse(item && (item.owner || item.ownerUser));
-    if (itemOwner) {
-        return canonicalPublisher(source, itemOwner);
-    }
-    return source.nameEn;
-}
-
-function knownLicense(textLicense) {
-    const text = collapse(textLicense);
-    if (/creative\s*commons\s*attribution\s*4\.0|cc[\s_-]?by[\s_-]?4/i.test(text)) {
-        return 'cc-by-4';
-    }
-    if (/open\s*government\s*licen[cs]e\s*[-–]\s*canada|canada[\s_-]?open[\s_-]?government/i.test(text)) {
-        return 'ogl-canada';
-    }
-    if (/statistics\s*canada\s*open\s*licen[cs]e|statcan/i.test(text)) {
-        return 'statcan';
-    }
-    return null;
-}
-
-function resolveLicense(source, record, item, namespace, publisher) {
-    const textLicense = collapse(record.license) || collapse(item.licenseInfo) || collapse(item.accessInformation) || '';
-    if (Array.isArray(source.restrictedLicensePatterns)) {
-        for (const pattern of source.restrictedLicensePatterns) {
-            if (pattern.test(textLicense)) return null;
-        }
-    }
-    const matchedRule = matchRule(source.licenseRules, namespace, publisher);
-    if (matchedRule) {
-        return matchedRule.license;
+    if ((wkid === 3857 || wkid === 102100) && [extent.xmin, extent.ymin, extent.xmax, extent.ymax].every(Number.isFinite)) {
+        const [west, south] = mercatorToLonLat(extent.xmin, extent.ymin);
+        const [east, north] = mercatorToLonLat(extent.xmax, extent.ymax);
+        return parseSpatial([west, south, east, north].join(','));
     }
     return null;
 }
 
 function matchRule(rules, namespace, publisher) {
-    if (!Array.isArray(rules)) return null;
-    for (const rule of rules) {
-        const nsMatch = !rule.namespace || rule.namespace === namespace;
-        const pubMatch = !rule.publisher || (typeof rule.publisher === 'string' ? rule.publisher === publisher : rule.publisher.test(publisher));
-        if (nsMatch && pubMatch) return rule;
+    for (const rule of rules || []) {
+        const namespaceMatches = !rule.namespace || rule.namespace === namespace;
+        const publisherMatches = !rule.publisher || (
+            rule.publisher instanceof RegExp ? rule.publisher.test(publisher) : rule.publisher === publisher
+        );
+        if (namespaceMatches && publisherMatches) return rule;
     }
     return null;
 }
 
+function canonicalPublisher(source, suppliedPublisher) {
+    for (const alias of source.publisherAliases || []) {
+        if (alias.publisher.test(suppliedPublisher)) {
+            return alias.name;
+        }
+    }
+    return isPlaceholder(suppliedPublisher) ? source.nameEn : suppliedPublisher;
+}
+
+function authoritativePublisher(source, publisher) {
+    return (source.authoritativePublishers || []).some(entry => entry.publisher.test(publisher));
+}
+
+function publisherName(record, item, source) {
+    const supplied = collapse(record.publisher && record.publisher.name);
+    if (supplied && !isPlaceholder(supplied)) return canonicalPublisher(source, supplied);
+    const owner = collapse(item && (item.owner || item.ownerUser));
+    if (owner) return canonicalPublisher(source, owner);
+    return source.nameEn;
+}
+
+function knownLicense(raw) {
+    const text = collapse(raw).toLowerCase();
+    if (text.includes('open.canada.ca/en/open-government-licence-canada') || text.includes('licence du gouvernement ouvert – canada')) {
+        return {
+            titleEn: 'Open Government Licence – Canada',
+            titleFr: 'Licence du gouvernement ouvert – Canada',
+            url: 'https://open.canada.ca/en/open-government-licence-canada'
+        };
+    }
+    if (text.includes('statcan.gc.ca/en/reference/licence') || text.includes('statistique canada') || text.includes('statistics canada open licence')) {
+        return {
+            titleEn: 'Statistics Canada Open Licence',
+            titleFr: 'Licence ouverte de Statistique Canada',
+            url: 'https://www.statcan.gc.ca/en/reference/licence'
+        };
+    }
+    if (text.includes('creativecommons.org/licenses/by/4.0') || text.includes('cc by 4.0') || text.includes('creative commons attribution 4.0')) {
+        return {
+            titleEn: 'Creative Commons Attribution 4.0 International',
+            titleFr: 'Creative Commons Attribution 4.0 International',
+            url: 'https://creativecommons.org/licenses/by/4.0/'
+        };
+    }
+    return null;
+}
+
+function resolveLicense(candidates, source, namespace, publisher) {
+    const candidateTexts = candidates.map(collapse).filter(Boolean);
+    const restrictedPatterns = [
+        /\bnon-commercial\b/i,
+        /\bpersonal use only\b/i,
+        /\bacademic use only\b/i,
+        /\bterms of use\b/i,
+        /\bprivacy\b/i,
+        /\bcopyright\b/i,
+        /\ball rights reserved\b/i
+    ];
+    for (const text of candidateTexts) {
+        if (restrictedPatterns.some(pattern => pattern.test(text))) {
+            return { status: 'restricted-license', license: null };
+        }
+    }
+    for (const text of candidateTexts) {
+        const direct = knownLicense(text);
+        if (direct) return { status: 'known', license: direct };
+    }
+    const rule = matchRule(source.licenseRules, namespace, publisher);
+    if (rule && rule.license) {
+        return { status: 'source-rule', license: rule.license };
+    }
+    return { status: 'unlicensed', license: null };
+}
+
+function slugKey(value) {
+    return collapse(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function selectedFields(metadata) {
+    const fields = Array.isArray(metadata && metadata.fields) ? metadata.fields : [];
+    const wanted = [];
+    const seen = new Set();
+    const add = name => {
+        const clean = collapse(name);
+        if (!clean || seen.has(clean.toLowerCase())) return;
+        seen.add(clean.toLowerCase());
+        wanted.push(clean);
+    };
+    add(metadata && metadata.objectIdField);
+    add(metadata && metadata.displayField);
+    for (const field of fields) {
+        if (wanted.length >= 20) break;
+        add(field.name);
+    }
+    return wanted;
+}
+
+function serviceIsLeaf(metadata) {
+    const type = collapse(metadata && metadata.type).toLowerCase();
+    if (type.includes('group layer') || type.includes('annotation')) return false;
+    return Boolean(GEO_TYPES[metadata && metadata.geometryType]) || type === 'table';
+}
+
 function formatForDirectItem(record, item) {
-    const type = collapse(item && item.type).toLowerCase();
-    if (type === 'csv' || type === 'microsoft excel') {
-        return type === 'csv' ? 'CSV' : 'XLSX';
-    }
-    const distributions = array(record.distribution);
-    for (const dist of distributions) {
-        const media = collapse(dist && dist.mediaType).toLowerCase();
-        const fmt = collapse(dist && dist.format).toLowerCase();
-        if (media.includes('csv') || fmt === 'csv') return 'CSV';
-        if (media.includes('excel') || media.includes('spreadsheet') || fmt === 'xlsx' || fmt === 'xls') return 'XLSX';
-    }
+    const formats = array(record.distribution).map(entry => collapse(entry && entry.format).toUpperCase());
+    if (formats.includes('XLSX') || /excel/i.test(item && item.type)) return 'XLSX';
+    if (formats.includes('CSV') || /^csv$/i.test(item && item.type)) return 'CSV';
+    if (/\.xlsx(?:$|\?)/i.test(item && item.url)) return 'XLSX';
+    if (/\.csv(?:$|\?)/i.test(item && item.url)) return 'CSV';
     return null;
 }
 
 function directUrl(identity, format, item, record) {
-    const distributions = array(record.distribution);
-    const target = distributions.find(d => {
-        const media = collapse(d.mediaType).toLowerCase();
-        const f = collapse(d.format).toLowerCase();
-        return media.includes(format.toLowerCase()) || f.includes(format.toLowerCase());
-    });
-    if (target) return collapse(target.downloadURL || target.accessURL);
-    return collapse(item && item.url);
-}
-
-function timestamp(value) {
-    if (!value) return new Date().toISOString();
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+    if (format === 'CSV' && /^csv$/i.test(item && item.type)) {
+        return 'https://www.arcgis.com/sharing/rest/content/items/' + identity.itemId + '/data';
+    }
+    const dist = distribution(record, format);
+    return collapse(dist && (dist.downloadURL || dist.accessURL)) || collapse(item && item.url) || null;
 }
 
 async function enrichRecord(record, source, options = {}) {
     const identity = identityFor(record);
     if (!identity) return { status: 'excluded', reason: 'missing-item-id', externalId: null };
-
     const itemUrl = 'https://www.arcgis.com/sharing/rest/content/items/' + identity.itemId + '?f=json';
     let item;
     try {
@@ -264,22 +255,20 @@ async function enrichRecord(record, source, options = {}) {
     } catch {
         return { status: 'excluded', reason: 'item-metadata-failed', externalId: canonicalKey(identity) };
     }
-
     const namespace = namespaceFor(record);
     const suppliedPublisher = collapse(record.publisher && record.publisher.name);
     const publisher = publisherName(record, item, source);
-
-    const licence = resolveLicense(source, record, item, namespace, publisher);
-    if (!licence) {
-        return { status: 'excluded', reason: 'unlicensed', externalId: canonicalKey(identity) };
+    const licenseResult = resolveLicense(
+        [record.license, record.rights, item.licenseInfo].filter(value => value != null),
+        source,
+        namespace,
+        publisher
+    );
+    if (!licenseResult.license || !licenseResult.license.url) {
+        return { status: 'excluded', reason: licenseResult.status, externalId: canonicalKey(identity) };
     }
-
-    const distributions = array(record.distribution);
-    const geo = distributions.find(d => {
-        const url = collapse(d.accessURL || d.downloadURL);
-        return /FeatureServer|MapServer/i.test(url);
-    });
-
+    const licence = licenseResult.license;
+    const geo = distribution(record, 'ArcGIS GeoServices REST API');
     const serviceUrl = collapse(geo && geo.accessURL);
     let metadata = null;
     if (serviceUrl && identity.layerId != null) {
@@ -396,7 +385,6 @@ module.exports = {
     discover,
     enrichRecord,
     identityFor,
-    namespaceFor,
     canonicalKey,
     htmlToText,
     parseSpatial,

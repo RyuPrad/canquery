@@ -1,12 +1,10 @@
 const adapter = require('../services/arcgisHubAdapter');
-const { sources } = require('../config/catalogSources');
+const { sources, getSource } = require('../config/catalogSources');
 
 const ITEM_ID = '0123456789abcdef0123456789abcdef';
 
-describe('ArcGIS Hub adapter', () => {
-    const source = sources.find(s => s.id === 'halifax-hub');
-
-    const rawRecord = {
+function record(overrides = {}) {
+    return {
         identifier: 'https://www.arcgis.com/home/item.html?id=' + ITEM_ID + '&sublayer=2',
         landingPage: 'https://data-hrm.hub.arcgis.com/datasets/hrm::zoning',
         title: 'Halifax Land Use Zoning',
@@ -18,138 +16,275 @@ describe('ArcGIS Hub adapter', () => {
         distribution: [
             {
                 accessURL: 'https://services.arcgis.com/example/FeatureServer/2',
-                format: 'Feature Layer'
+                format: 'ArcGIS GeoServices REST API'
             }
-        ]
+        ],
+        ...overrides
     };
+}
 
-    const itemMetadata = {
-        id: ITEM_ID,
-        title: 'Halifax Land Use Zoning',
-        snippet: 'Zoning layers',
-        licenseInfo: 'Open Government Licence – Halifax',
-        accessInformation: 'HRM Planning',
-        modified: 1785542400000,
-        tags: ['zoning', 'planning']
-    };
+describe('ArcGIS Hub adapter', () => {
+    test('extracts itemId and sublayer from canonical URLs', () => {
+        expect(adapter.identityFor({
+            identifier: 'https://www.arcgis.com/home/item.html?id=' + ITEM_ID + '&sublayer=4'
+        })).toEqual({ itemId: ITEM_ID, layerId: 4 });
 
-    const layerMetadata = {
-        id: 2,
-        name: 'Zoning Boundaries',
-        type: 'Feature Layer',
-        geometryType: 'esriGeometryPolygon',
-        objectIdField: 'OBJECTID',
-        displayField: 'ZONE_CODE',
-        extent: {
-            xmin: -63.6, ymin: 44.6, xmax: -63.5, ymax: 44.7,
-            spatialReference: { wkid: 4326 }
-        },
-        fields: [
-            { name: 'OBJECTID', alias: 'Object ID', type: 'esriFieldTypeOID' },
-            { name: 'ZONE_CODE', alias: 'Zone Code', type: 'esriFieldTypeString' },
-            { name: 'SHAPE', alias: 'Shape', type: 'esriFieldTypeGeometry' }
-        ]
-    };
+        expect(adapter.identityFor({
+            identifier: 'https://www.arcgis.com/home/item.html?id=' + ITEM_ID
+        })).toEqual({ itemId: ITEM_ID, layerId: null });
 
-    const fetchJson = async (url) => {
-        if (url.includes('/sharing/rest/content/items/')) return itemMetadata;
-        if (url.includes('/FeatureServer/2')) return layerMetadata;
-        throw new Error('Unexpected URL: ' + url);
-    };
-
-    test('extracts stable itemId and layerId from DCAT distributions', () => {
-        const id = adapter.identityFor(rawRecord);
-        expect(id).toEqual({ itemId: ITEM_ID, layerId: 2 });
+        expect(adapter.identityFor({ identifier: 'invalid-url' })).toBeNull();
     });
 
-    test('extracts namespace from Hub landing page', () => {
-        expect(adapter.namespaceFor(rawRecord)).toBe('data-hrm');
-    });
+    test('enriches Halifax ArcGIS Hub records under Open Government Licence – Halifax', async () => {
+        const fetchJson = jest.fn(async url => {
+            if (url.includes('/sharing/rest/content/items/')) {
+                return {
+                    owner: 'HRM_Admin',
+                    licenseInfo: 'Open Government Licence – Halifax',
+                    type: 'Feature Service'
+                };
+            }
+            return {
+                type: 'Feature Layer',
+                geometryType: 'esriGeometryPolygon',
+                objectIdField: 'OBJECTID',
+                displayField: 'ZONE_NAME',
+                extent: {
+                    xmin: -63.6, ymin: 44.6, xmax: -63.5, ymax: 44.7,
+                    spatialReference: { latestWkid: 4326 }
+                },
+                fields: [
+                    { name: 'OBJECTID' },
+                    { name: 'ZONE_NAME' }
+                ]
+            };
+        });
 
-    test('enriches valid ArcGIS layer into canonical dataset, resource, and map candidate', async () => {
-        const result = await adapter.enrichRecord(rawRecord, source, { fetchJson });
+        const source = getSource('halifax-hub');
+        const result = await adapter.enrichRecord(record(), source, { fetchJson });
+
         expect(result.status).toBe('included');
-        const { value } = result;
-
-        expect(value.externalId).toBe(ITEM_ID + ':2');
-        expect(value.dataset.id).toBe('arcgis-' + ITEM_ID + '-2');
-        expect(value.dataset.titleEn).toBe('Halifax Land Use Zoning');
-        expect(value.dataset.notesEn).toBe('Zoning bylaws for Halifax Regional Municipality.');
-        expect(value.dataset.keywordsEn).toEqual(['land use', 'zoning', 'planning']);
-        expect(value.dataset.orgId).toBe('arcgis-publisher-halifax-regional-municipality');
-
-        expect(value.source.sourceId).toBe('halifax-hub');
-        expect(value.source.licenseTitleEn).toBe('Open Government Licence – Halifax');
-        expect(value.source.isAuthoritative).toBe(true);
-
-        expect(value.resource.id).toBe('arcgis-' + ITEM_ID + '-2-data');
-        expect(value.resource.format).toBe('CSV');
-        expect(value.resource.url).toBe('https://hub.arcgis.com/api/download/v1/items/' + ITEM_ID + '/csv?layers=2');
-
-        expect(value.places).toHaveLength(1);
-        expect(value.places[0]).toEqual(expect.objectContaining({
+        expect(result.value.organization.titleEn).toBe('Halifax Regional Municipality');
+        expect(result.value.dataset.id).toBe('arcgis-' + ITEM_ID + '-2');
+        expect(result.value.dataset.titleEn).toBe('Halifax Land Use Zoning');
+        expect(result.value.resource.format).toBe('CSV');
+        expect(result.value.resource.url).toBe('https://hub.arcgis.com/api/download/v1/items/' + ITEM_ID + '/csv?layers=2');
+        expect(result.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseTitleEn: 'Open Government Licence – Halifax',
+            licenseUrl: 'https://www.halifax.ca/home/open-data/open-data-licence'
+        }));
+        expect(result.value.places[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-csd-1209034',
             relationship: 'direct',
             includesDescendants: false
         }));
-
-        expect(value.map).toEqual(expect.objectContaining({
-            resourceId: 'arcgis-' + ITEM_ID + '-2-data',
-            serviceUrl: 'https://services.arcgis.com/example/FeatureServer/2',
+        expect(result.value.map).toEqual(expect.objectContaining({
             geometryType: 'polygon',
-            extent: [-63.6, 44.6, -63.5, 44.7],
             objectIdField: 'OBJECTID',
-            displayField: 'ZONE_CODE'
+            displayField: 'ZONE_NAME',
+            extent: [-63.6, 44.6, -63.5, 44.7]
         }));
-        expect(value.map.fields).toEqual([
-            { name: 'OBJECTID', alias: 'Object ID', type: 'esriFieldTypeOID' },
-            { name: 'ZONE_CODE', alias: 'Zone Code', type: 'esriFieldTypeString' }
-        ]);
     });
 
-    test('excludes non-leaf composite service layers', async () => {
-        const groupLayerFetch = async (url) => {
-            if (url.includes('/sharing/rest/content/items/')) return itemMetadata;
-            if (url.includes('/FeatureServer/2')) {
-                return { ...layerMetadata, type: 'Group Layer', layers: [{ id: 3 }, { id: 4 }] };
-            }
-            throw new Error('Unexpected URL: ' + url);
-        };
+    test('applies Halifax portal terms only to exact HRM publisher evidence', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'HalifaxHRM', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
+        const source = getSource('halifax-hub');
+        const cityRecord = record({
+            landingPage: 'https://data-hrm.hub.arcgis.com/datasets/hrm::zoning',
+            publisher: { name: 'Halifax Regional Municipality' },
+            license: null
+        });
+        const city = await adapter.enrichRecord(cityRecord, source, { fetchJson });
 
-        const result = await adapter.enrichRecord(rawRecord, source, { fetchJson: groupLayerFetch });
-        expect(result).toEqual({
-            status: 'excluded',
-            reason: 'non-leaf-layer',
-            externalId: ITEM_ID + ':2'
+        expect(city.status).toBe('included');
+        expect(city.value.organization.titleEn).toBe('Halifax Regional Municipality');
+        expect(city.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-1209034', relationship: 'direct', includesDescendants: false
+        }));
+
+        const external = await adapter.enrichRecord({
+            ...cityRecord,
+            publisher: { name: 'Ministry of Education' },
+            license: null
+        }, source, { fetchJson });
+        expect(external).toEqual({
+            status: 'included',
+            value: expect.objectContaining({
+                source: expect.objectContaining({
+                    isAuthoritative: false
+                })
+            })
         });
     });
 
-    test('excludes records with restrictive non-commercial license terms', async () => {
-        const restrictiveFetch = async (url) => {
-            if (url.includes('/sharing/rest/content/items/')) {
-                return { ...itemMetadata, licenseInfo: 'Restricted - Non-Commercial Academic Use Only' };
-            }
-            if (url.includes('/FeatureServer/2')) return layerMetadata;
-            throw new Error('Unexpected URL: ' + url);
-        };
+    test('enforces Hamilton and Surrey portal licensing and detects external layers', async () => {
+        const makeFetch = owner => jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner, type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
 
-        const result = await adapter.enrichRecord(rawRecord, source, { fetchJson: restrictiveFetch });
-        expect(result).toEqual({
-            status: 'excluded',
-            reason: 'unlicensed',
-            externalId: ITEM_ID + ':2'
+        const hamiltonSource = getSource('hamilton-hub');
+        const hamiltonRecord = record({
+            landingPage: 'https://open.hamilton.ca/datasets/hamilton::zoning',
+            publisher: { name: 'City of Hamilton' }
         });
+        const hamilton = await adapter.enrichRecord(hamiltonRecord, hamiltonSource, { fetchJson: makeFetch('CityofHamilton') });
+        expect(hamilton.status).toBe('included');
+        expect(hamilton.value.organization.titleEn).toBe('City of Hamilton');
+        expect(hamilton.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-cd-3525', relationship: 'direct', includesDescendants: false
+        }));
+
+        const surreySource = getSource('surrey-hub');
+        const surreyRecord = record({
+            landingPage: 'https://opendata-surrey.hub.arcgis.com/datasets/surrey::parks',
+            publisher: { name: 'City of Surrey' }
+        });
+        const surrey = await adapter.enrichRecord(surreyRecord, surreySource, { fetchJson: makeFetch('CityofSurrey') });
+        expect(surrey.status).toBe('included');
+        expect(surrey.value.organization.titleEn).toBe('City of Surrey');
+        expect(surrey.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-5915004', relationship: 'direct', includesDescendants: false
+        }));
     });
 
-    test('marks external provincial or third-party datasets as non-authoritative', async () => {
-        const externalRecord = {
-            ...rawRecord,
-            publisher: { name: 'Province of Nova Scotia' }
-        };
+    test('maps Oshawa, Ajax, Pickering, Whitby and regional Durham items accurately', async () => {
+        const makeFetch = owner => jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner, type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPoint', fields: [] });
 
-        const result = await adapter.enrichRecord(externalRecord, source, { fetchJson });
+        const oshawaSource = getSource('oshawa-hub');
+        const oshawaRecord = record({
+            landingPage: 'https://city-oshawa.opendata.arcgis.com/datasets/oshawa::parks',
+            publisher: { name: 'City of Oshawa' }
+        });
+        const oshawa = await adapter.enrichRecord(oshawaRecord, oshawaSource, { fetchJson: makeFetch('OshawaGIS') });
+        expect(oshawa.status).toBe('included');
+        expect(oshawa.value.organization.titleEn).toBe('City of Oshawa');
+        expect(oshawa.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-3518013', relationship: 'direct', includesDescendants: false
+        }));
+
+        const ajaxSource = getSource('ajax-hub');
+        const ajaxRecord = record({
+            landingPage: 'https://opendata.ajax.ca/datasets/ajax::trails',
+            publisher: { name: 'Town of Ajax' }
+        });
+        const ajax = await adapter.enrichRecord(ajaxRecord, ajaxSource, { fetchJson: makeFetch('TownOfAjax') });
+        expect(ajax.status).toBe('included');
+        expect(ajax.value.organization.titleEn).toBe('Town of Ajax');
+        expect(ajax.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-3518005', relationship: 'direct', includesDescendants: false
+        }));
+
+        const pickeringSource = getSource('pickering-hub');
+        const pickeringRecord = record({
+            landingPage: 'https://opendata.pickering.ca/datasets/pickering::wards',
+            publisher: { name: 'City of Pickering' }
+        });
+        const pickering = await adapter.enrichRecord(pickeringRecord, pickeringSource, { fetchJson: makeFetch('CityOfPickering') });
+        expect(pickering.status).toBe('included');
+        expect(pickering.value.organization.titleEn).toBe('City of Pickering');
+        expect(pickering.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-3518001', relationship: 'direct', includesDescendants: false
+        }));
+    });
+
+    test('admits only explicit Brampton CC BY or Statistics Canada records', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'Brampton', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPoint', fields: [] });
+        const source = getSource('brampton-hub');
+        const bramptonRecord = record({
+            landingPage: 'https://geohub.brampton.ca/datasets/brampton::parks',
+            publisher: { name: 'City of Brampton' },
+            license: 'https://creativecommons.org/licenses/by/4.0'
+        });
+        const allowed = await adapter.enrichRecord(bramptonRecord, source, { fetchJson });
+        expect(allowed.status).toBe('included');
+        expect(allowed.value.places[0].placeId).toBe('sgc-csd-3521010');
+        expect(allowed.value.source.licenseUrl).toBe('https://www.ontario.ca/page/open-government-licence-ontario');
+
+        const missing = await adapter.enrichRecord({ ...bramptonRecord, license: null }, source, { fetchJson });
+        expect(missing.status).toBe('included');
+
+        const restricted = await adapter.enrichRecord({
+            ...bramptonRecord,
+            license: 'Reproduction is permitted for non-commercial purposes only.'
+        }, source, { fetchJson });
+        expect(restricted).toEqual({ status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2' });
+    });
+
+    test('uses recognized Peel licences and keeps regional third-party records non-authoritative', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'RegionOfPeel', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolyline', fields: [] });
+        const source = getSource('peel-hub');
+        const peelRecord = record({
+            landingPage: 'https://data.peelregion.ca/datasets/RegionofPeel::roads',
+            publisher: { name: 'Region of Peel - Corporate Services' },
+            license: 'https://data.peelregion.ca/pages/license'
+        });
+        const regional = await adapter.enrichRecord(peelRecord, source, { fetchJson });
+        expect(regional.status).toBe('included');
+        expect(regional.value.places[0].placeId).toBe('sgc-cd-3521');
+        expect(regional.value.places[0].includesDescendants).toBe(true);
+        expect(regional.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseUrl: 'https://data.peelregion.ca/pages/terms-of-use'
+        }));
+
+        const custom = await adapter.enrichRecord({
+            ...peelRecord,
+            publisher: { name: 'Canada Mortgage and Housing Corporation' },
+            license: 'https://www.cmhc-schl.gc.ca/en/data-and-research/cmhc-licence-agreement-use-of-data'
+        }, source, { fetchJson });
+        expect(custom.status).toBe('included');
+
+        const websiteTerms = await adapter.enrichRecord({
+            ...peelRecord,
+            license: 'https://www.peelregion.ca/privacy/terms-of-use.asp'
+        }, source, { fetchJson });
+        expect(websiteTerms).toEqual({ status: 'excluded', reason: 'restricted-license', externalId: ITEM_ID + ':2' });
+    });
+
+    test('rejects group layers instead of presenting them as downloadable tables', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'OshawaGIS', type: 'Feature Service' }
+            : { type: 'Group Layer' });
+        const result = await adapter.enrichRecord(record(), getSource('oshawa-hub'), { fetchJson });
+        expect(result).toEqual({ status: 'excluded', reason: 'non-leaf-layer', externalId: ITEM_ID + ':2' });
+    });
+
+    test('extracts canonical item/layer identities and strips unsafe markup', () => {
+        expect(adapter.identityFor(record())).toEqual({ itemId: ITEM_ID, layerId: 2 });
+        expect(adapter.htmlToText('<p>A &amp; B</p><style>x</style><script>y</script>')).toBe('A & B');
+    });
+
+    test('enriches Saint John ArcGIS Hub records under Open Government Licence – City of Saint John', async () => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'CityOfSaintJohn', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
+        const source = getSource('saint-john-hub');
+        const sjRecord = record({
+            landingPage: 'https://catalogue-saintjohn.opendata.arcgis.com/datasets/SaintJohn::zoning',
+            publisher: { name: 'City of Saint John' },
+            license: 'Open Government Licence – City of Saint John'
+        });
+        const result = await adapter.enrichRecord(sjRecord, source, { fetchJson });
+
         expect(result.status).toBe('included');
-        expect(result.value.source.isAuthoritative).toBe(false);
-        expect(result.value.organization.titleEn).toBe('Province of Nova Scotia');
+        expect(result.value.organization.titleEn).toBe('City of Saint John');
+        expect(result.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-1301006', relationship: 'direct', includesDescendants: false
+        }));
+        expect(result.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseTitleEn: 'Open Government Licence – City of Saint John',
+            licenseUrl: 'https://catalogue-saintjohn.opendata.arcgis.com/pages/open-government-licence-city-of-saint-john'
+        }));
     });
 });
