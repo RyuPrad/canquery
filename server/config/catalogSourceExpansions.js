@@ -143,7 +143,10 @@ function exactPattern(value) {
     return new RegExp('^' + escaped + '$', 'i');
 }
 
-function donneesQuebecSource({ id, organization, cityEn, cityFr, publisherPattern, placeId }) {
+function donneesQuebecSource({
+    id, organization, cityEn, cityFr, publisherPattern, placeId,
+    directGeoJsonMaps = true, directGeoJsonMapsDisabledReason = null
+}) {
     return {
         id,
         kind: 'ckan',
@@ -158,7 +161,8 @@ function donneesQuebecSource({ id, organization, cityEn, cityFr, publisherPatter
         syncIntervalHours: 24,
         maxDeleteFraction: 0.1,
         metadataLanguage: 'fr',
-        directGeoJsonMaps: true,
+        directGeoJsonMaps,
+        ...(directGeoJsonMapsDisabledReason ? { directGeoJsonMapsDisabledReason } : {}),
         defaultOrganizationId: organization,
         defaultOrganizationName: organization,
         defaultOrganizationTitleEn: cityEn,
@@ -318,7 +322,13 @@ function buildExpansionSources({ ccBy4License }) {
         dq({ id: 'longueuil-open-data', organization: 'ville-de-longueuil', cityEn: 'City of Longueuil', cityFr: 'la Ville de Longueuil', publisherPattern: /^ville de longueuil$/i, placeId: 'sgc-csd-2458227' }),
         dq({ id: 'saguenay-open-data', organization: 'ville-de-saguenay', cityEn: 'City of Saguenay', cityFr: 'la Ville de Saguenay', publisherPattern: /^ville de saguenay$/i, placeId: 'sgc-csd-2494068' }),
         dq({ id: 'rimouski-open-data', organization: 'ville-de-rimouski', cityEn: 'City of Rimouski', cityFr: 'la Ville de Rimouski', publisherPattern: /^ville de rimouski$/i, placeId: 'sgc-csd-2410043' }),
-        dq({ id: 'shawinigan-open-data', organization: 'ville-de-shawinigan', cityEn: 'City of Shawinigan', cityFr: 'la Ville de Shawinigan', publisherPattern: /^ville de shawinigan$/i, placeId: 'sgc-csd-2436033' }),
+        dq({
+            id: 'shawinigan-open-data', organization: 'ville-de-shawinigan',
+            cityEn: 'City of Shawinigan', cityFr: 'la Ville de Shawinigan',
+            publisherPattern: /^ville de shawinigan$/i, placeId: 'sgc-csd-2436033',
+            directGeoJsonMaps: false,
+            directGeoJsonMapsDisabledReason: 'Map service timed out from production during v35 closeout'
+        }),
         dq({ id: 'levis-open-data', organization: 'ville-de-levis', cityEn: 'City of Lévis', cityFr: 'la Ville de Lévis', publisherPattern: /^ville de l[eé]vis$/i, placeId: 'sgc-csd-2425213' }),
         dq({ id: 'sherbrooke-open-data', organization: 'ville-de-sherbrooke', cityEn: 'City of Sherbrooke', cityFr: 'la Ville de Sherbrooke', publisherPattern: /^ville de sherbrooke$/i, placeId: 'sgc-csd-2443027' }),
         arcgisMunicipalSource({ id: 'saint-john-hub', cityEn: 'City of Saint John', cityFr: 'la Ville de Saint John', host: 'catalogue-saintjohn.opendata.arcgis.com', placeId: 'sgc-csd-1301006', license: EXPANSION_LICENSES.SAINT_JOHN_LICENSE, publisherPatterns: [/^the city of saint john$/i, /^city of saint john$/i] }),
@@ -348,7 +358,13 @@ function buildExpansionSources({ ccBy4License }) {
         arcgisMunicipalSource({ id: 'maple-ridge-hub', cityEn: 'City of Maple Ridge', cityFr: 'la Ville de Maple Ridge', host: 'opengov.mapleridge.ca', placeId: 'sgc-csd-5915075', license: EXPANSION_LICENSES.MAPLE_RIDGE_LICENSE, publisherPatterns: [/^(?:city of )?maple ridge$/i], restrictedLicensePatterns: [/translink/i] }),
         arcgisMunicipalSource({ id: 'port-coquitlam-hub', cityEn: 'City of Port Coquitlam', cityFr: 'la Ville de Port Coquitlam', host: 'data-poco.hub.arcgis.com', placeId: 'sgc-csd-5915039', license: EXPANSION_LICENSES.PORT_COQUITLAM_LICENSE, publisherPatterns: [/^city of port coquitlam$/i], restrictedLicensePatterns: [/pocomap/i, /internal business and personal purpose/i] }),
         dq({ id: 'sherbrooke-geomatics-open-data', organization: 'ville-de-sherbrooke-donnees-geomatiques', cityEn: 'City of Sherbrooke Geomatics', cityFr: 'la Ville de Sherbrooke – données géomatiques', publisherPattern: /^ville de sherbrooke - donn[eé]es g[eé]omatiques$/i, placeId: 'sgc-csd-2443027' }),
-        dq({ id: 'saint-hyacinthe-open-data', organization: 'ville-de-saint-hyacinthe', cityEn: 'City of Saint-Hyacinthe', cityFr: 'la Ville de Saint-Hyacinthe', publisherPattern: /^ville de saint-hyacinthe$/i, placeId: 'sgc-csd-2454048' })
+        dq({
+            id: 'saint-hyacinthe-open-data', organization: 'ville-de-saint-hyacinthe',
+            cityEn: 'City of Saint-Hyacinthe', cityFr: 'la Ville de Saint-Hyacinthe',
+            publisherPattern: /^ville de saint-hyacinthe$/i, placeId: 'sgc-csd-2454048',
+            directGeoJsonMaps: false,
+            directGeoJsonMapsDisabledReason: 'Map service timed out from production during v35 closeout'
+        })
     ];
 }
 

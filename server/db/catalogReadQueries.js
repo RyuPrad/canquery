@@ -486,15 +486,25 @@ async function getJobHealth() {
     `);
     const evictResult = await pool.query("SELECT max(finished_at) AS last_ok_at FROM ingest_runs WHERE ok AND error LIKE 'evict:%'");
     const mapResult = await pool.query(`
-        SELECT count(*) FILTER (WHERE status = 'pending')::int AS pending,
-               count(*) FILTER (WHERE status = 'running')::int AS running,
-               count(*) FILTER (WHERE status = 'ready')::int AS ready,
-               count(*) FILTER (WHERE status = 'skipped')::int AS skipped,
-               count(*) FILTER (WHERE status = 'failed')::int AS failed,
-               min(updated_at) FILTER (WHERE status = 'pending') AS oldest_pending_at,
-               min(heartbeat_at) FILTER (WHERE status = 'running') AS oldest_running_at,
-               max(finished_at) FILTER (WHERE status = 'ready') AS last_indexed_at
-        FROM map_index_jobs
+        SELECT count(*) FILTER (WHERE j.status = 'pending')::int AS pending,
+               count(*) FILTER (WHERE j.status = 'pending' AND j.next_attempt_at > now())::int AS deferred,
+               count(*) FILTER (WHERE j.status = 'running')::int AS running,
+               count(*) FILTER (WHERE j.status = 'ready')::int AS ready,
+               count(*) FILTER (WHERE j.status = 'skipped')::int AS skipped,
+               count(*) FILTER (WHERE j.status = 'failed')::int AS failed,
+               count(DISTINCT r.raw->>'source_id') FILTER (
+                   WHERE j.status = 'pending' AND j.failure_code = 'MAP_SOURCE_UNAVAILABLE'
+               )::int AS retrying_sources,
+               min(j.updated_at) FILTER (
+                   WHERE j.status = 'pending' AND j.next_attempt_at <= now()
+               ) AS oldest_pending_at,
+               min(j.next_attempt_at) FILTER (
+                   WHERE j.status = 'pending' AND j.next_attempt_at > now()
+               ) AS next_retry_at,
+               min(j.heartbeat_at) FILTER (WHERE j.status = 'running') AS oldest_running_at,
+               max(j.finished_at) FILTER (WHERE j.status = 'ready') AS last_indexed_at
+        FROM map_index_jobs j
+        LEFT JOIN resources r ON r.id = j.resource_id
     `);
     return {
         syncRows: syncResult.rows,

@@ -657,9 +657,10 @@ describe('configured municipal catalogue sources', () => {
 
         for (const [id, organization, placeId] of expected) {
             const source = getSource(id);
+            const directMaps = !['shawinigan-open-data', 'saint-hyacinthe-open-data'].includes(id);
             expect(source).toEqual(expect.objectContaining({
                 kind: 'ckan', enabled: true, metadataLanguage: 'fr',
-                catalogOrganization: organization, directGeoJsonMaps: true,
+                catalogOrganization: organization, directGeoJsonMaps: directMaps,
                 licenseMode: 'record-explicit', upstreamHost: 'www.donneesquebec.ca'
             }));
             expect(source.licenseRules).toEqual([expect.objectContaining({

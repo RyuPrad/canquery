@@ -84,6 +84,22 @@ describe('ingestion caps', () => {
         });
     });
 
+    it('treats an asynchronous export response as retryable work', async () => {
+        const pendingFetch = async () => ({
+            status: 202,
+            headers: { get: name => name === 'retry-after' ? '3' : null },
+            body: new ReadableStream({ start(controller) { controller.close(); } })
+        });
+        await expect(downloadToTempFile('https://example.org/export.geojson', {
+            maxFileBytes: 1024,
+            fetchImpl: pendingFetch
+        })).rejects.toMatchObject({
+            code: 'DOWNLOAD_PENDING',
+            retryAfterMs: 3000,
+            message: 'download is still being prepared (HTTP 202)'
+        });
+    });
+
     it('a stalled download is aborted instead of hanging the worker', async () => {
         // Sends one chunk then never closes - mirrors an upstream that accepts
         // the socket and then goes silent. Without the stall guard this read

@@ -5,6 +5,7 @@ const {
     claimJob,
     finishJob,
     requeueJob,
+    failPendingSourceJobs,
     upsertMapCandidates
 } = require('../db/mapIndexQueries');
 
@@ -52,6 +53,8 @@ describe('versioned map-index queue', () => {
         expect(db.query.mock.calls[1][0]).toContain("candidate->>'expectedBytes'");
         expect(db.query.mock.calls[1][0]).toContain("candidate->>'expectedRows'");
         expect(db.query.mock.calls[1][0]).toContain('NULLS LAST');
+        expect(db.query.mock.calls[1][0]).toContain('next_attempt_at <= now()');
+        expect(db.query.mock.calls[1][0]).toContain('blocker.failure_code');
     });
 
     test('terminal and retry transitions are lease and version guarded', async () => {
@@ -63,5 +66,12 @@ describe('versioned map-index queue', () => {
         await expect(requeueJob(db, job, 'worker', 'temporary')).resolves.toBe(true);
         expect(db.query.mock.calls[0][0]).toContain("desired_version <> $3");
         expect(db.query.mock.calls[1][0]).toContain('desired_version = $3');
+    });
+
+    test('bulk-fails pending jobs for one unavailable source', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rowCount: 4 }) };
+        await expect(failPendingSourceJobs(db, 'source-a', 'MAP_SOURCE_UNAVAILABLE: timeout')).resolves.toBe(4);
+        expect(db.query.mock.calls[0][0]).toContain("r.raw->>'source_id' = $1");
+        expect(db.query.mock.calls[0][0]).toContain("status = 'failed'");
     });
 });

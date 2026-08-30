@@ -25,11 +25,15 @@ const {
     heartbeatJob,
     finishJob,
     requeueJob,
+    failPendingSourceJobs,
+    SOURCE_RETRY_CODE,
     getReadyMapState,
     listPmtilesMapObjects,
     deletePmtilesMapMetadata,
     requeueMissingPmtilesMaps
 } = require('../db/mapIndexQueries');
+
+const SOURCE_FAILURE_CODE = SOURCE_RETRY_CODE || 'MAP_SOURCE_UNAVAILABLE';
 
 const onceMode = process.argv.includes('--once');
 const drainMode = process.argv.includes('--drain');
@@ -38,6 +42,10 @@ const resourceTarget = resourceArg ? resourceArg.slice('--resource='.length).tri
 const POLL_MS = Number(process.env.MAP_INDEX_POLL_MS) || 3000;
 const HEARTBEAT_MS = Math.max(1000, Number(process.env.MAP_INDEX_HEARTBEAT_MS) || 15000);
 const MAX_ATTEMPTS = 3;
+const MAX_PENDING_ATTEMPTS = 5;
+const SOURCE_BACKOFF_MS = [5 * 60 * 1000, 30 * 60 * 1000];
+const PENDING_BACKOFF_MS = [15 * 1000, 30 * 1000, 60 * 1000, 3 * 60 * 1000];
+const RETRY_BACKOFF_MS = [60 * 1000, 5 * 60 * 1000];
 let stopRequested = false;
 let wakePoll = null;
 
@@ -51,6 +59,41 @@ function requestStop(signal) {
 
 function isPermanentMissingDownload(error) {
     return error && error.code === 'DOWNLOAD_HTTP' && [404, 410].includes(Number(error.httpStatus));
+}
+
+function sourceIdFor(resource) {
+    const raw = resource && resource.raw && typeof resource.raw === 'object' ? resource.raw : {};
+    return typeof raw.source_id === 'string' && raw.source_id ? raw.source_id : null;
+}
+
+function isSourceRetryable(error) {
+    if (!error) return false;
+    if (['DOWNLOAD_RESPONSE_STALL', 'DOWNLOAD_BODY_STALL', 'DOWNLOAD_NETWORK'].includes(error.code)) return true;
+    if (error.code === 'DOWNLOAD_HTTP' && [408, 425, 429, 500, 502, 503, 504].includes(Number(error.httpStatus))) {
+        return true;
+    }
+    const networkCodes = ['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ENETUNREACH',
+        'EHOSTUNREACH', 'EAI_AGAIN', 'ENOTFOUND', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'];
+    return networkCodes.includes(error.code) || networkCodes.includes(error.cause && error.cause.code);
+}
+
+function retryLimit(error) {
+    return error && error.code === 'DOWNLOAD_PENDING' ? MAX_PENDING_ATTEMPTS : MAX_ATTEMPTS;
+}
+
+function retryDelayMs(error, attempts) {
+    const retryAfter = Number(error && error.retryAfterMs);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Math.min(Math.max(retryAfter, 5 * 1000), 30 * 60 * 1000);
+    }
+    const schedule = error && error.code === 'DOWNLOAD_PENDING'
+        ? PENDING_BACKOFF_MS
+        : isSourceRetryable(error) ? SOURCE_BACKOFF_MS : RETRY_BACKOFF_MS;
+    return schedule[Math.min(Math.max(attempts - 1, 0), schedule.length - 1)];
+}
+
+function retryAt(error, attempts, now = Date.now()) {
+    return new Date(now + retryDelayMs(error, attempts));
 }
 
 function waitForPoll() {
@@ -120,11 +163,12 @@ async function probeGeometry(resource) {
 
 async function processJob(job, workerId, options = {}) {
     let heartbeatBusy = false;
+    let processFinished = false;
     const heartbeat = setInterval(async () => {
         if (heartbeatBusy) return;
         heartbeatBusy = true;
         try {
-            if (!await heartbeatJob(pool, job.resource_id, workerId)) {
+            if (!await heartbeatJob(pool, job.resource_id, workerId) && !processFinished) {
                 console.error('[map ' + job.resource_id + '] worker lease was lost');
             }
         } catch (error) {
@@ -134,8 +178,9 @@ async function processJob(job, workerId, options = {}) {
         }
     }, HEARTBEAT_MS);
     heartbeat.unref();
+    let resource = null;
     try {
-        const resource = await (options.getResourceById || getResourceById)(job.resource_id);
+        resource = await (options.getResourceById || getResourceById)(job.resource_id);
         if (!resource) throw new MapSkipError('resource vanished from catalogue', 'MAP_SOURCE');
         const ready = await (options.getReadyMapState || getReadyMapState)(pool, job.resource_id, job.claimed_version);
         if (ready && ready.provider === 'pmtiles') {
@@ -194,13 +239,28 @@ async function processJob(job, workerId, options = {}) {
         console.error('[map ' + job.resource_id + '] ' + (skipped ? 'skipped' : 'failed') + ': ' + detail);
         if (skipped) {
             await finishJob(pool, job, workerId, 'skipped', {}, detail);
-        } else if (job.attempts >= MAX_ATTEMPTS) {
-            await finishJob(pool, job, workerId, 'failed', {}, detail);
+        } else if (job.attempts >= retryLimit(error)) {
+            const sourceRetry = isSourceRetryable(error) && sourceIdFor(resource);
+            const finished = sourceRetry
+                ? await finishJob(pool, job, workerId, 'failed', {}, detail, SOURCE_FAILURE_CODE)
+                : await finishJob(pool, job, workerId, 'failed', {}, detail);
+            if (sourceRetry && finished) {
+                await (options.failPendingSourceJobs || failPendingSourceJobs)(
+                    pool, sourceIdFor(resource), detail, SOURCE_FAILURE_CODE
+                );
+            }
         } else {
-            await requeueJob(pool, job, workerId, detail);
+            const failureCode = isSourceRetryable(error) && sourceIdFor(resource)
+                ? SOURCE_FAILURE_CODE : error && error.code === 'DOWNLOAD_PENDING'
+                    ? 'DOWNLOAD_PENDING' : null;
+            await requeueJob(
+                pool, job, workerId, detail,
+                retryAt(error, job.attempts), failureCode
+            );
         }
         return { error, skipped };
     } finally {
+        processFinished = true;
         clearInterval(heartbeat);
     }
 }
@@ -282,5 +342,6 @@ if (require.main === module) {
 
 module.exports = {
     main, processJob, probeGeometry, ckanTarget, validateDirectGeoJson,
-    reconcileMissingPmtiles, requestStop, waitForPoll
+    reconcileMissingPmtiles, requestStop, waitForPoll,
+    isSourceRetryable, retryLimit, retryDelayMs, retryAt, sourceIdFor
 };

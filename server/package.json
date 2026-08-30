@@ -25,6 +25,7 @@
         "maps:once": "node scripts/map-worker.js --once",
         "maps:drain": "node scripts/map-worker.js --drain",
         "maps:prune": "node scripts/prune-map-objects.js",
+        "maps:retry-source": "node scripts/retry-map-source.js",
         "gsc:authorize": "node scripts/authorize-search-console.js",
         "gsc:sync": "node scripts/sync-search-console.js",
         "gsc:report": "node scripts/build-search-growth-report.js",

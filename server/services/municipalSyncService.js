@@ -151,7 +151,9 @@ async function syncMunicipalSource(source, {
             await replaceDatasetPlaces(client, source.id, datasetIds, places);
             await replaceResourceMaps(client, managedMapResourceIds, maps);
             await upsertMapCandidates(client, mapCandidates);
-            await sweepMapCandidates(client, candidateDatasetIds, mapCandidates.map(candidate => candidate.resourceId));
+            summary.map_sweep = await sweepMapCandidates(
+                client, candidateDatasetIds, mapCandidates.map(candidate => candidate.resourceId)
+            );
             if (limit == null) {
                 summary.sweep = await sweepMissingDatasets(client, keepExternalIds, {
                     sourceId: source.id,

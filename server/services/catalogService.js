@@ -466,17 +466,24 @@ const opsStatus = async () => {
     const mapStale = oldestPendingMs > 48 * 3600 * 1000 || oldestRunningMs > 10 * 60 * 1000;
     const maps = {
         pending: Number(rawMaps.pending) || 0,
+        deferred: Number(rawMaps.deferred) || 0,
         running: Number(rawMaps.running) || 0,
         ready: Number(rawMaps.ready) || 0,
         skipped: Number(rawMaps.skipped) || 0,
         failed: Number(rawMaps.failed) || 0,
+        retrying_sources: Number(rawMaps.retrying_sources) || 0,
         oldest_pending_at: rawMaps.oldest_pending_at || null,
+        next_retry_at: rawMaps.next_retry_at || null,
         oldest_running_at: rawMaps.oldest_running_at || null,
         last_indexed_at: rawMaps.last_indexed_at || null,
-        status: mapStale ? 'stale' : Number(rawMaps.failed) > 0 ? 'degraded' : 'ok'
+        status: mapStale || Number(rawMaps.failed) > 0 || Number(rawMaps.retrying_sources) > 0
+            ? (mapStale ? 'stale' : 'degraded') : 'ok'
     };
     const anyStale = Object.values(jobs).some(j => j.status === 'stale');
-    return { ok: !anyStale && !mapStale && maps.failed === 0, jobs, maps };
+    return {
+        ok: !anyStale && !mapStale && maps.failed === 0 && maps.retrying_sources === 0,
+        jobs, maps
+    };
 };
 
 module.exports = {
