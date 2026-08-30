@@ -5,6 +5,8 @@ const source = getSource('toronto-open-data');
 const montreal = getSource('montreal-open-data');
 const quebecCity = getSource('quebec-city-open-data');
 const laval = getSource('laval-open-data');
+const gnwt = getSource('northwest-territories-open-data');
+const regina = getSource('regina-hub');
 
 function packageRecord(overrides = {}) {
     return {
@@ -251,14 +253,63 @@ describe('generic CKAN source adapter', () => {
         expect(lavalResult.value.places[0]).toEqual(expect.objectContaining({
             placeId: 'sgc-cd-2465'
         }));
+    });
 
-        const gatineau = getSource('gatineau-open-data');
-        const gatineauResult = await adapter.enrichRecord({ ...record,
-            id: 'gatineau-record',
-            organization: { id: 'ville-de-gatineau', name: 'ville-de-gatineau', title: 'Ville de Gatineau' }
-        }, gatineau);
-        expect(gatineauResult.value.places[0]).toEqual(expect.objectContaining({
-            placeId: 'sgc-csd-2481017'
+    test('admits only GNWT-licensed records and builds source-aware DataStore URLs', async () => {
+        const record = packageRecord({
+            id: 'gnwt-record', name: 'wildlife-observations', title: 'Wildlife Observations',
+            license_id: 'GNWT', license_title: 'Open Government Licence - Northwest Territories',
+            organization: {
+                id: 'environment-and-climate-change',
+                name: 'environment-and-climate-change',
+                title: 'Environment and Climate Change'
+            },
+            resources: [{
+                id: 'gnwt-datastore', name: 'Wildlife observations', format: 'CSV',
+                datastore_active: true, record_count: 25,
+                url: 'https://opendata.gov.nt.ca/unused.csv'
+            }]
+        });
+        const result = await adapter.enrichRecord(record, gnwt);
+
+        expect(result.status).toBe('included');
+        expect(result.value.source).toEqual(expect.objectContaining({
+            licenseUrl: 'https://www.gov.nt.ca/en/open-government-licence-northwest-territories'
+        }));
+        expect(result.value.resources[0]).toEqual(expect.objectContaining({
+            datastoreActive: true,
+            url: 'https://opendata.gov.nt.ca/datastore/dump/gnwt-datastore'
+        }));
+        expect(result.value.places).toEqual([expect.objectContaining({
+            placeId: 'sgc-pr-61', relationship: 'direct', includesDescendants: true
+        })]);
+
+        await expect(adapter.enrichRecord({ ...record, license_id: 'notspecified' }, gnwt))
+            .resolves.toEqual(expect.objectContaining({ status: 'excluded', reason: 'unlicensed' }));
+    });
+
+    test('applies Regina portal terms only to its exact CKAN publisher evidence', async () => {
+        const record = packageRecord({
+            id: 'regina-record', name: 'building-permits', title: 'Building Permits',
+            license_id: 'notspecified', license_title: 'Open Gov. License',
+            organization: {
+                id: 'city-of-regina', name: 'city-of-regina', title: 'City of Regina'
+            }
+        });
+        const result = await adapter.enrichRecord(record, regina);
+        expect(result.status).toBe('included');
+        expect(result.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseUrl: 'https://www.regina.ca/city-government/open-data/open-government-licence/index.html'
+        }));
+        expect(result.value.places[0]).toEqual(expect.objectContaining({
+            placeId: 'sgc-csd-4706027', relationship: 'direct'
+        }));
+
+        await expect(adapter.enrichRecord({ ...record, organization: {
+            id: 'external', name: 'external', title: 'External Publisher'
+        } }, regina)).resolves.toEqual(expect.objectContaining({
+            status: 'excluded', reason: 'unlicensed'
         }));
     });
 });

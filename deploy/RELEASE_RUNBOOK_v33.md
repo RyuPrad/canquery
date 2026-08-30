@@ -1,5 +1,9 @@
 # CanQuery v33 Production Deployment Runbook
 
+> Superseded by `RELEASE_RUNBOOK_v35.md`. Retained only as a historical v33
+> source list; do not use its credentials, paths, counts, or deployment sequence
+> for the current release.
+
 **Target Server:** `canquery-prod-01` (dedicated VPS at Little Creek Hosting)  
 **Host IP:** `38.45.71.90`  
 **User:** `canquery` / `root`  

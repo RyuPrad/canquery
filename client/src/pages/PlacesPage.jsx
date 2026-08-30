@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchPlaces } from '../api/catalog.js';
+import { fetchFeaturedPlaces, fetchPlaces } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import { MapPinIcon, ArrowRightIcon, MapIcon, SearchIcon } from '../components/Icons.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
@@ -22,11 +22,10 @@ export default function PlacesPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchPlaces({
-      q: debouncedQuery || undefined,
-      featured: debouncedQuery ? undefined : true,
-      limit: 100
-    })
+    const request = debouncedQuery
+      ? fetchPlaces({ q: debouncedQuery, limit: 100 })
+      : fetchFeaturedPlaces();
+    request
       .then(env => {
         if (!cancelled) {
           setPlaces(env.data || []);

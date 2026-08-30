@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchPlaces, fetchSources } from '../api/catalog.js';
+import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -145,7 +145,7 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchPlaces({ featured: true, limit: 100 })
+    fetchFeaturedPlaces()
       .then(env => { if (!cancelled) setPlaces(env.data || []); })
       .catch(() => {});
     return () => { cancelled = true; };

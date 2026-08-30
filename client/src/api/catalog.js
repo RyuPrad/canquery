@@ -36,6 +36,27 @@ export function fetchPlaces({ q, kind, parent, featured, limit, cursor } = {}) {
   return getJSON('/api/v1/places', { q, kind, parent, featured, limit, cursor });
 }
 
+export async function fetchFeaturedPlaces() {
+  const data = [];
+  const seenCursors = new Set();
+  let cursor;
+  let meta = {};
+
+  do {
+    const env = await fetchPlaces({ featured: true, limit: 100, cursor });
+    data.push(...(env.data || []));
+    meta = env.meta || meta;
+    const nextCursor = env.pagination?.nextCursor || null;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new Error('Featured place pagination returned a repeated cursor');
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  return { data, pagination: { nextCursor: null }, meta };
+}
+
 export function fetchPlace(idOrSlug) {
   return getJSON('/api/v1/places/' + encodeURIComponent(idOrSlug));
 }
