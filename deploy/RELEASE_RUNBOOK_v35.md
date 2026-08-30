@@ -322,8 +322,10 @@ psql -d opencanada -c \
 Continue monitoring the service journal, local disk, PostgreSQL, private-R2
 budget, and the queue counts until `pending` and `running` reach zero. A
 temporary export response (`202`) is retried with bounded job-local backoff;
-source connectivity failures defer only that source while unrelated sources
-continue. Review every new `failed` or unexpected `skipped` job. If map
+if it remains pending at the five-attempt limit it becomes a retryable
+`skipped` job (inspect and requeue it with `maps:retry-source --apply` after a
+probe). Source connectivity failures defer only that source while unrelated
+sources continue. Review every new `failed` or unexpected `skipped` job. If map
 processing regresses,
 follow the map-only rollback boundary in section 10; the catalogue and API can
 remain live.

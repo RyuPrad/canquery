@@ -228,6 +228,23 @@ describe('map worker transitions', () => {
         );
     });
 
+    test('marks an export still pending at its limit as a retryable skip', async () => {
+        const error = Object.assign(new Error('export pending'), {
+            code: 'DOWNLOAD_PENDING'
+        });
+        const finalJob = { ...job, attempts: 5 };
+        await processJob(finalJob, '00000000-0000-4000-8000-000000000001', {
+            getResourceById: async () => resource,
+            probeGeometry: async () => ({ total: 1, fields: [{ id: 'geometry' }] }),
+            indexMapResource: async () => { throw error; }
+        });
+        expect(mapQueries.finishJob).toHaveBeenCalledWith(
+            pool, finalJob, expect.any(String), 'skipped', {},
+            'DOWNLOAD_PENDING: export pending', 'DOWNLOAD_PENDING'
+        );
+        expect(mapQueries.requeueJob).not.toHaveBeenCalled();
+    });
+
     test('skips a permanently missing catalogued download without retrying', async () => {
         const error = Object.assign(new Error('download failed: HTTP 404'), {
             code: 'DOWNLOAD_HTTP', httpStatus: 404

@@ -15,14 +15,18 @@ async function retryMapSource(db, sourceId, apply = false) {
     const source = getSource(sourceId);
     if (!source) throw new Error('unknown or missing --source');
     const result = await db.query(`
-        SELECT count(*)::int AS failed
+        SELECT count(*) FILTER (WHERE j.status = 'failed')::int AS failed,
+               count(*) FILTER (
+                   WHERE j.status = 'skipped' AND j.failure_code = 'DOWNLOAD_PENDING'
+               )::int AS retryable_skipped
         FROM map_index_jobs j
         JOIN resources r ON r.id = j.resource_id
-        WHERE j.status = 'failed' AND r.raw->>'source_id' = $1
+        WHERE r.raw->>'source_id' = $1
     `, [source.id]);
     const failed = Number(result.rows[0].failed) || 0;
+    const retryableSkipped = Number(result.rows[0].retryable_skipped) || 0;
     if (!apply) {
-        return { source_id: source.id, failed, apply: false };
+        return { source_id: source.id, failed, retryable_skipped: retryableSkipped, apply: false };
     }
     const updated = await db.query(`
         UPDATE map_index_jobs j
@@ -32,11 +36,15 @@ async function retryMapSource(db, sourceId, apply = false) {
             next_attempt_at = now(), failure_code = NULL, updated_at = now()
         FROM resources r
         WHERE j.resource_id = r.id
-          AND j.status = 'failed'
+          AND (j.status = 'failed'
+               OR (j.status = 'skipped' AND j.failure_code = 'DOWNLOAD_PENDING'))
           AND r.raw->>'source_id' = $1
         RETURNING j.resource_id
     `, [source.id]);
-    return { source_id: source.id, failed, requeued: updated.rowCount, apply: true };
+    return {
+        source_id: source.id, failed, retryable_skipped: retryableSkipped,
+        requeued: updated.rowCount, apply: true
+    };
 }
 
 async function main() {
