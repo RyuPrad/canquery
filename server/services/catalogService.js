@@ -5,49 +5,13 @@ const AppError = require('../utils/AppError');
 const { createCache } = require('../utils/cache');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { sources: configuredSources } = require('../config/catalogSources');
-
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
-const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
-const MAX_ROWS = Number(process.env.MAX_ROWS) > 0 ? Number(process.env.MAX_ROWS) : 1_000_000;
-const MAX_COLS = Number(process.env.MAX_COLS) > 0 ? Number(process.env.MAX_COLS) : 120;
-
-const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
-
-// Excel formats get a smaller cap than CSV: conversion is isolated and bounded,
-// but XLSX shared strings/styles and legacy XLS parsing still expand in memory
-// inside that child process.
-const ingestCapBytesFor = (format) => {
-    const normalized = String(format || '').toUpperCase();
-    if (normalized === 'CSV') return maxFileBytes();
-    if (normalized === 'XLSX' || normalized === 'XLS') return MAX_XLSX_MB * 1024 * 1024;
-    return null;
-};
-
-const knownRecordCount = (row) => {
-    const raw = row && row.raw && typeof row.raw === 'object' && !Array.isArray(row.raw)
-        ? row.raw : {};
-    if (raw.record_count == null || raw.record_count === '') return null;
-    const count = Number(raw.record_count);
-    return Number.isFinite(count) && count >= 0 ? count : null;
-};
-
-const knownFieldCount = (row) => {
-    const raw = row && row.raw && typeof row.raw === 'object' && !Array.isArray(row.raw)
-        ? row.raw : {};
-    if (raw.field_count == null || raw.field_count === '') return null;
-    const count = Number(raw.field_count);
-    return Number.isSafeInteger(count) && count >= 0 ? count : null;
-};
-
-const isIngestableFile = (row) => {
-    const cap = ingestCapBytesFor(row && row.format);
-    const recordCount = knownRecordCount(row);
-    const fieldCount = knownFieldCount(row);
-    return cap !== null &&
-        (row.size_bytes == null || Number(row.size_bytes) <= cap) &&
-        (recordCount == null || recordCount <= MAX_ROWS) &&
-        (fieldCount == null || fieldCount <= MAX_COLS);
-};
+const {
+    computeQueryMode,
+    ingestCapBytesFor,
+    knownRecordCount,
+    knownFieldCount,
+    isIngestableFile
+} = require('./resourceCapabilities');
 
 const clampLimit = (limit, def, max) => {
     if (limit === undefined || limit === null) return def;
@@ -120,13 +84,6 @@ const shapePlaceMatch = (row) => row.matched_place_id ? {
         name: { en: row.matched_place_name_en, fr: row.matched_place_name_fr }
     }
 } : null;
-
-const computeQueryMode = (row) => {
-    if (row.ingest_status === 'ready') return 'ingested';
-    if (row.datastore_active) return 'datastore';
-    if (isIngestableFile(row)) return 'ingestable';
-    return 'file-only';
-};
 
 const shapeResource = (row) => ({
     id: row.id,
@@ -431,6 +388,11 @@ const opsStatus = async () => {
     }
     const health = await catalogReadQueries.getJobHealth();
     const lastOkByJob = {};
+    const latestAttemptByJob = {};
+    const timeOf = value => {
+        const time = new Date(value).getTime();
+        return Number.isFinite(time) ? time : -Infinity;
+    };
     for (const row of health.syncRows) {
         const name = ['municipal', 'source'].includes(row.kind) && row.source_id ? 'source:' + row.source_id : row.kind;
         // `municipal` was renamed to `source`. Both kinds can exist for the
@@ -441,14 +403,31 @@ const opsStatus = async () => {
             new Date(row.last_ok_at).getTime() > new Date(current).getTime())) {
             lastOkByJob[name] = row.last_ok_at;
         }
+        const latestFinishedAt = row.latest_finished_at || row.last_ok_at;
+        const latestOk = typeof row.latest_ok === 'boolean' ? row.latest_ok : row.last_ok_at != null;
+        const latest = latestAttemptByJob[name];
+        if (latestFinishedAt != null && (!latest ||
+            timeOf(latestFinishedAt) > timeOf(latest.finishedAt) ||
+            (timeOf(latestFinishedAt) === timeOf(latest.finishedAt) && latest.ok && !latestOk))) {
+            latestAttemptByJob[name] = { finishedAt: latestFinishedAt, ok: latestOk };
+        }
         if (name.startsWith('source:')) JOB_MAX_AGE_HOURS[name] = 48;
     }
     lastOkByJob.evict = health.evictLastOkAt;
+    const evictLatestFinishedAt = health.evictLatestFinishedAt || health.evictLastOkAt;
+    if (evictLatestFinishedAt != null) {
+        latestAttemptByJob.evict = {
+            finishedAt: evictLatestFinishedAt,
+            ok: typeof health.evictLatestOk === 'boolean' ? health.evictLatestOk : health.evictLastOkAt != null
+        };
+    }
     const jobs = {};
     const now = Date.now();
     for (const [name, maxAgeHours] of Object.entries(JOB_MAX_AGE_HOURS)) {
         const lastOkAt = lastOkByJob[name];
-        if (lastOkAt === null || lastOkAt === undefined) {
+        if (latestAttemptByJob[name] && latestAttemptByJob[name].ok === false) {
+            jobs[name] = { last_ok_at: lastOkAt || null, status: 'failed' };
+        } else if (lastOkAt === null || lastOkAt === undefined) {
             jobs[name] = { last_ok_at: null, status: 'pending' };
         } else {
             const lastOkTime = new Date(lastOkAt).getTime();
@@ -479,9 +458,9 @@ const opsStatus = async () => {
         status: mapStale || Number(rawMaps.failed) > 0 || Number(rawMaps.retrying_sources) > 0
             ? (mapStale ? 'stale' : 'degraded') : 'ok'
     };
-    const anyStale = Object.values(jobs).some(j => j.status === 'stale');
+    const anyUnhealthyJob = Object.values(jobs).some(j => ['failed', 'stale'].includes(j.status));
     return {
-        ok: !anyStale && !mapStale && maps.failed === 0 && maps.retrying_sources === 0,
+        ok: !anyUnhealthyJob && !mapStale && maps.failed === 0 && maps.retrying_sources === 0,
         jobs, maps
     };
 };

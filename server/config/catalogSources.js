@@ -1195,6 +1195,7 @@ const sources = [{
         { publisher: /^region of waterloo$/i, name: 'Region of Waterloo' },
         { publisher: /^city of kitchener$/i, name: 'City of Kitchener' },
         { publisher: /^city of cambridge$/i, name: 'City of Cambridge' },
+        { publisher: /^cambridge, ontario$/i, name: 'City of Cambridge' },
         { publisher: /^city of waterloo$/i, name: 'City of Waterloo' }
     ],
     authoritativePublishers: [
@@ -1335,7 +1336,8 @@ const sources = [{
         /personal use only/i
     ],
     publisherAliases: [
-        { publisher: /^city of fredericton$/i, name: 'City of Fredericton' }
+        { publisher: /^city of fredericton$/i, name: 'City of Fredericton' },
+        { publisher: /^city of fredericton - ville de fredericton$/i, name: 'City of Fredericton' }
     ],
     authoritativePublishers: [
         { publisher: /^city of fredericton$/i }
@@ -2071,6 +2073,7 @@ const sources = [{
     homepageUrl: 'https://opendata.lethbridge.ca/',
     catalogUrl: 'https://opendata.lethbridge.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'opendata.lethbridge.ca',
+    placeholderPublisher: 'City of Lethbridge',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2100,6 +2103,7 @@ const sources = [{
     homepageUrl: 'https://opendata.medicinehat.ca/',
     catalogUrl: 'https://opendata.medicinehat.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'opendata.medicinehat.ca',
+    placeholderPublisher: 'City of Medicine Hat',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2129,11 +2133,14 @@ const sources = [{
     homepageUrl: 'https://data-airdrie.opendata.arcgis.com/',
     catalogUrl: 'https://data-airdrie.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data-airdrie.opendata.arcgis.com',
+    placeholderPublisher: 'City of Airdrie',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
     publisherAliases: [
         { publisher: /^city of airdrie$/i, name: 'City of Airdrie' },
+        { publisher: /^the city of airdrie$/i, name: 'City of Airdrie' },
+        { publisher: /^geoconnection$/i, name: 'City of Airdrie' },
         { publisher: /^{{source}}$/i, name: 'City of Airdrie' }
     ],
     authoritativePublishers: [
@@ -2158,6 +2165,7 @@ const sources = [{
     homepageUrl: 'https://opendata-canmore.opendata.arcgis.com/',
     catalogUrl: 'https://opendata-canmore.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'opendata-canmore.opendata.arcgis.com',
+    placeholderPublisher: 'Town of Canmore',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2190,6 +2198,7 @@ const sources = [{
     homepageUrl: 'https://open.penticton.ca/',
     catalogUrl: 'https://open.penticton.ca/api/feed/dcat-us/1.1.json',
     upstreamHost: 'open.penticton.ca',
+    placeholderPublisher: 'City of Penticton',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2219,6 +2228,7 @@ const sources = [{
     homepageUrl: 'https://data-langleycity.opendata.arcgis.com/',
     catalogUrl: 'https://data-langleycity.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data-langleycity.opendata.arcgis.com',
+    placeholderPublisher: 'City of Langley',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2248,6 +2258,7 @@ const sources = [{
     homepageUrl: 'https://data-huron.opendata.arcgis.com/',
     catalogUrl: 'https://data-huron.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data-huron.opendata.arcgis.com',
+    placeholderPublisher: 'County of Huron',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2281,6 +2292,7 @@ const sources = [{
     homepageUrl: 'https://data-cumberlandns.opendata.arcgis.com/',
     catalogUrl: 'https://data-cumberlandns.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'data-cumberlandns.opendata.arcgis.com',
+    placeholderPublisher: 'Municipality of the County of Cumberland',
     enabled: true,
     syncIntervalHours: 24,
     maxDeleteFraction: 0.1,
@@ -2295,10 +2307,10 @@ const sources = [{
         { publisher: /^{{source}}$/i }
     ],
     licenseRules: [
-        { publisher: /.*/, license: CUMBERLAND_LICENSE }
+        { publisher: /^municipality of the county of cumberland$/i, license: CUMBERLAND_LICENSE }
     ],
     placeRules: [{
-        publisher: /.*/,
+        publisher: /^municipality of the county of cumberland$/i,
         placeId: 'sgc-cd-1211',
         relationship: 'direct',
         includesDescendants: true

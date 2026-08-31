@@ -481,10 +481,28 @@ async function listRecentlyIngested(limit, place = null) {
 
 async function getJobHealth() {
     const syncResult = await pool.query(`
-        SELECT kind, source_id, max(finished_at) AS last_ok_at
-        FROM sync_runs WHERE ok GROUP BY kind, source_id
+        WITH completed AS (
+            SELECT id, kind, source_id, finished_at, ok,
+                   max(finished_at) FILTER (WHERE ok) OVER (
+                       PARTITION BY kind, source_id
+                   ) AS last_ok_at
+            FROM sync_runs
+            WHERE finished_at IS NOT NULL AND ok IS NOT NULL
+        )
+        SELECT DISTINCT ON (kind, source_id)
+               kind, source_id, last_ok_at,
+               finished_at AS latest_finished_at,
+               ok AS latest_ok
+        FROM completed
+        ORDER BY kind, source_id, finished_at DESC, id DESC
     `);
-    const evictResult = await pool.query("SELECT max(finished_at) AS last_ok_at FROM ingest_runs WHERE ok AND error LIKE 'evict:%'");
+    const evictResult = await pool.query(`
+        SELECT max(finished_at) FILTER (WHERE ok) AS last_ok_at,
+               (array_agg(finished_at ORDER BY finished_at DESC, id DESC))[1] AS latest_finished_at,
+               (array_agg(ok ORDER BY finished_at DESC, id DESC))[1] AS latest_ok
+        FROM ingest_runs
+        WHERE finished_at IS NOT NULL AND ok IS NOT NULL AND error LIKE 'evict:%'
+    `);
     const mapResult = await pool.query(`
         SELECT count(*) FILTER (WHERE j.status = 'pending')::int AS pending,
                count(*) FILTER (WHERE j.status = 'pending' AND j.next_attempt_at > now())::int AS deferred,
@@ -509,6 +527,8 @@ async function getJobHealth() {
     return {
         syncRows: syncResult.rows,
         evictLastOkAt: evictResult.rows[0] ? evictResult.rows[0].last_ok_at : null,
+        evictLatestFinishedAt: evictResult.rows[0] ? evictResult.rows[0].latest_finished_at : null,
+        evictLatestOk: evictResult.rows[0] ? evictResult.rows[0].latest_ok : null,
         mapQueue: mapResult.rows[0]
     };
 }

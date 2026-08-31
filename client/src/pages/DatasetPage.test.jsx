@@ -1,7 +1,8 @@
 import { describe, beforeEach, vi, expect, test } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import DatasetPage from './DatasetPage.jsx';
+import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
   fetchDataset: vi.fn(),
@@ -15,7 +16,7 @@ function datasetEnvelope(queryMode, suffix = 'a') {
     data: {
       id: `dataset-${suffix}`,
       name: `dataset-${suffix}`,
-      title: { en: `Dataset ${suffix.toUpperCase()}`, fr: null },
+      title: { en: `Dataset ${suffix.toUpperCase()}`, fr: `Jeu de données ${suffix.toUpperCase()}` },
       notes: { en: 'Notes', fr: null },
       keywords: { en: [], fr: [] },
       organization: null,
@@ -46,6 +47,27 @@ beforeEach(() => {
 });
 
 describe('DatasetPage ingestion', () => {
+  test.each([
+    ['en', 'Breadcrumb', 'Datasets', 'Dataset A'],
+    ['fr', 'Fil d’Ariane', 'Jeux de données', 'Jeu de données A'],
+  ])('shows the localized %s dataset breadcrumb', async (lang, ariaLabel, rootLabel, currentLabel) => {
+    localStorage.setItem('cq-lang', lang);
+    fetchDataset.mockReset();
+    fetchDataset.mockResolvedValue(datasetEnvelope('ingestable'));
+
+    render(
+      <LangProvider>
+        <MemoryRouter initialEntries={['/datasets/dataset-a']}>
+          <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+        </MemoryRouter>
+      </LangProvider>
+    );
+
+    const breadcrumb = await screen.findByRole('navigation', { name: ariaLabel });
+    expect(within(breadcrumb).getByRole('link', { name: rootLabel })).toHaveAttribute('href', '/');
+    expect(within(breadcrumb).getByText(currentLabel)).toHaveAttribute('aria-current', 'page');
+  });
+
   test('collapses long resource lists and expands a hidden deep-link target before focusing it', async () => {
     const env = datasetEnvelope('datastore');
     env.data.resources = Array.from({ length: 15 }, (_, index) => ({

@@ -15,7 +15,9 @@ function sample() {
             { data_date: '2026-08-19', clicks: 12 }
         ],
         topQueries: [{ value: '<img src=x onerror=alert(1)>', clicks: 2, impressions: 10, ctr: 0.2, position: 3 }],
-        topPages: [], zeroClickQueries: [], countries: [], devices: [], routes: []
+        topPages: [], zeroClickQueries: [],
+        pageOpportunities: [{ value: 'https://canquery.com/datasets/roads', clicks: 0, impressions: 200, ctr: 0, position: 5 }],
+        countries: [], devices: [], routes: []
     };
 }
 
@@ -26,12 +28,15 @@ it('escapes imported Search Console text and emits no executable scripts', () =>
     expect(html).not.toContain('<script');
     expect(html).toContain('noindex,nofollow,noarchive');
     expect(html).toContain('Finalized through 2026-08-19');
+    expect(html).toContain('High-impression, low-CTR pages');
+    expect(html).toContain('https://canquery.com/datasets/roads');
 });
 
 it('renders a safe empty report before the first import', () => {
     const html = renderSearchGrowthReport({
         latestDate: null, lastSyncedAt: null, summary: null, daily: [],
-        topQueries: [], topPages: [], zeroClickQueries: [], countries: [], devices: [], routes: []
+        topQueries: [], topPages: [], zeroClickQueries: [], pageOpportunities: [],
+        countries: [], devices: [], routes: []
     });
     expect(html).toContain('No imported data');
     expect(html).toContain('Run the Search Console import');

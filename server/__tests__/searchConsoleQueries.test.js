@@ -39,3 +39,32 @@ it('rolls back and releases the client after a write failure', async () => {
     expect(client.query).toHaveBeenLastCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
 });
+
+it('surfaces high-impression, low-CTR dataset and resource pages in the report data', async () => {
+    const opportunity = {
+        value: 'https://canquery.com/resources/r1',
+        clicks: 0, impressions: 200, ctr: 0, position: 5
+    };
+    const db = { query: jest.fn()
+        .mockResolvedValueOnce({ rows: [{ latest_date: '2026-08-27', last_synced_at: '2026-08-29T00:00:00Z' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{
+            current_clicks: 1, current_impressions: 100,
+            prior_clicks: 0, prior_impressions: 50,
+            current_position: 5, prior_position: 6
+        }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [opportunity] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] }) };
+
+    const report = await queries.getSearchGrowthReportData(db);
+
+    expect(report.pageOpportunities).toEqual([opportunity]);
+    const opportunitySql = db.query.mock.calls.find(call => call[0].includes('HAVING sum(impressions) >= 50'));
+    expect(opportunitySql[0]).toContain("value ~ '/datasets/[^/?#]+'");
+    expect(opportunitySql[0]).toContain("value ~ '/resources/[^/?#]+'");
+});

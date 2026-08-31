@@ -107,6 +107,78 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         expect(meta.description).toContain('Water Quality');
         expect(meta.description).toContain('Environment Canada');
     });
+
+    it('bounds dynamic metadata and adds a canonical dataset breadcrumb', () => {
+        const meta = seo.datasetMeta({
+            ...dataset,
+            title_en: 'A very long dataset title '.repeat(12),
+            notes_en: 'A very long dataset description '.repeat(20)
+        }, []);
+        expect(meta.title.length).toBeLessThanOrEqual(80);
+        expect(meta.title).toMatch(/ - canquery$/);
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+        const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
+        expect(breadcrumb.itemListElement).toEqual([
+            expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/' }),
+            expect.objectContaining({
+                position: 2,
+                item: 'https://canquery.com/datasets/water-quality'
+            })
+        ]);
+    });
+});
+
+describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
+    const base = {
+        id: 'r1', dataset_id: 'd1', dataset_name: 'water-quality',
+        name_en: 'Measurements', dataset_title_en: 'Water Quality',
+        format: 'CSV', size_bytes: 1024
+    };
+
+    it('falls back from generic resource names and appends a missing format once', () => {
+        expect(seo.resourceMeta({ ...base, name_en: 'Dataset' }).title)
+            .toBe('Water Quality (CSV) - canquery');
+        expect(seo.resourceMeta({ ...base, name_en: 'Measurements CSV' }).title)
+            .toBe('Measurements CSV - canquery');
+        expect(seo.resourceMeta({ ...base, name_en: 'English' }).title)
+            .toBe('Water Quality (CSV) - canquery');
+    });
+
+    it('bounds long resource titles and descriptions', () => {
+        const meta = seo.resourceMeta({
+            ...base,
+            name_en: 'Specific annual measurement export '.repeat(10),
+            dataset_title_en: 'Water quality observations '.repeat(12)
+        });
+        expect(meta.title.length).toBeLessThanOrEqual(80);
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+        expect(meta.canonical).toBe('https://canquery.com/resources/r1');
+    });
+
+    test.each([
+        [{ ...base, ingest_status: 'ready' }, /live CSV table.*query, filter, chart and export/i],
+        [{ ...base, datastore_active: true }, /live CSV table.*query, filter, chart and export/i],
+        [base, /Load this CSV resource.*query, filter, chart and export/i],
+        [{ ...base, format: 'PDF', map_provider: 'arcgis' }, /interactive map.*original PDF file/i],
+        [{ ...base, format: 'PDF' }, /metadata.*original PDF file.*public-sector publisher/i]
+    ])('writes truthful capability-specific copy for %#', (resource, expected) => {
+        expect(seo.resourceMeta(resource).description).toMatch(expected);
+    });
+
+    it('emits the stable dataset and UUID resource hierarchy', () => {
+        const meta = seo.resourceMeta(base);
+        expect(meta.jsonLd[0].itemListElement).toEqual([
+            expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/' }),
+            expect.objectContaining({
+                position: 2, name: 'Water Quality',
+                item: 'https://canquery.com/datasets/water-quality'
+            }),
+            expect.objectContaining({
+                position: 3, name: 'Measurements',
+                item: 'https://canquery.com/resources/r1'
+            })
+        ]);
+    });
 });
 
 describe('seoMeta - site + static meta', () => {
@@ -123,11 +195,20 @@ describe('seoMeta - site + static meta', () => {
     it('builds indexable metadata for place pages', () => {
         const meta = seo.placeMeta({
             id: 'sgc-cd-3506', slug: 'ottawa-on', name_en: 'Ottawa',
-            type_en: 'City', latitude: 45.4215, longitude: -75.6972
+            type_en: 'City', latitude: 45.4215, longitude: -75.6972,
+            ancestors: [
+                { id: 'ca', slug: 'canada', name_en: 'Canada' },
+                { id: 'sgc-cd-3506', slug: 'ottawa-on', name_en: 'Ottawa' }
+            ]
         });
         expect(meta.canonical).toBe('https://canquery.com/places/ottawa-on');
         expect(meta.jsonLd[0]['@type']).toBe('AdministrativeArea');
         expect(meta.jsonLd[0].geo.latitude).toBeCloseTo(45.4215);
+        expect(meta.jsonLd[1].itemListElement).toEqual([
+            expect.objectContaining({ position: 1, name: 'Places', item: 'https://canquery.com/places' }),
+            expect.objectContaining({ position: 2, name: 'Canada', item: 'https://canquery.com/places/canada' }),
+            expect.objectContaining({ position: 3, name: 'Ottawa', item: 'https://canquery.com/places/ottawa-on' })
+        ]);
     });
 
     it('static sections get a title and a clean canonical', () => {

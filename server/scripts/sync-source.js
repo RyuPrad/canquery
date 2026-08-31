@@ -18,7 +18,12 @@ async function main() {
     const limitRaw = value('--limit');
     const limit = limitRaw == null ? null : Number(limitRaw);
     if (limit != null && (!Number.isInteger(limit) || limit < 1)) throw new Error('--limit must be a positive integer');
-    const summary = await syncMunicipalSource(source, { dryRun: args.includes('--dry-run'), limit });
+    const dryRun = args.includes('--dry-run');
+    const summary = await syncMunicipalSource(source, {
+        dryRun,
+        compareCatalogue: dryRun,
+        limit
+    });
     console.log(JSON.stringify(summary, null, 2));
 }
 

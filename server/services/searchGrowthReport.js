@@ -86,8 +86,9 @@ function renderSearchGrowthReport(data, generatedAt = new Date()) {
         '<div class="grid">' + table('Top queries: 28 days', data.topQueries || [], { valueLabel: 'Query' }) +
         table('Top pages: 28 days', data.topPages || [], { valueLabel: 'Page' }) + '</div><div class="grid">' +
         table('Zero-click opportunities', data.zeroClickQueries || [], { valueLabel: 'Query' }) +
-        table('Page families', data.routes || [], { valueLabel: 'Route group' }) + '</div><div class="grid">' +
-        table('Countries', data.countries || [], { valueLabel: 'Country', limit: 15 }) +
+        table('High-impression, low-CTR pages', data.pageOpportunities || [], { valueLabel: 'Page', limit: 50 }) +
+        '</div><div class="grid">' + table('Page families', data.routes || [], { valueLabel: 'Route group' }) +
+        table('Countries', data.countries || [], { valueLabel: 'Country', limit: 15 }) + '</div><div class="grid">' +
         table('Devices', data.devices || [], { valueLabel: 'Device', limit: 10 }) +
         '</div></main></body></html>';
 }

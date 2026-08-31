@@ -16,6 +16,30 @@ describe('generic municipal source orchestration', () => {
         expect(summary.exclusion_reasons).toEqual({ 'not-loadable': 1 });
     });
 
+    test('optionally compares a dry-run admission set with stored source identities', async () => {
+        const sourceAdapter = {
+            discover: jest.fn().mockResolvedValue(['one', 'two']),
+            enrichRecord: jest.fn(async value => ({
+                status: 'included', value: { externalId: value }
+            })),
+            identityFor: jest.fn(), canonicalKey: jest.fn()
+        };
+        const pool = { query: jest.fn().mockResolvedValue({
+            rows: [{ stored: 4, would_add: 2, would_delete: 0 }]
+        }) };
+
+        const summary = await syncMunicipalSource({ id: 'test', kind: 'test' }, {
+            pool, dryRun: true, compareCatalogue: true, sourceAdapter,
+            log: { warn: jest.fn(), error: jest.fn() }
+        });
+
+        expect(summary.catalogue_diff).toEqual({ stored: 4, would_add: 2, would_delete: 0 });
+        expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('WITH existing AS'), [
+            ['one', 'two'], ['one', 'two'], 'test'
+        ]);
+        expect(pool.connect).toBeUndefined();
+    });
+
     test('fails closed when metadata errors exceed the allowed fraction', async () => {
         const sourceAdapter = {
             discover: async () => [1, 2],

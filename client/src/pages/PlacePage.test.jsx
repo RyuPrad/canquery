@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import PlacePage from './PlacePage.jsx';
+import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
   fetchPlace: vi.fn(),
@@ -12,6 +13,7 @@ import { fetchPlace, fetchSources, searchDatasets } from '../api/catalog.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   fetchPlace.mockResolvedValue({ data: {
     id: 'ca-on-oshawa', slug: 'oshawa-on', kind: 'municipality',
     name: { en: 'Oshawa', fr: 'Oshawa' }, type: { en: 'City', fr: 'Ville' },
@@ -39,9 +41,28 @@ describe('PlacePage', () => {
       </MemoryRouter>
     );
     expect(await screen.findByRole('heading', { name: 'Oshawa' })).toBeInTheDocument();
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(breadcrumb).getByRole('link', { name: 'Places' })).toHaveAttribute('href', '/places');
+    expect(within(breadcrumb).getByRole('link', { name: 'Canada' })).toHaveAttribute('href', '/places/canada');
+    expect(within(breadcrumb).getByText('Oshawa')).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText('Oshawa Hub')).toBeInTheDocument();
     expect(await screen.findByText('Road network')).toBeInTheDocument();
     expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ place: 'oshawa-on', limit: 20 }));
+  });
+
+  test('localizes the place breadcrumb in French', async () => {
+    localStorage.setItem('cq-lang', 'fr');
+    render(
+      <LangProvider>
+        <MemoryRouter initialEntries={['/places/oshawa-on']}>
+          <Routes><Route path="/places/:slug" element={<PlacePage />} /></Routes>
+        </MemoryRouter>
+      </LangProvider>
+    );
+
+    const breadcrumb = await screen.findByRole('navigation', { name: 'Fil d’Ariane' });
+    expect(within(breadcrumb).getByRole('link', { name: 'Lieux' })).toHaveAttribute('href', '/places');
+    expect(within(breadcrumb).getByText('Oshawa')).toHaveAttribute('aria-current', 'page');
   });
 
   test('explains inherited coverage and lists a region’s featured municipalities', async () => {
