@@ -27,6 +27,7 @@ const MapPanel = lazy(() => import('../components/MapPanel.jsx'));
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import Provenance from '../components/Provenance.jsx';
+import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
   ArrowLeftIcon,
@@ -50,7 +51,7 @@ const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
 const AUTO_INGEST_MAX_BYTES = 100 * 1024 * 1024;
 
 function ResourceExplorer({ id }) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
 
   const [resource, setResource] = useState(null);
   const [resourceError, setResourceError] = useState(null);
@@ -382,13 +383,17 @@ function ResourceExplorer({ id }) {
       )}
       {resource && (
         <div className="space-y-2.5 cq-fade">
-          <Link
-            to={`/datasets/${resource.dataset.id}`}
-            className="inline-flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors"
-          >
-            <ArrowLeftIcon size={14} />
-            {resource.dataset.title.en || resource.dataset.name}
-          </Link>
+          <Breadcrumbs
+            label={t('breadcrumbs.label')}
+            items={[
+              { label: t('nav.datasets'), to: '/' },
+              {
+                label: resource.dataset.title?.[lang] || resource.dataset.title?.en || resource.dataset.name,
+                to: `/datasets/${resource.dataset.name || resource.dataset.id}`
+              },
+              { label: resource.name?.[lang] || resource.name?.en || resource.name?.fr || resource.id }
+            ]}
+          />
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold font-display tracking-tight">
               {resource.name.en || resource.name.fr || resource.id}

@@ -10,9 +10,9 @@ import { track } from '../utils/analytics.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
+import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
-  ArrowLeftIcon,
   ArrowRightIcon,
   BuildingIcon,
   CalendarIcon,
@@ -191,13 +191,13 @@ function DatasetExplorer({ idOrName }) {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 cq-fade">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors"
-      >
-        <ArrowLeftIcon size={14} />
-        {t('common.back_search')}
-      </Link>
+      <Breadcrumbs
+        label={t('breadcrumbs.label')}
+        items={[
+          { label: t('nav.datasets'), to: '/' },
+          { label: pick(dataset.title) || dataset.name || dataset.id }
+        ]}
+      />
 
       <div className="flex justify-between items-start gap-4">
         <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight leading-tight">

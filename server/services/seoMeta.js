@@ -4,6 +4,7 @@
 // Express - so it is fully unit-testable and reused by both the SPA head
 // injector (controllers/spaController.js) and any other caller.
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
+const { classifyResource } = require('./resourceCapabilities');
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
 const SITE_NAME = 'canquery';
@@ -12,6 +13,9 @@ const DEFAULT_DESC =
     'Search Canadian open data by place, load CSV and Excel files into live tables, and explore spatial data on a map. No signup.';
 const DEFAULT_IMAGE = SITE_URL + '/og-image.svg';
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
+const TITLE_MAX = 80;
+const DESCRIPTION_MAX = 160;
+const TITLE_SUFFIX = ' - canquery';
 
 function escapeHtml(value) {
     return String(value == null ? '' : value)
@@ -46,6 +50,64 @@ function truncate(value, max) {
 // English-default site: prefer the EN value, fall back to FR when EN is blank.
 function pick(en, fr) {
     return collapse(en) || collapse(fr) || '';
+}
+
+function siteTitle(value) {
+    return truncate(collapse(value) || 'Open data', TITLE_MAX - TITLE_SUFFIX.length) + TITLE_SUFFIX;
+}
+
+const GENERIC_RESOURCE_NAMES = new Set([
+    'data', 'dataset', 'download', 'english', 'en', 'file', 'french', 'fr',
+    'francais', 'français', 'resource', 'csv', 'xls', 'xlsx', 'json', 'geojson',
+    'xml', 'pdf', 'zip'
+]);
+
+function isGenericResourceName(value, format) {
+    const normalized = collapse(value).toLowerCase().replace(/[._-]+/g, ' ');
+    const normalizedFormat = collapse(format).toLowerCase();
+    return !normalized || GENERIC_RESOURCE_NAMES.has(normalized) ||
+        (normalizedFormat && normalized === normalizedFormat);
+}
+
+function titleContainsFormat(value, format) {
+    const normalizedFormat = collapse(format);
+    if (!normalizedFormat) return true;
+    const escaped = normalizedFormat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(^|[^a-z0-9])' + escaped + '([^a-z0-9]|$)', 'i').test(value);
+}
+
+function resourceTitleBase(resource) {
+    const name = pick(resource.name_en, resource.name_fr);
+    const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
+    const format = collapse(resource.format).toUpperCase();
+    let base = isGenericResourceName(name, format) ? datasetTitle : name;
+    base = base || datasetTitle || 'Resource';
+    if (format && !titleContainsFormat(base, format)) base += ' (' + format + ')';
+    return base;
+}
+
+function buildBreadcrumbJsonLd(items) {
+    const unique = [];
+    const paths = new Set();
+    for (const item of items || []) {
+        const name = collapse(item && item.name);
+        const path = item && item.path;
+        if (!name || !path) continue;
+        const url = canonicalFor(path);
+        if (paths.has(url)) continue;
+        paths.add(url);
+        unique.push({ name, url });
+    }
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: unique.map((item, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            name: item.name,
+            item: item.url
+        }))
+    };
 }
 
 function canonicalFor(pathname) {
@@ -239,34 +301,68 @@ function datasetMeta(dataset, resources) {
     const org = pick(dataset.org_title_en, dataset.org_title_fr);
     const notes = pick(dataset.notes_en, dataset.notes_fr);
     const description = truncate(
-        notes || (org ? title + ' - open data from ' + org + ', queryable on canquery.' : title),
-        300
+        notes || (org
+            ? 'Open data from ' + org + ': ' + title + '. Explore its resources on canquery.'
+            : title + '. Explore the available open-data resources on canquery.'),
+        DESCRIPTION_MAX
     );
     const slug = dataset.name || dataset.id;
     return {
-        title: title + ' - canquery',
+        title: siteTitle(title),
         description,
         canonical: SITE_URL + '/datasets/' + encodeURIComponent(slug),
         ogType: 'website',
-        jsonLd: [buildDatasetJsonLd(dataset, resources)],
+        jsonLd: [
+            buildDatasetJsonLd(dataset, resources),
+            buildBreadcrumbJsonLd([
+                { name: 'Datasets', path: '/' },
+                { name: title, path: '/datasets/' + encodeURIComponent(slug) }
+            ])
+        ],
     };
+}
+
+function resourceDescription(resource) {
+    const capability = classifyResource(resource).capability;
+    const name = pick(resource.name_en, resource.name_fr);
+    const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
+    const subject = datasetTitle || name || 'this open-data resource';
+    const format = collapse(resource.format).toUpperCase();
+    const formatLabel = format ? format + ' ' : '';
+    let description;
+    if (capability === 'datastore' || capability === 'ingested') {
+        description = 'Explore ' + subject + ' as a live ' + formatLabel +
+            'table: query, filter, chart and export the data on canquery.';
+    } else if (capability === 'ingestable') {
+        description = 'Load this ' + formatLabel + 'resource from ' + subject +
+            ' into a live table, then query, filter, chart and export it on canquery.';
+    } else if (capability === 'mapped') {
+        description = 'Explore ' + subject + ' on an interactive map, with metadata and access to the original ' +
+            formatLabel + 'file on canquery.';
+    } else {
+        description = 'View metadata for ' + subject + ' and access the original ' + formatLabel +
+            'file from its public-sector publisher on canquery.';
+    }
+    return truncate(description, DESCRIPTION_MAX);
 }
 
 function resourceMeta(resource) {
     const name = pick(resource.name_en, resource.name_fr) || 'Resource';
     const ds = pick(resource.dataset_title_en, resource.dataset_title_fr);
-    const fmt = collapse(resource.format);
-    const description = truncate(
-        (fmt ? fmt + ' resource' : 'Resource') +
-            (ds ? ' from the dataset "' + ds + '"' : '') +
-            ' - filter, chart and export it live on canquery.',
-        300
-    );
+    const datasetSlug = resource.dataset_name || resource.dataset_id;
     return {
-        title: name + (ds ? ' - ' + ds : '') + ' - canquery',
-        description,
+        title: siteTitle(resourceTitleBase(resource)),
+        description: resourceDescription(resource),
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',
+        jsonLd: [buildBreadcrumbJsonLd([
+            { name: 'Datasets', path: '/' },
+            datasetSlug && ds ? {
+                name: ds,
+                path: '/datasets/' + encodeURIComponent(datasetSlug)
+            } : null,
+            { name, path: '/resources/' + encodeURIComponent(resource.id) }
+        ])]
     };
 }
 
@@ -276,6 +372,7 @@ function placeMeta(place) {
     const description = 'Explore queryable and mappable open data' +
         (type ? ' for the ' + type.toLowerCase() : ' for') + ' of ' + name + ' on canquery.';
     const slug = place.slug || place.id;
+    const placePath = '/places/' + encodeURIComponent(slug);
     const ld = {
         '@context': 'https://schema.org',
         '@type': 'AdministrativeArea',
@@ -291,11 +388,18 @@ function placeMeta(place) {
         };
     }
     return {
-        title: name + ' open data - canquery',
-        description,
-        canonical: SITE_URL + '/places/' + encodeURIComponent(slug),
+        title: siteTitle(name + ' open data'),
+        description: truncate(description, DESCRIPTION_MAX),
+        canonical: SITE_URL + placePath,
         ogType: 'website',
-        jsonLd: [ld]
+        jsonLd: [ld, buildBreadcrumbJsonLd([
+            { name: 'Places', path: '/places' },
+            ...(Array.isArray(place.ancestors) ? place.ancestors.map(ancestor => ({
+                name: pick(ancestor.name_en, ancestor.name_fr),
+                path: '/places/' + encodeURIComponent(ancestor.slug || ancestor.id)
+            })) : []),
+            { name, path: placePath }
+        ])]
     };
 }
 
@@ -364,6 +468,11 @@ module.exports = {
     buildWebsiteJsonLd,
     buildOrganizationJsonLd,
     buildDatasetJsonLd,
+    buildBreadcrumbJsonLd,
+    isGenericResourceName,
+    resourceTitleBase,
+    resourceDescription,
+    siteTitle,
     homeMeta,
     staticMeta,
     datasetMeta,

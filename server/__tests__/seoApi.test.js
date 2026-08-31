@@ -151,25 +151,31 @@ describe('resolveMeta routing', () => {
 
     it('resolves a resource page', async () => {
         const deps = {
-            getResourceById: jest.fn().mockResolvedValue({ id: 'r1', name_en: 'File', format: 'CSV', dataset_title_en: 'DS' }),
+            getResourceById: jest.fn().mockResolvedValue({
+                id: 'r1', dataset_id: 'd1', dataset_name: 'dataset-slug',
+                name_en: 'File', format: 'CSV', dataset_title_en: 'DS'
+            }),
             getDatasetByIdOrName: jest.fn(),
             listResourcesForDataset: jest.fn(),
         };
         const meta = await resolveMeta('/resources/r1', deps);
-        expect(meta.title).toContain('File');
+        expect(meta.title).toBe('DS (CSV) - canquery');
         expect(meta.canonical).toBe('https://canquery.com/resources/r1');
+        expect(meta.jsonLd[0].itemListElement[1].item).toBe('https://canquery.com/datasets/dataset-slug');
     });
 
     it('resolves a place page from its stable slug', async () => {
         const deps = {
             getPlaceByIdOrSlug: jest.fn().mockResolvedValue({
-                id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa', type_en: 'City'
+                id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa', type_en: 'City',
+                ancestors: [{ id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa' }]
             })
         };
         const meta = await resolveMeta('/places/oshawa-on', deps);
         expect(deps.getPlaceByIdOrSlug).toHaveBeenCalledWith('oshawa-on');
         expect(meta.title).toContain('Oshawa');
         expect(meta.noindex).not.toBe(true);
+        expect(meta.jsonLd.some(item => item['@type'] === 'BreadcrumbList')).toBe(true);
     });
 
     it('uses static home meta without touching the DB', async () => {

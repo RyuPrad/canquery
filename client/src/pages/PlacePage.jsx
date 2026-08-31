@@ -10,6 +10,7 @@ import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { ArrowRightIcon, MapIcon, MapPinIcon } from '../components/Icons.jsx';
 
 export default function PlacePage() {
@@ -62,19 +63,17 @@ export default function PlacePage() {
   const name = place.name?.[lang] || place.name?.en || place.slug;
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
-      <nav className="flex flex-wrap items-center gap-1.5 text-xs text-base-content/45 mb-5" aria-label={t('places.breadcrumb')}>
-        <Link to="/places" className="hover:text-base-content">{t('nav.places')}</Link>
-        {(place.ancestors || []).map(ancestor => (
-          <span key={ancestor.id} className="inline-flex items-center gap-1.5">
-            <ArrowRightIcon size={10} />
-            {ancestor.id === place.id ? (
-              <span className="text-base-content/70">{ancestor.name?.[lang] || ancestor.name?.en}</span>
-            ) : (
-              <Link to={'/places/' + ancestor.slug} className="hover:text-base-content">{ancestor.name?.[lang] || ancestor.name?.en}</Link>
-            )}
-          </span>
-        ))}
-      </nav>
+      <Breadcrumbs
+        className="mb-5"
+        label={t('breadcrumbs.label')}
+        items={[
+          { label: t('nav.places'), to: '/places' },
+          ...(place.ancestors || []).map(ancestor => ({
+            label: ancestor.name?.[lang] || ancestor.name?.en,
+            to: ancestor.id === place.id ? null : '/places/' + ancestor.slug
+          }))
+        ]}
+      />
       <div className="cq-card p-6 sm:p-8 overflow-hidden relative">
         <div className="absolute inset-0 cq-grid-bg opacity-40 pointer-events-none" />
         <div className="relative flex flex-col sm:flex-row sm:items-end justify-between gap-5">

@@ -96,10 +96,14 @@ async function getSearchGrowthReportData(db = pool) {
     if (!latestDate) {
         return {
             latestDate: null, lastSyncedAt: null, daily: [], summary: null,
-            topQueries: [], topPages: [], zeroClickQueries: [], countries: [], devices: [], routes: []
+            topQueries: [], topPages: [], zeroClickQueries: [], pageOpportunities: [],
+            countries: [], devices: [], routes: []
         };
     }
-    const [dailyResult, summaryResult, topQueries, topPages, zeroClickQueries, countries, devices, routesResult] = await Promise.all([
+    const [
+        dailyResult, summaryResult, topQueries, topPages, zeroClickQueries,
+        pageOpportunitiesResult, countries, devices, routesResult
+    ] = await Promise.all([
         db.query(`
             SELECT data_date::text, clicks, impressions, ctr, position
             FROM search_console_daily
@@ -121,6 +125,26 @@ async function getSearchGrowthReportData(db = pool) {
         aggregateBreakdown(db, 'query'),
         aggregateBreakdown(db, 'page'),
         aggregateBreakdown(db, 'query', { zeroClick: true }),
+        db.query(`
+            WITH latest AS (SELECT $1::date AS d)
+            SELECT value,
+                   sum(clicks)::float8 AS clicks,
+                   sum(impressions)::float8 AS impressions,
+                   CASE WHEN sum(impressions) = 0 THEN 0
+                        ELSE sum(clicks) / sum(impressions) END::float8 AS ctr,
+                   CASE WHEN sum(impressions) = 0 THEN 0
+                        ELSE sum(position * impressions) / sum(impressions) END::float8 AS position
+            FROM search_console_breakdowns, latest
+            WHERE search_type = 'web' AND dimension = 'page'
+              AND data_date BETWEEN latest.d - 27 AND latest.d
+              AND (value ~ '/datasets/[^/?#]+' OR value ~ '/resources/[^/?#]+')
+            GROUP BY value
+            HAVING sum(impressions) >= 50
+               AND CASE WHEN sum(impressions) = 0 THEN 0
+                        ELSE sum(clicks) / sum(impressions) END < 0.01
+            ORDER BY impressions DESC, clicks, value
+            LIMIT 50
+        `, [latestDate]),
         aggregateBreakdown(db, 'country', { limit: 15 }),
         aggregateBreakdown(db, 'device', { limit: 10 }),
         db.query(`
@@ -153,6 +177,7 @@ async function getSearchGrowthReportData(db = pool) {
         topQueries,
         topPages,
         zeroClickQueries,
+        pageOpportunities: pageOpportunitiesResult.rows,
         countries,
         devices,
         routes: routesResult.rows

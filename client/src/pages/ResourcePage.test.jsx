@@ -1,8 +1,9 @@
 import { describe, beforeEach, vi, expect, test } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import ResourcePage from './ResourcePage.jsx';
 import { NotIngestedError } from '../api/client.js';
+import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
   fetchResource: vi.fn(),
@@ -19,8 +20,12 @@ function resourceEnvelope(id) {
   return {
     data: {
       id,
-      name: { en: `Resource ${id}`, fr: null },
-      dataset: { id: `dataset-${id}`, name: `dataset-${id}`, title: { en: `Dataset ${id}`, fr: null } },
+      name: { en: `Resource ${id}`, fr: `Ressource ${id}` },
+      dataset: {
+        id: `dataset-id-${id}`,
+        name: `dataset-slug-${id}`,
+        title: { en: `Dataset ${id}`, fr: `Jeu de données ${id}` }
+      },
       query_mode: 'ingested',
       format: 'CSV',
       url: `https://example.test/${id}.csv`,
@@ -48,6 +53,28 @@ beforeEach(() => {
 });
 
 describe('ResourcePage navigation', () => {
+  test.each([
+    ['en', 'Breadcrumb', 'Datasets', 'Dataset a', 'Resource a'],
+    ['fr', 'Fil d’Ariane', 'Jeux de données', 'Jeu de données a', 'Ressource a'],
+  ])('shows the localized %s resource hierarchy with its canonical dataset slug', async (
+    lang, ariaLabel, rootLabel, datasetLabel, resourceLabel
+  ) => {
+    localStorage.setItem('cq-lang', lang);
+    render(
+      <LangProvider>
+        <MemoryRouter initialEntries={['/resources/a']}>
+          <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+        </MemoryRouter>
+      </LangProvider>
+    );
+
+    const breadcrumb = await screen.findByRole('navigation', { name: ariaLabel });
+    expect(within(breadcrumb).getByRole('link', { name: rootLabel })).toHaveAttribute('href', '/');
+    expect(within(breadcrumb).getByRole('link', { name: datasetLabel }))
+      .toHaveAttribute('href', '/datasets/dataset-slug-a');
+    expect(within(breadcrumb).getByText(resourceLabel)).toHaveAttribute('aria-current', 'page');
+  });
+
   test('opens a live map without querying or loading the table first', async () => {
     fetchResource.mockResolvedValue({
       ...resourceEnvelope('a'),
