@@ -256,7 +256,7 @@ export const STRINGS = {
     'docs.ep_ingest': 'Idempotent CSV, XLSX or XLS ingest request (50 MB CSV / 20 MB Excel / 1M rows caps). Returns 202 with a job to poll, or 200 with already_loaded: true and id: null when the resource is already loaded. Rate limited to 5/hour.',
     'docs.ep_job': 'Poll an ingest job: pending, running, done or failed.',
     'docs.ep_stats': 'Catalogue totals: datasets, resources, datastore-active, ingested, store bytes.',
-    'docs.ep_ops': 'Background-job health for uptime monitors: catalogue jobs plus local-map queue counts, failures and oldest pending/running work. Returns 503 for stale work or a failed map index; expected cap skips remain visible without alarming.',
+    'docs.ep_ops': 'Background-job health for uptime monitors: catalogue jobs plus local-map queue counts, failures and oldest pending/running work. Job status is pending, ok, stale or failed; the latest failed catalogue attempt returns 503 immediately without exposing its raw error. Expected cap skips remain visible without alarming.',
   },
   fr: {
     'nav.datasets': 'Jeux de données',
@@ -509,7 +509,7 @@ export const STRINGS = {
     'docs.ep_ingest': 'Demande de chargement idempotente d’un fichier CSV, XLSX ou XLS (limites : 50 Mo CSV / 20 Mo Excel / 1 M de lignes). Renvoie 202 avec une tâche à interroger, ou 200 avec already_loaded: true et id: null si la ressource est déjà chargée. Limité à 5 par heure.',
     'docs.ep_job': 'Interrogez une tâche de chargement : pending, running, done ou failed.',
     'docs.ep_stats': 'Totaux du catalogue : jeux de données, ressources, datastore-active, chargés, octets stockés.',
-    'docs.ep_ops': 'État des tâches en arrière-plan : synchronisations du catalogue, totaux de la file cartographique, échecs et plus anciennes tâches en attente ou actives. Renvoie 503 pour un retard ou un échec d’indexation; les exclusions attendues dues aux limites restent visibles sans alerte.',
+    'docs.ep_ops': 'État des tâches en arrière-plan : synchronisations du catalogue, totaux de la file cartographique, échecs et plus anciennes tâches en attente ou actives. L’état est pending, ok, stale ou failed; le dernier échec d’une synchronisation renvoie immédiatement 503 sans exposer l’erreur brute. Les exclusions attendues dues aux limites restent visibles sans alerte.',
   },
 };
 

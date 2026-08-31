@@ -43,6 +43,47 @@ describe('ops API', () => {
         expect(res.body.data.jobs.full.status).toBe('ok');
     });
 
+    it('reports the latest failed catalogue attempt immediately without exposing its error', async () => {
+        const lastSuccess = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const failedAt = new Date().toISOString();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [{
+                kind: 'incremental',
+                last_ok_at: lastSuccess,
+                latest_finished_at: failedAt,
+                latest_ok: false,
+                error: 'private upstream diagnostics'
+            }],
+            evictLastOkAt: null
+        });
+
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(503);
+        expect(res.body.data.ok).toBe(false);
+        expect(res.body.data.jobs.incremental).toEqual({
+            last_ok_at: lastSuccess,
+            status: 'failed'
+        });
+        expect(JSON.stringify(res.body)).not.toContain('private upstream diagnostics');
+    });
+
+    it('clears a failed status after a later successful attempt', async () => {
+        const now = new Date().toISOString();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [{
+                kind: 'incremental',
+                last_ok_at: now,
+                latest_finished_at: now,
+                latest_ok: true
+            }],
+            evictLastOkAt: null
+        });
+
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(200);
+        expect(res.body.data.jobs.incremental).toEqual({ last_ok_at: now, status: 'ok' });
+    });
+
     it('never-ran jobs are pending, not stale', async () => {
         const now = new Date();
         catalogReadQueries.getJobHealth.mockResolvedValue({
@@ -95,6 +136,45 @@ describe('ops API', () => {
         expect(res.body.data.jobs['source:oshawa-hub']).toEqual({
             last_ok_at: now.toISOString(), status: 'ok'
         });
+    });
+
+    it('merges legacy and current source attempts by the newest completion', async () => {
+        const priorSuccess = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const laterFailure = new Date().toISOString();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [
+                {
+                    kind: 'source', source_id: 'oshawa-hub',
+                    last_ok_at: priorSuccess, latest_finished_at: priorSuccess, latest_ok: true
+                },
+                {
+                    kind: 'municipal', source_id: 'oshawa-hub',
+                    last_ok_at: null, latest_finished_at: laterFailure, latest_ok: false
+                }
+            ],
+            evictLastOkAt: null
+        });
+
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(503);
+        expect(res.body.data.jobs['source:oshawa-hub']).toEqual({
+            last_ok_at: priorSuccess,
+            status: 'failed'
+        });
+    });
+
+    it('reports a failed eviction attempt while preserving its last success', async () => {
+        const lastSuccess = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [],
+            evictLastOkAt: lastSuccess,
+            evictLatestFinishedAt: new Date().toISOString(),
+            evictLatestOk: false
+        });
+
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(503);
+        expect(res.body.data.jobs.evict).toEqual({ last_ok_at: lastSuccess, status: 'failed' });
     });
 
     it('reports expected map skips but alarms on a stale map lease', async () => {

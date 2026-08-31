@@ -431,6 +431,11 @@ const opsStatus = async () => {
     }
     const health = await catalogReadQueries.getJobHealth();
     const lastOkByJob = {};
+    const latestAttemptByJob = {};
+    const timeOf = value => {
+        const time = new Date(value).getTime();
+        return Number.isFinite(time) ? time : -Infinity;
+    };
     for (const row of health.syncRows) {
         const name = ['municipal', 'source'].includes(row.kind) && row.source_id ? 'source:' + row.source_id : row.kind;
         // `municipal` was renamed to `source`. Both kinds can exist for the
@@ -441,14 +446,31 @@ const opsStatus = async () => {
             new Date(row.last_ok_at).getTime() > new Date(current).getTime())) {
             lastOkByJob[name] = row.last_ok_at;
         }
+        const latestFinishedAt = row.latest_finished_at || row.last_ok_at;
+        const latestOk = typeof row.latest_ok === 'boolean' ? row.latest_ok : row.last_ok_at != null;
+        const latest = latestAttemptByJob[name];
+        if (latestFinishedAt != null && (!latest ||
+            timeOf(latestFinishedAt) > timeOf(latest.finishedAt) ||
+            (timeOf(latestFinishedAt) === timeOf(latest.finishedAt) && latest.ok && !latestOk))) {
+            latestAttemptByJob[name] = { finishedAt: latestFinishedAt, ok: latestOk };
+        }
         if (name.startsWith('source:')) JOB_MAX_AGE_HOURS[name] = 48;
     }
     lastOkByJob.evict = health.evictLastOkAt;
+    const evictLatestFinishedAt = health.evictLatestFinishedAt || health.evictLastOkAt;
+    if (evictLatestFinishedAt != null) {
+        latestAttemptByJob.evict = {
+            finishedAt: evictLatestFinishedAt,
+            ok: typeof health.evictLatestOk === 'boolean' ? health.evictLatestOk : health.evictLastOkAt != null
+        };
+    }
     const jobs = {};
     const now = Date.now();
     for (const [name, maxAgeHours] of Object.entries(JOB_MAX_AGE_HOURS)) {
         const lastOkAt = lastOkByJob[name];
-        if (lastOkAt === null || lastOkAt === undefined) {
+        if (latestAttemptByJob[name] && latestAttemptByJob[name].ok === false) {
+            jobs[name] = { last_ok_at: lastOkAt || null, status: 'failed' };
+        } else if (lastOkAt === null || lastOkAt === undefined) {
             jobs[name] = { last_ok_at: null, status: 'pending' };
         } else {
             const lastOkTime = new Date(lastOkAt).getTime();
@@ -479,9 +501,9 @@ const opsStatus = async () => {
         status: mapStale || Number(rawMaps.failed) > 0 || Number(rawMaps.retrying_sources) > 0
             ? (mapStale ? 'stale' : 'degraded') : 'ok'
     };
-    const anyStale = Object.values(jobs).some(j => j.status === 'stale');
+    const anyUnhealthyJob = Object.values(jobs).some(j => ['failed', 'stale'].includes(j.status));
     return {
-        ok: !anyStale && !mapStale && maps.failed === 0 && maps.retrying_sources === 0,
+        ok: !anyUnhealthyJob && !mapStale && maps.failed === 0 && maps.retrying_sources === 0,
         jobs, maps
     };
 };
