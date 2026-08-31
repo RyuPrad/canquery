@@ -69,6 +69,33 @@ describe('sweepMissingDatasets', () => {
         expect(db.query).toHaveBeenCalledTimes(1);
     });
 
+    test('refuses a truncated small-source catalogue', async () => {
+        const db = {
+            query: jest.fn().mockResolvedValueOnce({ rows: [{ total: '27', missing: '26' }] })
+        };
+
+        await expect(sweepMissingDatasets(db, ['kept'], {
+            sourceId: 'small-municipality', maxDeleteFraction: 0.1
+        })).rejects.toThrow('26/27');
+        expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    test('allows one routine deletion from a tiny catalogue', async () => {
+        const db = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [{ total: '5', missing: '1' }] })
+                .mockResolvedValueOnce({ rows: [{ dataset_id: 'shared-dataset' }] })
+                .mockResolvedValueOnce({ rowCount: 1 })
+                .mockResolvedValueOnce({ rows: [] })
+        };
+
+        await expect(sweepMissingDatasets(db, ['kept'], {
+            sourceId: 'tiny-municipality', maxDeleteFraction: 0.1
+        })).resolves.toEqual({ datasetsDeleted: 0, resourcesDeleted: 0 });
+        expect(db.query.mock.calls[0][1]).toEqual([['kept'], 'tiny-municipality']);
+        expect(db.query.mock.calls[1][0]).toContain('DELETE FROM dataset_sources');
+    });
+
     test('deletes missing resources before their datasets', async () => {
         const db = {
             query: jest.fn()

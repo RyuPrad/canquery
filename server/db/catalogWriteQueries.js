@@ -331,13 +331,16 @@ async function sweepMissingDatasets(db, upstreamIdsRaw, options = {}) {
     const total = Number(countResult.rows[0].total) || 0;
     const missing = Number(countResult.rows[0].missing) || 0;
 
-    // Small development catalogues can legitimately lose one of a handful of
-    // rows. On a real harvest, require an operator decision before deleting more
-    // than the safety fraction in one run.
-    if (total >= 100 && missing / total > maxDeleteFraction) {
+    // Permit one routine removal even when the configured fraction rounds down
+    // to zero, but never disable the guard for small production catalogues.
+    // Several municipal sources contain fewer than 100 datasets, where a
+    // truncated response would otherwise be allowed to delete nearly everything.
+    const maxDeleteCount = Math.max(1, Math.floor(total * maxDeleteFraction));
+    if (missing > maxDeleteCount) {
         throw new Error(
             'refusing catalogue sweep of ' + missing + '/' + total +
-            ' datasets (limit ' + (maxDeleteFraction * 100) + '%)'
+            ' datasets (limit ' + (maxDeleteFraction * 100) + '%, ' +
+            maxDeleteCount + ' for current catalogue size)'
         );
     }
     if (missing === 0) return { datasetsDeleted: 0, resourcesDeleted: 0 };
