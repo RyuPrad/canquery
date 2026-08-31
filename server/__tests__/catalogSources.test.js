@@ -69,7 +69,7 @@ describe('configured municipal catalogue sources', () => {
             kind: 'arcgis-hub', upstreamHost: 'rowopendata-rmw.opendata.arcgis.com',
             catalogUrl: 'https://rowopendata-rmw.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
         }));
-        expect(waterloo.publisherAliases).toHaveLength(4);
+        expect(waterloo.publisherAliases).toHaveLength(5);
         expect(waterloo.authoritativePublishers).toHaveLength(4);
         expect(waterloo.licenseRules).toHaveLength(4);
         expect(waterloo.placeRules).toHaveLength(4);
@@ -133,6 +133,10 @@ describe('configured municipal catalogue sources', () => {
             placeId: 'sgc-csd-1310032', relationship: 'direct',
             includesDescendants: false
         })]);
+        expect(fredericton.publisherAliases.some(rule =>
+            rule.publisher.test('City of Fredericton - Ville de Fredericton') &&
+            rule.name === 'City of Fredericton'
+        )).toBe(true);
     });
 
 
@@ -620,23 +624,35 @@ describe('configured municipal catalogue sources', () => {
 
     test('configures v32 multi-province sources with official licences and direct place rules', () => {
         const v32Sources = [
-            { id: 'lethbridge-hub', host: 'opendata.lethbridge.ca', placeId: 'sgc-csd-4802012' },
-            { id: 'medicine-hat-hub', host: 'opendata.medicinehat.ca', placeId: 'sgc-csd-4801006' },
-            { id: 'airdrie-hub', host: 'data-airdrie.opendata.arcgis.com', placeId: 'sgc-csd-4806021' },
-            { id: 'canmore-hub', host: 'opendata-canmore.opendata.arcgis.com', placeId: 'sgc-csd-4815023' },
-            { id: 'penticton-hub', host: 'open.penticton.ca', placeId: 'sgc-csd-5907041' },
-            { id: 'langley-city-hub', host: 'data-langleycity.opendata.arcgis.com', placeId: 'sgc-csd-5915001' },
-            { id: 'huron-hub', host: 'data-huron.opendata.arcgis.com', placeId: 'sgc-cd-3540' },
-            { id: 'cumberland-hub', host: 'data-cumberlandns.opendata.arcgis.com', placeId: 'sgc-cd-1211' }
+            { id: 'lethbridge-hub', host: 'opendata.lethbridge.ca', placeId: 'sgc-csd-4802012', publisher: 'City of Lethbridge' },
+            { id: 'medicine-hat-hub', host: 'opendata.medicinehat.ca', placeId: 'sgc-csd-4801006', publisher: 'City of Medicine Hat' },
+            { id: 'airdrie-hub', host: 'data-airdrie.opendata.arcgis.com', placeId: 'sgc-csd-4806021', publisher: 'City of Airdrie' },
+            { id: 'canmore-hub', host: 'opendata-canmore.opendata.arcgis.com', placeId: 'sgc-csd-4815023', publisher: 'Town of Canmore' },
+            { id: 'penticton-hub', host: 'open.penticton.ca', placeId: 'sgc-csd-5907041', publisher: 'City of Penticton' },
+            { id: 'langley-city-hub', host: 'data-langleycity.opendata.arcgis.com', placeId: 'sgc-csd-5915001', publisher: 'City of Langley' },
+            { id: 'huron-hub', host: 'data-huron.opendata.arcgis.com', placeId: 'sgc-cd-3540', publisher: 'County of Huron' },
+            { id: 'cumberland-hub', host: 'data-cumberlandns.opendata.arcgis.com', placeId: 'sgc-cd-1211', publisher: 'Municipality of the County of Cumberland' }
         ];
 
-        for (const { id, host, placeId } of v32Sources) {
+        for (const { id, host, placeId, publisher } of v32Sources) {
             const source = getSource(id);
             expect(source).toBeDefined();
             expect(source.kind).toBe('arcgis-hub');
             expect(source.upstreamHost).toBe(host);
+            expect(source.placeholderPublisher).toBe(publisher);
             expect(source.placeRules[0].placeId).toBe(placeId);
             expect(source.placeRules[0].relationship).toBe('direct');
+        }
+
+        const waterloo = getSource('waterloo-region-hub');
+        expect(waterloo.publisherAliases.some(rule =>
+            rule.publisher.test('Cambridge, Ontario') && rule.name === 'City of Cambridge'
+        )).toBe(true);
+        const airdrie = getSource('airdrie-hub');
+        for (const publisher of ['GeoConnection', 'The City of Airdrie']) {
+            expect(airdrie.publisherAliases.some(rule =>
+                rule.publisher.test(publisher) && rule.name === 'City of Airdrie'
+            )).toBe(true);
         }
     });
 

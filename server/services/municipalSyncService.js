@@ -41,6 +41,29 @@ async function mapConcurrent(rows, concurrency, callback) {
     return results;
 }
 
+async function previewCatalogueDiff(db, sourceId, admittedExternalIds, keptExternalIds) {
+    const result = await db.query(`
+        WITH existing AS (
+            SELECT external_id FROM dataset_sources WHERE source_id = $3
+        ), admitted AS (
+            SELECT DISTINCT unnest($1::text[]) AS external_id
+        ), kept AS (
+            SELECT DISTINCT unnest($2::text[]) AS external_id
+        )
+        SELECT (SELECT count(*)::int FROM existing) AS stored,
+               (SELECT count(*)::int FROM admitted i
+                WHERE NOT EXISTS (SELECT 1 FROM existing e WHERE e.external_id = i.external_id)) AS would_add,
+               (SELECT count(*)::int FROM existing e
+                WHERE NOT EXISTS (SELECT 1 FROM kept k WHERE k.external_id = e.external_id)) AS would_delete
+    `, [admittedExternalIds, keptExternalIds, sourceId]);
+    const row = result.rows[0] || {};
+    return {
+        stored: Number(row.stored) || 0,
+        would_add: Number(row.would_add) || 0,
+        would_delete: Number(row.would_delete) || 0
+    };
+}
+
 async function syncMunicipalSource(source, {
     pool = defaultPool,
     dryRun = false,
@@ -48,6 +71,7 @@ async function syncMunicipalSource(source, {
     fetchJson,
     concurrency = 2,
     maxFailureFraction = 0.05,
+    compareCatalogue = false,
     sourceAdapter,
     log = console
 } = {}) {
@@ -122,6 +146,14 @@ async function syncMunicipalSource(source, {
             }, {})
         };
         if (dryRun) {
+            if (compareCatalogue) {
+                summary.catalogue_diff = await previewCatalogueDiff(
+                    pool,
+                    source.id,
+                    included.map(row => row.externalId),
+                    keepExternalIds
+                );
+            }
             ok = true;
             return summary;
         }
@@ -193,4 +225,4 @@ async function syncMunicipalSource(source, {
     }
 }
 
-module.exports = { syncMunicipalSource, mapConcurrent };
+module.exports = { syncMunicipalSource, mapConcurrent, previewCatalogueDiff };

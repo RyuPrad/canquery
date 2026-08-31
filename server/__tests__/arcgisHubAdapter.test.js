@@ -448,6 +448,72 @@ describe('ArcGIS Hub adapter', () => {
         });
     });
 
+    test.each([
+        ['waterloo-region-hub', 'Cambridge, Ontario', 'City of Cambridge', 'sgc-csd-3530010', 'https://www.cambridge.ca/en/your-city/open-data.aspx'],
+        ['fredericton-hub', 'City of Fredericton - Ville de Fredericton', 'City of Fredericton', 'sgc-csd-1310032', 'https://data-fredericton.opendata.arcgis.com/pages/open-data-licence'],
+        ['airdrie-hub', 'GeoConnection', 'City of Airdrie', 'sgc-csd-4806021', 'https://data-airdrie.opendata.arcgis.com/pages/terms-of-use'],
+        ['airdrie-hub', 'The City of Airdrie', 'City of Airdrie', 'sgc-csd-4806021', 'https://data-airdrie.opendata.arcgis.com/pages/terms-of-use']
+    ])('normalizes %s publisher evidence %s without widening its licence gate', async (
+        sourceId, suppliedPublisher, canonicalPublisher, placeId, licenseUrl
+    ) => {
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'UnrelatedArcgisOwner', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
+
+        const result = await adapter.enrichRecord(record({
+            publisher: { name: suppliedPublisher },
+            license: null
+        }), getSource(sourceId), { fetchJson });
+
+        expect(result.status).toBe('included');
+        expect(result.value.organization.titleEn).toBe(canonicalPublisher);
+        expect(result.value.places[0]).toEqual(expect.objectContaining({ placeId }));
+        expect(result.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            licenseUrl,
+            raw: expect.objectContaining({
+                publisher: canonicalPublisher,
+                supplied_publisher: suppliedPublisher
+            })
+        }));
+    });
+
+    test.each([
+        ['lethbridge-hub', 'City of Lethbridge', 'sgc-csd-4802012'],
+        ['medicine-hat-hub', 'City of Medicine Hat', 'sgc-csd-4801006'],
+        ['airdrie-hub', 'City of Airdrie', 'sgc-csd-4806021'],
+        ['canmore-hub', 'Town of Canmore', 'sgc-csd-4815023'],
+        ['penticton-hub', 'City of Penticton', 'sgc-csd-5907041'],
+        ['langley-city-hub', 'City of Langley', 'sgc-csd-5915001'],
+        ['huron-hub', 'County of Huron', 'sgc-cd-3540'],
+        ['cumberland-hub', 'Municipality of the County of Cumberland', 'sgc-cd-1211']
+    ])('admits %s placeholders only from its exact HTTPS catalogue host', async (
+        sourceId, canonicalPublisher, placeId
+    ) => {
+        const source = getSource(sourceId);
+        const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
+            ? { owner: 'UnrelatedArcgisOwner', type: 'Feature Service' }
+            : { type: 'Feature Layer', geometryType: 'esriGeometryPolygon', fields: [] });
+        const placeholderRecord = record({ publisher: { name: '{{source}}' }, license: null });
+
+        const trusted = await adapter.enrichRecord(placeholderRecord, source, { fetchJson });
+        expect(trusted.status).toBe('included');
+        expect(trusted.value.organization.titleEn).toBe(canonicalPublisher);
+        expect(trusted.value.places[0]).toEqual(expect.objectContaining({ placeId }));
+        expect(trusted.value.source).toEqual(expect.objectContaining({
+            isAuthoritative: true,
+            raw: expect.objectContaining({ publisher: canonicalPublisher, supplied_publisher: null })
+        }));
+
+        const wrongHost = await adapter.enrichRecord(placeholderRecord, {
+            ...source,
+            catalogUrl: 'https://mirror.example/api/feed/dcat-us/1.1.json'
+        }, { fetchJson });
+        expect(wrongHost).toEqual({
+            status: 'excluded', reason: 'unlicensed', externalId: ITEM_ID + ':2'
+        });
+    });
+
     test('rejects v35 third-party and explicitly restricted ArcGIS records', async () => {
         const fetchJson = jest.fn(async url => url.includes('/sharing/rest/content/items/')
             ? { owner: 'MunicipalGIS', type: 'Feature Service' }
