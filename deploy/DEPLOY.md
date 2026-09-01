@@ -20,6 +20,34 @@ cd /home/canquery/canquery/server && sudo -u canquery npm install --omit=dev
 mkdir -p /home/canquery/logs && chown canquery:canquery /home/canquery/logs
 ```
 
+### Existing-host upgrades
+
+Run repository and dependency operations as the application user. Do not fetch,
+merge, install dependencies, or build the client as `root`; root-owned Git
+objects or generated files can prevent the systemd user from completing a later
+deployment.
+
+Before an upgrade, confirm the checkout is clean and that its Git metadata is
+owned by the application account. If a prior administrative deployment left
+only the `.git` metadata with the wrong owner, repair that exact directory (not
+the host, home directory, or application data) before continuing:
+
+```bash
+APP_ROOT=/home/canquery/canquery
+sudo -u canquery git -C "$APP_ROOT" status --short --branch
+sudo find "$APP_ROOT/.git" -xdev ! -user canquery -print -quit
+sudo chown -R canquery:canquery "$APP_ROOT/.git"
+sudo -u canquery git -C "$APP_ROOT" fetch --prune origin
+sudo -u canquery git -C "$APP_ROOT" merge --ff-only origin/main
+sudo -u canquery npm ci --prefix "$APP_ROOT/server" --omit=dev
+sudo -u canquery npm ci --prefix "$APP_ROOT/client"
+sudo -u canquery npm run build --prefix "$APP_ROOT/client"
+```
+
+Re-run the ownership check after the upgrade and verify the checkout remains
+clean before restarting services. Substitute the real application user and
+path for deployments that retain the historical `opencanada` names.
+
 ## 2. Database
 
 ```bash
