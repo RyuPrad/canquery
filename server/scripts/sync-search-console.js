@@ -43,11 +43,14 @@ async function main() {
             endDate,
             logger: message => console.log(message)
         });
-        rowCount = result.breakdownRows;
+        rowCount = result.breakdownRows + result.queryPageRows;
         if (result.truncated.length) {
             console.warn('Search Console row cap reached:', JSON.stringify(result.truncated));
         }
-        console.log('synced ' + result.days + ' days and ' + result.breakdownRows + ' breakdown rows');
+        console.log(
+            'synced ' + result.days + ' days, ' + result.breakdownRows +
+            ' breakdown rows, and ' + result.queryPageRows + ' query-page rows'
+        );
         ok = true;
     } catch (err) {
         error = err.message;

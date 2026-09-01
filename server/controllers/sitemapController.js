@@ -33,6 +33,13 @@ function urlset(entries) {
     );
 }
 
+function chunkNumber(value) {
+    if (!/^[1-9]\d*$/.test(value || '')) return null;
+    const parsed = Number(value);
+    const maxChunk = Math.floor(Number.MAX_SAFE_INTEGER / PAGE_SIZE);
+    return Number.isSafeInteger(parsed) && parsed <= maxChunk ? parsed : null;
+}
+
 // GET /robots.txt - allow everything, point at the sitemap index. We do NOT
 // block /api: Googlebot fetches it while rendering the SPA, and the per-page
 // <head> injection plus canonicals keep the index clean.
@@ -42,13 +49,18 @@ const robots = (req, res) => {
     res.send('User-agent: *\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 
-// GET /sitemap.xml - the index: the static hub pages plus one chunk per slice
-// of datasets.
+// GET /sitemap.xml - the index: static/place pages plus quality-gated dataset
+// and interactive-resource chunks.
 const sitemapIndex = catchAsync(async (req, res) => {
-    const total = await catalogRead.countSitemapDatasets();
-    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const [datasetTotal, resourceTotal] = await Promise.all([
+        catalogRead.countSitemapDatasets(),
+        catalogRead.countSitemapResources()
+    ]);
+    const datasetPages = Math.max(1, Math.ceil(datasetTotal / PAGE_SIZE));
+    const resourcePages = Math.ceil(resourceTotal / PAGE_SIZE);
     const locs = [SITE_URL + '/sitemap-pages.xml', SITE_URL + '/sitemap-places.xml'];
-    for (let i = 1; i <= pages; i++) locs.push(SITE_URL + '/sitemap-datasets-' + i + '.xml');
+    for (let i = 1; i <= datasetPages; i++) locs.push(SITE_URL + '/sitemap-datasets-' + i + '.xml');
+    for (let i = 1; i <= resourcePages; i++) locs.push(SITE_URL + '/sitemap-resources-' + i + '.xml');
     const body =
         '<?xml version="1.0" encoding="UTF-8"?>\n' +
         '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
@@ -90,8 +102,8 @@ const sitemapPlaces = catchAsync(async (req, res) => {
 
 // GET /sitemap-datasets-:n.xml - one chunk of dataset URLs.
 const sitemapDatasets = catchAsync(async (req, res, next) => {
-    const n = parseInt(req.params.n, 10);
-    if (!Number.isInteger(n) || n < 1) return next(new AppError('Not found', 404));
+    const n = chunkNumber(req.params.n);
+    if (n === null) return next(new AppError('Not found', 404));
     const rows = await catalogRead.listDatasetSitemap({
         limit: PAGE_SIZE,
         offset: (n - 1) * PAGE_SIZE,
@@ -107,4 +119,32 @@ const sitemapDatasets = catchAsync(async (req, res, next) => {
     res.send(urlset(entries));
 });
 
-module.exports = { robots, sitemapIndex, sitemapPages, sitemapPlaces, sitemapDatasets };
+// GET /sitemap-resources-:n.xml - datastore, locally ingested, and mapped
+// resource pages only. Loadable/file-only resources remain discoverable through
+// their dataset page without expanding the crawl surface.
+const sitemapResources = catchAsync(async (req, res, next) => {
+    const n = chunkNumber(req.params.n);
+    if (n === null) return next(new AppError('Not found', 404));
+    const rows = await catalogRead.listResourceSitemap({
+        limit: PAGE_SIZE,
+        offset: (n - 1) * PAGE_SIZE,
+    });
+    if (!rows.length) return next(new AppError('Not found', 404));
+    const entries = rows.map(resource => ({
+        loc: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
+        lastmod: resource.metadata_modified ? new Date(resource.metadata_modified).toISOString() : null,
+        changefreq: 'monthly',
+    }));
+    res.type('application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(urlset(entries));
+});
+
+module.exports = {
+    robots,
+    sitemapIndex,
+    sitemapPages,
+    sitemapPlaces,
+    sitemapDatasets,
+    sitemapResources
+};

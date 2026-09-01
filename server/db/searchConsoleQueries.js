@@ -33,6 +33,35 @@ async function insertBreakdowns(client, day) {
     }
 }
 
+async function insertQueryPages(client, day) {
+    const rows = day.queryPages || [];
+    const size = 500;
+    for (let offset = 0; offset < rows.length; offset += size) {
+        const chunk = rows.slice(offset, offset + size);
+        const values = [];
+        const tuples = chunk.map((row, index) => {
+            const p = index * 8 + 1;
+            values.push(
+                day.dataDate, day.searchType, row.query, row.page,
+                row.clicks, row.impressions, row.ctr, row.position
+            );
+            return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7})`;
+        });
+        await client.query(`
+            INSERT INTO search_console_query_pages (
+                data_date, search_type, query_text, page_url,
+                clicks, impressions, ctr, position
+            ) VALUES ${tuples.join(',')}
+            ON CONFLICT (data_date, search_type, query_text, page_url) DO UPDATE SET
+                clicks = EXCLUDED.clicks,
+                impressions = EXCLUDED.impressions,
+                ctr = EXCLUDED.ctr,
+                position = EXCLUDED.position,
+                synced_at = now()
+        `, values);
+    }
+}
+
 async function replaceSearchConsoleDay(day, db = pool) {
     const client = await db.connect();
     try {
@@ -56,6 +85,11 @@ async function replaceSearchConsoleDay(day, db = pool) {
             [day.dataDate, day.searchType]
         );
         await insertBreakdowns(client, day);
+        await client.query(
+            'DELETE FROM search_console_query_pages WHERE data_date = $1 AND search_type = $2',
+            [day.dataDate, day.searchType]
+        );
+        await insertQueryPages(client, day);
         await client.query('COMMIT');
     } catch (err) {
         await client.query('ROLLBACK');
@@ -97,12 +131,13 @@ async function getSearchGrowthReportData(db = pool) {
         return {
             latestDate: null, lastSyncedAt: null, daily: [], summary: null,
             topQueries: [], topPages: [], zeroClickQueries: [], pageOpportunities: [],
-            countries: [], devices: [], routes: []
+            queryPageOpportunities: [], countries: [], devices: [], routes: []
         };
     }
     const [
         dailyResult, summaryResult, topQueries, topPages, zeroClickQueries,
-        pageOpportunitiesResult, countries, devices, routesResult
+        pageOpportunitiesResult, queryPageOpportunitiesResult,
+        countries, devices, routesResult
     ] = await Promise.all([
         db.query(`
             SELECT data_date::text, clicks, impressions, ctr, position
@@ -145,25 +180,52 @@ async function getSearchGrowthReportData(db = pool) {
             ORDER BY impressions DESC, clicks, value
             LIMIT 50
         `, [latestDate]),
+        db.query(`
+            WITH latest AS (SELECT $1::date AS d)
+            SELECT query_text AS query, page_url AS page,
+                   sum(clicks)::float8 AS clicks,
+                   sum(impressions)::float8 AS impressions,
+                   CASE WHEN sum(impressions) = 0 THEN 0
+                        ELSE sum(clicks) / sum(impressions) END::float8 AS ctr,
+                   CASE WHEN sum(impressions) = 0 THEN 0
+                        ELSE sum(position * impressions) / sum(impressions) END::float8 AS position
+            FROM search_console_query_pages, latest
+            WHERE search_type = 'web'
+              AND data_date BETWEEN latest.d - 27 AND latest.d
+            GROUP BY query_text, page_url
+            HAVING sum(impressions) >= 5
+               AND sum(position * impressions) / nullif(sum(impressions), 0) BETWEEN 1 AND 20
+               AND sum(clicks) / nullif(sum(impressions), 0) < 0.01
+            ORDER BY impressions DESC, clicks, query_text, page_url
+            LIMIT 100
+        `, [latestDate]),
         aggregateBreakdown(db, 'country', { limit: 15 }),
         aggregateBreakdown(db, 'device', { limit: 10 }),
         db.query(`
-            WITH latest AS (SELECT $1::date AS d), grouped AS (
+            WITH latest AS (SELECT $1::date AS d), page_totals AS (
                 SELECT CASE
-                    WHEN value ~ '/places/[^/?#]+' THEN 'Place pages'
-                    WHEN value ~ '/datasets/[^/?#]+' THEN 'Dataset pages'
-                    WHEN value ~ '/resources/[^/?#]+' THEN 'Resource pages'
-                    WHEN value ~ '/insights/?([?#].*)?$' THEN 'Insights'
-                    ELSE 'Other pages' END AS value,
-                    clicks, impressions, position
-                FROM search_console_breakdowns, latest
-                WHERE search_type = 'web' AND dimension = 'page'
-                  AND data_date BETWEEN latest.d - 27 AND latest.d
+                    WHEN scb.value ~ '/places/[^/?#]+' THEN 'Place pages'
+                    WHEN scb.value ~ '/datasets/[^/?#]+' THEN 'Dataset pages'
+                    WHEN scb.value ~ '/resources/[^/?#]+' THEN 'Resource pages'
+                    WHEN scb.value ~ '/insights/?([?#].*)?$' THEN 'Insights'
+                    ELSE 'Other pages' END AS family,
+                    scb.value AS page,
+                    sum(scb.clicks)::float8 AS clicks,
+                    sum(scb.impressions)::float8 AS impressions,
+                    sum(scb.position * scb.impressions)::float8 AS position_weight
+                FROM search_console_breakdowns scb, latest
+                WHERE scb.search_type = 'web' AND scb.dimension = 'page'
+                  AND scb.data_date BETWEEN latest.d - 27 AND latest.d
+                GROUP BY 1, scb.value
             )
-            SELECT value, sum(clicks)::float8 AS clicks, sum(impressions)::float8 AS impressions,
+            SELECT family AS value,
+                   count(*)::int AS pages_with_impressions,
+                   count(*) FILTER (WHERE clicks > 0)::int AS pages_with_clicks,
+                   sum(clicks)::float8 AS clicks,
+                   sum(impressions)::float8 AS impressions,
                    CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(clicks) / sum(impressions) END::float8 AS ctr,
-                   CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(position * impressions) / sum(impressions) END::float8 AS position
-            FROM grouped GROUP BY value ORDER BY clicks DESC, impressions DESC
+                   CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(position_weight) / sum(impressions) END::float8 AS position
+            FROM page_totals GROUP BY family ORDER BY impressions DESC, clicks DESC
         `, [latestDate])
     ]);
     const summary = summaryResult.rows[0];
@@ -178,6 +240,7 @@ async function getSearchGrowthReportData(db = pool) {
         topPages,
         zeroClickQueries,
         pageOpportunities: pageOpportunitiesResult.rows,
+        queryPageOpportunities: queryPageOpportunitiesResult.rows,
         countries,
         devices,
         routes: routesResult.rows
@@ -187,6 +250,7 @@ async function getSearchGrowthReportData(db = pool) {
 module.exports = {
     latestSearchConsoleDate,
     insertBreakdowns,
+    insertQueryPages,
     replaceSearchConsoleDay,
     aggregateBreakdown,
     getSearchGrowthReportData

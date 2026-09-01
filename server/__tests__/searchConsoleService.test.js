@@ -49,6 +49,20 @@ describe('Search Console API pagination', () => {
         expect(request).toHaveBeenCalledTimes(2);
     });
 
+    it('requests validated query-to-page dimension pairs', async () => {
+        const request = jest.fn().mockResolvedValue({ data: { rows: [] } });
+        await service.querySlice(request, {
+            siteUrl: 'https://example.com/',
+            dataDate: '2026-08-19',
+            dimensions: ['query', 'page']
+        });
+        expect(request.mock.calls[0][0].data.dimensions).toEqual(['query', 'page']);
+        expect(() => service.normalizeDimensions(null, ['query', 'query']))
+            .toThrow(/duplicate/);
+        expect(() => service.normalizeDimensions(null, ['query', 'unknown']))
+            .toThrow(/unsupported/);
+    });
+
     it('retries 429/5xx responses with bounded backoff', async () => {
         const error = Object.assign(new Error('limited'), { response: { status: 429 } });
         const request = jest.fn().mockRejectedValueOnce(error).mockResolvedValue({ data: { rows: [] } });
@@ -65,6 +79,10 @@ describe('Search Console daily synchronization', () => {
     it('collects totals and each allowed breakdown without copying empty keys', async () => {
         const request = jest.fn(async ({ data }) => {
             if (!data.dimensions) return { data: { rows: [{ clicks: 3, impressions: 10, ctr: 0.3, position: 4.2 }] } };
+            if (data.dimensions.length === 2) return { data: { rows: [
+                { keys: ['water data', 'https://example.com/datasets/water'], clicks: 1, impressions: 4, ctr: 0.25, position: 3 },
+                { keys: ['', 'https://example.com/'], clicks: 0, impressions: 1, ctr: 0, position: 9 }
+            ] } };
             return { data: { rows: [
                 { keys: [data.dimensions[0] + '-value'], clicks: 1, impressions: 2, ctr: 0.5, position: 2 },
                 { keys: [''], clicks: 0, impressions: 0, ctr: 0, position: 0 }
@@ -76,6 +94,14 @@ describe('Search Console daily synchronization', () => {
         expect(day.total).toEqual({ clicks: 3, impressions: 10, ctr: 0.3, position: 4.2 });
         expect(day.breakdowns).toHaveLength(4);
         expect(day.breakdowns.map(row => row.dimension)).toEqual(service.DIMENSIONS);
+        expect(day.queryPages).toEqual([{
+            query: 'water data',
+            page: 'https://example.com/datasets/water',
+            clicks: 1,
+            impressions: 4,
+            ctr: 0.25,
+            position: 3
+        }]);
     });
 
     it('replaces one transactionally complete day at a time', async () => {
@@ -89,7 +115,12 @@ describe('Search Console daily synchronization', () => {
             startDate: '2026-08-18', endDate: '2026-08-19', logger: log
         });
         expect(db.replaceSearchConsoleDay).toHaveBeenCalledTimes(2);
-        expect(result).toEqual({ days: 2, breakdownRows: 0, truncated: [] });
+        expect(result).toEqual({
+            days: 2,
+            breakdownRows: 0,
+            queryPageRows: 0,
+            truncated: []
+        });
         expect(log).toHaveBeenCalledTimes(2);
     });
 });

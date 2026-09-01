@@ -10,5 +10,6 @@ router.get('/sitemap.xml', sitemap.sitemapIndex);
 router.get('/sitemap-pages.xml', sitemap.sitemapPages);
 router.get('/sitemap-places.xml', sitemap.sitemapPlaces);
 router.get('/sitemap-datasets-:n.xml', sitemap.sitemapDatasets);
+router.get('/sitemap-resources-:n.xml', sitemap.sitemapResources);
 
 module.exports = router;

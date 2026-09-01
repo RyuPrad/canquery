@@ -73,7 +73,7 @@ psql canquery -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
 cd server
 npm install
 cp .env.example .env              # set DATABASE_URL (and optional S3_* for PMTiles)
-npm run migrate                   # apply migrations (runs 001..030)
+npm run migrate                   # apply migrations (runs 001..031)
 npm run sync:places               # populate the 2021 SGC hierarchy
 
 # sync the federal catalogue (batched harvest, chunks of 50)
