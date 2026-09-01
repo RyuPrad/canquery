@@ -261,10 +261,11 @@ sudo -u canquery npm run gsc:report --prefix /home/canquery/canquery/server
 ```
 
 The client requests only `webmasters.readonly`. The first sync imports 90
-finalized Pacific-time days; later runs replace a seven-day overlap. Serve the
-file configured by `GSC_REPORT_PATH` only through an authenticated, noindex
-operator route. Once the initial import and protected report are verified,
-uncomment the 06:15 UTC sync and 06:30 UTC report entries.
+finalized Pacific-time days, including aggregate query-to-page attribution;
+later runs replace a seven-day overlap atomically. Serve the file configured by
+`GSC_REPORT_PATH` only through an authenticated, noindex operator route. Once the
+initial import and protected report are verified, uncomment the 06:15 UTC sync
+and 06:30 UTC report entries.
 
 Incremental sync advances its persisted checkpoint only after a complete
 overlap-window traversal. Reaching its safety page cap records an incomplete run

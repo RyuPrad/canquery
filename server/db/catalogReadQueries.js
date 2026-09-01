@@ -400,6 +400,11 @@ const SITEMAP_DATASET_PREDICATE = `EXISTS (
                           WHERE ir.resource_id = r.id AND ir.status = 'ready')
                OR EXISTS (SELECT 1 FROM resource_maps rm WHERE rm.resource_id = r.id)))`;
 
+const SITEMAP_RESOURCE_PREDICATE = `(r.datastore_active
+        OR EXISTS (SELECT 1 FROM ingested_resources ir
+                   WHERE ir.resource_id = r.id AND ir.status = 'ready')
+        OR EXISTS (SELECT 1 FROM resource_maps rm WHERE rm.resource_id = r.id))`;
+
 async function countSitemapDatasets() {
     const result = await pool.query(`SELECT count(*)::int AS n FROM datasets d WHERE ${SITEMAP_DATASET_PREDICATE}`);
     return result.rows[0].n;
@@ -410,6 +415,29 @@ async function listDatasetSitemap({ limit, offset }) {
         SELECT d.id, d.name, d.metadata_modified FROM datasets d
         WHERE ${SITEMAP_DATASET_PREDICATE}
         ORDER BY d.id LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+    return result.rows;
+}
+
+async function countSitemapResources() {
+    const result = await pool.query(`
+        SELECT count(*)::int AS n FROM resources r
+        WHERE ${SITEMAP_RESOURCE_PREDICATE}
+    `);
+    return result.rows[0].n;
+}
+
+async function listResourceSitemap({ limit, offset }) {
+    const result = await pool.query(`
+        WITH eligible_resources AS MATERIALIZED (
+            SELECT r.id, r.dataset_id
+            FROM resources r
+            WHERE ${SITEMAP_RESOURCE_PREDICATE}
+        )
+        SELECT eligible.id, d.metadata_modified
+        FROM eligible_resources eligible
+        JOIN datasets d ON d.id = eligible.dataset_id
+        ORDER BY eligible.id LIMIT $1 OFFSET $2
     `, [limit, offset]);
     return result.rows;
 }
@@ -546,6 +574,8 @@ module.exports = {
     getStats,
     countSitemapDatasets,
     listDatasetSitemap,
+    countSitemapResources,
+    listResourceSitemap,
     listPlaceSitemap,
     pingDb,
     getLastSyncTime,

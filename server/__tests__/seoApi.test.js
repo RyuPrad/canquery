@@ -7,6 +7,8 @@ jest.mock('../db/catalogReadQueries', () => ({
     getStats: jest.fn(),
     countSitemapDatasets: jest.fn(),
     listDatasetSitemap: jest.fn(),
+    countSitemapResources: jest.fn(),
+    listResourceSitemap: jest.fn(),
     listPlaceSitemap: jest.fn(),
     getPlaceByIdOrSlug: jest.fn(),
     pingDb: jest.fn(),
@@ -36,8 +38,9 @@ describe('robots.txt', () => {
 });
 
 describe('sitemap index', () => {
-    it('lists the pages sitemap plus one chunk per 25k datasets', async () => {
+    it('lists one chunk per 25k quality-gated datasets and resources', async () => {
         catalogRead.countSitemapDatasets.mockResolvedValue(30000);
+        catalogRead.countSitemapResources.mockResolvedValue(26000);
         const res = await request(app).get('/sitemap.xml');
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/xml/);
@@ -46,12 +49,17 @@ describe('sitemap index', () => {
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-2.xml</loc>');
         expect(res.text).not.toContain('sitemap-datasets-3.xml');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-1.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-2.xml</loc>');
+        expect(res.text).not.toContain('sitemap-resources-3.xml');
     });
 
-    it('always emits at least one dataset chunk', async () => {
+    it('always emits a dataset chunk but omits empty resource chunks', async () => {
         catalogRead.countSitemapDatasets.mockResolvedValue(0);
+        catalogRead.countSitemapResources.mockResolvedValue(0);
         const res = await request(app).get('/sitemap.xml');
         expect(res.text).toContain('sitemap-datasets-1.xml');
+        expect(res.text).not.toContain('sitemap-resources-1.xml');
     });
 });
 
@@ -108,6 +116,41 @@ describe('dataset sitemap chunk', () => {
         catalogRead.listDatasetSitemap.mockResolvedValue([]);
         const res = await request(app).get('/sitemap-datasets-99.xml');
         expect(res.status).toBe(404);
+    });
+});
+
+describe('resource sitemap chunk', () => {
+    it('emits canonical resource urls with parent-dataset lastmod values', async () => {
+        catalogRead.listResourceSitemap.mockResolvedValue([
+            { id: 'r1', metadata_modified: '2026-08-27T12:00:00Z' },
+            { id: 'r/2', metadata_modified: null }
+        ]);
+        const res = await request(app).get('/sitemap-resources-1.xml');
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toMatch(/xml/);
+        expect(catalogRead.listResourceSitemap).toHaveBeenCalledWith({ limit: 25000, offset: 0 });
+        expect(res.text).toContain('<loc>https://canquery.com/resources/r1</loc>');
+        expect(res.text).toContain('<lastmod>2026-08-27T12:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/resources/r%2F2</loc>');
+    });
+
+    it('computes chunk offsets and 404s beyond the current resource set', async () => {
+        catalogRead.listResourceSitemap
+            .mockResolvedValueOnce([{ id: 'r9', metadata_modified: null }])
+            .mockResolvedValueOnce([]);
+        await request(app).get('/sitemap-resources-3.xml');
+        expect(catalogRead.listResourceSitemap).toHaveBeenNthCalledWith(1, {
+            limit: 25000,
+            offset: 50000
+        });
+        const res = await request(app).get('/sitemap-resources-99.xml');
+        expect(res.status).toBe(404);
+    });
+
+    it('rejects malformed chunk numbers without querying the catalogue', async () => {
+        const res = await request(app).get('/sitemap-resources-1x.xml');
+        expect(res.status).toBe(404);
+        expect(catalogRead.listResourceSitemap).not.toHaveBeenCalled();
     });
 });
 

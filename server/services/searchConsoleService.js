@@ -1,4 +1,5 @@
 const DIMENSIONS = ['query', 'page', 'country', 'device'];
+const QUERY_PAGE_DIMENSIONS = ['query', 'page'];
 const ROW_LIMIT = 25000;
 const MAX_ROWS = 50000;
 const SEARCH_TYPE = 'web';
@@ -56,9 +57,31 @@ async function requestWithRetry(request, options, { retries = 3, sleep = (ms) =>
     }
 }
 
-async function querySlice(request, { siteUrl, dataDate, dimension = null, sleep }) {
+function normalizeDimensions(dimension, dimensions) {
+    if (dimension !== null && dimensions !== null) {
+        throw new Error('use either dimension or dimensions, not both');
+    }
+    const values = dimensions === null
+        ? (dimension === null ? [] : [dimension])
+        : dimensions;
+    if (!Array.isArray(values) || values.some(value => !DIMENSIONS.includes(value))) {
+        throw new Error('unsupported Search Console dimension');
+    }
+    if (new Set(values).size !== values.length) {
+        throw new Error('duplicate Search Console dimension');
+    }
+    return values;
+}
+
+async function querySlice(request, {
+    siteUrl,
+    dataDate,
+    dimension = null,
+    dimensions = null,
+    sleep
+}) {
     validateDate(dataDate);
-    if (dimension !== null && !DIMENSIONS.includes(dimension)) throw new Error('unsupported Search Console dimension');
+    const groupBy = normalizeDimensions(dimension, dimensions);
     const rows = [];
     const url = API_ROOT + encodeURIComponent(siteUrl) + '/searchAnalytics/query';
     for (let startRow = 0; startRow < MAX_ROWS; startRow += ROW_LIMIT) {
@@ -70,7 +93,7 @@ async function querySlice(request, { siteUrl, dataDate, dimension = null, sleep 
             rowLimit: ROW_LIMIT,
             startRow
         };
-        if (dimension) body.dimensions = [dimension];
+        if (groupBy.length) body.dimensions = groupBy;
         const response = await requestWithRetry(request, { url, method: 'POST', data: body }, { sleep });
         const page = Array.isArray(response?.data?.rows) ? response.data.rows : [];
         rows.push(...page);
@@ -102,24 +125,49 @@ async function collectDay(request, { siteUrl, dataDate, sleep }) {
             breakdowns.push({ dimension, value: String(value), ...metricRow(row) });
         }
     }
-    return { dataDate, searchType: SEARCH_TYPE, total, breakdowns, truncated };
+    const queryPageResult = await querySlice(request, {
+        siteUrl,
+        dataDate,
+        dimensions: QUERY_PAGE_DIMENSIONS,
+        sleep
+    });
+    if (queryPageResult.truncated) truncated.push('query+page');
+    const queryPages = queryPageResult.rows.flatMap(row => {
+        const query = row?.keys?.[0];
+        const page = row?.keys?.[1];
+        if (query == null || query === '' || page == null || page === '') return [];
+        return [{ query: String(query), page: String(page), ...metricRow(row) }];
+    });
+    return {
+        dataDate,
+        searchType: SEARCH_TYPE,
+        total,
+        breakdowns,
+        queryPages,
+        truncated
+    };
 }
 
 async function syncRange({ db, request, siteUrl, startDate, endDate, logger = () => {}, sleep }) {
-    const summary = { days: 0, breakdownRows: 0, truncated: [] };
+    const summary = { days: 0, breakdownRows: 0, queryPageRows: 0, truncated: [] };
     for (const dataDate of dateRange(startDate, endDate)) {
         const day = await collectDay(request, { siteUrl, dataDate, sleep });
         await db.replaceSearchConsoleDay(day);
         summary.days += 1;
         summary.breakdownRows += day.breakdowns.length;
+        summary.queryPageRows += day.queryPages.length;
         if (day.truncated.length) summary.truncated.push({ dataDate, dimensions: day.truncated });
-        logger('synced ' + dataDate + ': ' + day.breakdowns.length + ' breakdown rows');
+        logger(
+            'synced ' + dataDate + ': ' + day.breakdowns.length +
+            ' breakdown rows, ' + day.queryPages.length + ' query-page rows'
+        );
     }
     return summary;
 }
 
 module.exports = {
     DIMENSIONS,
+    QUERY_PAGE_DIMENSIONS,
     ROW_LIMIT,
     MAX_ROWS,
     SEARCH_TYPE,
@@ -127,6 +175,7 @@ module.exports = {
     addDays,
     pacificDate,
     dateRange,
+    normalizeDimensions,
     requestWithRetry,
     querySlice,
     metricRow,
