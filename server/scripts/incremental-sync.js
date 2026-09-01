@@ -47,6 +47,10 @@ const {
     collectIncrementalPackages,
     latestTimestamp
 } = require('../services/incrementalSync');
+const {
+    acquireCatalogSyncLock,
+    releaseCatalogSyncLock
+} = require('../db/catalogSyncLock');
 
 function positiveInteger(value, fallback) {
     const parsed = Number(value);
@@ -59,11 +63,19 @@ const overlapSeconds = positiveInteger(process.env.INCREMENTAL_SYNC_OVERLAP_SECO
 async function main() {
     const startedAt = new Date();
     let ok = false;
+    let skipped = false;
     let error = null;
     let datasetsUpserted = 0;
     let resourcesUpserted = 0;
+    let lockClient = null;
 
     try {
+        lockClient = await acquireCatalogSyncLock(pool);
+        if (!lockClient) {
+            skipped = true;
+            console.log('incremental-sync skipped: federal catalogue sync already active');
+            return;
+        }
         if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
             throw new Error('--limit must be a positive integer');
         }
@@ -175,13 +187,22 @@ async function main() {
         error = err.message;
         console.error('incremental-sync failed:', err);
     } finally {
-        try {
-            await insertSyncRun(pool, { kind: 'incremental', sourceId: 'open-canada', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
-        } catch (logErr) {
-            console.error('run log failed:', logErr.message);
+        if (lockClient) {
+            try {
+                await releaseCatalogSyncLock(lockClient);
+            } catch (unlockErr) {
+                console.error('catalog sync lock release failed:', unlockErr.message);
+            }
+        }
+        if (!skipped) {
+            try {
+                await insertSyncRun(pool, { kind: 'incremental', sourceId: 'open-canada', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
+            } catch (logErr) {
+                console.error('run log failed:', logErr.message);
+            }
         }
         await pool.end();
-        process.exit(ok ? 0 : 1);
+        process.exit(skipped || ok ? 0 : 1);
     }
 }
 

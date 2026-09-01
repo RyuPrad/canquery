@@ -24,6 +24,10 @@ const {
     setProgress,
     insertSyncRun
 } = require('../db/catalogWriteQueries');
+const {
+    acquireCatalogSyncLock,
+    releaseCatalogSyncLock
+} = require('../db/catalogSyncLock');
 
 const args = process.argv.slice(2);
 function getArgValue(name) {
@@ -47,11 +51,19 @@ const maxDeleteFraction = deleteFraction(process.env.FULL_SYNC_MAX_DELETE_FRACTI
 async function main() {
     const startedAt = new Date();
     let ok = false;
+    let skipped = false;
     let error = null;
     let datasetsUpserted = 0;
     let resourcesUpserted = 0;
+    let lockClient = null;
 
     try {
+        lockClient = await acquireCatalogSyncLock(pool);
+        if (!lockClient) {
+            skipped = true;
+            console.log('catalog-sync skipped: federal catalogue sync already active');
+            return;
+        }
         if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
             throw new Error('--limit must be a positive integer');
         }
@@ -165,13 +177,22 @@ async function main() {
         error = err.message;
         console.error('catalog-sync failed:', err);
     } finally {
-        try {
-            await insertSyncRun(pool, { kind: 'full', sourceId: 'open-canada', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
-        } catch (logErr) {
-            console.error('run log failed:', logErr.message);
+        if (lockClient) {
+            try {
+                await releaseCatalogSyncLock(lockClient);
+            } catch (unlockErr) {
+                console.error('catalog sync lock release failed:', unlockErr.message);
+            }
+        }
+        if (!skipped) {
+            try {
+                await insertSyncRun(pool, { kind: 'full', sourceId: 'open-canada', startedAt, finishedAt: new Date(), ok, datasetsUpserted, resourcesUpserted, error });
+            } catch (logErr) {
+                console.error('run log failed:', logErr.message);
+            }
         }
         await pool.end();
-        process.exit(ok ? 0 : 1);
+        process.exit(skipped || ok ? 0 : 1);
     }
 }
 
