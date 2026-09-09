@@ -107,4 +107,22 @@ integrationDescribe('search visibility PostgreSQL integration', () => {
         });
         expect(await getOrganizationByName(org + '_missing', admin)).toBeNull();
     });
+
+    test('groups both blog locales without including similarly named routes', async () => {
+        const metric = { clicks: 0, impressions: 60, ctr: 0, position: 5 };
+        const pages = ['/blog', '/fr/blog', '/blog/oshawa-parks-map', '/fr/blog/carte-parcs-oshawa', '/blogger'];
+        await replaceSearchConsoleDay({
+            dataDate: '2026-09-03', searchType: 'web', total: { ...metric, impressions: 300 },
+            breakdowns: pages.map(page => ({ dimension: 'page', value: 'https://canquery.com' + page, ...metric })),
+            queryPages: []
+        }, db);
+        const report = await getSearchGrowthReportData(db);
+        expect(report.routes.find(row => row.value === 'Local guides')).toMatchObject({
+            pages_with_impressions: 4, impressions: 240
+        });
+        expect(report.pageOpportunities.map(row => row.value)).toEqual(expect.arrayContaining([
+            'https://canquery.com/blog/oshawa-parks-map', 'https://canquery.com/fr/blog/carte-parcs-oshawa'
+        ]));
+        expect(report.pageOpportunities.map(row => row.value)).not.toContain('https://canquery.com/blogger');
+    });
 });

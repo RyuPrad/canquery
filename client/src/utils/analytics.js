@@ -1,5 +1,7 @@
 export const ANALYTICS_EVENTS = new Set([
   'catalog_search',
+  'catalog_search_result',
+  'blog_explore',
   'catalog_filter',
   'dataset_open',
   'organization_open',

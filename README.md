@@ -51,6 +51,27 @@ The Whitehorse, St. John's, and Charlottetown source identities remain configure
 their previously documented ArcGIS feeds are unavailable and no equivalent machine-readable
 catalogue with verified open-data terms is currently admissible.
 
+## Local resident guides
+
+The bilingual [local guides](https://canquery.com/blog) connect practical city
+questions to verified maps and tables: Oshawa park boundaries, Toronto active
+building permits, and Montréal parks and public spaces. French editions have
+separate URLs under `/fr/blog` and reciprocal language links. Articles include
+source attribution, coverage limits, and independently labelled publication,
+article-update, and link-verification dates.
+
+Guides are maintained in `content/blog/` with paired Markdown files and a JSON
+manifest; see its README for the authoring workflow. Full articles are served
+before JavaScript, and `/sitemap-blog.xml` is included in the sitemap index.
+The read-only API exposes `GET /api/v1/blog?lang=en&place=oshawa-on` and
+`GET /api/v1/blog/:lang/:slug` using the normal response envelope.
+
+Catalogue search supports reviewed English/French terms for parks, playgrounds,
+and building permits, with bounded spelling suggestions on empty first pages.
+Results include localized `description`, `preview_resources` map/table IDs,
+and `meta.search` query/suggestions while preserving the existing filters and
+pagination. Result links reflect current resource capabilities.
+
 ## Layout
 
 ```

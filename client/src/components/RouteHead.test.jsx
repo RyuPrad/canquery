@@ -99,3 +99,14 @@ test.each(['network', 'mismatched canonical', 'malformed schema'])('clears stale
   expect(document.querySelector('script[type="application/ld+json"]')).toBeNull();
   expect(document.querySelector('meta[name=robots]')).toBeNull();
 });
+
+test('preserves translated alternates while replacing the canonical on client navigation', async () => {
+  fetch.mockResolvedValue(response('/datasets/roads', 'Road guide', 200,
+    '<link rel="alternate" hreflang="en-CA" href="https://canquery.com/blog/roads">' +
+    '<link rel="alternate" hreflang="fr-CA" href="https://canquery.com/fr/blog/routes">'));
+  start();
+  fireEvent.click(screen.getByText('Dataset'));
+  await waitFor(() => expect(document.title).toBe('Road guide'));
+  expect(document.querySelectorAll('link[rel=canonical]')).toHaveLength(1);
+  expect(document.querySelector('link[hreflang="fr-CA"]').href).toBe('https://canquery.com/fr/blog/routes');
+});

@@ -1,4 +1,5 @@
 const seo = require('./seoMeta');
+const { listArticles } = require('./blogContent');
 const { classifyResource } = require('./resourceCapabilities');
 
 const MAX_LINKS = 12;
@@ -150,7 +151,8 @@ function placeSnapshot(place, datasets) {
             { label: 'Mappable datasets', value: maps }
         ],
         linksTitle: datasetLinks.length ? 'Open datasets' : 'Places in this area',
-        links: datasetLinks.length ? datasetLinks : childLinks
+        links: datasetLinks.length ? datasetLinks : childLinks,
+        relatedLinks: listArticles({ place: place.slug || place.id }).map(article => ({ path: article.path, label: article.title }))
     });
 }
 
@@ -190,6 +192,7 @@ const STATIC_COPY = {
         summary: 'Find federal, provincial, territorial and municipal datasets, query live tables, and explore spatial resources on maps.',
         links: [
             { path: '/places', label: 'Browse open data by place' },
+            { path: '/blog', label: 'Read local resident guides' },
             { path: '/organizations', label: 'Browse publishing organizations' },
             { path: '/insights', label: 'Explore popular dataset insights' },
             { path: '/docs', label: 'Use the CanQuery API' }

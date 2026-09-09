@@ -27,7 +27,7 @@ const listDatasets = async (req, res) => {
     });
     res.set('Cache-Control', 'public, max-age=300');
     const sources = Array.from(new Set(result.items.flatMap(item => item.provenance.sources.map(source => source.id))));
-    res.json(envelope(result.items, { nextCursor: result.nextCursor, meta: { sources } }));
+    res.json(envelope(result.items, { nextCursor: result.nextCursor, meta: { sources, search: { query: cleanStr(q) || '', suggestions: result.suggestions } } }));
 };
 
 const provenanceMeta = (value) => {

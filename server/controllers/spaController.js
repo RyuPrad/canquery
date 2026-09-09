@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
+const { resolveBlogPage } = require('../services/blogPresentation');
 const catalogRead = require('../db/catalogReadQueries');
 
 // The built index.html is immutable for the life of the process (a deploy
@@ -42,6 +43,8 @@ function searchArgs(overrides) {
 // in one pass. The same HTML is sent to every user agent; React replaces the
 // bounded snapshot when the application starts.
 async function resolvePage(reqPath, deps = catalogRead) {
+    const blog = resolveBlogPage(reqPath);
+    if (blog) return blog;
     const route = seoMeta.classifyRoute(reqPath);
     if (route.type === 'dataset') {
         const dataset = await deps.getDatasetByIdOrName(route.id);

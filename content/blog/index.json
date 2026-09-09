@@ -1,0 +1,98 @@
+[
+  {
+    "id": "toronto-building-permits",
+    "status": "published",
+    "place": "toronto-on",
+    "topic": "building-permits",
+    "query": {
+      "en": "building permits",
+      "fr": "permis de construction"
+    },
+    "view": "table",
+    "published": "2026-09-09",
+    "updated": "2026-09-09",
+    "verified": "2026-09-09",
+    "dataset": "/datasets/toronto-open-data-building-permits-active-permits",
+    "explore": "/resources/ckan-toronto-open-data-resource-6d0229af-bc54-46de-9c2b-26759b01dd05",
+    "editions": {
+      "en": {
+        "slug": "toronto-building-permits",
+        "title": "How to look up active building permits in Toronto",
+        "description": "Look up Toronto building applications and permits by street, understand the records, and open the official source through CanQuery.",
+        "placeName": "Toronto",
+        "topicName": "Building permits"
+      },
+      "fr": {
+        "slug": "permis-construction-toronto",
+        "title": "Comment consulter les permis de construction actifs à Toronto",
+        "description": "Recherchez les demandes et permis de construction de Toronto par rue et apprenez à lire les données officielles dans CanQuery.",
+        "placeName": "Toronto",
+        "topicName": "Permis de construction"
+      }
+    }
+  },
+  {
+    "id": "oshawa-parks",
+    "status": "published",
+    "place": "oshawa-on",
+    "topic": "parks",
+    "query": {
+      "en": "parks",
+      "fr": "parcs"
+    },
+    "view": "map",
+    "published": "2026-09-09",
+    "updated": "2026-09-09",
+    "verified": "2026-09-09",
+    "dataset": "/datasets/arcgis-088980627c7d494abc89ce1277068ebc-9",
+    "explore": "/resources/arcgis-088980627c7d494abc89ce1277068ebc-9-data?view=map",
+    "editions": {
+      "en": {
+        "slug": "oshawa-parks-map",
+        "title": "Explore Oshawa’s parks using open map data",
+        "description": "Open Oshawa’s park map, explore city-owned park boundaries, and understand what the municipal inventory can tell you before a visit.",
+        "placeName": "Oshawa",
+        "topicName": "Parks"
+      },
+      "fr": {
+        "slug": "carte-parcs-oshawa",
+        "title": "Explorer les parcs d’Oshawa avec les données ouvertes",
+        "description": "Explorez les limites des parcs municipaux d’Oshawa et découvrez ce que l’inventaire officiel permet de vérifier avant une visite.",
+        "placeName": "Oshawa",
+        "topicName": "Parcs"
+      }
+    }
+  },
+  {
+    "id": "montreal-parks",
+    "status": "published",
+    "place": "montreal-qc",
+    "topic": "parks",
+    "query": {
+      "en": "parks",
+      "fr": "parcs"
+    },
+    "view": "table",
+    "published": "2026-09-09",
+    "updated": "2026-09-09",
+    "verified": "2026-09-09",
+    "dataset": "/datasets/montreal-open-data-grands-parcs-parcs-d-arrondissements-et-espaces-publics",
+    "explore": "/resources/ckan-montreal-open-data-resource-f34c3555-c285-4ef3-a55c-f0f5c440ad2d",
+    "editions": {
+      "en": {
+        "slug": "montreal-parks-public-spaces",
+        "title": "Find Montréal parks and public spaces in open data",
+        "description": "Find Montréal park records by name, understand the French column labels, and check the limits of the city’s parks and public-spaces catalogue.",
+        "placeName": "Montréal",
+        "topicName": "Parks and public spaces"
+      },
+      "fr": {
+        "slug": "parcs-espaces-publics-montreal",
+        "title": "Trouver les parcs et espaces publics de Montréal",
+        "description": "Recherchez un parc montréalais par son nom, consultez les données municipales et comprenez les limites du catalogue des espaces publics.",
+        "placeName": "Montréal",
+        "topicName": "Parcs et espaces publics"
+      }
+    }
+  }
+]

@@ -1,6 +1,7 @@
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
 const catalogRead = require('../db/catalogReadQueries');
+const { listArticles } = require('../services/blogContent');
 const { SITE_URL } = require('../services/seoMeta');
 
 // Sitemap files cap at 50,000 URLs each; we chunk datasets well under that and
@@ -61,7 +62,8 @@ const sitemapIndex = catchAsync(async (req, res) => {
     const locs = [
         SITE_URL + '/sitemap-pages.xml',
         SITE_URL + '/sitemap-places.xml',
-        SITE_URL + '/sitemap-organizations.xml'
+        SITE_URL + '/sitemap-organizations.xml',
+        SITE_URL + '/sitemap-blog.xml'
     ];
     for (let i = 1; i <= datasetPages; i++) locs.push(SITE_URL + '/sitemap-datasets-' + i + '.xml');
     for (let i = 1; i <= resourcePages; i++) locs.push(SITE_URL + '/sitemap-resources-' + i + '.xml');
@@ -161,7 +163,18 @@ const sitemapResources = catchAsync(async (req, res, next) => {
     res.send(urlset(entries));
 });
 
+const sitemapBlog = (req, res) => {
+    const articles = ['en', 'fr'].flatMap(lang => listArticles({ lang }));
+    const updated = articles.map(article => article.updated).sort().at(-1);
+    const entries = ['/blog', '/fr/blog'].map(path => ({ loc: SITE_URL + path, lastmod: updated }));
+    for (const article of articles) entries.push({ loc: SITE_URL + article.path, lastmod: article.updated });
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(urlset(entries));
+};
+
 module.exports = {
+    sitemapBlog,
     robots,
     sitemapIndex,
     sitemapPages,

@@ -15,7 +15,8 @@ export function readSeoElements(html, responseUrl) {
   const elements = range.nodes.filter(node => {
     if (node.nodeType !== 1) return false;
     if (node.tagName === 'TITLE') return true;
-    if (node.tagName === 'LINK') return node.getAttribute('rel') === 'canonical';
+    if (node.tagName === 'LINK') return node.getAttribute('rel') === 'canonical' ||
+      (node.getAttribute('rel') === 'alternate' && ['en-CA', 'fr-CA', 'x-default'].includes(node.getAttribute('hreflang')));
     if (node.tagName === 'META') {
       return /^(description|robots|twitter:.+)$/.test(node.getAttribute('name') || '') ||
         /^og:/.test(node.getAttribute('property') || '');
@@ -23,7 +24,7 @@ export function readSeoElements(html, responseUrl) {
     return node.tagName === 'SCRIPT' && node.getAttribute('type') === 'application/ld+json';
   });
   const titles = elements.filter(node => node.tagName === 'TITLE');
-  const canonicals = elements.filter(node => node.tagName === 'LINK');
+  const canonicals = elements.filter(node => node.tagName === 'LINK' && node.getAttribute('rel') === 'canonical');
   if (titles.length !== 1 || !titles[0].textContent.trim() || canonicals.length !== 1) {
     throw new Error('Invalid SEO identity');
   }
@@ -33,8 +34,12 @@ export function readSeoElements(html, responseUrl) {
     throw new Error('SEO response belongs to a different page');
   }
   return elements.map(node => {
+    if (node.tagName === 'LINK' && node.getAttribute('rel') === 'alternate' &&
+        new URL(node.getAttribute('href'), responseUrl).origin !== canonical.origin) {
+      throw new Error('Invalid alternate origin');
+    }
     const copy = document.createElement(node.tagName.toLowerCase());
-    for (const name of ['name', 'content', 'property', 'rel', 'href', 'type']) {
+    for (const name of ['name', 'content', 'property', 'rel', 'href', 'hreflang', 'type']) {
       if (node.hasAttribute(name)) copy.setAttribute(name, node.getAttribute(name));
     }
     if (node.tagName === 'SCRIPT') JSON.parse(node.textContent);

@@ -13,19 +13,18 @@ export default function DatasetRow({ dataset }) {
     : null;
 
   return (
-    <Link
-      to={'/datasets/' + (dataset.name || dataset.id)}
+    <article
       className="cq-card block p-4 sm:px-5 group"
-      data-analytics-event="dataset_open"
-      data-analytics-dataset-id={dataset.id}
-      data-analytics-dataset-slug={dataset.name || ''}
-      data-analytics-source="catalog_result"
     >
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div className="min-w-0 sm:flex-1">
           <div className="font-semibold text-[0.95rem] leading-snug line-clamp-2 group-hover:text-base-content transition-colors">
-            {title}
+            <Link to={'/datasets/' + (dataset.name || dataset.id)} className="hover:underline"
+              data-analytics-event="dataset_open" data-analytics-dataset-id={dataset.id} data-analytics-source="catalog_result">{title}</Link>
           </div>
+          {(dataset.description?.[lang] || dataset.description?.en || dataset.description?.fr) && (
+            <p className="text-sm text-base-content/65 mt-2 line-clamp-2">{dataset.description?.[lang] || dataset.description?.en || dataset.description?.fr}</p>
+          )}
           <div className="text-[0.8rem] text-base-content/45 mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap">
             {orgTitle && (
               <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -36,7 +35,7 @@ export default function DatasetRow({ dataset }) {
             {modifiedDate && (
               <span className="inline-flex items-center gap-1.5">
                 <CalendarIcon size={12} />
-                {modifiedDate}
+                <span title={t('discovery.metadata')}>{t('discovery.metadata')}: {modifiedDate}</span>
               </span>
             )}
             {place && (
@@ -64,12 +63,20 @@ export default function DatasetRow({ dataset }) {
               {t('places.map')}
             </span>
           )}
+          {dataset.preview_resources?.map && <Link className="btn btn-sm btn-outline" to={'/resources/' + encodeURIComponent(dataset.preview_resources.map) + '?view=map'}
+            data-analytics-event="resource_view" data-analytics-view="map" data-analytics-source="catalog_result" data-analytics-resource-id={dataset.preview_resources.map}>
+            {t('discovery.map')}
+          </Link>}
+          {dataset.preview_resources?.table && <Link className="btn btn-sm btn-outline" to={'/resources/' + encodeURIComponent(dataset.preview_resources.table)}
+            data-analytics-event="resource_open" data-analytics-source="catalog_result" data-analytics-resource-id={dataset.preview_resources.table}>
+            {t('discovery.table')}
+          </Link>}
           <ArrowRightIcon
             size={15}
             className="opacity-0 group-hover:opacity-50 transition-opacity hidden sm:block"
           />
         </div>
       </div>
-    </Link>
+    </article>
   );
 }

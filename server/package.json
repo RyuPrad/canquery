@@ -30,7 +30,8 @@
         "gsc:sync": "node scripts/sync-search-console.js",
         "gsc:report": "node scripts/build-search-growth-report.js",
         "lint": "eslint .",
-        "verify": "bash ../scripts/verify-release.sh"
+        "verify": "bash ../scripts/verify-release.sh",
+        "blog:check": "node scripts/check-blog.js"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "3.1118.0",
@@ -43,6 +44,7 @@
         "express-rate-limit": "^7.4.0",
         "google-auth-library": "^10.9.1",
         "helmet": "^8.0.0",
+        "markdown-it": "14.3.1",
         "pbf": "5.1.2",
         "pg": "^8.13.0",
         "pg-copy-streams": "^7.0.0",

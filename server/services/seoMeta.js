@@ -679,6 +679,10 @@ function buildManagedTags(meta) {
     tags.push('<title>' + title + '</title>');
     tags.push('<meta name="description" content="' + description + '" />');
     tags.push('<link rel="canonical" href="' + url + '" />');
+    for (const [language, href] of Object.entries(meta.alternates || {})) {
+        tags.push('<link rel="alternate" hreflang="' + escapeHtml(language) + '" href="' + escapeHtml(href) + '" />');
+    }
+    if (meta.lang) tags.push('<meta property="og:locale" content="' + (meta.lang === 'fr' ? 'fr_CA' : 'en_CA') + '" />');
     tags.push('<meta property="og:title" content="' + title + '" />');
     tags.push('<meta property="og:description" content="' + description + '" />');
     tags.push('<meta property="og:type" content="' + ogType + '" />');
@@ -698,7 +702,7 @@ function buildManagedTags(meta) {
 // changed), return the template untouched - serving valid default HTML.
 function renderHtml(template, meta, bodyHtml = '') {
     const re = /<!-- seo:start -->[\s\S]*?<!-- seo:end -->/;
-    let html = template;
+    let html = meta.lang ? template.replace(/<html\b[^>]*>/, '<html lang="' + escapeHtml(meta.lang) + '">') : template;
     if (re.test(html)) {
         const block = buildManagedTags(meta)
             .map((line) => '    ' + line)

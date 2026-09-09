@@ -1,6 +1,12 @@
 const snapshot = require('../services/seoSnapshot');
 
 describe('server-rendered crawl snapshots', () => {
+    it('links pilot places to their guide without adding unrelated guides', () => {
+        expect(snapshot.placeSnapshot({ id: 'p1', slug: 'oshawa-on', name_en: 'Oshawa' }, []))
+            .toContain('href="/blog/oshawa-parks-map"');
+        expect(snapshot.placeSnapshot({ id: 'p2', name_en: 'Elsewhere' }, []))
+            .not.toContain('href="/blog/');
+    });
     it('escapes catalogue text and bounds linked resources', () => {
         const resources = Array.from({ length: 30 }, (_, index) => ({
             id: 'r' + index,

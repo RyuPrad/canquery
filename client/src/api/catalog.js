@@ -116,3 +116,11 @@ export async function fetchStats() {
     return null;
   }
 }
+
+export function fetchBlog({ lang = 'en', place } = {}) {
+  return getJSON('/api/v1/blog', { lang, place });
+}
+
+export function fetchBlogArticle(lang, slug) {
+  return getJSON('/api/v1/blog/' + encodeURIComponent(lang) + '/' + encodeURIComponent(slug));
+}

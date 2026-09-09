@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import LocalGuides from '../components/LocalGuides.jsx';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
@@ -27,7 +28,7 @@ import {
 } from '../components/Icons.jsx';
 
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
-const EXAMPLES = ['housing', 'wildfire', 'electric vehicles', 'water quality', 'census'];
+const EXAMPLES = { en: ['parks', 'playgrounds', 'building permits', 'water quality', 'census'], fr: ['parcs', 'aires de jeux', 'permis de construction', 'qualité de l’eau', 'recensement'] };
 
 function StatCard({ icon, value, label, tone, delay }) {
   const n = useCountUp(value);
@@ -167,7 +168,7 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, [lang]);
 
-  const { items, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
+  const { items, meta, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>
       searchDatasets({
         q: debouncedQuery || undefined,
@@ -182,6 +183,15 @@ export default function HomePage() {
       }),
     [debouncedQuery, org, format, keyword, place, source, mappable]
   );
+
+  const reportedSearch = useRef(null);
+  useEffect(() => {
+    if (loading || error || !debouncedQuery || meta?.search?.query !== debouncedQuery.trim() || reportedSearch.current === meta) return;
+    reportedSearch.current = meta;
+    track('catalog_search_result', {
+      place, language: lang, returned: items.length, empty: items.length === 0,
+    });
+  }, [loading, error, debouncedQuery, place, lang, items.length, meta]);
 
   const filtering = Boolean(debouncedQuery || org || format || keyword || place || source || mappable);
   const synced = stats?.last_synced_at ? formatRelativeTime(stats.last_synced_at, lang) : null;
@@ -237,7 +247,7 @@ export default function HomePage() {
 
           <div className="flex flex-wrap gap-2 items-center justify-center mt-4">
             <span className="text-xs text-base-content/35">{t('home.try')}</span>
-            {EXAMPLES.map((ex) => (
+            {EXAMPLES[lang].map((ex) => (
               <button key={ex} className="cq-pill !text-xs" onClick={() => {
                 track('catalog_search', { query: ex, source: 'example' });
                 setQuery(ex);
@@ -319,6 +329,8 @@ export default function HomePage() {
           </section>
         )}
 
+        {!debouncedQuery && !org && !format && !source && !keyword && <LocalGuides place={place} />}
+
         <div className="flex flex-wrap gap-2 items-center mt-10">
           <button
             className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
@@ -399,6 +411,10 @@ export default function HomePage() {
               <MapleLeaf size={34} className="mx-auto text-base-content/15" />
               <p className="text-base-content/60">{t('home.no_results')}</p>
               <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>
+              {meta?.search?.suggestions?.length > 0 && <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
+                <span>{t('discovery.suggest')}</span>
+                {meta.search.suggestions.map(suggestion => <button className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>{suggestion}</button>)}
+              </div>}
             </div>
           )}
           {items.map((d) => (

@@ -1,3 +1,5 @@
+const { plainText, truncate } = require('./seoMeta');
+const { spellingSuggestions } = require('./localSearch');
 const catalogReadQueries = require('../db/catalogReadQueries');
 const queryLogQueries = require('../db/queryLogQueries');
 const { packageList } = require('./ckanClient');
@@ -138,6 +140,8 @@ const searchDatasets = async ({ q, org, format, keyword, place, source, mappable
         id: r.id,
         name: r.name,
         title: { en: r.title_en, fr: r.title_fr },
+        description: { en: truncate(plainText(r.notes_en), 240), fr: truncate(plainText(r.notes_fr), 240) },
+        preview_resources: { map: r.preview_map_id || null, table: r.preview_table_id || null },
         organization: r.org_name
             ? { name: r.org_name, title: { en: r.org_title_en, fr: r.org_title_fr } }
             : null,
@@ -149,7 +153,8 @@ const searchDatasets = async ({ q, org, format, keyword, place, source, mappable
         place_match: shapePlaceMatch(r),
         provenance: shapeProvenance(r.provenance_sources)
     }));
-    return { items, nextCursor: hasMore ? String(offset + lim) : null };
+    return { items, nextCursor: hasMore ? String(offset + lim) : null,
+        suggestions: offset === 0 && items.length === 0 ? spellingSuggestions(q) : [] };
 };
 
 const getDataset = async (idOrName) => {
