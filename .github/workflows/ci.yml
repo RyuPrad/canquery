@@ -43,7 +43,7 @@ jobs:
       - run: npm run build
 
   spatial:
-    name: spatial (PostGIS migrations + viewport)
+    name: database (PostGIS + search reporting)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -74,4 +74,4 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run migrate
-      - run: npx jest __tests__/spatialIntegration.test.js --runInBand
+      - run: npx jest __tests__/spatialIntegration.test.js __tests__/searchConsoleIntegration.test.js --runInBand

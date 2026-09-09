@@ -176,7 +176,15 @@ const getResource = async (id) => {
     const row = await catalogReadQueries.getResourceById(id);
     if (!row) throw new AppError('Resource not found', 404);
     const shaped = shapeResource(row);
-    shaped.dataset = { id: row.dataset_id, name: row.dataset_name, title: { en: row.dataset_title_en, fr: row.dataset_title_fr } };
+    shaped.dataset = {
+        id: row.dataset_id,
+        name: row.dataset_name,
+        title: { en: row.dataset_title_en, fr: row.dataset_title_fr },
+        organization: row.org_name ? {
+            name: row.org_name,
+            title: { en: row.org_title_en, fr: row.org_title_fr }
+        } : null
+    };
     shaped.places = shapePlaces(row.places);
     shaped.provenance = shapeProvenance(row.provenance_sources);
     if (row.ingest_status) {
@@ -185,6 +193,25 @@ const getResource = async (id) => {
         shaped.ingestion.last_accessed_at = row.last_accessed_at;
     }
     return shaped;
+};
+
+const getOrganization = async (name) => {
+    const row = await catalogReadQueries.getOrganizationByName(name);
+    if (!row) throw new AppError('Organization not found', 404);
+    return {
+        id: row.id,
+        name: row.name,
+        title: { en: row.title_en, fr: row.title_fr },
+        dataset_count: Number(row.dataset_count) || 0,
+        queryable_dataset_count: Number(row.queryable_dataset_count) || 0,
+        mappable_dataset_count: Number(row.mappable_dataset_count) || 0,
+        metadata_modified: row.metadata_modified || null,
+        place: row.place_id ? {
+            id: row.place_id,
+            slug: row.place_slug,
+            name: { en: row.place_name_en, fr: row.place_name_fr }
+        } : null
+    };
 };
 
 const listOrganizations = async ({ source, place, limit, cursor }) => {
@@ -469,6 +496,7 @@ module.exports = {
     searchDatasets,
     getDataset,
     getResource,
+    getOrganization,
     listOrganizations,
     listSources,
     listPlaces,

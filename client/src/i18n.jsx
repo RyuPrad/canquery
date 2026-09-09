@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- context module: provider + hook + strings belong together */
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 // Every user-facing chrome string lives here. Dataset/resource CONTENT is
 // already bilingual from the catalogue; this covers the interface around it,
@@ -88,11 +88,19 @@ export const STRINGS = {
     'dataset.download': 'Download',
     'orgs.filter_placeholder': 'Filter organizations...',
     'orgs.loading': 'Loading organizations',
+    'orgs.loading_one': 'Loading organization',
     'orgs.datasets': 'datasets',
+    'orgs.publisher': 'Open data publisher',
+    'orgs.queryable': 'queryable',
+    'orgs.mappable': 'mappable',
+    'orgs.has_map': 'Has a map',
+    'orgs.dataset_list': 'Published datasets',
+    'orgs.no_datasets': 'No datasets matched your search.',
     'common.back_search': 'Back to search',
     'common.not_found': 'Page not found',
     'common.dataset_not_found': 'Dataset not found',
     'common.resource_not_found': 'Resource not found',
+    'common.organization_not_found': 'Organization not found',
     'common.updated': 'Updated',
     'common.explore': 'Explore data',
     'common.retry': 'Retry',
@@ -248,6 +256,8 @@ export const STRINGS = {
     'docs.ep_query_csv': 'Download the current query (same q, filters and sort parameters) as a CSV file, capped at 10,000 rows.',
     'docs.ep_datasets': 'Full-text search over the catalogue. Params: q, org, format, keyword, place, source, mappable, limit, cursor.',
     'docs.ep_places': 'Places backed by open datasets. Search by q, kind or parent, or pass featured=true for featured regions and cities. Counts distinguish direct publishing from inherited broader-area coverage.',
+    'docs.ep_organizations': 'Public-sector publishers with dataset counts. Filter by place or source and paginate with limit and cursor.',
+    'docs.ep_organization_detail': 'One publisher with total, queryable and mappable dataset counts plus its associated place.',
     'docs.ep_sources': 'Source portals and their current total and authoritative dataset counts. Pass place to see only authoritative portals relevant to one municipality or region.',
     'docs.ep_map': 'Bounded GeoJSON for one spatial resource, served from its official ArcGIS layer or CanQuery’s local PostGIS index. bbox is west,south,east,north; zoom controls geometry simplification; limit is capped at 1,000.',
     'docs.ep_dataset_detail': 'Dataset detail with resources tagged by query_mode: datastore, ingested, ingestable or file-only.',
@@ -342,11 +352,19 @@ export const STRINGS = {
     'dataset.download': 'Télécharger',
     'orgs.filter_placeholder': 'Filtrer les organisations...',
     'orgs.loading': 'Chargement des organisations',
+    'orgs.loading_one': 'Chargement de l’organisation',
     'orgs.datasets': 'jeux de données',
+    'orgs.publisher': 'Diffuseur de données ouvertes',
+    'orgs.queryable': 'interrogeables',
+    'orgs.mappable': 'cartographiables',
+    'orgs.has_map': 'Avec une carte',
+    'orgs.dataset_list': 'Jeux de données publiés',
+    'orgs.no_datasets': 'Aucun jeu de données ne correspond à votre recherche.',
     'common.back_search': 'Retour à la recherche',
     'common.not_found': 'Page introuvable',
     'common.dataset_not_found': 'Jeu de données introuvable',
     'common.resource_not_found': 'Ressource introuvable',
+    'common.organization_not_found': 'Organisation introuvable',
     'common.updated': 'Mis à jour',
     'common.explore': 'Explorer les données',
     'common.retry': 'Réessayer',
@@ -502,6 +520,8 @@ export const STRINGS = {
     'docs.ep_query_csv': 'Téléchargez la requête actuelle (mêmes paramètres q, filters et sort) sous forme de fichier CSV, limité à 10 000 lignes.',
     'docs.ep_datasets': 'Recherche plein texte dans le catalogue. Paramètres : q, org, format, keyword, place, source, mappable, limit, cursor.',
     'docs.ep_places': 'Lieux associés à des données ouvertes. Recherchez par q, kind ou parent, ou passez featured=true pour les régions et villes en vedette. Les totaux distinguent la publication directe de la couverture héritée d’une zone plus vaste.',
+    'docs.ep_organizations': 'Diffuseurs du secteur public avec le nombre de jeux de données. Filtrez par lieu ou source et paginez avec limit et cursor.',
+    'docs.ep_organization_detail': 'Un diffuseur avec le nombre total de jeux de données, ceux qui sont interrogeables et cartographiables, ainsi que son lieu associé.',
     'docs.ep_sources': 'Portails sources et nombres totaux et officiels de jeux de données. Passez place pour voir uniquement les portails officiels pertinents pour une municipalité ou une région.',
     'docs.ep_map': 'GeoJSON limité pour une ressource spatiale, servi depuis sa couche ArcGIS officielle ou l’index PostGIS local de CanQuery. bbox vaut ouest,sud,est,nord; zoom contrôle la simplification; limit est plafonné à 1 000.',
     'docs.ep_dataset_detail': 'Détail d’un jeu de données, avec les ressources étiquetées par query_mode : datastore, ingested, ingestable ou file-only.',
@@ -531,6 +551,7 @@ export function LangProvider({ children }) {
       return 'en';
     }
   });
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   const setLang = useCallback((next) => {
     setLangState(next);
     try {

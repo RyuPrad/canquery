@@ -39,6 +39,7 @@ import {
   LineChartIcon,
   FileIcon,
   MapIcon,
+  BuildingIcon,
 } from '../components/Icons.jsx';
 
 const PAGE_SIZE = 50;
@@ -413,6 +414,18 @@ function ResourceExplorer({ id }) {
               {t('resource.raw')}
             </a>
           </div>
+          {resource.dataset.organization && (
+            <Link
+              to={'/organizations/' + encodeURIComponent(resource.dataset.organization.name)}
+              className="inline-flex items-center gap-1.5 text-sm text-base-content/55 hover:text-base-content"
+            >
+              <BuildingIcon size={13} />
+              {resource.dataset.organization.title?.[lang] ||
+                resource.dataset.organization.title?.en ||
+                resource.dataset.organization.title?.fr ||
+                resource.dataset.organization.name}
+            </Link>
+          )}
           <Provenance provenance={resource.provenance} compact />
         </div>
       )}

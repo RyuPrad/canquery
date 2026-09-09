@@ -9,7 +9,7 @@ export default function DatasetRow({ dataset }) {
   const place = dataset.place_match?.place || dataset.places?.[0];
   const source = dataset.provenance?.sources?.[0];
   const modifiedDate = dataset.metadata_modified
-    ? new Date(dataset.metadata_modified).toLocaleDateString()
+    ? new Date(dataset.metadata_modified).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA')
     : null;
 
   return (
@@ -21,8 +21,8 @@ export default function DatasetRow({ dataset }) {
       data-analytics-dataset-slug={dataset.name || ''}
       data-analytics-source="catalog_result"
     >
-      <div className="flex justify-between items-center gap-4">
-        <div className="min-w-0">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div className="min-w-0 sm:flex-1">
           <div className="font-semibold text-[0.95rem] leading-snug line-clamp-2 group-hover:text-base-content transition-colors">
             {title}
           </div>
@@ -49,13 +49,13 @@ export default function DatasetRow({ dataset }) {
             {source && <span className="truncate">{source.name?.[lang] || source.name?.en || source.id}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <span className="cq-chip">
-            {dataset.resource_count} {t('row.resources')}
+            {dataset.resource_count.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')} {t('row.resources')}
           </span>
           {dataset.queryable_count > 0 && (
             <span className="cq-chip cq-chip-red">
-              {dataset.queryable_count} {t('row.queryable')}
+              {dataset.queryable_count.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')} {t('row.queryable')}
             </span>
           )}
           {dataset.mappable_count > 0 && (

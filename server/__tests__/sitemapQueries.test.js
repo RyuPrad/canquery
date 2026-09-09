@@ -34,3 +34,17 @@ describe('resource sitemap queries', () => {
         expect(params).toEqual([25000, 50000]);
     });
 });
+
+describe('organization sitemap queries', () => {
+    it('lists organizations with datasets and their latest modification time', async () => {
+        const rows = [{ name: 'city-works', metadata_modified: '2026-08-30T00:00:00Z' }];
+        pool.query.mockResolvedValue({ rows });
+
+        await expect(queries.listOrganizationSitemap()).resolves.toEqual(rows);
+
+        const sql = pool.query.mock.calls[0][0];
+        expect(sql).toContain('JOIN datasets d ON d.org_id = o.id');
+        expect(sql).toContain('HAVING count(d.id) > 0');
+        expect(sql).toContain('max(d.metadata_modified)');
+    });
+});

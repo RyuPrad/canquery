@@ -6,11 +6,13 @@ import HomePage from './pages/HomePage'
 import DatasetPage from './pages/DatasetPage'
 import ResourcePage from './pages/ResourcePage'
 import OrganizationsPage from './pages/OrganizationsPage'
+import OrganizationPage from './pages/OrganizationPage'
 import DocsPage from './pages/DocsPage'
 import PlacesPage from './pages/PlacesPage'
 import PlacePage from './pages/PlacePage'
 import PrivacyPage from './pages/PrivacyPage'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
+import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
 
@@ -43,6 +45,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col text-base-content">
       <ScrollToTop />
+      <RouteHead />
       <AnalyticsBridge />
       <Navbar />
       <main className="flex-1 w-full">
@@ -53,6 +56,7 @@ export default function App() {
             <Route path="/datasets/:idOrName" element={<DatasetPage />} />
             <Route path="/resources/:id" element={<ResourcePage />} />
             <Route path="/organizations" element={<OrganizationsPage />} />
+            <Route path="/organizations/:name" element={<OrganizationPage />} />
             <Route path="/places" element={<PlacesPage />} />
             <Route path="/places/:slug" element={<PlacePage />} />
             <Route path="/docs" element={<DocsPage />} />

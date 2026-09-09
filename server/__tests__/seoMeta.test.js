@@ -7,6 +7,7 @@ describe('seoMeta - route classification', () => {
         expect(seo.classifyRoute('/resources/abc-123')).toEqual({ type: 'resource', id: 'abc-123' });
         expect(seo.classifyRoute('/insights')).toEqual({ type: 'insights' });
         expect(seo.classifyRoute('/organizations')).toEqual({ type: 'organizations' });
+        expect(seo.classifyRoute('/organizations/statcan')).toEqual({ type: 'organization', id: 'statcan' });
         expect(seo.classifyRoute('/places')).toEqual({ type: 'places' });
         expect(seo.classifyRoute('/places/oshawa-on')).toEqual({ type: 'place', id: 'oshawa-on' });
         expect(seo.classifyRoute('/docs')).toEqual({ type: 'docs' });
@@ -58,9 +59,10 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
 
     it('builds an English-default title and slug canonical', () => {
         const meta = seo.datasetMeta(dataset, resources);
-        expect(meta.title).toBe('Water Quality - canquery');
+        expect(meta.title).toBe('Water Quality - CanQuery');
         expect(meta.canonical).toBe('https://canquery.com/datasets/water-quality');
-        expect(meta.description).toBe('Lake and river measurements.');
+        expect(meta.description).toContain('Lake and river measurements.');
+        expect(meta.description.length).toBeGreaterThanOrEqual(50);
     });
 
     it('emits a schema.org Dataset with licence, keywords and absolute distributions', () => {
@@ -69,6 +71,7 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         expect(ld['@type']).toBe('Dataset');
         expect(ld.url).toBe('https://canquery.com/datasets/water-quality');
         expect(ld.identifier).toBe('d1');
+        expect(ld.alternateName).toBe('Qualite de l eau');
         expect(ld.license).toContain('open-government-licence-canada');
         expect(ld.sameAs).toBe('https://open.canada.ca/data/en/dataset/d1');
         expect(ld.keywords).toEqual(['water', 'lakes', 'eau']); // deduped, both langs
@@ -81,7 +84,7 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
 
     it('falls back to the French title when English is missing', () => {
         const meta = seo.datasetMeta({ ...dataset, title_en: null }, []);
-        expect(meta.title).toBe('Qualite de l eau - canquery');
+        expect(meta.title).toBe('Qualite de l eau - CanQuery');
     });
 
     it('uses the authoritative municipal source for licence, publisher and sameAs', () => {
@@ -115,7 +118,7 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
             notes_en: 'A very long dataset description '.repeat(20)
         }, []);
         expect(meta.title.length).toBeLessThanOrEqual(80);
-        expect(meta.title).toMatch(/ - canquery$/);
+        expect(meta.title).toMatch(/ - CanQuery$/);
         expect(meta.description.length).toBeLessThanOrEqual(160);
         const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
         expect(breadcrumb.itemListElement).toEqual([
@@ -135,13 +138,23 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         format: 'CSV', size_bytes: 1024
     };
 
+    test.each([null, undefined, ''])('omits unknown size %s instead of inventing zero bytes', size => {
+        const meta = seo.resourceMeta({ ...base, size_bytes: size });
+        expect(meta.jsonLd.find(item => item['@type'] === 'WebPage').mainEntity.contentSize).toBeUndefined();
+    });
+
+    it('preserves an explicitly reported zero-byte file size', () => {
+        const meta = seo.resourceMeta({ ...base, size_bytes: 0 });
+        expect(meta.jsonLd.find(item => item['@type'] === 'WebPage').mainEntity.contentSize).toBe('0 bytes');
+    });
+
     it('falls back from generic resource names and appends a missing format once', () => {
         expect(seo.resourceMeta({ ...base, name_en: 'Dataset' }).title)
-            .toBe('Water Quality (CSV) - canquery');
+            .toBe('Water Quality (CSV) - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'Measurements CSV' }).title)
-            .toBe('Measurements CSV - canquery');
+            .toBe('Measurements CSV - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'English' }).title)
-            .toBe('Water Quality (CSV) - canquery');
+            .toBe('Water Quality (CSV) - CanQuery');
     });
 
     it('bounds long resource titles and descriptions', () => {
@@ -156,9 +169,9 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
     });
 
     test.each([
-        [{ ...base, ingest_status: 'ready' }, /live CSV table.*query, filter, chart and export/i],
-        [{ ...base, datastore_active: true }, /live CSV table.*query, filter, chart and export/i],
-        [base, /Load this CSV resource.*query, filter, chart and export/i],
+        [{ ...base, ingest_status: 'ready' }, /query, filter, chart and export.*live CSV table/i],
+        [{ ...base, datastore_active: true }, /query, filter, chart and export.*live CSV table/i],
+        [base, /Load this CSV resource.*live table.*query, filter, chart and export/i],
         [{ ...base, format: 'PDF', map_provider: 'arcgis' }, /interactive map.*original PDF file/i],
         [{ ...base, format: 'PDF' }, /metadata.*original PDF file.*public-sector publisher/i]
     ])('writes truthful capability-specific copy for %#', (resource, expected) => {
@@ -167,7 +180,8 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
 
     it('emits the stable dataset and UUID resource hierarchy', () => {
         const meta = seo.resourceMeta(base);
-        expect(meta.jsonLd[0].itemListElement).toEqual([
+        const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
+        expect(breadcrumb.itemListElement).toEqual([
             expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/' }),
             expect.objectContaining({
                 position: 2, name: 'Water Quality',
@@ -195,7 +209,7 @@ describe('seoMeta - site + static meta', () => {
     it('builds indexable metadata for place pages', () => {
         const meta = seo.placeMeta({
             id: 'sgc-cd-3506', slug: 'ottawa-on', name_en: 'Ottawa',
-            type_en: 'City', latitude: 45.4215, longitude: -75.6972,
+            type_en: 'City', latitude: 45.4215, longitude: -75.6972, dataset_count: 12,
             ancestors: [
                 { id: 'ca', slug: 'canada', name_en: 'Canada' },
                 { id: 'sgc-cd-3506', slug: 'ottawa-on', name_en: 'Ottawa' }
@@ -204,7 +218,8 @@ describe('seoMeta - site + static meta', () => {
         expect(meta.canonical).toBe('https://canquery.com/places/ottawa-on');
         expect(meta.jsonLd[0]['@type']).toBe('AdministrativeArea');
         expect(meta.jsonLd[0].geo.latitude).toBeCloseTo(45.4215);
-        expect(meta.jsonLd[1].itemListElement).toEqual([
+        const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
+        expect(breadcrumb.itemListElement).toEqual([
             expect.objectContaining({ position: 1, name: 'Places', item: 'https://canquery.com/places' }),
             expect.objectContaining({ position: 2, name: 'Canada', item: 'https://canquery.com/places/canada' }),
             expect.objectContaining({ position: 3, name: 'Ottawa', item: 'https://canquery.com/places/ottawa-on' })
@@ -216,6 +231,11 @@ describe('seoMeta - site + static meta', () => {
         expect(seo.staticMeta('docs').title).toContain('API documentation');
         expect(seo.staticMeta('insights').title).toContain('Top 100');
         expect(seo.staticMeta('privacy').canonical).toBe('https://canquery.com/privacy');
+    });
+
+    it('keeps empty place and organization pages out of the index', () => {
+        expect(seo.placeMeta({ id: 'p0', slug: 'empty', name_en: 'Empty', dataset_count: 0 }).noindex).toBe(true);
+        expect(seo.organizationMeta({ id: 'o0', name: 'empty', title_en: 'Empty', dataset_count: 0 }).noindex).toBe(true);
     });
 
     it('unknown routes are marked noindex', () => {
@@ -231,7 +251,7 @@ describe('seoMeta - renderHtml injection', () => {
 
     it('replaces the managed block with escaped tags + JSON-LD', () => {
         const html = seo.renderHtml(template, seo.datasetMeta({ id: 'd', name: 'n', title_en: 'A & B <c>', notes_en: 'x' }, []));
-        expect(html).toContain('<title>A &amp; B &lt;c&gt; - canquery</title>');
+        expect(html).toContain('<title>A &amp; B - CanQuery</title>');
         expect(html).toContain('<link rel="canonical" href="https://canquery.com/datasets/n" />');
         expect(html).toContain('application/ld+json');
         expect(html).not.toContain('<title>default</title>');
@@ -257,7 +277,7 @@ describe('seoMeta - renderHtml injection', () => {
             []
         );
         const html = seo.renderHtml(template, meta);
-        expect(html).toContain('<title>Grants and Contributions ($&#39;000) - canquery</title>');
+        expect(html).toContain('<title>Grants and Contributions ($&#39;000) - CanQuery</title>');
         expect(html).toContain('Amounts in $&amp;thousands, per $`unit, paid in CA$$.');
         expect(html.match(/<title>/g)).toHaveLength(1);
         expect(html.match(/rel="canonical"/g)).toHaveLength(1);
@@ -267,5 +287,52 @@ describe('seoMeta - renderHtml injection', () => {
     it('returns the template untouched when the markers are absent', () => {
         const plain = '<html><head><title>x</title></head></html>';
         expect(seo.renderHtml(plain, seo.homeMeta())).toBe(plain);
+    });
+
+    it('injects a semantic crawl snapshot into the empty React root', () => {
+        const page = '<html><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>';
+        const html = seo.renderHtml(page, seo.homeMeta(), '<main><h1>Search open data</h1></main>');
+        expect(html).toContain('<div id="root"><main><h1>Search open data</h1></main></div>');
+    });
+});
+
+describe('seoMeta - content hygiene and organization pages', () => {
+    it('strips markup and makes short Dataset descriptions schema-eligible', () => {
+        const dataset = {
+            id: 'd1', name: 'roads', title_en: 'Roads', title_fr: 'Routes',
+            notes_en: '<p>Roads<br>updated</p><script>bad()</script>',
+            org_title_en: 'City Works'
+        };
+        const ld = seo.buildDatasetJsonLd(dataset, []);
+        expect(ld.description).toContain('Roads updated');
+        expect(ld.description).not.toContain('<');
+        expect(ld.description).not.toContain('bad()');
+        expect(ld.description.length).toBeGreaterThanOrEqual(50);
+    });
+
+    it('decodes common French entities and rejects non-HTTP distributions', () => {
+        expect(seo.plainText('Ville de Qu&eacute;bec &amp; L&eacute;vis')).toBe('Ville de Québec & Lévis');
+        const ld = seo.buildDatasetJsonLd({
+            id: 'd1', name: 'roads', title_en: 'Roads', notes_en: 'A sufficiently descriptive public road dataset for testing.'
+        }, [
+            { url: 'javascript:alert(1)', format: 'CSV' },
+            { url: 'https://example.test/roads.csv', format: 'CSV', size_bytes: 2048 }
+        ]);
+        expect(ld.distribution).toHaveLength(1);
+        expect(ld.distribution[0]).toEqual(expect.objectContaining({
+            contentUrl: 'https://example.test/roads.csv', contentSize: '2 KB'
+        }));
+    });
+
+    it('builds bounded organization metadata and CollectionPage schema', () => {
+        const meta = seo.organizationMeta({
+            id: 'o1', name: 'city-works', title_en: 'City Works',
+            dataset_count: 23, queryable_dataset_count: 4, mappable_dataset_count: 8
+        }, [{ id: 'd1', name: 'roads', title_en: 'Roads' }]);
+        expect(meta.title).toBe('City Works open data - CanQuery');
+        expect(meta.canonical).toBe('https://canquery.com/organizations/city-works');
+        const collection = meta.jsonLd.find(item => item['@type'] === 'CollectionPage');
+        expect(collection.mainEntity.numberOfItems).toBe(23);
+        expect(collection.mainEntity.itemListElement[0].url).toBe('https://canquery.com/datasets/roads');
     });
 });

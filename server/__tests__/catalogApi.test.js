@@ -5,6 +5,7 @@ jest.mock('../db/catalogReadQueries', () => ({
     listResourcesForDataset: jest.fn(),
     getResourceById: jest.fn(),
     listOrganizations: jest.fn(),
+    getOrganizationByName: jest.fn(),
     getStats: jest.fn(),
     pingDb: jest.fn(),
     getLastSyncTime: jest.fn(),
@@ -144,6 +145,22 @@ describe('Catalog API', () => {
         }));
     });
 
+    it('GET /api/v1/resources/:id adds the parent publisher without changing resource fields', async () => {
+        queries.getResourceById.mockResolvedValue({
+            id: 'r1', dataset_id: 'd1', dataset_name: 'roads', dataset_title_en: 'Roads',
+            name_en: 'Road lines', format: 'GEOJSON', url: 'https://example.test/roads.geojson',
+            size_bytes: '1024', datastore_active: false, language: null, last_modified: null,
+            org_name: 'city-works', org_title_en: 'City Works', org_title_fr: null,
+            provenance_sources: [], places: []
+        });
+        const res = await request(app).get('/api/v1/resources/r1');
+        expect(res.status).toBe(200);
+        expect(res.body.data.name.en).toBe('Road lines');
+        expect(res.body.data.dataset.organization).toEqual({
+            name: 'city-works', title: { en: 'City Works', fr: null }
+        });
+    });
+
     it('GET /api/v1/stats wraps totals in the envelope', async () => {
         queries.getStats.mockResolvedValue({
             datasets: 10,
@@ -157,6 +174,29 @@ describe('Catalog API', () => {
         expect(res.status).toBe(200);
         expect(res.body.data.store_bytes).toBe(1234);
         expect(res.body.meta.source).toBe('canquery');
+    });
+
+    it('GET /api/v1/organizations/:name returns capability counts and place context', async () => {
+        queries.getOrganizationByName.mockResolvedValue({
+            id: 'o1', name: 'city-works', title_en: 'City Works', title_fr: 'Travaux municipaux',
+            dataset_count: '23', queryable_dataset_count: '4', mappable_dataset_count: '8',
+            metadata_modified: '2026-08-30T00:00:00Z',
+            place_id: 'p1', place_slug: 'example-on', place_name_en: 'Example', place_name_fr: 'Exemple'
+        });
+        const res = await request(app).get('/api/v1/organizations/city-works');
+        expect(res.status).toBe(200);
+        expect(res.body.data).toEqual(expect.objectContaining({
+            id: 'o1', name: 'city-works', dataset_count: 23,
+            queryable_dataset_count: 4, mappable_dataset_count: 8
+        }));
+        expect(res.body.data.place).toEqual(expect.objectContaining({ slug: 'example-on' }));
+    });
+
+    it('GET /api/v1/organizations/:name returns 404 for an unknown publisher', async () => {
+        queries.getOrganizationByName.mockResolvedValue(null);
+        const res = await request(app).get('/api/v1/organizations/unknown');
+        expect(res.status).toBe(404);
+        expect(res.body.error).toBe('Organization not found');
     });
 
     it('healthz reports ok when db and upstream are reachable', async () => {

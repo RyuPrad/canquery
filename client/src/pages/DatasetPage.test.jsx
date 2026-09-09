@@ -47,6 +47,22 @@ beforeEach(() => {
 });
 
 describe('DatasetPage ingestion', () => {
+  test('links the publisher to its canonical organization page', async () => {
+    const env = datasetEnvelope('datastore');
+    env.data.organization = { name: 'city-works', title: { en: 'City Works', fr: null } };
+    fetchDataset.mockReset();
+    fetchDataset.mockResolvedValue(env);
+
+    render(
+      <MemoryRouter initialEntries={['/datasets/dataset-a']}>
+        <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('link', { name: 'City Works' }))
+      .toHaveAttribute('href', '/organizations/city-works');
+  });
+
   test.each([
     ['en', 'Breadcrumb', 'Datasets', 'Dataset A'],
     ['fr', 'Fil d’Ariane', 'Jeux de données', 'Jeu de données A'],

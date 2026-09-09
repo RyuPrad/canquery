@@ -65,6 +65,14 @@ const listOrganizations = async (req, res) => {
     res.json(envelope(result.items, { nextCursor: result.nextCursor }));
 };
 
+const getOrganization = async (req, res) => {
+    const name = cleanStr(req.params.name);
+    if (!name) throw new AppError('Organization not found', 404);
+    const organization = await catalogService.getOrganization(name);
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(envelope(organization));
+};
+
 const listSources = async (req, res) => {
     const items = await catalogService.listSources({ place: cleanStr(req.query.place) });
     res.set('Cache-Control', 'public, max-age=300');
@@ -129,6 +137,7 @@ module.exports = {
     getDataset: catchAsync(getDataset),
     getResource: catchAsync(getResource),
     listOrganizations: catchAsync(listOrganizations),
+    getOrganization: catchAsync(getOrganization),
     listSources: catchAsync(listSources),
     listPlaces: catchAsync(listPlaces),
     getPlace: catchAsync(getPlace),

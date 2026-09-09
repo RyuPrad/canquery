@@ -127,6 +127,19 @@ export default function DocsPage() {
         />
         <Endpoint
           method="GET"
+          path="/api/v1/organizations"
+          desc={t('docs.ep_organizations')}
+          example={'curl "' + BASE + '/api/v1/organizations?limit=10"'}
+          runPath="/api/v1/organizations?limit=3"
+        />
+        <Endpoint
+          method="GET"
+          path="/api/v1/organizations/:name"
+          desc={t('docs.ep_organization_detail')}
+          example={'curl "' + BASE + '/api/v1/organizations/ORGANIZATION_NAME"'}
+        />
+        <Endpoint
+          method="GET"
           path="/api/v1/sources"
           desc={t('docs.ep_sources')}
           example={'curl "' + BASE + '/api/v1/sources?place=toronto-on"'}

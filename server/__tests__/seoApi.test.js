@@ -4,12 +4,15 @@ jest.mock('../db/catalogReadQueries', () => ({
     listResourcesForDataset: jest.fn(),
     getResourceById: jest.fn(),
     listOrganizations: jest.fn(),
+    listPlaces: jest.fn(),
+    getOrganizationByName: jest.fn(),
     getStats: jest.fn(),
     countSitemapDatasets: jest.fn(),
     listDatasetSitemap: jest.fn(),
     countSitemapResources: jest.fn(),
     listResourceSitemap: jest.fn(),
     listPlaceSitemap: jest.fn(),
+    listOrganizationSitemap: jest.fn(),
     getPlaceByIdOrSlug: jest.fn(),
     pingDb: jest.fn(),
     getLastSyncTime: jest.fn(),
@@ -21,11 +24,20 @@ jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), aggregateSt
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 
 const request = require('supertest');
+const express = require('express');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const catalogRead = require('../db/catalogReadQueries');
 const app = require('../app');
-const { resolveMeta, injectAnalytics } = require('../controllers/spaController');
+const { serveSpa, resolvePage, resolveMeta, injectAnalytics } = require('../controllers/spaController');
 
-beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => {
+    jest.resetAllMocks();
+    catalogRead.searchDatasets.mockResolvedValue([]);
+    catalogRead.listOrganizations.mockResolvedValue([]);
+    catalogRead.listPlaces.mockResolvedValue([]);
+});
 
 describe('robots.txt', () => {
     it('allows all and points at the sitemap index', async () => {
@@ -46,6 +58,7 @@ describe('sitemap index', () => {
         expect(res.headers['content-type']).toMatch(/xml/);
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-pages.xml</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-places.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-organizations.xml</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-2.xml</loc>');
         expect(res.text).not.toContain('sitemap-datasets-3.xml');
@@ -168,6 +181,18 @@ describe('place sitemap', () => {
     });
 });
 
+describe('organization sitemap', () => {
+    it('emits canonical organization pages with their latest dataset modification', async () => {
+        catalogRead.listOrganizationSitemap.mockResolvedValue([
+            { name: 'city-works', metadata_modified: '2026-08-30T00:00:00Z' }
+        ]);
+        const res = await request(app).get('/sitemap-organizations.xml');
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('<loc>https://canquery.com/organizations/city-works</loc>');
+        expect(res.text).toContain('<lastmod>2026-08-30T00:00:00.000Z</lastmod>');
+    });
+});
+
 describe('resolveMeta routing', () => {
     it('resolves a dataset via the DB and includes Dataset JSON-LD', async () => {
         const deps = {
@@ -177,7 +202,7 @@ describe('resolveMeta routing', () => {
         };
         const meta = await resolveMeta('/datasets/n1', deps);
         expect(deps.getDatasetByIdOrName).toHaveBeenCalledWith('n1');
-        expect(meta.title).toBe('T - canquery');
+        expect(meta.title).toBe('T - CanQuery');
         expect(meta.jsonLd[0]['@type']).toBe('Dataset');
     });
 
@@ -202,17 +227,20 @@ describe('resolveMeta routing', () => {
             listResourcesForDataset: jest.fn(),
         };
         const meta = await resolveMeta('/resources/r1', deps);
-        expect(meta.title).toBe('DS (CSV) - canquery');
+        expect(meta.title).toBe('DS (CSV) - CanQuery');
         expect(meta.canonical).toBe('https://canquery.com/resources/r1');
-        expect(meta.jsonLd[0].itemListElement[1].item).toBe('https://canquery.com/datasets/dataset-slug');
+        const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
+        expect(breadcrumb.itemListElement[1].item).toBe('https://canquery.com/datasets/dataset-slug');
     });
 
     it('resolves a place page from its stable slug', async () => {
         const deps = {
             getPlaceByIdOrSlug: jest.fn().mockResolvedValue({
                 id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa', type_en: 'City',
+                dataset_count: 10, mappable_dataset_count: 4,
                 ancestors: [{ id: 'ca-on-oshawa', slug: 'oshawa-on', name_en: 'Oshawa' }]
-            })
+            }),
+            searchDatasets: jest.fn().mockResolvedValue([])
         };
         const meta = await resolveMeta('/places/oshawa-on', deps);
         expect(deps.getPlaceByIdOrSlug).toHaveBeenCalledWith('oshawa-on');
@@ -226,5 +254,138 @@ describe('resolveMeta routing', () => {
         const meta = await resolveMeta('/', deps);
         expect(meta.jsonLd.some((o) => o['@type'] === 'WebSite')).toBe(true);
         expect(deps.getDatasetByIdOrName).not.toHaveBeenCalled();
+    });
+});
+
+describe('resolvePage crawl responses', () => {
+    it('returns a canonical dataset path and meaningful initial HTML', async () => {
+        const deps = {
+            getDatasetByIdOrName: jest.fn().mockResolvedValue({
+                id: 'd1', name: 'roads', title_en: 'Road network', notes_en: 'Public road geometry.',
+                org_name: 'city-works', org_title_en: 'City Works', places: []
+            }),
+            listResourcesForDataset: jest.fn().mockResolvedValue([{
+                id: 'r1', name_en: 'Road lines', format: 'GEOJSON', url: 'https://example.test/roads.geojson',
+                map_provider: 'arcgis'
+            }])
+        };
+        const page = await resolvePage('/datasets/d1', deps);
+        expect(page.status).toBe(200);
+        expect(page.canonicalPath).toBe('/datasets/roads');
+        expect(page.body).toContain('<h1>Road network</h1>');
+        expect(page.body).toContain('/resources/r1');
+        expect(page.body).toContain('/organizations/city-works');
+    });
+
+    it('resolves organization pages with datasets and CollectionPage metadata', async () => {
+        const deps = {
+            getOrganizationByName: jest.fn().mockResolvedValue({
+                id: 'o1', name: 'city-works', title_en: 'City Works',
+                dataset_count: 4, queryable_dataset_count: 2, mappable_dataset_count: 1
+            }),
+            searchDatasets: jest.fn().mockResolvedValue([{ id: 'd1', name: 'roads', title_en: 'Roads' }])
+        };
+        const page = await resolvePage('/organizations/city-works', deps);
+        expect(page.status).toBe(200);
+        expect(page.canonicalPath).toBe('/organizations/city-works');
+        expect(page.body).toContain('<h1>City Works open data</h1>');
+        expect(page.meta.jsonLd.some(item => item['@type'] === 'CollectionPage')).toBe(true);
+    });
+
+    it('returns a real noindex 404 page model for unknown routes and entities', async () => {
+        const route = await resolvePage('/not-a-route', {});
+        expect(route.status).toBe(404);
+        expect(route.meta.noindex).toBe(true);
+        expect(route.body).toContain('<h1>Page not found</h1>');
+
+        const dataset = await resolvePage('/datasets/missing', {
+            getDatasetByIdOrName: jest.fn().mockResolvedValue(null)
+        });
+        expect(dataset.status).toBe(404);
+        expect(dataset.body).toContain('<h1>Dataset not found</h1>');
+    });
+});
+
+describe('production SPA response semantics', () => {
+    let distDir;
+    let spa;
+
+    beforeAll(() => {
+        distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-seo-'));
+        fs.writeFileSync(path.join(distDir, 'index.html'),
+            '<!doctype html><html><head><!-- seo:start --><title>x</title><!-- seo:end -->' +
+            '<!-- analytics:config --></head><body><div id="root"></div></body></html>');
+        spa = express();
+        spa.get(/.*/, serveSpa(distDir));
+    });
+
+    afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+
+    it('301s aliases and trailing slashes while preserving the query string', async () => {
+        catalogRead.getDatasetByIdOrName.mockResolvedValue({
+            id: 'd1', name: 'roads', title_en: 'Roads', notes_en: 'Road data for public use.'
+        });
+        catalogRead.listResourcesForDataset.mockResolvedValue([]);
+        const alias = await request(spa).get('/datasets/d1?highlight=r1');
+        expect(alias.status).toBe(301);
+        expect(alias.headers.location).toBe('/datasets/roads?highlight=r1');
+
+        const slash = await request(spa).get('/docs/');
+        expect(slash.status).toBe(301);
+        expect(slash.headers.location).toBe('/docs');
+    });
+
+    it('serves semantic initial HTML with the canonical 200 response', async () => {
+        catalogRead.getDatasetByIdOrName.mockResolvedValue({
+            id: 'd1', name: 'roads', title_en: 'Roads', notes_en: 'Road data for public use.'
+        });
+        catalogRead.listResourcesForDataset.mockResolvedValue([]);
+        const res = await request(spa).get('/datasets/roads');
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('<h1>Roads</h1>');
+        expect(res.text).toContain('data-cq-seo-snapshot="true"');
+        expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/datasets/roads"');
+    });
+
+    it('returns noindex 404s and retryable 503s instead of soft 200 pages', async () => {
+        const missing = await request(spa).get('/not-a-route');
+        expect(missing.status).toBe(404);
+        expect(missing.text).toContain('name="robots" content="noindex');
+
+        catalogRead.getDatasetByIdOrName.mockRejectedValue(new Error('db unavailable'));
+        const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const unavailable = await request(spa).get('/datasets/roads');
+        log.mockRestore();
+        expect(unavailable.status).toBe(503);
+        expect(unavailable.headers['retry-after']).toBe('60');
+        expect(unavailable.headers['cache-control']).toBe('no-store');
+        expect(unavailable.text).toContain('<h1>Temporarily unavailable</h1>');
+    });
+
+    test.each([
+        ['/organizations', 'listOrganizations'],
+        ['/places', 'listPlaces'],
+        ['/organizations/city-works', 'searchDatasets'],
+        ['/places/example-on', 'searchDatasets']
+    ])('returns a retryable 503 when required catalogue data fails for %s', async (route, method) => {
+        catalogRead.getOrganizationByName.mockResolvedValue({ name: 'city-works', title_en: 'City Works' });
+        catalogRead.getPlaceByIdOrSlug.mockResolvedValue({ id: 'p1', slug: 'example-on', name_en: 'Example' });
+        catalogRead[method].mockRejectedValue(new Error('private database detail'));
+        const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const res = await request(spa).get(route);
+            expect(res.status).toBe(503);
+            expect(res.headers['retry-after']).toBe('60');
+            expect(res.text).toContain('name="robots" content="noindex');
+            expect(res.text).not.toContain('private database detail');
+        } finally {
+            log.mockRestore();
+        }
+    });
+
+    test.each(['/organizations', '/places'])('keeps an empty but available directory valid: %s', async route => {
+        const res = await request(spa).get(route);
+        expect(res.status).toBe(200);
+        expect(res.text).not.toContain('name="robots" content="noindex');
     });
 });
