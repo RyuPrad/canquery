@@ -710,6 +710,76 @@ a.cq-card:hover,
   overflow-wrap: anywhere;
 }
 
+/* Server-rendered, user-agent-neutral crawl snapshot. React replaces this
+   bounded fallback as soon as the interactive application starts. */
+.cq-seo-snapshot article {
+  max-width: 52rem;
+  margin-top: 1.5rem;
+}
+.cq-seo-snapshot nav ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  color: color-mix(in oklab, var(--color-base-content) 52%, transparent);
+  font-size: 0.8rem;
+}
+.cq-seo-snapshot nav li:not(:last-child)::after {
+  content: '/';
+  margin-left: 0.6rem;
+  opacity: 0.45;
+}
+.cq-seo-snapshot h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 700;
+  line-height: 1.08;
+}
+.cq-seo-snapshot h2 {
+  margin-top: 2rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+.cq-seo-snapshot p {
+  margin-top: 1rem;
+  color: color-mix(in oklab, var(--color-base-content) 72%, transparent);
+  line-height: 1.7;
+}
+.cq-seo-snapshot dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+.cq-seo-snapshot dl div {
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.8rem;
+}
+.cq-seo-snapshot dt {
+  color: color-mix(in oklab, var(--color-base-content) 48%, transparent);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+.cq-seo-snapshot dd {
+  margin: 0.2rem 0 0;
+}
+.cq-seo-snapshot ul {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+}
+.cq-seo-snapshot a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.cq-seo-snapshot li span {
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  font-size: 0.78rem;
+}
+
 /* ------------------------------------------------------------ motion */
 
 @keyframes cq-fade-up {

@@ -32,6 +32,10 @@ export function fetchOrganizations({ place, source, limit, cursor } = {}) {
   return getJSON('/api/v1/organizations', { place, source, limit, cursor });
 }
 
+export function fetchOrganization(name) {
+  return getJSON('/api/v1/organizations/' + encodeURIComponent(name));
+}
+
 export function fetchPlaces({ q, kind, parent, featured, limit, cursor } = {}) {
   return getJSON('/api/v1/places', { q, kind, parent, featured, limit, cursor });
 }

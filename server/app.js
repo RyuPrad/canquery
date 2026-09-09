@@ -101,8 +101,7 @@ const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
     app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(clientDist, { index: false }));
-    // Per-route <head> injection (title/description/canonical/OG + JSON-LD) for
-    // SEO; falls back to the untouched template on any error.
+    // Per-route SEO and initial content, with real 404s and retryable 503s.
     app.get(/^\/(?!api\/|healthz).*/, spaController.serveSpa(clientDist));
 }
 

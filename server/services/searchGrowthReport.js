@@ -84,6 +84,16 @@ function routeTable(rows) {
         : '<p class="empty">No page visibility data yet.</p>') + '</section>';
 }
 
+function intentTable(rows) {
+    const body = (rows || []).map(row => '<tr><td>' + escapeHtml(row.intent) + '</td><td>' +
+        number(row.queries) + '</td><td>' + number(row.clicks) + '</td><td>' +
+        number(row.impressions) + '</td><td>' + percent(row.ctr) + '</td></tr>').join('');
+    return '<section class="panel"><h2>Reported query intent: 28 days</h2>' +
+        '<p>Counts cover distinct reported queries. Query metrics can be incomplete and do not equal property totals; query-page opportunities are a separate subset.</p>' + (body
+        ? '<div class="table-wrap"><table><thead><tr><th>Intent</th><th>Queries</th><th>Clicks</th><th>Impressions</th><th>CTR</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+        : '<p class="empty">No query intent data yet.</p>') + '</section>';
+}
+
 function renderSearchGrowthReport(data, generatedAt = new Date()) {
     const stale = data.lastSyncedAt && generatedAt.getTime() - new Date(data.lastSyncedAt).getTime() > 48 * 60 * 60 * 1000;
     const status = !data.latestDate ? 'No imported data' : stale ? 'Import may be stale' : 'Import current';
@@ -104,12 +114,13 @@ function renderSearchGrowthReport(data, generatedAt = new Date()) {
         escapeHtml(data.latestDate || 'none') + '. Generated ' + escapeHtml(generatedAt.toISOString()) +
         '. <span class="status">' + escapeHtml(status) + '</span></p><section class="metrics">' + metrics +
         '</section><section class="panel"><h2>Daily clicks: last 90 finalized days</h2>' + trendSvg(data.daily || []) + '</section>' +
-        '<div class="grid">' + table('Top queries: 28 days', data.topQueries || [], { valueLabel: 'Query' }) +
+        '<div class="grid">' + table('Top semantic queries: 28 days', data.topQueries || [], { valueLabel: 'Query' }) +
         table('Top pages: 28 days', data.topPages || [], { valueLabel: 'Page' }) + '</div><div class="grid">' +
-        table('Zero-click opportunities', data.zeroClickQueries || [], { valueLabel: 'Query' }) +
+        table('Semantic zero-click opportunities', data.zeroClickQueries || [], { valueLabel: 'Query' }) +
         table('High-impression, low-CTR pages', data.pageOpportunities || [], { valueLabel: 'Page', limit: 50 }) +
-        '</div>' + queryPageTable(data.queryPageOpportunities || []) +
-        '<div class="grid">' + routeTable(data.routes || []) +
+        '</div>' + queryPageTable(data.queryPageOpportunities || []) + '<div class="grid">' +
+        table('Brand queries', data.brandQueries || [], { valueLabel: 'Query' }) +
+        intentTable(data.queryIntentSummary || []) + '</div><div class="grid">' + routeTable(data.routes || []) +
         table('Countries', data.countries || [], { valueLabel: 'Country', limit: 15 }) + '</div><div class="grid">' +
         table('Devices', data.devices || [], { valueLabel: 'Device', limit: 10 }) +
         '</div></main></body></html>';
@@ -124,5 +135,6 @@ module.exports = {
     table,
     queryPageTable,
     routeTable,
+    intentTable,
     renderSearchGrowthReport
 };

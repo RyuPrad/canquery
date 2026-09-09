@@ -157,6 +157,7 @@ async function getResourceById(id) {
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
                d.name AS dataset_name, d.title_en AS dataset_title_en, d.title_fr AS dataset_title_fr,
+               o.name AS org_name, o.title_en AS org_title_en, o.title_fr AS org_title_fr,
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
                ir.byte_size AS ingested_byte_size, ir.columns AS ingested_columns,
                ir.ingested_at, ir.last_accessed_at,
@@ -171,10 +172,43 @@ async function getResourceById(id) {
                ${PLACES_SELECT}
         FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
+        LEFT JOIN organizations o ON o.id = d.org_id
         LEFT JOIN ingested_resources ir ON ir.resource_id = r.id
         LEFT JOIN resource_maps rm ON rm.resource_id = r.id
         WHERE r.id = $1
     `, [id]);
+    return result.rows[0] || null;
+}
+
+async function getOrganizationByName(name, db = pool) {
+    const result = await db.query(`
+        SELECT o.id, o.name, o.title_en, o.title_fr,
+               p.id AS place_id, p.slug AS place_slug,
+               p.name_en AS place_name_en, p.name_fr AS place_name_fr,
+               (SELECT count(*)::int FROM datasets d
+                WHERE d.org_id = o.id) AS dataset_count,
+               (SELECT count(*)::int FROM datasets d
+                WHERE d.org_id = o.id AND EXISTS (
+                    SELECT 1 FROM resources r
+                    WHERE r.dataset_id = d.id
+                      AND (r.datastore_active OR EXISTS (
+                          SELECT 1 FROM ingested_resources ir
+                          WHERE ir.resource_id = r.id AND ir.status = 'ready'
+                      ))
+                )) AS queryable_dataset_count,
+               (SELECT count(*)::int FROM datasets d
+                WHERE d.org_id = o.id AND EXISTS (
+                    SELECT 1 FROM resources r
+                    JOIN resource_maps rm ON rm.resource_id = r.id
+                    WHERE r.dataset_id = d.id
+                )) AS mappable_dataset_count,
+               (SELECT max(d.metadata_modified) FROM datasets d
+                WHERE d.org_id = o.id) AS metadata_modified
+        FROM organizations o
+        LEFT JOIN places p ON p.id = o.place_id
+        WHERE o.name = $1
+        LIMIT 1
+    `, [name]);
     return result.rows[0] || null;
 }
 
@@ -469,6 +503,18 @@ async function listPlaceSitemap() {
     return result.rows;
 }
 
+async function listOrganizationSitemap() {
+    const result = await pool.query(`
+        SELECT o.name, max(d.metadata_modified) AS metadata_modified
+        FROM organizations o
+        JOIN datasets d ON d.org_id = o.id
+        GROUP BY o.id, o.name
+        HAVING count(d.id) > 0
+        ORDER BY o.name
+    `);
+    return result.rows;
+}
+
 async function pingDb() {
     await pool.query('SELECT 1');
     return true;
@@ -568,6 +614,7 @@ module.exports = {
     getResourceById,
     getResourceMapById,
     listOrganizations,
+    getOrganizationByName,
     listSources,
     listPlaces,
     getPlaceByIdOrSlug,
@@ -577,6 +624,7 @@ module.exports = {
     countSitemapResources,
     listResourceSitemap,
     listPlaceSitemap,
+    listOrganizationSitemap,
     pingDb,
     getLastSyncTime,
     listRecentlyIngested,

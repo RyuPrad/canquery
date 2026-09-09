@@ -1,4 +1,5 @@
 const pool = require('./pool');
+const { classifyRows, searchIntentSql, INTENTS } = require('../services/searchIntent');
 
 async function latestSearchConsoleDate(db = pool) {
     const result = await db.query("SELECT max(data_date)::text AS data_date FROM search_console_daily WHERE search_type = 'web'");
@@ -99,7 +100,8 @@ async function replaceSearchConsoleDay(day, db = pool) {
     }
 }
 
-async function aggregateBreakdown(db, dimension, { zeroClick = false, limit = 25 } = {}) {
+async function aggregateBreakdown(db, dimension, { zeroClick = false, limit = 25, intent = null } = {}) {
+    if (intent && (dimension !== 'query' || !INTENTS.includes(intent))) throw new Error('Invalid query intent');
     const result = await db.query(`
         WITH latest AS (
             SELECT max(data_date) AS d FROM search_console_daily WHERE search_type = 'web'
@@ -113,11 +115,12 @@ async function aggregateBreakdown(db, dimension, { zeroClick = false, limit = 25
         FROM search_console_breakdowns, latest
         WHERE search_type = 'web' AND dimension = $1
           AND data_date BETWEEN latest.d - 27 AND latest.d
+          ${intent ? 'AND ' + searchIntentSql('value') + ' = $3' : ''}
         GROUP BY value
         ${zeroClick ? 'HAVING sum(clicks) = 0 AND sum(impressions) > 0' : ''}
         ORDER BY ${zeroClick ? 'impressions' : 'clicks'} DESC, impressions DESC, value
         LIMIT $2
-    `, [dimension, limit]);
+    `, intent ? [dimension, limit, intent] : [dimension, limit]);
     return result.rows;
 }
 
@@ -131,13 +134,14 @@ async function getSearchGrowthReportData(db = pool) {
         return {
             latestDate: null, lastSyncedAt: null, daily: [], summary: null,
             topQueries: [], topPages: [], zeroClickQueries: [], pageOpportunities: [],
-            queryPageOpportunities: [], countries: [], devices: [], routes: []
+            queryPageOpportunities: [], brandQueries: [], queryIntentSummary: [],
+            countries: [], devices: [], routes: []
         };
     }
     const [
         dailyResult, summaryResult, topQueries, topPages, zeroClickQueries,
         pageOpportunitiesResult, queryPageOpportunitiesResult,
-        countries, devices, routesResult
+        countries, devices, routesResult, brandQueries, intentSummaryResult
     ] = await Promise.all([
         db.query(`
             SELECT data_date::text, clicks, impressions, ctr, position
@@ -157,9 +161,9 @@ async function getSearchGrowthReportData(db = pool) {
                     nullif(sum(impressions) FILTER (WHERE data_date BETWEEN $1::date - 55 AND $1::date - 28), 0), 0)::float8 AS prior_position
             FROM search_console_daily WHERE search_type = 'web'
         `, [latestDate]),
-        aggregateBreakdown(db, 'query'),
+        aggregateBreakdown(db, 'query', { intent: 'semantic' }),
         aggregateBreakdown(db, 'page'),
-        aggregateBreakdown(db, 'query', { zeroClick: true }),
+        aggregateBreakdown(db, 'query', { zeroClick: true, intent: 'semantic' }),
         db.query(`
             WITH latest AS (SELECT $1::date AS d)
             SELECT value,
@@ -172,7 +176,8 @@ async function getSearchGrowthReportData(db = pool) {
             FROM search_console_breakdowns, latest
             WHERE search_type = 'web' AND dimension = 'page'
               AND data_date BETWEEN latest.d - 27 AND latest.d
-              AND (value ~ '/datasets/[^/?#]+' OR value ~ '/resources/[^/?#]+')
+              AND (value ~ '/datasets/[^/?#]+' OR value ~ '/resources/[^/?#]+'
+                   OR value ~ '/places/[^/?#]+' OR value ~ '/organizations/[^/?#]+')
             GROUP BY value
             HAVING sum(impressions) >= 50
                AND CASE WHEN sum(impressions) = 0 THEN 0
@@ -192,6 +197,7 @@ async function getSearchGrowthReportData(db = pool) {
             FROM search_console_query_pages, latest
             WHERE search_type = 'web'
               AND data_date BETWEEN latest.d - 27 AND latest.d
+              AND ${searchIntentSql('query_text')} = 'semantic'
             GROUP BY query_text, page_url
             HAVING sum(impressions) >= 5
                AND sum(position * impressions) / nullif(sum(impressions), 0) BETWEEN 1 AND 20
@@ -205,6 +211,7 @@ async function getSearchGrowthReportData(db = pool) {
             WITH latest AS (SELECT $1::date AS d), page_totals AS (
                 SELECT CASE
                     WHEN scb.value ~ '/places/[^/?#]+' THEN 'Place pages'
+                    WHEN scb.value ~ '/organizations/[^/?#]+' THEN 'Organization pages'
                     WHEN scb.value ~ '/datasets/[^/?#]+' THEN 'Dataset pages'
                     WHEN scb.value ~ '/resources/[^/?#]+' THEN 'Resource pages'
                     WHEN scb.value ~ '/insights/?([?#].*)?$' THEN 'Insights'
@@ -226,21 +233,42 @@ async function getSearchGrowthReportData(db = pool) {
                    CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(clicks) / sum(impressions) END::float8 AS ctr,
                    CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(position_weight) / sum(impressions) END::float8 AS position
             FROM page_totals GROUP BY family ORDER BY impressions DESC, clicks DESC
+        `, [latestDate]),
+        aggregateBreakdown(db, 'query', { intent: 'brand' }),
+        db.query(`
+            WITH reported_queries AS (
+                SELECT value, sum(clicks)::float8 AS clicks, sum(impressions)::float8 AS impressions
+                FROM search_console_breakdowns
+                WHERE search_type = 'web' AND dimension = 'query'
+                  AND data_date BETWEEN $1::date - 27 AND $1::date
+                GROUP BY value
+            )
+            SELECT ${searchIntentSql('value')} AS intent, count(*)::int AS queries,
+                   sum(clicks)::float8 AS clicks, sum(impressions)::float8 AS impressions,
+                   coalesce(sum(clicks) / nullif(sum(impressions), 0), 0)::float8 AS ctr
+            FROM reported_queries GROUP BY intent
         `, [latestDate])
     ]);
     const summary = summaryResult.rows[0];
     summary.current_ctr = summary.current_impressions ? summary.current_clicks / summary.current_impressions : 0;
     summary.prior_ctr = summary.prior_impressions ? summary.prior_clicks / summary.prior_impressions : 0;
+    const classifiedTopQueries = classifyRows(topQueries);
+    const classifiedZeroClickQueries = classifyRows(zeroClickQueries);
+    const classifiedQueryPages = classifyRows(queryPageOpportunitiesResult.rows, 'query');
     return {
         latestDate,
         lastSyncedAt: latestResult.rows[0].last_synced_at,
         daily: dailyResult.rows,
         summary,
-        topQueries,
+        topQueries: classifiedTopQueries,
+        brandQueries: classifyRows(brandQueries),
         topPages,
-        zeroClickQueries,
+        zeroClickQueries: classifiedZeroClickQueries,
         pageOpportunities: pageOpportunitiesResult.rows,
-        queryPageOpportunities: queryPageOpportunitiesResult.rows,
+        queryPageOpportunities: classifiedQueryPages,
+        queryIntentSummary: INTENTS.map(intent => intentSummaryResult.rows.find(row => row.intent === intent) || {
+            intent, queries: 0, clicks: 0, impressions: 0, ctr: 0
+        }),
         countries,
         devices,
         routes: routesResult.rows

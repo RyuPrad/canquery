@@ -58,7 +58,11 @@ const sitemapIndex = catchAsync(async (req, res) => {
     ]);
     const datasetPages = Math.max(1, Math.ceil(datasetTotal / PAGE_SIZE));
     const resourcePages = Math.ceil(resourceTotal / PAGE_SIZE);
-    const locs = [SITE_URL + '/sitemap-pages.xml', SITE_URL + '/sitemap-places.xml'];
+    const locs = [
+        SITE_URL + '/sitemap-pages.xml',
+        SITE_URL + '/sitemap-places.xml',
+        SITE_URL + '/sitemap-organizations.xml'
+    ];
     for (let i = 1; i <= datasetPages; i++) locs.push(SITE_URL + '/sitemap-datasets-' + i + '.xml');
     for (let i = 1; i <= resourcePages; i++) locs.push(SITE_URL + '/sitemap-resources-' + i + '.xml');
     const body =
@@ -93,6 +97,23 @@ const sitemapPlaces = catchAsync(async (req, res) => {
     const entries = rows.map(place => ({
         loc: SITE_URL + '/places/' + encodeURIComponent(place.slug),
         lastmod: place.metadata_modified ? new Date(place.metadata_modified).toISOString() : null,
+        changefreq: 'weekly'
+    }));
+    res.type('application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(urlset(entries));
+});
+
+// GET /sitemap-organizations.xml - public organizations with at least one
+// mirrored dataset. Their detail pages are useful discovery hubs even when a
+// particular dataset is download-only.
+const sitemapOrganizations = catchAsync(async (req, res) => {
+    const rows = await catalogRead.listOrganizationSitemap();
+    const entries = rows.map(organization => ({
+        loc: SITE_URL + '/organizations/' + encodeURIComponent(organization.name),
+        lastmod: organization.metadata_modified
+            ? new Date(organization.metadata_modified).toISOString()
+            : null,
         changefreq: 'weekly'
     }));
     res.type('application/xml');
@@ -145,6 +166,7 @@ module.exports = {
     sitemapIndex,
     sitemapPages,
     sitemapPlaces,
+    sitemapOrganizations,
     sitemapDatasets,
     sitemapResources
 };

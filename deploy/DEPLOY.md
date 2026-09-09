@@ -267,6 +267,21 @@ later runs replace a seven-day overlap atomically. Serve the file configured by
 initial import and protected report are verified, uncomment the 06:15 UTC sync
 and 06:30 UTC report entries.
 
+After an SEO-facing release, verify the response before asking Google to
+recrawl it. A canonical dataset, resource, place, and organization page must
+return HTTP 200 with a non-empty `data-cq-seo-snapshot`, one `<h1>`, one
+canonical link, and valid JSON-LD in the initial HTML. An alias should return
+301 to the canonical slug, an unknown route should return a noindex 404, and a
+catalogue lookup outage should return a noindex 503 with `Retry-After`.
+Confirm that `/sitemap.xml` includes the dataset, resource, place, and
+organization sitemap families. The installed read-only OAuth grant supports
+API URL inspection. Sitemap submission and requesting indexing require the
+owner-authenticated Search Console UI; retain the existing OAuth scope.
+Rebuild the private report after
+seven finalized days for crawl/indexing checks and compare the next complete
+28-day semantic-query cohort with the pre-release baseline; diagnostic UUID and
+`site:` traffic is retained in storage but excluded from the actionable table.
+
 Incremental sync advances its persisted checkpoint only after a complete
 overlap-window traversal. Reaching its safety page cap records an incomplete run
 and does not advance that checkpoint. A successful unlimited full sync also sweeps

@@ -1,7 +1,7 @@
 {
-  "name": "canquery",
+  "name": "CanQuery",
   "short_name": "canquery",
-  "description": "Query Canada's open data.",
+  "description": "Search Canada's open data, query live tables, and explore maps.",
   "icons": [
     {
       "src": "/android-chrome-192.png",

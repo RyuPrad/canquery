@@ -221,10 +221,13 @@ function DatasetExplorer({ idOrName }) {
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-base-content/55">
         {dataset.organization && (
-          <span className="inline-flex items-center gap-1.5">
+          <Link
+            to={'/organizations/' + encodeURIComponent(dataset.organization.name)}
+            className="inline-flex items-center gap-1.5 hover:text-base-content"
+          >
             <BuildingIcon size={14} />
             {pick(dataset.organization.title)}
-          </span>
+          </Link>
         )}
         {dataset.metadata_modified && (
           <span className="inline-flex items-center gap-1.5">

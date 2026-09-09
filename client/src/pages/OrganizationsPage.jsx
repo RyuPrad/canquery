@@ -12,12 +12,12 @@ function OrgCard({ org, t }) {
   return (
     <Link
       key={org.id}
-      to={'/?org=' + encodeURIComponent(org.name)}
+      to={'/organizations/' + encodeURIComponent(org.name)}
       title={'See every dataset from ' + title}
       className="cq-card p-4 flex items-center gap-3.5 group"
-      data-analytics-event="catalog_filter"
-      data-analytics-filter="organization"
-      data-analytics-value={org.name}
+      data-analytics-event="organization_open"
+      data-analytics-organization={org.name}
+      data-analytics-dataset-count={org.dataset_count}
       data-analytics-source="organization_card"
     >
       <span className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center font-display font-bold text-base shrink-0">

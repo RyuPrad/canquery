@@ -160,6 +160,7 @@ curl -X POST 'http://localhost:3100/api/v1/resources/<id>/ingest'
 curl 'http://localhost:3100/api/v1/jobs/<jobId>'
 
 curl 'http://localhost:3100/api/v1/organizations?limit=10'
+curl 'http://localhost:3100/api/v1/organizations/<name>'
 curl 'http://localhost:3100/api/v1/stats'
 
 # the live Top 100 Downloaded Datasets leaderboard (period + ranked items)

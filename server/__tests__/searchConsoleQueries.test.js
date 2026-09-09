@@ -54,7 +54,7 @@ it('surfaces high-impression, low-CTR dataset and resource pages in the report d
         value: 'https://canquery.com/resources/r1',
         clicks: 0, impressions: 200, ctr: 0, position: 5
     };
-    const db = { query: jest.fn()
+    const db = { query: jest.fn().mockResolvedValue({ rows: [] })
         .mockResolvedValueOnce({ rows: [{ latest_date: '2026-08-27', last_synced_at: '2026-08-29T00:00:00Z' }] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [{
@@ -77,6 +77,8 @@ it('surfaces high-impression, low-CTR dataset and resource pages in the report d
     const opportunitySql = db.query.mock.calls.find(call => call[0].includes('HAVING sum(impressions) >= 50'));
     expect(opportunitySql[0]).toContain("value ~ '/datasets/[^/?#]+'");
     expect(opportunitySql[0]).toContain("value ~ '/resources/[^/?#]+'");
+    expect(opportunitySql[0]).toContain("value ~ '/places/[^/?#]+'");
+    expect(opportunitySql[0]).toContain("value ~ '/organizations/[^/?#]+'");
 });
 
 it('returns query-to-page opportunities and per-family visible-page counts', async () => {
@@ -88,7 +90,7 @@ it('returns query-to-page opportunities and per-family visible-page counts', asy
         value: 'Resource pages', pages_with_impressions: 870, pages_with_clicks: 11,
         clicks: 16, impressions: 6269, ctr: 0.0026, position: 10.1
     };
-    const db = { query: jest.fn()
+    const db = { query: jest.fn().mockResolvedValue({ rows: [] })
         .mockResolvedValueOnce({ rows: [{ latest_date: '2026-08-27', last_synced_at: '2026-08-29T00:00:00Z' }] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [{
@@ -107,7 +109,7 @@ it('returns query-to-page opportunities and per-family visible-page counts', asy
 
     const report = await queries.getSearchGrowthReportData(db);
 
-    expect(report.queryPageOpportunities).toEqual([pair]);
+    expect(report.queryPageOpportunities).toEqual([{ ...pair, intent: 'semantic' }]);
     expect(report.routes).toEqual([route]);
     const pairSql = db.query.mock.calls.find(call => call[0].includes('FROM search_console_query_pages'));
     expect(pairSql[0]).toContain('sum(impressions) >= 5');
