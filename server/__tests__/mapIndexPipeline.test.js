@@ -82,6 +82,20 @@ describe('bounded local-map conversion', () => {
             .toThrow(MapSkipError);
     });
 
+    test('rejects deeply nested metadata before the path-filter pass', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-depth-test-'));
+        const file = path.join(dir, 'nested.geojson');
+        try {
+            fs.writeFileSync(file, '{"type":"FeatureCollection","metadata":' +
+                '['.repeat(200) + '0' + ']'.repeat(200) + ',"features":[]}');
+            await expect(inspectGeoJsonFile(file)).rejects.toMatchObject({
+                code: 'MAP_GEOMETRY', message: 'GeoJSON nesting exceeds depth cap 128'
+            });
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     test('inspects a FeatureCollection without assembling its features', async () => {
         const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'canquery-map-test-'));
         const projected = path.join(dir, 'projected.geojson');

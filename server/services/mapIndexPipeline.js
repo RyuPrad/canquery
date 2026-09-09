@@ -192,6 +192,11 @@ async function inspectGeoJsonFile(filePath) {
                         crsObject = token.name === 'startObject';
                     }
                     depth += 1;
+                    // Bound nesting before the second pass reaches stream-json's
+                    // path filter, whose older versions have quadratic depth cost.
+                    if (depth > 128) {
+                        throw new MapSkipError('GeoJSON nesting exceeds depth cap 128', 'MAP_GEOMETRY');
+                    }
                 } else if (token.name === 'endObject' || token.name === 'endArray') {
                     depth -= 1;
                 } else if (token.name === 'keyValue') {
