@@ -54,8 +54,9 @@ If `source:red-deer-hub` remains failed, recover only that source:
 2. Require the expected source identity, nonzero admission, zero enrichment
    failures and zero proposed dataset deletions. Independently compare admitted
    resource IDs and map-job IDs against stored rows; require zero removals.
-3. Hold the existing municipal cron lock and a database transaction lock on
-   the affected catalogue tables while rechecking these assertions. Use the
+3. Run outside the municipal cron window and require no active municipal sync
+   process. Hold a database transaction lock on the affected catalogue tables
+   while rechecking these assertions. Use the
    same frozen snapshot for the write with `source.maxDeleteFraction = 0`.
    Roll back the source transaction if any deletion assertion fails.
 4. Retain dry-run/write summaries, resource identity checks and before/after
