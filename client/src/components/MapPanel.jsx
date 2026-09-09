@@ -151,15 +151,17 @@ function LegacyMapPanel({ resourceId, mapInfo }) {
           />
         )}
       </MapContainer>
-      <div className="absolute left-3 top-3 z-[500] flex items-center gap-2 rounded-lg border border-base-content/10 bg-base-100/90 backdrop-blur px-3 py-2 text-xs shadow-lg">
-        {loading ? <span className="loading loading-spinner loading-xs" /> : <MapIcon size={13} className="text-secondary" />}
-        {loading ? t('map.loading') : meta ? meta.returned.toLocaleString() + ' ' + t('map.features') : t('map.live')}
-      </div>
-      {meta?.truncated && (
-        <div className="absolute right-3 top-3 z-[500] rounded-lg bg-warning/90 text-warning-content px-3 py-2 text-xs shadow-lg">
-          {t('map.zoom_in')}
+      <div className="absolute left-16 right-3 top-3 z-[500] flex flex-col items-end gap-2 pointer-events-none">
+        <div className="max-w-full flex items-center gap-2 rounded-lg border border-base-content/10 bg-base-100/90 backdrop-blur px-3 py-2 text-xs shadow-lg">
+          {loading ? <span className="loading loading-spinner loading-xs" /> : <MapIcon size={13} className="text-secondary" />}
+          {loading ? t('map.loading') : meta ? meta.returned.toLocaleString() + ' ' + t('map.features') : t('map.live')}
         </div>
-      )}
+        {meta?.truncated && (
+          <div className="max-w-full rounded-lg bg-warning/90 text-warning-content px-3 py-2 text-xs shadow-lg">
+            {t('map.zoom_in')}
+          </div>
+        )}
+      </div>
       {error && (
         <div className="absolute inset-x-4 bottom-8 z-[500] alert alert-error text-sm shadow-xl">
           {error.status === 413 ? t('map.zoom_in') : t('map.failed')}
