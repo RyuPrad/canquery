@@ -57,8 +57,11 @@ If `source:red-deer-hub` remains failed, recover only that source:
 3. Run outside the municipal cron window and require no active municipal sync
    process. Hold a database transaction lock on the affected catalogue tables
    while rechecking these assertions. Use the
-   same frozen snapshot for the write with `source.maxDeleteFraction = 0`.
-   Roll back the source transaction if any deletion assertion fails.
+   same frozen snapshot for the write. Keep a valid positive
+   `source.maxDeleteFraction`; the sync API rejects zero and permits at least
+   one routine removal, so that setting alone cannot enforce zero deletions.
+   Enforce zero removals with the locked identity comparisons and roll back if
+   any dataset, resource or map-job retention assertion fails before commit.
 4. Retain dry-run/write summaries, resource identity checks and before/after
    health responses in the private release directory. Do not run a broad
    municipal or federal sync or start a second map worker.
