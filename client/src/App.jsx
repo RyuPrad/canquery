@@ -18,6 +18,7 @@ import { useLang } from './i18n.jsx'
 
 // The gallery renders charts (Recharts) - lazy-load it so the chart bundle only
 // ships when someone opens /insights.
+const BlogPage = lazy(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazy(() => import('./pages/InsightsPage'))
 
 function ScrollToTop() {
@@ -60,6 +61,10 @@ export default function App() {
             <Route path="/places" element={<PlacesPage />} />
             <Route path="/places/:slug" element={<PlacePage />} />
             <Route path="/docs" element={<DocsPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/blog/:slug" element={<BlogPage />} />
+            <Route path="/fr/blog" element={<BlogPage language="fr" />} />
+            <Route path="/fr/blog/:slug" element={<BlogPage language="fr" />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

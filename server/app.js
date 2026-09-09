@@ -89,6 +89,7 @@ app.use('/api/v1/ops', opsRouter);
 app.use('/api/v1/insights', insightsRouter);
 app.use('/api/v1/places', placesRouter);
 app.use('/api/v1/sources', sourcesRouter);
+app.use('/api/v1/blog', require('./routes/blog'));
 
 // Crawl-facing files (robots.txt + sitemaps) live at the site root and read
 // from Postgres; mounted before the SPA so they win over the static catch-all.

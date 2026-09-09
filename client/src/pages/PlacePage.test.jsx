@@ -5,6 +5,7 @@ import PlacePage from './PlacePage.jsx';
 import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
+  fetchBlog: vi.fn(() => Promise.resolve({ data: [] })),
   fetchPlace: vi.fn(),
   fetchSources: vi.fn(),
   searchDatasets: vi.fn(),

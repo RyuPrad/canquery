@@ -73,7 +73,7 @@ function StarCount() {
 }
 
 export default function Footer() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   return (
     <footer className="mt-20 border-t border-base-content/8 bg-base-200/40">
       <div className="max-w-7xl mx-auto px-4 py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -155,6 +155,9 @@ export default function Footer() {
               <Link to="/docs" className="text-base-content/65 hover:text-base-content transition-colors">
                 {t('nav.docs')}
               </Link>
+            </li>
+            <li>
+              <Link to={lang === 'fr' ? '/fr/blog' : '/blog'} className="text-base-content/65 hover:text-base-content transition-colors">{t('blog.title')}</Link>
             </li>
             <li>
               <Link to="/privacy" className="text-base-content/65 hover:text-base-content transition-colors">

@@ -10,6 +10,25 @@ export const STRINGS = {
     'nav.insights': 'Insights',
     'nav.organizations': 'Organizations',
     'nav.places': 'Places',
+    "blog.title": "Local guides",
+    "blog.eyebrow": "Your city, explained with data",
+    "blog.intro": "Practical ways to explore your city with official open data. Start with a local question, then open the map or records behind it.",
+    "blog.read": "Read the guide",
+    "blog.not_found": "Guide not found",
+    "blog.failed": "This guide could not be loaded. Please try again.",
+    "blog.loading": "Loading guide",
+    "blog.by": "By",
+    "blog.published": "Published",
+    "blog.updated": "Article updated",
+    "blog.verified": "Data links checked",
+    "blog.dataset": "View the source dataset",
+    "blog.more": "More data for",
+    "discovery.title": "Explore something local",
+    "discovery.map": "Explore map",
+    "discovery.table": "View records",
+    "discovery.suggest": "Try this spelling:",
+    "discovery.metadata": "Catalogue metadata updated",
+
     'nav.docs': 'API docs',
     'breadcrumbs.label': 'Breadcrumb',
     'theme.toggle': 'Toggle light / dark theme',
@@ -274,6 +293,25 @@ export const STRINGS = {
     'nav.insights': 'Aperçus',
     'nav.organizations': 'Organisations',
     'nav.places': 'Lieux',
+    "blog.title": "Guides locaux",
+    "blog.eyebrow": "Votre ville, expliquée par les données",
+    "blog.intro": "Des façons pratiques de découvrir votre ville grâce aux données ouvertes officielles. Partez d’une question locale, puis consultez la carte ou les dossiers associés.",
+    "blog.read": "Lire le guide",
+    "blog.not_found": "Guide introuvable",
+    "blog.failed": "Impossible de charger ce guide. Veuillez réessayer.",
+    "blog.loading": "Chargement du guide",
+    "blog.by": "Par",
+    "blog.published": "Publié le",
+    "blog.updated": "Article mis à jour le",
+    "blog.verified": "Liens vérifiés le",
+    "blog.dataset": "Consulter le jeu de données source",
+    "blog.more": "Autres données pour",
+    "discovery.title": "Explorez votre milieu",
+    "discovery.map": "Explorer la carte",
+    "discovery.table": "Consulter les dossiers",
+    "discovery.suggest": "Essayez cette orthographe :",
+    "discovery.metadata": "Métadonnées du catalogue mises à jour",
+
     'nav.docs': 'API',
     'breadcrumbs.label': 'Fil d’Ariane',
     'theme.toggle': 'Basculer le thème clair / sombre',
@@ -544,7 +582,10 @@ const lookup = (lang, key) => {
 const LangContext = createContext({ lang: 'en', setLang: () => {}, t: (key) => lookup('en', key) });
 
 export function LangProvider({ children }) {
+  const [blogTranslations, setBlogTranslations] = useState(null);
   const [lang, setLangState] = useState(() => {
+    if (/^\/fr\/blog(?:\/|$)/.test(window.location.pathname)) return 'fr';
+    if (/^\/blog(?:\/|$)/.test(window.location.pathname)) return 'en';
     try {
       return localStorage.getItem('cq-lang') === 'fr' ? 'fr' : 'en';
     } catch {
@@ -561,7 +602,7 @@ export function LangProvider({ children }) {
     }
   }, []);
   const t = useCallback((key) => lookup(lang, key), [lang]);
-  return <LangContext.Provider value={{ lang, setLang, t }}>{children}</LangContext.Provider>;
+  return <LangContext.Provider value={{ lang, setLang, t, blogTranslations, setBlogTranslations }}>{children}</LangContext.Provider>;
 }
 
 export function useLang() {

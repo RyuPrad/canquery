@@ -14,6 +14,9 @@ echo -e "${BLUE}=== CanQuery Release Verification ===${NC}"
 echo "Root directory: ${ROOT_DIR}"
 echo ""
 
+# Validate the repository-authored guides before build or deployment.
+node "${ROOT_DIR}/server/scripts/check-blog.js"
+
 # 1. Server Linter
 echo -e "${BLUE}[1/5] Running Server ESLint...${NC}"
 cd "${ROOT_DIR}/server"

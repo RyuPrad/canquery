@@ -177,7 +177,8 @@ async function getSearchGrowthReportData(db = pool) {
             WHERE search_type = 'web' AND dimension = 'page'
               AND data_date BETWEEN latest.d - 27 AND latest.d
               AND (value ~ '/datasets/[^/?#]+' OR value ~ '/resources/[^/?#]+'
-                   OR value ~ '/places/[^/?#]+' OR value ~ '/organizations/[^/?#]+')
+                   OR value ~ '/places/[^/?#]+' OR value ~ '/organizations/[^/?#]+'
+                   OR value ~ '^https?://[^/]+/(fr/)?blog/[^/?#]+')
             GROUP BY value
             HAVING sum(impressions) >= 50
                AND CASE WHEN sum(impressions) = 0 THEN 0
@@ -210,6 +211,7 @@ async function getSearchGrowthReportData(db = pool) {
         db.query(`
             WITH latest AS (SELECT $1::date AS d), page_totals AS (
                 SELECT CASE
+                    WHEN scb.value ~ '^https?://[^/]+/(fr/)?blog(/|[?#]|$)' THEN 'Local guides'
                     WHEN scb.value ~ '/places/[^/?#]+' THEN 'Place pages'
                     WHEN scb.value ~ '/organizations/[^/?#]+' THEN 'Organization pages'
                     WHEN scb.value ~ '/datasets/[^/?#]+' THEN 'Dataset pages'

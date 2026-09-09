@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import LocalGuides from '../components/LocalGuides.jsx';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchPlace, fetchSources, searchDatasets } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
@@ -45,7 +46,7 @@ export default function PlacePage() {
     return () => { cancelled = true; };
   }, [slug]);
 
-  const { items, loading, loadingMore, error: searchError, hasMore, loadMore } = usePaginatedCollection(
+  const { items, meta, loading, loadingMore, error: searchError, hasMore, loadMore } = usePaginatedCollection(
     cursor => searchDatasets({
       q: debouncedQuery || undefined,
       place: slug,
@@ -55,6 +56,15 @@ export default function PlacePage() {
     }),
     [slug, debouncedQuery, mappable]
   );
+
+  const reportedSearch = useRef(null);
+  useEffect(() => {
+    if (loading || searchError || !debouncedQuery || meta?.search?.query !== debouncedQuery.trim() || reportedSearch.current === meta) return;
+    reportedSearch.current = meta;
+    track('catalog_search_result', {
+      place: slug, language: lang, returned: items.length, empty: items.length === 0,
+    });
+  }, [loading, searchError, debouncedQuery, slug, lang, items.length, meta]);
 
   if (notFound) return <div className="text-center py-28"><h1 className="text-2xl font-bold font-display">{t('places.not_found')}</h1></div>;
   if (error) return <div className="max-w-5xl mx-auto px-4 py-8"><div className="alert alert-error">{error.message}</div></div>;
@@ -152,6 +162,8 @@ export default function PlacePage() {
         </div>
       )}
 
+      <LocalGuides place={slug} />
+
       <div className="grid sm:grid-cols-[minmax(0,1fr)_auto] gap-3 mt-8">
         <SearchBar value={query} onChange={setQuery} />
         <button
@@ -168,7 +180,13 @@ export default function PlacePage() {
       <section className="space-y-3 mt-6">
         {loading ? [...Array(5)].map((_, index) => <div className="cq-skel h-[82px]" key={index} />) :
           searchError ? <div className="alert alert-error">{searchError.message}</div> :
-            items.length === 0 ? <div className="text-center py-14 text-base-content/50">{t('places.no_datasets')}</div> :
+            items.length === 0 ? <div className="text-center py-14 text-base-content/50">
+                <p>{t('places.no_datasets')}</p>
+                {meta?.search?.suggestions?.length > 0 && <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
+                  <span>{t('discovery.suggest')}</span>
+                  {meta.search.suggestions.map(suggestion => <button className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>{suggestion}</button>)}
+                </div>}
+              </div> :
               items.map(dataset => <DatasetRow key={dataset.id} dataset={dataset} />)}
       </section>
       {hasMore && <div className="text-center mt-6"><button className="btn btn-outline btn-sm rounded-full px-7" onClick={() => { track('catalog_filter', { action: 'load_more', place: slug }); loadMore(); }} disabled={loadingMore}>{loadingMore ? t('home.loading') : t('home.load_more')}</button></div>}

@@ -213,3 +213,12 @@ describe('Catalog API', () => {
         expect(res.body.error).toBe('Origin not allowed');
     });
 });
+
+it('returns spelling suggestions only on an empty first page while retaining the selected place', async () => {
+    queries.searchDatasets.mockResolvedValue([]);
+    const first = await request(app).get('/api/v1/datasets?q=playgrouds&place=toronto-on');
+    expect(first.body.meta.search).toEqual({ query: 'playgrouds', suggestions: ['playgrounds'] });
+    expect(queries.searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ place: 'toronto-on', q: 'playgrouds' }));
+    const later = await request(app).get('/api/v1/datasets?q=playgrouds&cursor=20');
+    expect(later.body.meta.search.suggestions).toEqual([]);
+});

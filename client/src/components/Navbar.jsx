@@ -1,4 +1,4 @@
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { useTheme } from '../theme.jsx';
 import { MapleLeaf, ExternalIcon, SparklesIcon, SunIcon, MoonIcon } from './Icons.jsx';
@@ -7,7 +7,16 @@ import { track } from '../utils/analytics.js';
 const navClass = ({ isActive }) => 'cq-nav-link' + (isActive ? ' cq-nav-active' : '');
 
 export default function Navbar() {
-  const { lang, setLang, t } = useLang();
+  const { lang, setLang, t, blogTranslations } = useLang();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const isBlog = /^\/(fr\/)?blog(?:\/|$)/.test(pathname);
+  const chooseLanguage = language => {
+    track('ui_language', { language });
+    if (isBlog && blogTranslations?.pathname === pathname) navigate(blogTranslations.paths[language]);
+    else if (isBlog) navigate(language === 'fr' ? '/fr/blog' : '/blog');
+    setLang(language);
+  };
   const { dark, toggle } = useTheme();
   return (
     <header className="cq-glass sticky top-0 z-40">
@@ -33,6 +42,9 @@ export default function Navbar() {
           </NavLink>
           <NavLink to="/places" className={navClass}>
             {t('nav.places')}
+          </NavLink>
+          <NavLink to={lang === 'fr' ? '/fr/blog' : '/blog'} className={navClass}>
+            {t('blog.title')}
           </NavLink>
           <NavLink to="/docs" className={navClass}>
             {t('nav.docs')}
@@ -65,14 +77,16 @@ export default function Navbar() {
           <div className="cq-seg ml-1">
             <button
               className={'cq-seg-btn' + (lang === 'en' ? ' cq-seg-active' : '')}
-              onClick={() => { track('ui_language', { language: 'en' }); setLang('en'); }}
+              onClick={() => chooseLanguage('en')}
+              disabled={isBlog && /\/blog\/[^/]+/.test(pathname) && blogTranslations?.pathname !== pathname}
               aria-pressed={lang === 'en'}
             >
               EN
             </button>
             <button
               className={'cq-seg-btn' + (lang === 'fr' ? ' cq-seg-active' : '')}
-              onClick={() => { track('ui_language', { language: 'fr' }); setLang('fr'); }}
+              onClick={() => chooseLanguage('fr')}
+              disabled={isBlog && /\/blog\/[^/]+/.test(pathname) && blogTranslations?.pathname !== pathname}
               aria-pressed={lang === 'fr'}
             >
               FR

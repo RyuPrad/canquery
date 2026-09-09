@@ -1,6 +1,7 @@
 import React from 'react';
 
 export default function usePaginatedCollection(fetchPage, deps) {
+  const [meta, setMeta] = React.useState(null);
   const [items, setItems] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -13,9 +14,11 @@ export default function usePaginatedCollection(fetchPage, deps) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setMeta(null);
     fetchPage(null).then(env => {
       if (cancelled || seqRef.current !== mySeq) return;
       setItems(env.data || []);
+      setMeta(env.meta || null);
       setNextCursor(env.pagination ? env.pagination.nextCursor : null);
     }).catch(err => {
       if (cancelled || seqRef.current !== mySeq) return;
@@ -41,5 +44,5 @@ export default function usePaginatedCollection(fetchPage, deps) {
     }
   }, [nextCursor, loadingMore, fetchPage]);
 
-  return { items, loading, loadingMore, error, hasMore: Boolean(nextCursor), loadMore };
+  return { items, meta, loading, loadingMore, error, hasMore: Boolean(nextCursor), loadMore };
 }
