@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 150" fill="none">
+  <!-- Original Hello Mochi cat, reused by its creator for this promotion. -->
+  <ellipse cx="91" cy="131" rx="63" ry="10" fill="#debcb7" opacity=".3"/>
+  <path d="M42 74 41 29Q42 21 49 27L72 47Q90 42 109 47L132 27Q140 22 139 32L140 76Q158 134 90 134 20 134 42 74Z" fill="#fffdf6" stroke="#71575d" stroke-width="3" stroke-linejoin="round"/>
+  <path d="m49 51 1-14 15 15M117 52l15-15-1 17" fill="#f5bdca"/>
+  <path d="M75 50q14-5 29 0" stroke="#fffdf6" stroke-width="8"/>
+  <ellipse cx="72" cy="86" rx="3.5" ry="4.5" fill="#71575d"/><ellipse cx="110" cy="86" rx="3.5" ry="4.5" fill="#71575d"/>
+  <ellipse cx="58" cy="96" rx="10" ry="5" fill="#f5b0c5" opacity=".7"/><ellipse cx="123" cy="96" rx="10" ry="5" fill="#f5b0c5" opacity=".7"/>
+  <path d="m86 94 5 4 5-4M91 98v3m0 0q-5 7-9 1m9-1q5 7 9 1" stroke="#71575d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M51 117q12-9 19 3M111 120q8-12 18-3" stroke="#71575d" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

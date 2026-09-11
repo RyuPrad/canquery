@@ -27,12 +27,15 @@ describe('analytics bootstrap privacy signals', () => {
 
   test('loads the same-origin tracker, then the heatmap recorder', () => {
     const doc = configuredDocument();
-    expect(startAnalytics(doc, {}, {})).toBe(true);
+    const ready = vi.fn();
+    expect(startAnalytics(doc, {}, { dispatchEvent: ready })).toBe(true);
     const tracker = doc.querySelector('script[src="/metrics.js"]');
     expect(tracker.dataset.websiteId).toBe(ID);
     expect(tracker.dataset.performance).toBe('true');
     expect(doc.querySelector('script[src="/heatmaps.js"]')).toBeNull();
     tracker.dispatchEvent(new Event('load'));
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(ready.mock.calls[0][0].type).toBe('canquery:analytics-ready');
     const recorder = doc.querySelector('script[src="/heatmaps.js"]');
     expect(recorder).not.toBeNull();
     expect(recorder.dataset.websiteId).toBe(ID);

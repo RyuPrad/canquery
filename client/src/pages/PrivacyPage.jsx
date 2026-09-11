@@ -8,6 +8,7 @@ const COLLECTED = [
   'privacy.collect_location',
   'privacy.collect_performance',
   'privacy.collect_heatmaps',
+  'privacy.collect_promotions',
 ];
 
 const NOT_COLLECTED = [

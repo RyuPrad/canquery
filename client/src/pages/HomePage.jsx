@@ -7,6 +7,7 @@ import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
+import MochiPromotion from '../components/MochiPromotion.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import RecentRail from '../components/RecentRail.jsx';
 import PopularRail from '../components/PopularRail.jsx';
@@ -220,8 +221,8 @@ export default function HomePage() {
       )}
       <div className="relative max-w-6xl mx-auto px-4 pb-4">
         <section className="pt-14 pb-2 text-center cq-fade">
-          <div className="cq-chip cq-chip-mono mb-5 !px-3 !py-1.5">
-            <MapleLeaf size={11} className="text-primary" />
+          <div className="cq-chip cq-chip-mono mb-5 max-w-full !whitespace-normal !px-3 !py-1.5">
+            <MapleLeaf size={11} className="text-primary shrink-0" />
             {t('home.hero_chip')}
             {synced && (
               <span className="text-base-content/40 hidden sm:inline">
@@ -273,6 +274,8 @@ export default function HomePage() {
             <HeroChartWidget items={featured} reduced={reduced} horizontal />
           </div>
         )}
+
+        {!filtering && <MochiPromotion />}
 
         {!filtering && stats && (
           <section className="grid sm:grid-cols-3 gap-3.5 mt-10 max-w-4xl mx-auto">

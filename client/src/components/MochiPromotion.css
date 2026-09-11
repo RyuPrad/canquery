@@ -1,0 +1,49 @@
+.mochi-promotion {
+  --mochi-background: #2b212c;
+  --mochi-border: #785267;
+  --mochi-ink: #fff4eb;
+  --mochi-muted: #dfc3d0;
+  --mochi-button: #f3bdd0;
+  --mochi-button-ink: #46283a;
+  display: grid;
+  align-items: center;
+  color: var(--mochi-ink);
+  background: var(--mochi-background);
+  border: 1px solid var(--mochi-border);
+  border-radius: 1.25rem;
+  text-align: left;
+}
+[data-theme="canquery-light"] .mochi-promotion {
+  --mochi-background: #fff7f1;
+  --mochi-border: #e5bfcc;
+  --mochi-ink: #573c49;
+  --mochi-muted: #765362;
+  --mochi-button: #914464;
+  --mochi-button-ink: #ffffff;
+}
+.mochi-promotion-home { grid-template-columns: 100px minmax(0, 1fr) auto; gap: 1.25rem; max-width: 56rem; margin: 1.75rem auto 0; padding: 1.5rem; }
+.mochi-promotion-cat { width: 100%; height: auto; }
+.mochi-promotion-copy { min-width: 0; }
+.mochi-promotion-attribution { font-size: .7rem; line-height: 1.5; color: var(--mochi-muted); }
+.mochi-promotion-brand { margin-top: .4rem; font-size: .8rem; font-weight: 700; }
+.mochi-promotion h2 { margin-top: .15rem; font-family: var(--font-display); font-size: 1.4rem; line-height: 1.2; font-weight: 700; text-wrap: balance; }
+.mochi-promotion-description { margin-top: .5rem; font-size: .82rem; line-height: 1.6; color: var(--mochi-muted); }
+.mochi-promotion-action { max-width: 14rem; }
+.mochi-promotion-link { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; padding: .65rem 1rem; border-radius: .75rem; background: var(--mochi-button); color: var(--mochi-button-ink); font-size: .82rem; font-weight: 650; line-height: 1.4; }
+.mochi-promotion-link svg { flex-shrink: 0; }
+.mochi-promotion-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mochi-promotion-link:focus-visible { outline: 3px solid var(--mochi-ink); outline-offset: 4px; }
+.mochi-promotion-language { font-size: .7rem; line-height: 1.5; color: var(--mochi-muted); margin-top: .4rem; }
+.mochi-promotion-action .mochi-promotion-language { text-align: center; }
+.mochi-promotion-compact { grid-template-columns: 48px minmax(0, 1fr); gap: .65rem; padding: .75rem; max-width: 21rem; margin-top: 1.25rem; border-radius: .9rem; }
+.mochi-promotion-compact .mochi-promotion-link { justify-content: flex-start; padding: .25rem 0; font-size: .95rem; background: transparent; color: var(--mochi-ink); }
+.mochi-promotion-compact .mochi-promotion-language { margin-top: 0; }
+@media (max-width: 760px) {
+  .mochi-promotion-home { grid-template-columns: 72px minmax(0, 1fr); padding: 1.1rem; gap: .85rem; }
+  .mochi-promotion-action { grid-column: 1 / -1; max-width: none; }
+  .mochi-promotion-action .mochi-promotion-link { width: 100%; }
+}
+@media (max-width: 420px) {
+  .mochi-promotion-home { grid-template-columns: 52px minmax(0, 1fr); }
+  .mochi-promotion h2 { font-size: 1.2rem; }
+}
