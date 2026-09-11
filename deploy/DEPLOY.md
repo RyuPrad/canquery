@@ -260,6 +260,22 @@ sudo -u canquery npm run gsc:sync --prefix /home/canquery/canquery/server -- --d
 sudo -u canquery npm run gsc:report --prefix /home/canquery/canquery/server
 ```
 
+To compare a release against a frozen period, pass `--start YYYY-MM-DD`,
+`--end YYYY-MM-DD`, `--compare-start YYYY-MM-DD`, and `--compare-end YYYY-MM-DD`
+after `npm run gsc:report --`. Both periods must have the same length (1–90
+days), cannot overlap, and cannot extend beyond imported finalized data.
+Every report breakdown uses the selected current period. Imported-day counts
+make gaps visible; missing dates are not confirmed zero traffic.
+
+Use `--output /private/path/report.html` for a separate report and
+`--json /private/path/baseline.json` for a mode-600 baseline that refuses to
+overwrite an existing file. `--releases /private/path/releases.json` (or
+`GSC_RELEASES_PATH`) accepts an array of `{ "date": "YYYY-MM-DD", "label":
+"Release description" }` annotations. Record actual release dates; the report
+labels releases after its selected period. Keep these files private. Report
+generation reads one consistent database snapshot and does not import or
+modify Search Console data.
+
 The client requests only `webmasters.readonly`. The first sync imports 90
 finalized Pacific-time days, including aggregate query-to-page attribution;
 later runs replace a seven-day overlap atomically. Serve the file configured by

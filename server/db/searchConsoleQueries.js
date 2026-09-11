@@ -1,5 +1,6 @@
 const pool = require('./pool');
 const { classifyRows, searchIntentSql, INTENTS } = require('../services/searchIntent');
+const { resolveReportPeriod } = require('../services/searchReportPeriod');
 
 async function latestSearchConsoleDate(db = pool) {
     const result = await db.query("SELECT max(data_date)::text AS data_date FROM search_console_daily WHERE search_type = 'web'");
@@ -100,11 +101,11 @@ async function replaceSearchConsoleDay(day, db = pool) {
     }
 }
 
-async function aggregateBreakdown(db, dimension, { zeroClick = false, limit = 25, intent = null } = {}) {
+async function aggregateBreakdown(db, dimension, { zeroClick = false, limit = 25, intent = null, startDate = null, endDate = null } = {}) {
     if (intent && (dimension !== 'query' || !INTENTS.includes(intent))) throw new Error('Invalid query intent');
     const result = await db.query(`
         WITH latest AS (
-            SELECT max(data_date) AS d FROM search_console_daily WHERE search_type = 'web'
+            SELECT coalesce($4::date, max(data_date)) AS d FROM search_console_daily WHERE search_type = 'web'
         )
         SELECT value,
                sum(clicks)::float8 AS clicks,
@@ -114,17 +115,17 @@ async function aggregateBreakdown(db, dimension, { zeroClick = false, limit = 25
                     ELSE sum(position * impressions) / sum(impressions) END::float8 AS position
         FROM search_console_breakdowns, latest
         WHERE search_type = 'web' AND dimension = $1
-          AND data_date BETWEEN latest.d - 27 AND latest.d
-          ${intent ? 'AND ' + searchIntentSql('value') + ' = $3' : ''}
+          AND data_date BETWEEN coalesce($3::date, latest.d - 27) AND latest.d
+          ${intent ? 'AND ' + searchIntentSql('value') + ' = $5' : ''}
         GROUP BY value
         ${zeroClick ? 'HAVING sum(clicks) = 0 AND sum(impressions) > 0' : ''}
         ORDER BY ${zeroClick ? 'impressions' : 'clicks'} DESC, impressions DESC, value
         LIMIT $2
-    `, intent ? [dimension, limit, intent] : [dimension, limit]);
+    `, intent ? [dimension, limit, startDate, endDate, intent] : [dimension, limit, startDate, endDate]);
     return result.rows;
 }
 
-async function getSearchGrowthReportData(db = pool) {
+async function getSearchGrowthReportData(db = pool, options = {}) {
     const latestResult = await db.query(`
         SELECT max(data_date)::text AS latest_date, max(synced_at) AS last_synced_at
         FROM search_console_daily WHERE search_type = 'web'
@@ -138,6 +139,8 @@ async function getSearchGrowthReportData(db = pool) {
             countries: [], devices: [], routes: []
         };
     }
+    const period = resolveReportPeriod(latestDate, options);
+    const { startDate, endDate, comparisonStartDate, comparisonEndDate } = period;
     const [
         dailyResult, summaryResult, topQueries, topPages, zeroClickQueries,
         pageOpportunitiesResult, queryPageOpportunitiesResult,
@@ -146,26 +149,28 @@ async function getSearchGrowthReportData(db = pool) {
         db.query(`
             SELECT data_date::text, clicks, impressions, ctr, position
             FROM search_console_daily
-            WHERE search_type = 'web' AND data_date >= $1::date - 89
+            WHERE search_type = 'web' AND data_date BETWEEN $1::date - 89 AND $1::date
             ORDER BY data_date
-        `, [latestDate]),
+        `, [endDate]),
         db.query(`
             SELECT
-                coalesce(sum(clicks) FILTER (WHERE data_date BETWEEN $1::date - 27 AND $1::date), 0)::float8 AS current_clicks,
-                coalesce(sum(impressions) FILTER (WHERE data_date BETWEEN $1::date - 27 AND $1::date), 0)::float8 AS current_impressions,
-                coalesce(sum(clicks) FILTER (WHERE data_date BETWEEN $1::date - 55 AND $1::date - 28), 0)::float8 AS prior_clicks,
-                coalesce(sum(impressions) FILTER (WHERE data_date BETWEEN $1::date - 55 AND $1::date - 28), 0)::float8 AS prior_impressions,
-                coalesce(sum(position * impressions) FILTER (WHERE data_date BETWEEN $1::date - 27 AND $1::date) /
-                    nullif(sum(impressions) FILTER (WHERE data_date BETWEEN $1::date - 27 AND $1::date), 0), 0)::float8 AS current_position,
-                coalesce(sum(position * impressions) FILTER (WHERE data_date BETWEEN $1::date - 55 AND $1::date - 28) /
-                    nullif(sum(impressions) FILTER (WHERE data_date BETWEEN $1::date - 55 AND $1::date - 28), 0), 0)::float8 AS prior_position
+                count(*) FILTER (WHERE data_date BETWEEN $2::date AND $1::date)::int AS current_days,
+                count(*) FILTER (WHERE data_date BETWEEN $3::date AND $4::date)::int AS prior_days,
+                coalesce(sum(clicks) FILTER (WHERE data_date BETWEEN $2::date AND $1::date), 0)::float8 AS current_clicks,
+                coalesce(sum(impressions) FILTER (WHERE data_date BETWEEN $2::date AND $1::date), 0)::float8 AS current_impressions,
+                coalesce(sum(clicks) FILTER (WHERE data_date BETWEEN $3::date AND $4::date), 0)::float8 AS prior_clicks,
+                coalesce(sum(impressions) FILTER (WHERE data_date BETWEEN $3::date AND $4::date), 0)::float8 AS prior_impressions,
+                coalesce(sum(position * impressions) FILTER (WHERE data_date BETWEEN $2::date AND $1::date) /
+                    nullif(sum(impressions) FILTER (WHERE data_date BETWEEN $2::date AND $1::date), 0), 0)::float8 AS current_position,
+                coalesce(sum(position * impressions) FILTER (WHERE data_date BETWEEN $3::date AND $4::date) /
+                    nullif(sum(impressions) FILTER (WHERE data_date BETWEEN $3::date AND $4::date), 0), 0)::float8 AS prior_position
             FROM search_console_daily WHERE search_type = 'web'
-        `, [latestDate]),
-        aggregateBreakdown(db, 'query', { intent: 'semantic' }),
-        aggregateBreakdown(db, 'page'),
-        aggregateBreakdown(db, 'query', { zeroClick: true, intent: 'semantic' }),
+        `, [endDate, startDate, comparisonStartDate, comparisonEndDate]),
+        aggregateBreakdown(db, 'query', { intent: 'semantic', startDate, endDate }),
+        aggregateBreakdown(db, 'page', { startDate, endDate }),
+        aggregateBreakdown(db, 'query', { zeroClick: true, intent: 'semantic', startDate, endDate }),
         db.query(`
-            WITH latest AS (SELECT $1::date AS d)
+            WITH latest AS (SELECT $1::date AS d, $2::date AS start_date)
             SELECT value,
                    sum(clicks)::float8 AS clicks,
                    sum(impressions)::float8 AS impressions,
@@ -175,7 +180,7 @@ async function getSearchGrowthReportData(db = pool) {
                         ELSE sum(position * impressions) / sum(impressions) END::float8 AS position
             FROM search_console_breakdowns, latest
             WHERE search_type = 'web' AND dimension = 'page'
-              AND data_date BETWEEN latest.d - 27 AND latest.d
+              AND data_date BETWEEN latest.start_date AND latest.d
               AND (value ~ '/datasets/[^/?#]+' OR value ~ '/resources/[^/?#]+'
                    OR value ~ '/places/[^/?#]+' OR value ~ '/organizations/[^/?#]+'
                    OR value ~ '^https?://[^/]+/(fr/)?blog/[^/?#]+')
@@ -185,9 +190,9 @@ async function getSearchGrowthReportData(db = pool) {
                         ELSE sum(clicks) / sum(impressions) END < 0.01
             ORDER BY impressions DESC, clicks, value
             LIMIT 50
-        `, [latestDate]),
+        `, [endDate, startDate]),
         db.query(`
-            WITH latest AS (SELECT $1::date AS d)
+            WITH latest AS (SELECT $1::date AS d, $2::date AS start_date)
             SELECT query_text AS query, page_url AS page,
                    sum(clicks)::float8 AS clicks,
                    sum(impressions)::float8 AS impressions,
@@ -197,7 +202,7 @@ async function getSearchGrowthReportData(db = pool) {
                         ELSE sum(position * impressions) / sum(impressions) END::float8 AS position
             FROM search_console_query_pages, latest
             WHERE search_type = 'web'
-              AND data_date BETWEEN latest.d - 27 AND latest.d
+              AND data_date BETWEEN latest.start_date AND latest.d
               AND ${searchIntentSql('query_text')} = 'semantic'
             GROUP BY query_text, page_url
             HAVING sum(impressions) >= 5
@@ -205,11 +210,11 @@ async function getSearchGrowthReportData(db = pool) {
                AND sum(clicks) / nullif(sum(impressions), 0) < 0.01
             ORDER BY impressions DESC, clicks, query_text, page_url
             LIMIT 100
-        `, [latestDate]),
-        aggregateBreakdown(db, 'country', { limit: 15 }),
-        aggregateBreakdown(db, 'device', { limit: 10 }),
+        `, [endDate, startDate]),
+        aggregateBreakdown(db, 'country', { limit: 15, startDate, endDate }),
+        aggregateBreakdown(db, 'device', { limit: 10, startDate, endDate }),
         db.query(`
-            WITH latest AS (SELECT $1::date AS d), page_totals AS (
+            WITH latest AS (SELECT $1::date AS d, $2::date AS start_date), page_totals AS (
                 SELECT CASE
                     WHEN scb.value ~ '^https?://[^/]+/(fr/)?blog(/|[?#]|$)' THEN 'Local guides'
                     WHEN scb.value ~ '/places/[^/?#]+' THEN 'Place pages'
@@ -224,7 +229,7 @@ async function getSearchGrowthReportData(db = pool) {
                     sum(scb.position * scb.impressions)::float8 AS position_weight
                 FROM search_console_breakdowns scb, latest
                 WHERE scb.search_type = 'web' AND scb.dimension = 'page'
-                  AND scb.data_date BETWEEN latest.d - 27 AND latest.d
+                  AND scb.data_date BETWEEN latest.start_date AND latest.d
                 GROUP BY 1, scb.value
             )
             SELECT family AS value,
@@ -235,23 +240,23 @@ async function getSearchGrowthReportData(db = pool) {
                    CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(clicks) / sum(impressions) END::float8 AS ctr,
                    CASE WHEN sum(impressions) = 0 THEN 0 ELSE sum(position_weight) / sum(impressions) END::float8 AS position
             FROM page_totals GROUP BY family ORDER BY impressions DESC, clicks DESC
-        `, [latestDate]),
-        aggregateBreakdown(db, 'query', { intent: 'brand' }),
+        `, [endDate, startDate]),
+        aggregateBreakdown(db, 'query', { intent: 'brand', startDate, endDate }),
         db.query(`
             WITH reported_queries AS (
                 SELECT value, sum(clicks)::float8 AS clicks, sum(impressions)::float8 AS impressions
                 FROM search_console_breakdowns
                 WHERE search_type = 'web' AND dimension = 'query'
-                  AND data_date BETWEEN $1::date - 27 AND $1::date
+                  AND data_date BETWEEN $2::date AND $1::date
                 GROUP BY value
             )
             SELECT ${searchIntentSql('value')} AS intent, count(*)::int AS queries,
                    sum(clicks)::float8 AS clicks, sum(impressions)::float8 AS impressions,
                    coalesce(sum(clicks) / nullif(sum(impressions), 0), 0)::float8 AS ctr
             FROM reported_queries GROUP BY intent
-        `, [latestDate])
+        `, [endDate, startDate])
     ]);
-    const summary = summaryResult.rows[0];
+    const summary = summaryResult.rows[0] || {};
     summary.current_ctr = summary.current_impressions ? summary.current_clicks / summary.current_impressions : 0;
     summary.prior_ctr = summary.prior_impressions ? summary.prior_clicks / summary.prior_impressions : 0;
     const classifiedTopQueries = classifyRows(topQueries);
@@ -259,6 +264,7 @@ async function getSearchGrowthReportData(db = pool) {
     const classifiedQueryPages = classifyRows(queryPageOpportunitiesResult.rows, 'query');
     return {
         latestDate,
+        period,
         lastSyncedAt: latestResult.rows[0].last_synced_at,
         daily: dailyResult.rows,
         summary,

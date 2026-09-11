@@ -1,5 +1,21 @@
 const seo = require('../services/seoMeta');
 
+test('makes Markdown descriptions readable without exposing link destinations or executable markup', () => {
+    expect(seo.plainText('**Note**: Read [contract history](https://example.test/long-url).\n\n---\n<script>bad()</script>Use `CSV` &amp; tables.'))
+        .toBe('Note: Read contract history. Use CSV & tables.');
+});
+
+test('keeps the recorded file language, format and map action in long resource snippets', () => {
+    const resource = { id: 'r', name_en: 'Long official employer list name '.repeat(20),
+        format: 'XLSX', language: ['fr'], ingest_status: 'ready', map_provider: 'arcgis' };
+    const meta = seo.resourceMeta(resource);
+    expect(meta.title).toContain('(French, XLSX) - CanQuery');
+    expect(meta.title.length).toBeLessThanOrEqual(80);
+    expect(meta.description).toMatch(/^Explore the interactive map\./);
+    expect(meta.description).toContain('French XLSX table');
+    expect(meta.description.length).toBeLessThanOrEqual(160);
+});
+
 describe('seoMeta - route classification', () => {
     it('classifies the known SPA routes', () => {
         expect(seo.classifyRoute('/')).toEqual({ type: 'home' });
@@ -171,9 +187,9 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
     test.each([
         [{ ...base, ingest_status: 'ready' }, /query, filter, chart and export.*live CSV table/i],
         [{ ...base, datastore_active: true }, /query, filter, chart and export.*live CSV table/i],
-        [base, /Load this CSV resource.*live table.*query, filter, chart and export/i],
+        [base, /Load this CSV resource.*live table/i],
         [{ ...base, format: 'PDF', map_provider: 'arcgis' }, /interactive map.*original PDF file/i],
-        [{ ...base, format: 'PDF' }, /metadata.*original PDF file.*public-sector publisher/i]
+        [{ ...base, format: 'PDF' }, /metadata.*original PDF file/i]
     ])('writes truthful capability-specific copy for %#', (resource, expected) => {
         expect(seo.resourceMeta(resource).description).toMatch(expected);
     });

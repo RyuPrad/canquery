@@ -30,7 +30,7 @@ function change(current, prior, inverse = false) {
 
 function metricCard(label, current, prior, formatter = number, inverse = false) {
     return '<div class="metric"><span>' + escapeHtml(label) + '</span><strong>' +
-        escapeHtml(formatter(current)) + '</strong><small>vs prior 28 days ' +
+        escapeHtml(formatter(current)) + '</strong><small>vs comparison period ' +
         change(current, prior, inverse) + '</small></div>';
 }
 
@@ -88,7 +88,7 @@ function intentTable(rows) {
     const body = (rows || []).map(row => '<tr><td>' + escapeHtml(row.intent) + '</td><td>' +
         number(row.queries) + '</td><td>' + number(row.clicks) + '</td><td>' +
         number(row.impressions) + '</td><td>' + percent(row.ctr) + '</td></tr>').join('');
-    return '<section class="panel"><h2>Reported query intent: 28 days</h2>' +
+    return '<section class="panel"><h2>Reported query intent: selected period</h2>' +
         '<p>Counts cover distinct reported queries. Query metrics can be incomplete and do not equal property totals; query-page opportunities are a separate subset.</p>' + (body
         ? '<div class="table-wrap"><table><thead><tr><th>Intent</th><th>Queries</th><th>Clicks</th><th>Impressions</th><th>CTR</th></tr></thead><tbody>' + body + '</tbody></table></div>'
         : '<p class="empty">No query intent data yet.</p>') + '</section>';
@@ -98,6 +98,18 @@ function renderSearchGrowthReport(data, generatedAt = new Date()) {
     const stale = data.lastSyncedAt && generatedAt.getTime() - new Date(data.lastSyncedAt).getTime() > 48 * 60 * 60 * 1000;
     const status = !data.latestDate ? 'No imported data' : stale ? 'Import may be stale' : 'Import current';
     const summary = data.summary;
+    const period = data.period;
+    const periodHtml = period ? '<section class="panel"><h2>Comparison periods</h2><p>Current: ' +
+        escapeHtml(period.startDate) + ' to ' + escapeHtml(period.endDate) + '. Comparison: ' +
+        escapeHtml(period.comparisonStartDate) + ' to ' + escapeHtml(period.comparisonEndDate) +
+        ' (' + number(period.days) + ' days each).</p><p>Imported days: ' + number(summary?.current_days) +
+        ' current; ' + number(summary?.prior_days) + ' comparison. Missing days are unknown, not verified zero traffic.</p>' +
+        '<p>Property totals, page totals and reported-query metrics use different aggregation and must not be added together. ' +
+        'Reported queries omit some traffic. These comparisons are observational, not proof that a release caused a change.</p></section>' : '';
+    const releaseHtml = (data.releases || []).length ? '<section class="panel"><h2>Release annotations</h2><ul>' +
+        data.releases.map(release => '<li>' + escapeHtml(release.date) + ' — ' + escapeHtml(release.label) +
+            (period && release.date > period.endDate ? ' (after this reporting period)' : '') + '</li>').join('') + '</ul></section>' : '';
+
     const metrics = summary ? [
         metricCard('Clicks', summary.current_clicks, summary.prior_clicks),
         metricCard('Impressions', summary.current_impressions, summary.prior_impressions),
@@ -113,9 +125,9 @@ function renderSearchGrowthReport(data, generatedAt = new Date()) {
         '</style></head><body><main><h1>Search growth</h1><p class="meta">Private canquery operator report. Finalized through ' +
         escapeHtml(data.latestDate || 'none') + '. Generated ' + escapeHtml(generatedAt.toISOString()) +
         '. <span class="status">' + escapeHtml(status) + '</span></p><section class="metrics">' + metrics +
-        '</section><section class="panel"><h2>Daily clicks: last 90 finalized days</h2>' + trendSvg(data.daily || []) + '</section>' +
-        '<div class="grid">' + table('Top semantic queries: 28 days', data.topQueries || [], { valueLabel: 'Query' }) +
-        table('Top pages: 28 days', data.topPages || [], { valueLabel: 'Page' }) + '</div><div class="grid">' +
+        '</section>' + periodHtml + releaseHtml + '<section class="panel"><h2>Daily clicks: up to 90 days ending with the selected period</h2>' + trendSvg(data.daily || []) + '</section>' +
+        '<div class="grid">' + table('Top semantic queries: selected period', data.topQueries || [], { valueLabel: 'Query' }) +
+        table('Top pages: selected period', data.topPages || [], { valueLabel: 'Page' }) + '</div><div class="grid">' +
         table('Semantic zero-click opportunities', data.zeroClickQueries || [], { valueLabel: 'Query' }) +
         table('High-impression, low-CTR pages', data.pageOpportunities || [], { valueLabel: 'Page', limit: 50 }) +
         '</div>' + queryPageTable(data.queryPageOpportunities || []) + '<div class="grid">' +
