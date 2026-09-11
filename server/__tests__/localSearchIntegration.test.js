@@ -21,7 +21,8 @@ integrationDescribe('resident search PostgreSQL integration', () => {
             ['parking', 'Parking Lot Facilities', null, 'Park your vehicle. Parking lots for vehicles.', null, 'sgc-cd-3520'],
             ['fr', null, 'Parcs et espaces publics', null, 'Les grands parcs et les espaces verts de Montréal.', 'sgc-csd-2466023'],
             ['play', 'Recreation Facilities', null, 'Outdoor playgrounds for children.', null, 'sgc-cd-3520'],
-            ['permits', 'Building Permits', null, 'Active building applications and permits.', null, 'sgc-cd-3520']
+            ['permits', 'Building Permits', null, 'Active building applications and permits.', null, 'sgc-cd-3520'],
+            ['wards', 'Uxbridge Ward Boundaries', null, 'Municipal boundary layer.', null, 'sgc-cd-3520']
         ];
         for (const [key, en, fr, notesEn, notesFr, place] of datasets) {
             await db.query(`INSERT INTO datasets (id, name, org_id, title_en, title_fr, notes_en, notes_fr)
@@ -52,6 +53,8 @@ integrationDescribe('resident search PostgreSQL integration', () => {
         expect((await search('parks', { place: 'montreal-qc' })).map(row => row.id)).toEqual([id('fr')]);
         expect((await search('parcs', { place: 'toronto-on' }))[0].id).toBe(id('parks'));
         expect((await search('permis de construction'))[0]).toMatchObject({ id: id('permits'), preview_table_id: id('permits_resource') });
+        expect((await search('limites quartiers Uxbridge')).map(row => row.id)).toEqual([id('wards')]);
+        expect(await search('limites quartiers Oshawa')).toEqual([]);
     });
 
     test('keeps extra words, geography, format, map filters and pagination', async () => {
@@ -65,7 +68,7 @@ integrationDescribe('resident search PostgreSQL integration', () => {
     });
 
     test('handles empty browsing, punctuation and stop words without SQL errors', async () => {
-        expect((await search(null)).length).toBe(5);
+        expect((await search(null)).length).toBe(6);
         expect(await search("' | ! ;")).toEqual([]);
         expect(await search('the')).toEqual([]);
     });

@@ -33,7 +33,9 @@ function readArticles(root = ROOT) {
         if (!slugPattern.test(entry.id) || ids.has(entry.id)) throw new Error('Duplicate or invalid article id');
         ids.add(entry.id);
         if (!['draft', 'published'].includes(entry.status)) throw new Error('Invalid article status');
-        if (!slugPattern.test(entry.place) || !slugPattern.test(entry.topic)) throw new Error('Invalid article place or topic');
+        if ((entry.place != null && !slugPattern.test(entry.place)) || !slugPattern.test(entry.topic)) throw new Error('Invalid article place or topic');
+        if (!['table', 'map', 'download'].includes(entry.view)) throw new Error('Invalid article view');
+        if (entry.datasetId != null && !slugPattern.test(entry.datasetId)) throw new Error('Invalid dataset identity');
         for (const key of ['published', 'updated', 'verified']) {
             if (!datePattern.test(entry[key] || '') || new Date(entry[key]).toISOString().slice(0, 10) !== entry[key]) {
                 throw new Error('Invalid article date: ' + key);
@@ -44,10 +46,11 @@ function readArticles(root = ROOT) {
             const edition = entry.editions?.[lang];
             if (typeof entry.query?.[lang] !== 'string' || !entry.query[lang].trim()) throw new Error('Missing localized topic query');
             if (!edition || !slugPattern.test(edition.slug) || !edition.title?.trim() ||
-                !edition.description?.trim() || !edition.placeName?.trim() || !edition.topicName?.trim()) {
+                !edition.description?.trim() || (entry.place && !edition.placeName?.trim()) || !edition.topicName?.trim()) {
                 throw new Error('Missing or invalid article translation: ' + entry.id + '/' + lang);
             }
-            if (!permittedUrl(entry.explore) || !entry.explore.startsWith('/resources/')) throw new Error('Invalid exploration link');
+            const explore = edition.explore || entry.explore;
+            if (!permittedUrl(explore) || !explore.startsWith('/resources/')) throw new Error('Invalid exploration link');
             if (!entry.dataset?.startsWith('/datasets/') || !permittedUrl(entry.dataset)) throw new Error('Invalid dataset link');
             const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + edition.slug;
             if (paths.has(articlePath)) throw new Error('Duplicate article slug');
@@ -62,7 +65,7 @@ function readArticles(root = ROOT) {
                 place: entry.place, topic: entry.topic, query: entry.query[lang],
                 published: entry.published, updated: entry.updated, verified: entry.verified,
                 author: 'CanQuery', status: entry.status,
-                explore: entry.explore, view: entry.view, dataset: entry.dataset,
+                explore, view: entry.view, dataset: entry.dataset, datasetId: entry.datasetId,
                 bodyHtml: markdown.renderer.render(tokens, markdown.options, {}),
                 translations: Object.fromEntries(['en', 'fr'].map(language => [language,
                     (language === 'fr' ? '/fr' : '') + '/blog/' + entry.editions[language].slug]))
@@ -77,8 +80,9 @@ function allArticles() {
     return cache;
 }
 
-function listArticles({ lang = 'en', place } = {}) {
-    return allArticles().filter(article => article.lang === lang && (!place || article.place === place))
+function listArticles({ lang = 'en', place, dataset } = {}) {
+    return allArticles().filter(article => article.lang === lang && (!place || article.place === place) &&
+        (!dataset || article.datasetId === dataset || article.dataset === '/datasets/' + encodeURIComponent(dataset)))
         .sort((a, b) => b.published.localeCompare(a.published) || a.id.localeCompare(b.id))
         .map(({ bodyHtml: _body, status: _status, ...article }) => article);
 }

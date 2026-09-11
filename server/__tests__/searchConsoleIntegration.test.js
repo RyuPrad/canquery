@@ -117,7 +117,7 @@ integrationDescribe('search visibility PostgreSQL integration', () => {
             queryPages: []
         }, db);
         const report = await getSearchGrowthReportData(db);
-        expect(report.routes.find(row => row.value === 'Local guides')).toMatchObject({
+        expect(report.routes.find(row => row.value === 'Data guides')).toMatchObject({
             pages_with_impressions: 4, impressions: 240
         });
         expect(report.pageOpportunities.map(row => row.value)).toEqual(expect.arrayContaining([

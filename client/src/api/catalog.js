@@ -117,8 +117,8 @@ export async function fetchStats() {
   }
 }
 
-export function fetchBlog({ lang = 'en', place } = {}) {
-  return getJSON('/api/v1/blog', { lang, place });
+export function fetchBlog({ lang = 'en', place, dataset } = {}) {
+  return getJSON('/api/v1/blog', { lang, place, dataset });
 }
 
 export function fetchBlogArticle(lang, slug) {

@@ -39,7 +39,7 @@ export default function BlogPage({ language = 'en' }) {
     <p className="text-lg text-base-content/65 mt-4 max-w-2xl">{t('blog.intro')}</p>
     <div className="grid md:grid-cols-3 gap-5 mt-10">
       {content.data.map(article => <article key={article.id} className="cq-card p-6 flex flex-col items-start">
-        <span className="cq-chip">{article.placeName}</span>
+        <span className="cq-chip !whitespace-normal">{article.placeName || article.topicName}</span>
         <h2 className="font-display text-xl font-semibold mt-4"><Link className="hover:underline" to={article.path}>{article.title}</Link></h2>
         <p className="text-sm text-base-content/65 mt-3 mb-6 leading-relaxed">{article.description}</p>
         <Link className="link mt-auto" to={article.path}>{t('blog.read')} →</Link>
@@ -53,7 +53,7 @@ export default function BlogPage({ language = 'en' }) {
   return <div className="max-w-3xl mx-auto px-4 py-10">
     <nav aria-label={t('breadcrumbs.label')}><Link to={indexPath} className="link text-sm">{t('blog.title')}</Link></nav>
     <article className="mt-7">
-      <div className="flex flex-wrap gap-2"><Link className="cq-chip" to={'/places/' + article.place}>{article.placeName}</Link><span className="cq-chip">{article.topicName}</span></div>
+      <div className="flex flex-wrap gap-2">{article.place && <Link className="cq-chip" to={'/places/' + article.place}>{article.placeName}</Link>}<span className="cq-chip !whitespace-normal">{article.topicName}</span></div>
       <h1 className="font-display text-3xl sm:text-4xl font-bold leading-tight mt-5">{article.title}</h1>
       <p className="text-lg text-base-content/65 leading-relaxed mt-5">{article.description}</p>
       <div className="text-sm text-base-content/60 space-y-1 mt-5">
@@ -74,10 +74,10 @@ export default function BlogPage({ language = 'en' }) {
         <Link className="btn btn-primary w-full sm:w-auto h-auto min-h-10 py-2" to={article.explore}
           data-analytics-event="blog_explore" data-analytics-article={article.id} data-analytics-language={language}
           data-analytics-place={article.place} data-analytics-topic={article.topic} data-analytics-view={article.view}>
-          {article.view === 'map' ? t('discovery.map') : t('discovery.table')} →
+          {t('discovery.' + (article.view === 'map' ? 'map' : article.view === 'download' ? 'download' : 'table'))} →
         </Link>
         <p><Link className="link text-sm" to={article.dataset}>{t('blog.dataset')}</Link></p>
-        <p><Link className="link text-sm" to={'/places/' + article.place}>{t('blog.more')} {article.placeName}</Link></p>
+        {article.place && <p><Link className="link text-sm" to={'/places/' + article.place}>{t('blog.more')} {article.placeName}</Link></p>}
       </aside>
     </article>
   </div>;

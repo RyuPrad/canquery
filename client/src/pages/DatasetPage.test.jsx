@@ -5,6 +5,7 @@ import DatasetPage from './DatasetPage.jsx';
 import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
+  fetchBlog: vi.fn(() => Promise.resolve({ data: [] })),
   fetchDataset: vi.fn(),
   enqueueIngest: vi.fn(),
   fetchJob: vi.fn(),
