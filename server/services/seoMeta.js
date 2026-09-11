@@ -70,12 +70,13 @@ function titleContainsFormat(value, format) {
     return new RegExp('(^|[^a-z0-9])' + escaped + '([^a-z0-9]|$)', 'i').test(value);
 }
 
-function resourceTitleBase(resource, max = null) {
+function resourceTitleBase(resource, max = null, lang = 'en') {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const format = collapse(resource.format).toUpperCase();
     const base = (isGenericResourceName(name, format) ? datasetTitle : name) || datasetTitle || 'Resource';
-    const languages = resourceLanguages(resource).map(lang => lang === 'fr' ? 'French' : 'English');
+    const languages = resourceLanguages(resource).map(code => lang === 'fr'
+        ? (code === 'fr' ? 'français' : 'anglais') : (code === 'fr' ? 'French' : 'English'));
     const suffixParts = [...languages, format && !titleContainsFormat(base, format) ? format : ''].filter(Boolean);
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
     return (max ? truncate(base, Math.max(12, max - suffix.length)) : base) + suffix;
@@ -394,7 +395,7 @@ function datasetMeta(dataset, resources) {
     };
 }
 
-function resourceDescription(resource) {
+function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = {}) {
     const capability = classifyResource(resource).capability;
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
@@ -410,9 +411,20 @@ function resourceDescription(resource) {
     } else {
         action = 'View metadata and access the original ' + (format ? format + ' ' : '') + 'file';
     }
+    if (lang === 'fr') {
+        const localizedFormat = [resourceLanguages(resource).map(code => code === 'fr' ? 'français' : 'anglais').join('/'),
+            plainText(resource.format).toUpperCase()].filter(Boolean).join(' ');
+        if (capability === 'datastore' || capability === 'ingested') {
+            action = 'Recherchez, filtrez et exportez ce tableau ' + localizedFormat;
+        } else if (capability === 'ingestable') {
+            action = 'Chargez ce fichier ' + localizedFormat + ' pour explorer son tableau';
+        } else {
+            action = 'Consultez les métadonnées et le fichier original ' + localizedFormat;
+        }
+    }
     // Mapping is independent of the table capability and must survive truncation.
-    if (mapped) action = 'Explore the interactive map. ' + action;
-    return truncate(action + ': ' + subject + '.', DESCRIPTION_MAX);
+    if (mapped) action = (lang === 'fr' ? 'Explorez la carte interactive. ' : 'Explore the interactive map. ') + action;
+    return truncate(action + ': ' + subject + '.', max);
 }
 
 function buildResourceJsonLd(resource, description) {

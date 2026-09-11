@@ -15,10 +15,10 @@ export default function Provenance({ provenance, compact = false }) {
             href={source.landing_url || source.homepage_url}
             target="_blank"
             rel="noreferrer"
-            className="cq-chip hover:border-base-content/25 transition-colors"
+            className="cq-chip max-w-full !whitespace-normal hover:border-base-content/25 transition-colors"
           >
-            {source.name?.[lang] || source.name?.en || source.id}
-            <ExternalIcon size={10} />
+            <span className="min-w-0 break-words">{source.name?.[lang] || source.name?.en || source.id}</span>
+            <span className="shrink-0"><ExternalIcon size={10} /></span>
           </a>
         ))}
       </div>
