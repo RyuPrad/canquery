@@ -380,9 +380,15 @@ function datasetMeta(dataset, resources) {
     const title = pick(dataset.title_en, dataset.title_fr) || 'Dataset';
     const description = datasetDescription(dataset, resources, DESCRIPTION_MAX);
     const slug = dataset.name || dataset.id;
+    // Keep the official catalogue name in the page and Dataset schema while
+    // giving this frequently searched, long-titled dataset a complete snippet.
+    const snippet = dataset.id === '90fed587-1364-4f33-a9ee-208181dc0b97' ? {
+        title: 'Positive LMIA Employer Lists (TFWP) - CanQuery',
+        description: 'Browse official positive LMIA employer lists by quarter and language, with CSV and Excel downloads from Canada’s open data portal.'
+    } : null;
     return {
-        title: siteTitle(title),
-        description,
+        title: snippet ? snippet.title : siteTitle(title),
+        description: snippet ? snippet.description : description,
         canonical: SITE_URL + '/datasets/' + encodeURIComponent(slug),
         ogType: 'website',
         jsonLd: [
