@@ -1,6 +1,7 @@
 const seo = require('./seoMeta');
 const { listArticles } = require('./blogContent');
 const { classifyResource } = require('./resourceCapabilities');
+const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 
 const MAX_LINKS = 12;
 const MAX_SUMMARY = 1200;
@@ -41,20 +42,62 @@ function linkList(title, links) {
     ).join('') + '</ul></section>';
 }
 
-function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks }) {
+function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [] }) {
     return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' +
         breadcrumb(breadcrumbs) + '<article><h1>' + text(title) + '</h1>' +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
-        factList(facts) + linkList(linksTitle, links) +
+        factList(facts) + overviewHtml + linkList('Official sources and licences', sources) + linkList(linksTitle, links) +
         linkList('Related open data', relatedLinks) + '</article></main>';
 }
 
+function sourceLinks(row) {
+    const links = [];
+    for (const source of Array.isArray(row.provenance_sources) ? row.provenance_sources : []) {
+        for (const [url, label] of [
+            [source.landing_url || source.homepage_url, source.name_en || source.name_fr || 'Official source'],
+            [source.license_url, source.license_title_en || source.license_title_fr || 'Licence']
+        ]) {
+            try {
+                const parsed = new URL(url);
+                if (['https:', 'http:'].includes(parsed.protocol) && !parsed.username && !parsed.password && !links.some(link => link.path === parsed.href)) {
+                    links.push({ path: parsed.href, label });
+                }
+            } catch { /* Missing and invalid source URLs are omitted. */ }
+        }
+    }
+    return links;
+}
+
+function overviewSnapshot(presentation, dataset = false) {
+    const capabilities = presentation.capabilities;
+    const actions = dataset ? [
+        capabilities.ready && capabilities.ready + ' queryable resources',
+        capabilities.loadable && capabilities.loadable + ' loadable resources',
+        capabilities.mapped && capabilities.mapped + ' mapped resources'
+    ].filter(Boolean) : [
+        capabilities.table === 'ready' && 'Query table', capabilities.table === 'loadable' && 'Load table',
+        capabilities.map && 'Explore map', capabilities.download && 'Access original file'
+    ].filter(Boolean);
+    const fields = presentation.fields;
+    const table = fields.total ? '<h3>Available fields (' + fields.items.length + '/' + fields.total + ')</h3><p>' +
+        (fields.source === 'map' ? 'Fields from the recorded map schema.' : 'Fields from the loaded table schema.') +
+        '</p><div class="overflow-x-auto"><table><thead><tr><th scope="col">Field</th><th scope="col">Recorded type</th></tr></thead><tbody>' +
+        fields.items.map(field => '<tr><th scope="row">' + text(field.name) + '</th><td>' + text(field.type || 'Not recorded') + '</td></tr>').join('') +
+        '</tbody></table></div>' : '';
+    return '<section data-cq-overview><h2>Data overview</h2>' + factList([
+        { label: 'Formats', value: presentation.formats.join(', ') },
+        { label: 'File languages', value: presentation.languages.map(code => code === 'fr' ? 'French' : 'English').join(', ') },
+        { label: 'Available actions', value: actions.join(' · ') }
+    ]) + table + '</section>';
+}
+
 function datasetSnapshot(dataset, resources) {
+    const presentation = datasetPresentation(dataset, resources);
     const title = seo.plainText(dataset.title_en) || seo.plainText(dataset.title_fr) || dataset.name || dataset.id;
     const organization = seo.plainText(dataset.org_title_en) || seo.plainText(dataset.org_title_fr);
     const links = (resources || []).slice(0, MAX_LINKS).map(resource => ({
         path: '/resources/' + encodeURIComponent(resource.id),
-        label: seo.plainText(resource.name_en) || seo.plainText(resource.name_fr) || resource.format || resource.id,
+        label: resourcePresentation({ ...resource, dataset_title_en: dataset.title_en, dataset_title_fr: dataset.title_fr }).title.en,
         detail: resource.format || classifyResource(resource).capability
     }));
     const placeLinks = (Array.isArray(dataset.places) ? dataset.places : []).map(place => ({
@@ -68,7 +111,9 @@ function datasetSnapshot(dataset, resources) {
     return shell({
         breadcrumbs: [{ label: 'Datasets', path: '/' }, { label: title }],
         title,
-        summary: seo.datasetDescription(dataset, resources, MAX_SUMMARY),
+        summary: presentation.summary.en,
+        overviewHtml: overviewSnapshot(presentation, true),
+        sources: sourceLinks(dataset),
         facts: [
             organization ? {
                 label: 'Publisher',
@@ -76,7 +121,7 @@ function datasetSnapshot(dataset, resources) {
             } : null,
             { label: 'Resources', value: (resources || []).length },
             dataset.metadata_modified ? {
-                label: 'Updated',
+                label: 'Catalogue metadata updated',
                 value: new Date(dataset.metadata_modified).toLocaleDateString('en-CA')
             } : null
         ],
@@ -87,7 +132,8 @@ function datasetSnapshot(dataset, resources) {
 }
 
 function resourceSnapshot(resource) {
-    const name = seo.plainText(resource.name_en) || seo.plainText(resource.name_fr) || resource.id;
+    const presentation = resourcePresentation(resource);
+    const name = presentation.title.en;
     const datasetName = seo.plainText(resource.dataset_title_en) || seo.plainText(resource.dataset_title_fr) || resource.dataset_name || resource.dataset_id;
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const organization = seo.plainText(resource.org_title_en) || seo.plainText(resource.org_title_fr);
@@ -109,12 +155,14 @@ function resourceSnapshot(resource) {
             { label: name }
         ],
         title: name,
-        summary: seo.resourceDescription(resource),
+        summary: presentation.summary.en,
+        overviewHtml: overviewSnapshot(presentation),
+        sources: sourceLinks(resource),
         facts: [
             { label: 'Format', value: resource.format || 'File' },
             { label: 'Access', value: capability },
             resource.size_bytes ? { label: 'Size', value: Number(resource.size_bytes).toLocaleString('en-CA') + ' bytes' } : null,
-            resource.last_modified ? { label: 'Updated', value: new Date(resource.last_modified).toLocaleDateString('en-CA') } : null
+            resource.last_modified ? { label: 'Publisher-reported update', value: new Date(resource.last_modified).toLocaleDateString('en-CA') } : null
         ],
         linksTitle: 'Related open data',
         links
@@ -265,6 +313,7 @@ module.exports = {
     MAX_LINKS,
     MAX_SUMMARY,
     datasetSnapshot,
+    overviewSnapshot,
     resourceSnapshot,
     placeSnapshot,
     organizationSnapshot,

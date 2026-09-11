@@ -10,6 +10,7 @@ import { track } from '../utils/analytics.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
+import CatalogOverview from '../components/CatalogOverview.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -199,9 +200,9 @@ function DatasetExplorer({ idOrName }) {
         ]}
       />
 
-      <div className="flex justify-between items-start gap-4">
-        <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight leading-tight">
-          {pick(dataset.title)}
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+        <h1 className="min-w-0 break-words text-3xl sm:text-4xl font-bold font-display tracking-tight leading-tight">
+          {dataset.presentation?.title?.[contentLang] || pick(dataset.title)}
         </h1>
         <div className="cq-seg shrink-0 mt-1.5">
           <button
@@ -232,7 +233,7 @@ function DatasetExplorer({ idOrName }) {
         {dataset.metadata_modified && (
           <span className="inline-flex items-center gap-1.5">
             <CalendarIcon size={14} />
-            {t('common.updated')} {new Date(dataset.metadata_modified).toLocaleDateString()}
+            {t('preview.metadata_updated')} {new Date(dataset.metadata_modified).toLocaleDateString()}
           </span>
         )}
         {(dataset.places || []).map(place => (
@@ -252,8 +253,14 @@ function DatasetExplorer({ idOrName }) {
       </div>
 
       <p className="max-w-3xl whitespace-pre-wrap text-[0.95rem] leading-relaxed text-base-content/75">
-        {pick(dataset.notes)}
+        {dataset.presentation?.summary?.[contentLang] || pick(dataset.notes)}
       </p>
+
+      {dataset.presentation?.description?.[contentLang] && dataset.presentation.description[contentLang] !== dataset.presentation.summary[contentLang] &&
+        <details className="text-sm"><summary className="cursor-pointer link">{t('preview.full_description')}</summary>
+          <p className="whitespace-pre-wrap mt-3 break-words">{dataset.presentation.description[contentLang]}</p>
+        </details>}
+      <CatalogOverview presentation={dataset.presentation} language={contentLang} dataset />
 
       <div className="flex flex-wrap gap-1.5">
         {(contentLang === 'fr' ? dataset.keywords?.fr : dataset.keywords?.en)?.map(kw => (
@@ -287,7 +294,7 @@ function DatasetExplorer({ idOrName }) {
             <FormatTile format={resource.format} />
             <div className="flex-1 min-w-48">
               <div className="font-medium text-[0.92rem] leading-snug">
-                {pick(resource.name) || resource.format || resource.id}
+                {resource.presentation?.title?.[contentLang] || pick(resource.name) || resource.format || resource.id}
               </div>
               <div className="text-xs text-base-content/40 mt-0.5 font-mono">
                 {resource.format}

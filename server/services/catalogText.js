@@ -28,7 +28,7 @@ function truncate(value, max) {
 
 function resourceLanguages(resource) {
     const values = Array.isArray(resource.language) ? resource.language : [resource.language];
-    const codes = values.map(value => String(value || '').toLowerCase());
+    const codes = values.flatMap(value => String(value || '').toLowerCase().split(/[,;|\s]+/));
     return ['en', 'fr'].filter(lang => codes.some(code =>
         (lang === 'en' ? /^(en(?:[-_]ca)?|eng|english)$/ : /^(fr(?:[-_]ca)?|fra|fre|french|français)$/).test(code)
     ));

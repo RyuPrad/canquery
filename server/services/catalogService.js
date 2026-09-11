@@ -1,4 +1,5 @@
 const { plainText, truncate } = require('./seoMeta');
+const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { spellingSuggestions } = require('./localSearch');
 const catalogReadQueries = require('../db/catalogReadQueries');
 const queryLogQueries = require('../db/queryLogQueries');
@@ -173,7 +174,9 @@ const getDataset = async (idOrName) => {
             : null,
         places: shapePlaces(row.places),
         provenance: shapeProvenance(row.provenance_sources),
-        resources: resources.map(shapeResource)
+        presentation: datasetPresentation(row, resources),
+        resources: resources.map(resource => ({ ...shapeResource(resource),
+            presentation: resourcePresentation({ ...resource, dataset_title_en: row.title_en, dataset_title_fr: row.title_fr }) }))
     };
 };
 
@@ -181,6 +184,7 @@ const getResource = async (id) => {
     const row = await catalogReadQueries.getResourceById(id);
     if (!row) throw new AppError('Resource not found', 404);
     const shaped = shapeResource(row);
+    shaped.presentation = resourcePresentation(row);
     shaped.dataset = {
         id: row.dataset_id,
         name: row.dataset_name,

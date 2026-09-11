@@ -27,6 +27,7 @@ const MapPanel = lazy(() => import('../components/MapPanel.jsx'));
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import Provenance from '../components/Provenance.jsx';
+import CatalogOverview from '../components/CatalogOverview.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -397,7 +398,7 @@ function ResourceExplorer({ id }) {
           />
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold font-display tracking-tight">
-              {resource.name.en || resource.name.fr || resource.id}
+              {resource.presentation?.title?.[lang] || resource.name?.[lang] || resource.name?.en || resource.name?.fr || resource.id}
             </h1>
             <ResourceBadge mode={resource.query_mode} />
             <a
@@ -426,7 +427,9 @@ function ResourceExplorer({ id }) {
                 resource.dataset.organization.name}
             </Link>
           )}
+          {resource.last_modified && <p className="text-xs text-base-content/60">{t('preview.resource_updated')} {new Date(resource.last_modified).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA')}</p>}
           <Provenance provenance={resource.provenance} compact />
+          <CatalogOverview presentation={resource.presentation} />
         </div>
       )}
 

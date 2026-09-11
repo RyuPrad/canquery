@@ -32,6 +32,14 @@ const knownFieldCount = (row) => {
 };
 
 const isIngestableFile = (row) => {
+    // A CSV label can describe a ZIP distribution (notably Statistics Canada).
+    // The CSV loader accepts a text stream, not an archive. Existing loaded
+    // tables and active upstream datastores are still classified first below.
+    if (String(row?.format || '').toUpperCase() === 'CSV') {
+        try {
+            if (/\.zip$/i.test(new URL(row.url).pathname)) return false;
+        } catch { /* URL admission is owned by the download layer. */ }
+    }
     const cap = ingestCapBytesFor(row && row.format);
     const recordCount = knownRecordCount(row);
     const fieldCount = knownFieldCount(row);
