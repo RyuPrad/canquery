@@ -125,4 +125,31 @@ integrationDescribe('search visibility PostgreSQL integration', () => {
         ]));
         expect(report.pageOpportunities.map(row => row.value)).not.toContain('https://canquery.com/blogger');
     });
+
+    test('applies explicit comparison dates to totals and every current-period breakdown', async () => {
+        for (const [date, query, clicks, impressions] of [
+            ['2026-08-01', 'prior water data', 7, 100],
+            ['2026-10-01', 'current water data', 13, 200]
+        ]) {
+            const metric = { clicks, impressions, ctr: clicks / impressions, position: 5 };
+            await replaceSearchConsoleDay({
+                dataDate: date, searchType: 'web', total: metric,
+                breakdowns: [{ dimension: 'query', value: query, ...metric },
+                    { dimension: 'page', value: 'https://canquery.com/datasets/' + date, ...metric }],
+                queryPages: [{ query, page: 'https://canquery.com/datasets/' + date, ...metric }]
+            }, db);
+        }
+        const report = await getSearchGrowthReportData(db, {
+            startDate: '2026-10-01', endDate: '2026-10-01',
+            comparisonStartDate: '2026-08-01', comparisonEndDate: '2026-08-01'
+        });
+        expect(report.summary).toMatchObject({ current_clicks: 13, prior_clicks: 7,
+            current_impressions: 200, prior_impressions: 100, current_days: 1, prior_days: 1 });
+        expect(report.topQueries.map(row => row.value)).toEqual(['current water data']);
+        expect(report.topPages.map(row => row.value)).toEqual(['https://canquery.com/datasets/2026-10-01']);
+        expect(report.queryIntentSummary.find(row => row.intent === 'semantic')).toMatchObject({ queries: 1, clicks: 13 });
+        const historical = await getSearchGrowthReportData(db, { startDate: '2026-08-01', endDate: '2026-08-01' });
+        expect(historical.topQueries.map(row => row.value)).toEqual(['prior water data']);
+        expect(historical.daily.every(row => row.data_date <= '2026-08-01')).toBe(true);
+    });
 });

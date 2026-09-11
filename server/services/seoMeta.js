@@ -5,6 +5,7 @@
 // injector (controllers/spaController.js) and any other caller.
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { classifyResource } = require('./resourceCapabilities');
+const { plainText, collapse, truncate, resourceLanguages } = require('./catalogText');
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
 const SITE_NAME = 'CanQuery';
@@ -40,64 +41,6 @@ function jsonLdScript(obj) {
     return '<script type="application/ld+json">' + json + '</script>';
 }
 
-function collapse(value) {
-    return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-}
-
-const HTML_ENTITIES = Object.freeze({
-    amp: '&', apos: "'", copy: '©', gt: '>', lt: '<', nbsp: ' ', quot: '"', reg: '®',
-    agrave: 'à', acirc: 'â', auml: 'ä', ccedil: 'ç', eacute: 'é', egrave: 'è',
-    ecirc: 'ê', euml: 'ë', icirc: 'î', iuml: 'ï', ocirc: 'ô', ouml: 'ö',
-    ugrave: 'ù', ucirc: 'û', uuml: 'ü', yuml: 'ÿ',
-    laquo: '«', raquo: '»', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
-    ndash: '–', mdash: '—', hellip: '…', bull: '•', middot: '·'
-});
-
-function decodeHtmlEntities(value) {
-    return String(value == null ? '' : value).replace(
-        /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi,
-        (match, entity) => {
-            if (entity[0] === '#') {
-                const hex = entity[1].toLowerCase() === 'x';
-                const codePoint = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
-                const control = codePoint < 32 && ![9, 10, 13].includes(codePoint);
-                const surrogate = codePoint >= 0xd800 && codePoint <= 0xdfff;
-                if (!Number.isInteger(codePoint) || control || surrogate || codePoint > 0x10ffff) return ' ';
-                try {
-                    return String.fromCodePoint(codePoint);
-                } catch {
-                    return ' ';
-                }
-            }
-            const normalized = entity.toLowerCase();
-            if (!Object.prototype.hasOwnProperty.call(HTML_ENTITIES, normalized)) return match;
-            const decoded = HTML_ENTITIES[normalized];
-            return entity[0] === entity[0].toUpperCase() && /^[a-zà-ÿ]$/i.test(decoded)
-                ? decoded.toLocaleUpperCase('fr-CA')
-                : decoded;
-        }
-    );
-}
-
-// Catalogue descriptions sometimes contain small HTML fragments. Search
-// metadata and the crawl snapshot must use the visible text, never upstream
-// markup or script/style contents.
-function plainText(value) {
-    const withoutExecutable = String(value == null ? '' : value)
-        .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
-        .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
-        .replace(/<br\s*\/?\s*>/gi, ' ')
-        .replace(/<\/(?:div|h[1-6]|li|p|section|td|th)>/gi, ' ')
-        .replace(/<[^>]*>/g, ' ');
-    return collapse(decodeHtmlEntities(withoutExecutable));
-}
-
-function truncate(value, max) {
-    const s = collapse(value);
-    if (s.length <= max) return s;
-    return s.slice(0, max - 1).replace(/\s+\S*$/, '') + '…';
-}
-
 // English-default site: prefer the EN value, fall back to FR when EN is blank.
 function pick(en, fr) {
     return plainText(en) || plainText(fr) || '';
@@ -109,7 +52,7 @@ function siteTitle(value) {
 
 const GENERIC_RESOURCE_NAMES = new Set([
     'data', 'dataset', 'download', 'english', 'en', 'file', 'french', 'fr',
-    'francais', 'français', 'resource', 'csv', 'xls', 'xlsx', 'json', 'geojson',
+    'francais', 'français', 'ensembles de données', 'ensemble de données', 'resource', 'csv', 'xls', 'xlsx', 'json', 'geojson',
     'xml', 'pdf', 'zip'
 ]);
 
@@ -127,14 +70,15 @@ function titleContainsFormat(value, format) {
     return new RegExp('(^|[^a-z0-9])' + escaped + '([^a-z0-9]|$)', 'i').test(value);
 }
 
-function resourceTitleBase(resource) {
+function resourceTitleBase(resource, max = null) {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const format = collapse(resource.format).toUpperCase();
-    let base = isGenericResourceName(name, format) ? datasetTitle : name;
-    base = base || datasetTitle || 'Resource';
-    if (format && !titleContainsFormat(base, format)) base += ' (' + format + ')';
-    return base;
+    const base = (isGenericResourceName(name, format) ? datasetTitle : name) || datasetTitle || 'Resource';
+    const languages = resourceLanguages(resource).map(lang => lang === 'fr' ? 'French' : 'English');
+    const suffixParts = [...languages, format && !titleContainsFormat(base, format) ? format : ''].filter(Boolean);
+    const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
+    return (max ? truncate(base, Math.max(12, max - suffix.length)) : base) + suffix;
 }
 
 function buildBreadcrumbJsonLd(items) {
@@ -454,29 +398,21 @@ function resourceDescription(resource) {
     const capability = classifyResource(resource).capability;
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
-    const organization = pick(resource.org_title_en, resource.org_title_fr);
-    const resourceLabel = isGenericResourceName(name, resource.format) ? '' : name;
-    const subject = [resourceLabel, datasetTitle && datasetTitle !== resourceLabel
-        ? 'from ' + datasetTitle
-        : '', organization ? 'by ' + organization : ''].filter(Boolean).join(' ') ||
-        datasetTitle || name || 'This open-data resource';
-    const format = plainText(resource.format).toUpperCase();
-    const formatLabel = format ? format + ' ' : '';
-    let description;
+    const subject = (isGenericResourceName(name, resource.format) ? datasetTitle : name) || datasetTitle || 'open data';
+    const language = resourceLanguages(resource).map(lang => lang === 'fr' ? 'French' : 'English').join('/');
+    const format = [language, plainText(resource.format).toUpperCase()].filter(Boolean).join(' ');
+    const mapped = Boolean(resource.map_provider || resource.map?.available);
+    let action;
     if (capability === 'datastore' || capability === 'ingested') {
-        description = subject + '. Query, filter, chart and export this live ' + formatLabel +
-            'table on CanQuery.';
+        action = 'Query, filter, chart and export this live ' + (format ? format + ' ' : '') + 'table';
     } else if (capability === 'ingestable') {
-        description = subject + '. Load this ' + formatLabel +
-            'resource into a live table to query, filter, chart and export it.';
-    } else if (capability === 'mapped') {
-        description = subject + '. Explore it on an interactive map and access the original ' +
-            formatLabel + 'file on CanQuery.';
+        action = 'Load this ' + (format ? format + ' ' : '') + 'resource into a live table';
     } else {
-        description = subject + '. View its metadata and access the original ' + formatLabel +
-            'file from the public-sector publisher.';
+        action = 'View metadata and access the original ' + (format ? format + ' ' : '') + 'file';
     }
-    return truncate(description, DESCRIPTION_MAX);
+    // Mapping is independent of the table capability and must survive truncation.
+    if (mapped) action = 'Explore the interactive map. ' + action;
+    return truncate(action + ': ' + subject + '.', DESCRIPTION_MAX);
 }
 
 function buildResourceJsonLd(resource, description) {
@@ -516,7 +452,7 @@ function resourceMeta(resource) {
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const description = resourceDescription(resource);
     return {
-        title: siteTitle(resourceTitleBase(resource)),
+        title: resourceTitleBase(resource, TITLE_MAX - TITLE_SUFFIX.length) + TITLE_SUFFIX,
         description,
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',

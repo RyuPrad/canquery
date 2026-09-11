@@ -57,3 +57,17 @@ it('renders a safe empty report before the first import', () => {
 it('escapes all HTML metacharacters', () => {
     expect(escapeHtml(`<&>"'`)).toBe('&lt;&amp;&gt;&quot;&#39;');
 });
+
+it('labels periods, incomplete imports and releases outside the selected window', () => {
+    const data = sample();
+    data.period = { startDate: '2026-08-13', endDate: '2026-08-19', comparisonStartDate: '2026-08-01', comparisonEndDate: '2026-08-07', days: 7 };
+    data.releases = [{ date: '2026-09-09', label: '<script>release</script>' }];
+    data.summary.current_days = 6;
+    data.summary.prior_days = 7;
+    const html = renderSearchGrowthReport(data);
+    expect(html).toContain('Current: 2026-08-13 to 2026-08-19');
+    expect(html).toContain('Imported days: 6 current; 7 comparison');
+    expect(html).toContain('after this reporting period');
+    expect(html).toContain('&lt;script&gt;release&lt;/script&gt;');
+    expect(html).not.toContain('<script>');
+});
