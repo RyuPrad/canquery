@@ -11,6 +11,7 @@ import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
+import LocalGuides from '../components/LocalGuides.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -422,6 +423,7 @@ function DatasetExplorer({ idOrName }) {
           </button>
         </div>
       )}
+      <LocalGuides dataset={dataset.id} />
     </div>
   );
 }

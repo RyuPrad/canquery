@@ -9,9 +9,9 @@ const { renderHtml } = require('../services/seoMeta');
 const app = require('../app');
 const template = '<!doctype html><html lang="en"><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>';
 
-test('publishes three paired guides with verified resource links', () => {
-    expect(readArticles()).toHaveLength(6);
-    expect(listArticles()).toHaveLength(3);
+test('publishes six paired guides with verified resource links', () => {
+    expect(readArticles()).toHaveLength(12);
+    expect(listArticles()).toHaveLength(6);
     expect(listArticles({ lang: 'fr', place: 'oshawa-on' })).toHaveLength(1);
     for (const lang of ['en', 'fr']) for (const article of listArticles({ lang })) {
         const full = getArticle(lang, article.slug);
@@ -52,7 +52,7 @@ test('serves article APIs, geographic listing, real 404s and the blog sitemap', 
     expect((await request(app).get('/api/v1/blog/en/missing')).status).toBe(404);
     const sitemap = await request(app).get('/sitemap-blog.xml');
     expect(sitemap.status).toBe(200);
-    expect(sitemap.text.match(/<loc>/g)).toHaveLength(8);
+    expect(sitemap.text.match(/<loc>/g)).toHaveLength(14);
     expect(sitemap.text).toContain('/fr/blog/');
 });
 
@@ -112,11 +112,36 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
             for (const lang of ['en', 'fr']) {
                 const slug = manifest[0].editions[lang].slug;
                 const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + slug;
-                expect(content.listArticles({ lang })).toHaveLength(2);
+                expect(content.listArticles({ lang })).toHaveLength(5);
                 expect(content.getArticle(lang, slug)).toBeNull();
                 expect(resolveBlogPage(articlePath).status).toBe(404);
                 expect(res.send.mock.calls[0][0]).not.toContain(articlePath);
             }
         });
     } finally { spy.mockRestore(); }
+});
+
+test('national guides support localized resource links and dataset discovery without fictional places', async () => {
+    const dataset = '90fed587-1364-4f33-a9ee-208181dc0b97';
+    const en = listArticles({ dataset })[0];
+    const fr = listArticles({ dataset, lang: 'fr' })[0];
+    expect(en.place).toBeUndefined();
+    expect(en.explore).toContain('4ee7a4e0-ffc3-47af-94e7-30929d1eeb67');
+    expect(fr.explore).toContain('8c205edb-9a82-468e-9aa4-b82266cbaad6');
+    const html = (await resolvePage(fr.path)).body;
+    expect(html).not.toContain('/places/');
+    const download = listArticles({ dataset: '4f8575f0-918e-41bb-bcde-044d04caaf31', lang: 'fr' })[0];
+    expect(download.view).toBe('download');
+    expect((await resolvePage(download.path)).body).toContain('Consulter les détails du téléchargement');
+    const response = await request(app).get('/api/v1/blog').query({ dataset, lang: 'fr' });
+    expect(response.body.data.map(item => item.id)).toEqual([fr.id]);
+    expect((await request(app).get('/api/v1/blog?dataset=a&dataset=b')).status).toBe(400);
+    expect(listArticles({ dataset: 'does-not-exist' })).toEqual([]);
+    expect(listArticles({ dataset: 'toronto-open-data-building-permits-active-permits' })).toEqual(
+        listArticles({ dataset: 'ckan-toronto-open-data-dataset-108c2bd1-6945-46f6-af92-02f5658ee7f7' }));
+    const snapshots = require('../services/seoSnapshot');
+    for (const html of [snapshots.datasetSnapshot({ id: dataset }, []), snapshots.resourceSnapshot({ id: 'r', dataset_id: dataset })]) {
+        expect(html).toContain(en.path);
+        expect(html).not.toContain(download.path);
+    }
 });

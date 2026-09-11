@@ -42,12 +42,12 @@ function linkList(title, links) {
     ).join('') + '</ul></section>';
 }
 
-function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [] }) {
+function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [], guides = [] }) {
     return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' +
         breadcrumb(breadcrumbs) + '<article><h1>' + text(title) + '</h1>' +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
         factList(facts) + overviewHtml + linkList('Official sources and licences', sources) + linkList(linksTitle, links) +
-        linkList('Related open data', relatedLinks) + '</article></main>';
+        linkList('Related open data', relatedLinks) + linkList('Data guides', guides) + '</article></main>';
 }
 
 function sourceLinks(row) {
@@ -114,6 +114,7 @@ function datasetSnapshot(dataset, resources) {
         summary: presentation.summary.en,
         overviewHtml: overviewSnapshot(presentation, true),
         sources: sourceLinks(dataset),
+        guides: dataset.id || dataset.name ? listArticles({ dataset: dataset.id || dataset.name }).map(article => ({ path: article.path, label: article.title })) : [],
         facts: [
             organization ? {
                 label: 'Publisher',
@@ -158,6 +159,7 @@ function resourceSnapshot(resource) {
         summary: presentation.summary.en,
         overviewHtml: overviewSnapshot(presentation),
         sources: sourceLinks(resource),
+        guides: resource.dataset_id || resource.dataset_name ? listArticles({ dataset: resource.dataset_id || resource.dataset_name }).map(article => ({ path: article.path, label: article.title })) : [],
         facts: [
             { label: 'Format', value: resource.format || 'File' },
             { label: 'Access', value: capability },
@@ -240,7 +242,7 @@ const STATIC_COPY = {
         summary: 'Find federal, provincial, territorial and municipal datasets, query live tables, and explore spatial resources on maps.',
         links: [
             { path: '/places', label: 'Browse open data by place' },
-            { path: '/blog', label: 'Read local resident guides' },
+            { path: '/blog', label: 'Read data guides' },
             { path: '/organizations', label: 'Browse publishing organizations' },
             { path: '/insights', label: 'Explore popular dataset insights' },
             { path: '/docs', label: 'Use the CanQuery API' }

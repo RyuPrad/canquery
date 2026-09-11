@@ -60,7 +60,16 @@ test('the URL determines article language, including navbar switching and Back',
 
 test('the blog index links to complete guides', async () => {
   start('/blog');
-  expect(await screen.findByRole('heading', { name: 'Local guides' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Data guides' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('link', { name: 'City parks guide' }));
   expect(await screen.findByRole('heading', { name: 'Read the boundaries' })).toBeInTheDocument();
+});
+
+test('a national download guide has no place links and opens explicit download details', async () => {
+  fetchBlogArticle.mockResolvedValue({ data: { ...article('en'), place: undefined, placeName: undefined,
+    view: 'download', explore: '/resources/archive' } });
+  start('/blog/parks');
+  expect(await screen.findByRole('heading', { name: 'City parks guide' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /View download details/ })).toHaveAttribute('href', '/resources/archive');
+  expect(document.querySelector('a[href^="/places/"]')).toBeNull();
 });

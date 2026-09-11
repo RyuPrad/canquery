@@ -6,11 +6,11 @@ const router = express.Router();
 
 router.get('/', (req, res, next) => {
     const lang = req.query.lang || 'en';
-    if (!['en', 'fr'].includes(lang) || (req.query.place != null && typeof req.query.place !== 'string')) {
+    if (!['en', 'fr'].includes(lang) || ['place', 'dataset'].some(key => req.query[key] != null && typeof req.query[key] !== 'string')) {
         return next(new AppError('Invalid blog filter', 400));
     }
     res.set('Cache-Control', 'public, max-age=300');
-    res.json(envelope(listArticles({ lang, place: req.query.place })));
+    res.json(envelope(listArticles({ lang, place: req.query.place, dataset: req.query.dataset })));
 });
 
 router.get('/:lang/:slug', (req, res, next) => {

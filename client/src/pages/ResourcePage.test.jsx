@@ -6,6 +6,7 @@ import { NotIngestedError } from '../api/client.js';
 import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
+  fetchBlog: vi.fn(() => Promise.resolve({ data: [] })),
   fetchResource: vi.fn(),
   queryResource: vi.fn(),
   enqueueIngest: vi.fn(),

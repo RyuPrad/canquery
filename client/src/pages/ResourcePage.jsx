@@ -28,6 +28,7 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
+import LocalGuides from '../components/LocalGuides.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -641,6 +642,7 @@ function ResourceExplorer({ id }) {
       ) : (
         <LoadingSpinner label={t('resource.querying')} />
       )}
+      {resource?.dataset?.id && <LocalGuides dataset={resource.dataset.id} />}
     </div>
   );
 }

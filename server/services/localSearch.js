@@ -1,16 +1,18 @@
-// A small, reviewed vocabulary for resident tasks. Expansion happens inside
+// A small, reviewed vocabulary for data-seeking tasks. Expansion happens inside
 // the existing search; it never changes geographic or publisher filters.
 const TOPICS = [
     ['parks', 'park', 'parcs', 'parc', 'green spaces', 'green space', 'espaces verts', 'espace vert'],
     ['playgrounds', 'playground', 'play areas', 'play area', 'aires de jeux', 'aire de jeux'],
-    ['building permits', 'building permit', 'permis de construction', 'permis de bâtir']
+    ['building permits', 'building permit', 'permis de construction', 'permis de bâtir'],
+    ['ward boundaries', 'ward boundary', 'limites des quartiers', 'limites quartiers']
 ];
 // Inflection is already handled by PostgreSQL. Repeating singular/plural
 // alternatives inflates the planner's match estimate and can bypass the GIN index.
 const SEARCH_TERMS = [
     ['parks', 'parcs', 'green spaces', 'espaces verts'],
     ['playgrounds', 'play areas', 'aires de jeux'],
-    ['building permits', 'permis de construction', 'permis de bâtir']
+    ['building permits', 'permis de construction', 'permis de bâtir'],
+    ['ward boundaries', 'limites des quartiers', 'limites quartiers']
 ];
 const words = value => String(value || '').toLocaleLowerCase('fr-CA').match(/[\p{L}\p{N}]+/gu) || [];
 const fold = value => value.normalize('NFD').replace(/\p{M}/gu, '');

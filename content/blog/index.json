@@ -29,7 +29,8 @@
         "placeName": "Toronto",
         "topicName": "Permis de construction"
       }
-    }
+    },
+    "datasetId": "ckan-toronto-open-data-dataset-108c2bd1-6945-46f6-af92-02f5658ee7f7"
   },
   {
     "id": "oshawa-parks",
@@ -61,7 +62,8 @@
         "placeName": "Oshawa",
         "topicName": "Parcs"
       }
-    }
+    },
+    "datasetId": "arcgis-088980627c7d494abc89ce1277068ebc-9"
   },
   {
     "id": "montreal-parks",
@@ -93,6 +95,101 @@
         "placeName": "Montréal",
         "topicName": "Parcs et espaces publics"
       }
+    },
+    "datasetId": "ckan-montreal-open-data-dataset-2e9e4d2f-173a-4c3d-a5e3-565d79baa27d"
+  },
+  {
+    "id": "lmia-employer-lists",
+    "status": "published",
+    "topic": "lmia-employers",
+    "query": {
+      "en": "positive LMIA employers",
+      "fr": "employeurs EIMT positive"
+    },
+    "view": "table",
+    "published": "2026-09-11",
+    "updated": "2026-09-11",
+    "verified": "2026-09-11",
+    "dataset": "/datasets/90fed587-1364-4f33-a9ee-208181dc0b97",
+    "datasetId": "90fed587-1364-4f33-a9ee-208181dc0b97",
+    "explore": "/resources/4ee7a4e0-ffc3-47af-94e7-30929d1eeb67",
+    "editions": {
+      "en": {
+        "slug": "find-lmia-employer-lists",
+        "title": "Find LMIA employer lists by quarter and file language",
+        "description": "Choose an official positive-LMIA employer file, inspect its columns, and understand the difference between approved positions and job vacancies.",
+        "topicName": "LMIA employer lists"
+      },
+      "fr": {
+        "slug": "trouver-listes-employeurs-eimt",
+        "title": "Trouver les listes d’employeurs avec une EIMT positive",
+        "description": "Choisissez un trimestre et une langue de fichier, consultez les colonnes et distinguez les postes approuvés des offres d’emploi.",
+        "topicName": "Listes d’employeurs EIMT",
+        "explore": "/resources/8c205edb-9a82-468e-9aa4-b82266cbaad6"
+      }
     }
+  },
+  {
+    "id": "statcan-csv-download",
+    "status": "published",
+    "topic": "statistics-canada",
+    "query": {
+      "en": "Youth admissions correctional services",
+      "fr": "admissions jeunes services correctionnels"
+    },
+    "view": "download",
+    "published": "2026-09-11",
+    "updated": "2026-09-11",
+    "verified": "2026-09-11",
+    "dataset": "/datasets/4f8575f0-918e-41bb-bcde-044d04caaf31",
+    "datasetId": "4f8575f0-918e-41bb-bcde-044d04caaf31",
+    "explore": "/resources/94e53244-91df-495e-b5d8-93ba224a5246",
+    "editions": {
+      "en": {
+        "slug": "download-statistics-canada-csv",
+        "title": "Download and read a Statistics Canada CSV table",
+        "description": "Use table 35-10-0007 to find a CSV archive, extract its data and metadata, and check dimensions and status flags before comparing values.",
+        "topicName": "Statistics Canada CSV"
+      },
+      "fr": {
+        "slug": "telecharger-csv-statistique-canada",
+        "title": "Télécharger et lire un tableau CSV de Statistique Canada",
+        "description": "Avec le tableau 35-10-0007, trouvez l’archive CSV, consultez les métadonnées et vérifiez les dimensions et indicateurs avant de comparer les valeurs.",
+        "topicName": "CSV de Statistique Canada"
+      }
+    }
+  },
+  {
+    "id": "uxbridge-ward-boundaries",
+    "status": "published",
+    "topic": "ward-boundaries",
+    "query": {
+      "en": "Uxbridge Ward Boundaries",
+      "fr": "limites quartiers Uxbridge"
+    },
+    "view": "map",
+    "published": "2026-09-11",
+    "updated": "2026-09-11",
+    "verified": "2026-09-11",
+    "dataset": "/datasets/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32",
+    "datasetId": "arcgis-6881ab21ee78498e90d7317d20b3f8e9-32",
+    "explore": "/resources/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32-data?view=map",
+    "editions": {
+      "en": {
+        "slug": "uxbridge-ward-boundaries-map",
+        "title": "Explore Uxbridge ward boundaries on a map",
+        "description": "Open Durham Region’s Uxbridge ward layer, read its WARD and LABEL fields, and choose between the interactive map and source downloads.",
+        "topicName": "Ward boundaries",
+        "placeName": "Uxbridge"
+      },
+      "fr": {
+        "slug": "carte-limites-quartiers-uxbridge",
+        "title": "Explorer les limites des quartiers d’Uxbridge sur une carte",
+        "description": "Consultez la couche d’Uxbridge publiée par Durham, lisez les champs WARD et LABEL et choisissez une carte ou un téléchargement à la source.",
+        "topicName": "Limites des quartiers",
+        "placeName": "Uxbridge"
+      }
+    },
+    "place": "uxbridge-on"
   }
 ]

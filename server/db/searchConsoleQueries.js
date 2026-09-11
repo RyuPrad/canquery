@@ -216,7 +216,7 @@ async function getSearchGrowthReportData(db = pool, options = {}) {
         db.query(`
             WITH latest AS (SELECT $1::date AS d, $2::date AS start_date), page_totals AS (
                 SELECT CASE
-                    WHEN scb.value ~ '^https?://[^/]+/(fr/)?blog(/|[?#]|$)' THEN 'Local guides'
+                    WHEN scb.value ~ '^https?://[^/]+/(fr/)?blog(/|[?#]|$)' THEN 'Data guides'
                     WHEN scb.value ~ '/places/[^/?#]+' THEN 'Place pages'
                     WHEN scb.value ~ '/organizations/[^/?#]+' THEN 'Organization pages'
                     WHEN scb.value ~ '/datasets/[^/?#]+' THEN 'Dataset pages'
