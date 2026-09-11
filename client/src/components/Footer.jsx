@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { getJSON } from '../api/client.js';
+import MochiPromotion from './MochiPromotion.jsx';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { MapleLeaf, ExternalIcon, GithubIcon, StarIcon, ArrowUpRightIcon, XLogoIcon, BlueskyIcon } from './Icons.jsx';
 
@@ -130,6 +131,7 @@ export default function Footer() {
               <BlueskyIcon size={17} />
             </a>
           </div>
+          <MochiPromotion placement="footer" />
         </div>
         <div className="space-y-3">
           <div className="text-xs font-semibold uppercase tracking-widest text-base-content/40">

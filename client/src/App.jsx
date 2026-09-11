@@ -12,6 +12,7 @@ import PlacesPage from './pages/PlacesPage'
 import PlacePage from './pages/PlacePage'
 import PrivacyPage from './pages/PrivacyPage'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
+import { PromotionTracking } from './components/PromotionTracking.jsx'
 import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
@@ -44,7 +45,7 @@ function NotFound() {
 
 export default function App() {
   return (
-    <div className="min-h-screen flex flex-col text-base-content">
+    <PromotionTracking><div className="min-h-screen flex flex-col text-base-content">
       <ScrollToTop />
       <RouteHead />
       <AnalyticsBridge />
@@ -71,6 +72,6 @@ export default function App() {
         </Suspense>
       </main>
       <Footer />
-    </div>
+    </div></PromotionTracking>
   )
 }

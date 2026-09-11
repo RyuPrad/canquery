@@ -25,6 +25,7 @@ export const ANALYTICS_EVENTS = new Set([
   'ui_language',
   'ui_theme',
   'outbound_link',
+  'promotion_view',
 ]);
 
 const MAX_VALUE_LENGTH = 500;
@@ -41,14 +42,19 @@ export function sanitizeAnalyticsProperties(properties = {}) {
 }
 
 export function track(event, properties = {}) {
-  if (!ANALYTICS_EVENTS.has(event)) return false;
+  if (!ANALYTICS_EVENTS.has(event) || analyticsOptedOut()) return false;
   try {
     if (typeof globalThis.window?.umami?.track !== 'function') return false;
-    globalThis.window.umami.track(event, sanitizeAnalyticsProperties(properties));
+    globalThis.window.umami.track(event, sanitizeAnalyticsProperties(properties))?.catch?.(() => {});
     return true;
   } catch {
     // Analytics is decorative: blocking, startup races and vendor failures must
     // never affect the product interaction that called this helper.
     return false;
   }
+}
+
+export function analyticsOptedOut(nav = globalThis.navigator, win = globalThis.window) {
+  return [nav?.doNotTrack, win?.doNotTrack, nav?.globalPrivacyControl]
+    .some(value => value === true || value === 1 || value === '1' || value === 'yes');
 }
