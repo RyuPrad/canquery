@@ -95,11 +95,13 @@ describe('DatasetPage ingestion', () => {
     fetchDataset.mockReset();
     fetchDataset.mockResolvedValue(env);
 
-    render(
-      <MemoryRouter initialEntries={['/datasets/dataset-a?highlight=resource-55']}>
-        <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/datasets/dataset-a?highlight=resource-55']}>
+          <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+        </MemoryRouter>
+      );
+    });
 
     expect(await screen.findByText('Resource 55')).toBeInTheDocument();
     expect(screen.getByText('Page 2')).toHaveAttribute('aria-current', 'page');
