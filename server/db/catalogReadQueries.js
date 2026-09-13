@@ -66,7 +66,40 @@ const PLACE_CTES = `WITH RECURSIVE selected_place AS (
 )`;
 
 async function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, offset }, db = pool) {
-    const result = await db.query(`${PLACE_CTES}
+    // Select the requested identities before evaluating resource/provenance
+    // subqueries. Otherwise OFFSET enriches every skipped dataset as well.
+    const result = await db.query(`${PLACE_CTES}, dataset_page AS MATERIALIZED (
+        SELECT d.id AS dataset_id, pm.depth,
+               pm.matched_place_id, pm.matched_place_slug,
+               pm.matched_place_name_en, pm.matched_place_name_fr, pm.place_relationship,
+               CASE WHEN $1::text IS NULL THEN 0 ELSE (SELECT coalesce(sum(
+                    CASE WHEN concat_ws(' ', d.title_en, d.title_fr) ~* pattern THEN 8 ELSE 0 END +
+                    CASE WHEN concat_ws(' ', array_to_string(d.keywords_en, ' '), array_to_string(d.keywords_fr, ' ')) ~* pattern THEN 4 ELSE 0 END +
+                    CASE WHEN concat_ws(' ', d.notes_en, d.notes_fr) ~* pattern THEN 1 ELSE 0 END
+                ), 0) FROM unnest($11::text[]) AS pattern) END AS literal_rank,
+               CASE WHEN $1::text IS NULL THEN NULL
+                    ELSE ts_rank(d.search_tsv, to_tsquery('english', $10) || to_tsquery('french', $10))
+               END AS search_rank,
+               d.metadata_modified
+        FROM datasets d
+        LEFT JOIN organizations o ON o.id = d.org_id
+        LEFT JOIN place_matches pm ON pm.dataset_id = d.id
+        WHERE ($1::text IS NULL OR d.search_tsv @@ (to_tsquery('english', $10) || to_tsquery('french', $10)))
+          AND ($2::text IS NULL OR o.name = $2)
+          AND ($3::text IS NULL OR EXISTS (
+               SELECT 1 FROM resources r2
+               WHERE r2.dataset_id = d.id AND r2.format = upper($3)))
+          AND ($4::text IS NULL OR $4 = ANY(d.keywords_en) OR $4 = ANY(d.keywords_fr))
+          AND ($5::text IS NULL OR pm.dataset_id IS NOT NULL)
+          AND ($6::text IS NULL OR EXISTS (
+               SELECT 1 FROM dataset_sources ds2 WHERE ds2.dataset_id = d.id AND ds2.source_id = $6))
+          AND ($7::boolean IS NULL OR EXISTS (
+               SELECT 1 FROM resources r3 JOIN resource_maps rm3 ON rm3.resource_id = r3.id
+               WHERE r3.dataset_id = d.id))
+        ORDER BY pm.depth ASC NULLS LAST, literal_rank DESC, search_rank DESC NULLS LAST,
+                 d.metadata_modified DESC NULLS LAST, d.id ASC
+        LIMIT $8 OFFSET $9
+    )
         SELECT d.id, d.name, d.title_en, d.title_fr, d.metadata_modified,
                d.notes_en, d.notes_fr,
                (SELECT r.id FROM resources r JOIN resource_maps rm ON rm.resource_id = r.id
@@ -74,11 +107,7 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
                (SELECT r.id FROM resources r LEFT JOIN ingested_resources ir ON ir.resource_id = r.id
                 WHERE r.dataset_id = d.id AND (r.datastore_active OR ir.status = 'ready')
                 ORDER BY (ir.status = 'ready') DESC NULLS LAST, r.id LIMIT 1) AS preview_table_id,
-               CASE WHEN $1::text IS NULL THEN 0 ELSE (SELECT coalesce(sum(
-                    CASE WHEN concat_ws(' ', d.title_en, d.title_fr) ~* pattern THEN 8 ELSE 0 END +
-                    CASE WHEN concat_ws(' ', array_to_string(d.keywords_en, ' '), array_to_string(d.keywords_fr, ' ')) ~* pattern THEN 4 ELSE 0 END +
-                    CASE WHEN concat_ws(' ', d.notes_en, d.notes_fr) ~* pattern THEN 1 ELSE 0 END
-                ), 0) FROM unnest($11::text[]) AS pattern) END AS literal_rank,
+               pm.literal_rank,
                o.name AS org_name, o.title_en AS org_title_en, o.title_fr AS org_title_fr,
                (SELECT count(*)::int FROM resources r WHERE r.dataset_id = d.id) AS resource_count,
                (SELECT count(*)::int FROM resources r
@@ -95,29 +124,14 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
                pm.matched_place_id, pm.matched_place_slug,
                pm.matched_place_name_en, pm.matched_place_name_fr,
                pm.place_relationship
-        FROM datasets d
+        FROM dataset_page pm
+        JOIN datasets d ON d.id = pm.dataset_id
         LEFT JOIN organizations o ON o.id = d.org_id
-        LEFT JOIN place_matches pm ON pm.dataset_id = d.id
-        WHERE ($1::text IS NULL OR d.search_tsv @@ (to_tsquery('english', $10) || to_tsquery('french', $10)))
-          AND ($2::text IS NULL OR o.name = $2)
-          AND ($3::text IS NULL OR EXISTS (
-               SELECT 1 FROM resources r2
-               WHERE r2.dataset_id = d.id AND r2.format = upper($3)))
-          AND ($4::text IS NULL OR $4 = ANY(d.keywords_en) OR $4 = ANY(d.keywords_fr))
-          AND ($5::text IS NULL OR pm.dataset_id IS NOT NULL)
-          AND ($6::text IS NULL OR EXISTS (
-               SELECT 1 FROM dataset_sources ds2 WHERE ds2.dataset_id = d.id AND ds2.source_id = $6))
-          AND ($7::boolean IS NULL OR EXISTS (
-               SELECT 1 FROM resources r3 JOIN resource_maps rm3 ON rm3.resource_id = r3.id
-               WHERE r3.dataset_id = d.id))
         ORDER BY pm.depth ASC NULLS LAST,
-                 literal_rank DESC,
-                 CASE WHEN $1::text IS NULL THEN NULL
-                      ELSE ts_rank(d.search_tsv, to_tsquery('english', $10) || to_tsquery('french', $10))
-                 END DESC NULLS LAST,
+                 pm.literal_rank DESC,
+                 pm.search_rank DESC NULLS LAST,
                  d.metadata_modified DESC NULLS LAST,
                  d.id ASC
-        LIMIT $8 OFFSET $9
     `, [q || null, org || null, format || null, keyword || null, place || null, source || null, mappable || null, limit, offset, searchExpression(q) || null, literalPatterns(q)]);
     return result.rows;
 }

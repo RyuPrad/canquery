@@ -53,6 +53,20 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         expect((await search('études du nord')).map(row => row.name)).toEqual([id('publisher')]);
         expect(await search('%études%')).toHaveLength(0);
     });
+    test('filters before pagination and retains resource capabilities on the selected page', async () => {
+        const page = await queries.searchDatasets({ org: prefix, format: 'CSV', limit: 2, offset: 1 }, db);
+        expect(page.map(row => row.id)).toEqual([id('dataset002'), id('dataset003')]);
+        for (const [index, row] of page.entries()) {
+            expect(row.resource_count).toBe(1);
+            expect(row.queryable_count).toBe(1);
+            expect(row.preview_table_id).toBe(id('resource' + (index + 2)));
+            expect(row.org_name).toBe(prefix);
+        }
+        const maps = await queries.searchDatasets({ org: prefix, mappable: true, limit: 1, offset: 0 }, db);
+        expect(maps.map(row => row.id)).toEqual([id('dataset004')]);
+        expect(maps[0].mappable_count).toBe(1);
+        expect(maps[0].preview_map_id).toBe(id('resource4'));
+    });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         const first = await queries.listResourceSitemap({ limit: 2, offset: 0 }, db);
