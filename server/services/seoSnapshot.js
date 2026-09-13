@@ -3,6 +3,8 @@ const { listArticles } = require('./blogContent');
 const { classifyResource } = require('./resourceCapabilities');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 
+const { PAGE_SIZE, pagePath } = require('./catalogPagination');
+const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const MAX_LINKS = 12;
 const MAX_SUMMARY = 1200;
 
@@ -34,19 +36,28 @@ function factList(facts) {
         '</dd></div>').join('') + '</dl>';
 }
 
-function linkList(title, links) {
-    const entries = (links || []).filter(link => link && link.path && link.label).slice(0, MAX_LINKS);
+function linkList(title, links, limit = MAX_LINKS) {
+    const entries = (links || []).filter(link => link && link.path && link.label).slice(0, limit);
     if (!entries.length) return '';
     return '<section><h2>' + text(title) + '</h2><ul>' + entries.map(link =>
         '<li>' + pathLink(link.path, link.label) + (link.detail ? ' <span>' + text(link.detail) + '</span>' : '') + '</li>'
     ).join('') + '</ul></section>';
 }
 
-function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [], guides = [] }) {
+function paginationLinks(pagination) {
+    if (!pagination || (pagination.page === 1 && !pagination.hasMore)) return '';
+    const { page, path, hasMore } = pagination;
+    return '<nav aria-label="Catalogue pages">' +
+        (page > 1 ? pathLink(pagePath(path, page - 1), 'Previous') + ' ' + pathLink(path, '1') + ' ' : '') +
+        '<span aria-current="page">Page ' + page + '</span>' +
+        (hasMore ? ' ' + pathLink(pagePath(path, page + 1), String(page + 1)) + ' ' + pathLink(pagePath(path, page + 1), 'Next') : '') + '</nav>';
+}
+
+function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
     return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' +
         breadcrumb(breadcrumbs) + '<article><h1>' + text(title) + '</h1>' +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
-        factList(facts) + overviewHtml + linkList('Official sources and licences', sources) + linkList(linksTitle, links) +
+        factList(facts) + overviewHtml + linkList('Official sources and licences', sources) + linkList(linksTitle, links, pagination ? PAGE_SIZE : MAX_LINKS) + paginationLinks(pagination) +
         linkList('Related open data', relatedLinks) + linkList('Data guides', guides) + '</article></main>';
 }
 
@@ -91,11 +102,11 @@ function overviewSnapshot(presentation, dataset = false) {
     ]) + table + '</section>';
 }
 
-function datasetSnapshot(dataset, resources) {
+function datasetSnapshot(dataset, resources, pagination) {
     const presentation = datasetPresentation(dataset, resources);
     const title = seo.plainText(dataset.title_en) || seo.plainText(dataset.title_fr) || dataset.name || dataset.id;
     const organization = seo.plainText(dataset.org_title_en) || seo.plainText(dataset.org_title_fr);
-    const links = (resources || []).slice(0, MAX_LINKS).map(resource => ({
+    const links = (pagination?.items || (resources || []).slice(0, MAX_LINKS)).map(resource => ({
         path: '/resources/' + encodeURIComponent(resource.id),
         label: resourcePresentation({ ...resource, dataset_title_en: dataset.title_en, dataset_title_fr: dataset.title_fr }).title.en,
         detail: resource.format || classifyResource(resource).capability
@@ -109,7 +120,8 @@ function datasetSnapshot(dataset, resources) {
         label: organization
     }] : [];
     return shell({
-        breadcrumbs: [{ label: 'Datasets', path: '/' }, { label: title }],
+        pagination,
+        breadcrumbs: [{ label: 'Datasets', path: '/datasets' }, { label: title }],
         title,
         summary: presentation.summary.en,
         overviewHtml: overviewSnapshot(presentation, true),
@@ -132,6 +144,14 @@ function datasetSnapshot(dataset, resources) {
     });
 }
 
+function originalFileLink(resource) {
+    try {
+        const url = new URL(toAbsoluteUrl(resource.url));
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return '';
+        return '<p>' + pathLink(url.href, 'Access original file') + '</p>';
+    } catch { return ''; }
+}
+
 function resourceSnapshot(resource) {
     const presentation = resourcePresentation(resource);
     const name = presentation.title.en;
@@ -151,13 +171,14 @@ function resourceSnapshot(resource) {
     }
     return shell({
         breadcrumbs: [
-            { label: 'Datasets', path: '/' },
+            { label: 'Datasets', path: '/datasets' },
             { label: datasetName, path: '/datasets/' + encodeURIComponent(datasetSlug) },
             { label: name }
         ],
         title: name,
         summary: presentation.summary.en,
-        overviewHtml: overviewSnapshot(presentation),
+        overviewHtml: (presentation.context.en ? '<p>' + text(presentation.context.en) + '</p>' : '') +
+            originalFileLink(resource) + overviewSnapshot(presentation),
         sources: sourceLinks(resource),
         guides: resource.dataset_id || resource.dataset_name ? listArticles({ dataset: resource.dataset_id || resource.dataset_name }).map(article => ({ path: article.path, label: article.title })) : [],
         facts: [
@@ -171,7 +192,7 @@ function resourceSnapshot(resource) {
     });
 }
 
-function placeSnapshot(place, datasets) {
+function placeSnapshot(place, datasets, pagination) {
     const name = seo.plainText(place.name_en) || seo.plainText(place.name_fr) || place.slug || place.id;
     const ancestors = (Array.isArray(place.ancestors) ? place.ancestors : [])
         .filter(ancestor => ancestor.id !== place.id)
@@ -191,6 +212,7 @@ function placeSnapshot(place, datasets) {
     const count = Number(place.dataset_count) || 0;
     const maps = Number(place.mappable_dataset_count) || 0;
     return shell({
+        pagination,
         breadcrumbs: [{ label: 'Places', path: '/places' }, ...ancestors, { label: name }],
         title: name + ' open data',
         summary: 'Explore ' + count.toLocaleString('en-CA') + ' open dataset' + (count === 1 ? '' : 's') +
@@ -206,7 +228,7 @@ function placeSnapshot(place, datasets) {
     });
 }
 
-function organizationSnapshot(organization, datasets) {
+function organizationSnapshot(organization, datasets, pagination) {
     const name = seo.plainText(organization.title_en) || seo.plainText(organization.title_fr) || organization.name;
     const links = (datasets || []).map(dataset => ({
         path: '/datasets/' + encodeURIComponent(dataset.name || dataset.id),
@@ -221,6 +243,7 @@ function organizationSnapshot(organization, datasets) {
     }
     const total = Number(organization.dataset_count) || 0;
     return shell({
+        pagination,
         breadcrumbs: [{ label: 'Organizations', path: '/organizations' }, { label: name }],
         title: name + ' open data',
         summary: 'Browse ' + total.toLocaleString('en-CA') + ' open dataset' + (total === 1 ? '' : 's') +
@@ -241,12 +264,17 @@ const STATIC_COPY = {
         title: "Search Canada's open data",
         summary: 'Find federal, provincial, territorial and municipal datasets, query live tables, and explore spatial resources on maps.',
         links: [
+            { path: '/datasets', label: 'Browse all datasets' },
             { path: '/places', label: 'Browse open data by place' },
             { path: '/blog', label: 'Read data guides' },
             { path: '/organizations', label: 'Browse publishing organizations' },
             { path: '/insights', label: 'Explore popular dataset insights' },
             { path: '/docs', label: 'Use the CanQuery API' }
         ]
+    },
+    datasets: {
+        title: 'Browse all Canadian datasets',
+        summary: 'Browse the complete CanQuery catalogue, including downloadable files, live tables and maps.'
     },
     insights: {
         title: 'Top downloaded Canadian datasets',
@@ -273,9 +301,20 @@ const STATIC_COPY = {
     }
 };
 
-function staticSnapshot(type, items = []) {
+function staticSnapshot(type, items = [], pagination) {
     const copy = STATIC_COPY[type] || STATIC_COPY.home;
-    const dynamicLinks = items.map(item => {
+    const regions = items.filter(item => item.kind === 'region');
+    const regionIds = new Set(regions.map(item => item.id));
+    const ordered = type === 'places' ? [
+        ...regions.flatMap(region => [region, ...items.filter(item => item.kind === 'municipality' && item.parent_id === region.id)]),
+        ...items.filter(item => item.kind === 'municipality' && !regionIds.has(item.parent_id)),
+        ...items.filter(item => !['region', 'municipality'].includes(item.kind))
+    ] : items;
+    const dynamicLinks = ordered.map(item => {
+        if (type === 'datasets') return {
+            path: '/datasets/' + encodeURIComponent(item.name || item.id),
+            label: seo.plainText(item.title_en) || seo.plainText(item.title_fr) || item.name || item.id
+        };
         if (type === 'organizations') {
             return {
                 path: '/organizations/' + encodeURIComponent(item.name),
@@ -293,10 +332,11 @@ function staticSnapshot(type, items = []) {
         return null;
     }).filter(Boolean);
     return shell({
+        pagination,
         breadcrumbs: type === 'home' ? [] : [{ label: 'CanQuery', path: '/' }, { label: copy.title }],
         title: copy.title,
         summary: copy.summary,
-        linksTitle: dynamicLinks.length ? (type === 'places' ? 'Featured places' : 'Publishing organizations') : 'Explore CanQuery',
+        linksTitle: dynamicLinks.length ? (type === 'places' ? 'Featured places' : type === 'datasets' ? 'Open datasets' : 'Publishing organizations') : 'Explore CanQuery',
         links: dynamicLinks.length ? dynamicLinks : copy.links
     });
 }

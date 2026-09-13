@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { fetchOrganization, searchDatasets } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
-import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
+import useCatalogPage from '../hooks/useCatalogPage.js';
+import CatalogPagination from '../components/CatalogPagination.jsx';
+import { PAGE_SIZE } from '../utils/catalogPagination.js';
 import { track } from '../utils/analytics.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
@@ -55,18 +57,20 @@ export default function OrganizationPage() {
     }
   }, [debouncedQuery, name]);
 
-  const { items, loading, loadingMore, error: searchError, hasMore, loadMore } = usePaginatedCollection(
+  const collection = useCatalogPage(
     cursor => searchDatasets({
       q: debouncedQuery || undefined,
       org: name,
       mappable: mappable || undefined,
-      limit: 20,
+      limit: PAGE_SIZE,
       cursor,
     }),
-    [name, debouncedQuery, mappable]
+    [name, debouncedQuery, mappable],
+    Boolean(debouncedQuery || mappable)
   );
+  const { items, loading, error: searchError } = collection;
 
-  if (notFound) {
+  if (notFound || collection.notFound) {
     return <div className="text-center py-28"><h1 className="text-2xl font-bold font-display">{t('common.organization_not_found')}</h1></div>;
   }
   if (error) return <div className="max-w-5xl mx-auto px-4 py-8"><div className="alert alert-error">{error.message}</div></div>;
@@ -128,20 +132,7 @@ export default function OrganizationPage() {
             items.length === 0 ? <div className="text-center py-14 text-base-content/50">{t('orgs.no_datasets')}</div> :
               items.map(dataset => <DatasetRow key={dataset.id} dataset={dataset} />)}
       </section>
-      {hasMore && (
-        <div className="text-center mt-6">
-          <button
-            className="btn btn-outline btn-sm rounded-full px-7"
-            onClick={() => {
-              track('catalog_filter', { action: 'load_more', organization: name });
-              loadMore();
-            }}
-            disabled={loadingMore}
-          >
-            {loadingMore ? t('home.loading') : t('home.load_more')}
-          </button>
-        </div>
-      )}
+      {!searchError && !collection.notFound && <CatalogPagination {...collection} />}
     </div>
   );
 }

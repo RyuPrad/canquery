@@ -126,9 +126,9 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('link', { name: /Ottawa/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Toronto/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Montréal/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Québec/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /Québec/ })[0]).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Laval/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: /Vancouver/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /^Vancouver/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Calgary/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Edmonton/ })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /Winnipeg/ })).toHaveLength(1);
@@ -139,12 +139,12 @@ describe('PlacesPage', () => {
     expect(screen.getByRole('link', { name: /Mississauga/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Caledon/ })).toBeInTheDocument();
     expect(screen.getAllByText('Broader-area coverage')).toHaveLength(2);
-    await waitFor(() => expect(fetchFeaturedPlaces).toHaveBeenCalledTimes(1));
-    expect(fetchPlaces).not.toHaveBeenCalled();
+    await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith(expect.objectContaining({ featured: true, limit: 50, cursor: '0' })));
+    expect(fetchFeaturedPlaces).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Find a city, region or province...' }), {
       target: { value: 'Toronto' }
     });
-    await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith({ q: 'Toronto', limit: 100 }));
+    await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith(expect.objectContaining({ q: 'Toronto', limit: 50, cursor: '0' })));
   });
 });

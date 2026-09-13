@@ -138,7 +138,7 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         expect(meta.description.length).toBeLessThanOrEqual(160);
         const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
         expect(breadcrumb.itemListElement).toEqual([
-            expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/' }),
+            expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/datasets' }),
             expect.objectContaining({
                 position: 2,
                 item: 'https://canquery.com/datasets/water-quality'
@@ -198,7 +198,7 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         const meta = seo.resourceMeta(base);
         const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
         expect(breadcrumb.itemListElement).toEqual([
-            expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/' }),
+            expect.objectContaining({ position: 1, name: 'Datasets', item: 'https://canquery.com/datasets' }),
             expect.objectContaining({
                 position: 2, name: 'Water Quality',
                 item: 'https://canquery.com/datasets/water-quality'

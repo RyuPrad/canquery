@@ -63,6 +63,18 @@ function isGenericResourceName(value, format) {
         (normalizedFormat && normalized === normalizedFormat);
 }
 
+function isPeriodName(name) {
+    return /^\d{4}(?:-\d{2}(?:-\d{2})?)?(?:\s*(?:to|au|à|[-–—/])\s*\d{4}(?:-\d{2}(?:-\d{2})?)?)?$/i.test(name) ||
+        /^(?:[QT][1-4]\s+\d{4}|\d{4}\s+[QT][1-4])$/i.test(name);
+}
+
+function resourceSubject(resource) {
+    const name = pick(resource.name_en, resource.name_fr);
+    const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
+    if (datasetTitle && isPeriodName(name)) return datasetTitle + ' — ' + name;
+    return (isGenericResourceName(name, resource.format) ? datasetTitle : name) || datasetTitle;
+}
+
 function titleContainsFormat(value, format) {
     const normalizedFormat = collapse(format);
     if (!normalizedFormat) return true;
@@ -74,11 +86,15 @@ function resourceTitleBase(resource, max = null, lang = 'en') {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const format = collapse(resource.format).toUpperCase();
-    const base = (isGenericResourceName(name, format) ? datasetTitle : name) || datasetTitle || 'Resource';
+    let base = resourceSubject(resource) || 'Resource';
     const languages = resourceLanguages(resource).map(code => lang === 'fr'
         ? (code === 'fr' ? 'français' : 'anglais') : (code === 'fr' ? 'French' : 'English'));
     const suffixParts = [...languages, format && !titleContainsFormat(base, format) ? format : ''].filter(Boolean);
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
+    if (max && datasetTitle && isPeriodName(name)) {
+        const period = ' — ' + name;
+        base = truncate(datasetTitle, Math.max(12, max - suffix.length - period.length)) + period;
+    }
     return (max ? truncate(base, Math.max(12, max - suffix.length)) : base) + suffix;
 }
 
@@ -146,6 +162,7 @@ function classifyRoute(pathname) {
         const id = decodePathSegment(m[1]);
         return id == null ? { type: 'other' } : { type: 'organization', id };
     }
+    if (/^\/datasets\/?$/.test(p)) return { type: 'datasets' };
     if (/^\/places\/?$/.test(p)) return { type: 'places' };
     if (/^\/insights\/?$/.test(p)) return { type: 'insights' };
     if (/^\/organizations\/?$/.test(p)) return { type: 'organizations' };
@@ -155,6 +172,8 @@ function classifyRoute(pathname) {
 }
 
 const STATIC_META = {
+    datasets: { path: '/datasets', title: 'Browse all Canadian datasets - CanQuery',
+        description: 'Browse the complete Canadian open data catalogue: downloadable files, live tables and maps from federal, provincial and municipal publishers.' },
     home: { title: DEFAULT_TITLE, description: DEFAULT_DESC, path: '/' },
     insights: {
         title: 'Insights: Top 100 downloaded datasets - CanQuery',
@@ -394,7 +413,7 @@ function datasetMeta(dataset, resources) {
         jsonLd: [
             buildDatasetJsonLd(dataset, resources),
             buildBreadcrumbJsonLd([
-                { name: 'Datasets', path: '/' },
+                { name: 'Datasets', path: '/datasets' },
                 { name: title, path: '/datasets/' + encodeURIComponent(slug) }
             ])
         ],
@@ -403,9 +422,7 @@ function datasetMeta(dataset, resources) {
 
 function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = {}) {
     const capability = classifyResource(resource).capability;
-    const name = pick(resource.name_en, resource.name_fr);
-    const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
-    const subject = (isGenericResourceName(name, resource.format) ? datasetTitle : name) || datasetTitle || 'open data';
+    const subject = resourceSubject(resource) || 'open data';
     const language = resourceLanguages(resource).map(lang => lang === 'fr' ? 'French' : 'English').join('/');
     const format = [language, plainText(resource.format).toUpperCase()].filter(Boolean).join(' ');
     const mapped = Boolean(resource.map_provider || resource.map?.available);
@@ -475,7 +492,7 @@ function resourceMeta(resource) {
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',
         jsonLd: [buildResourceJsonLd(resource, description), buildBreadcrumbJsonLd([
-            { name: 'Datasets', path: '/' },
+            { name: 'Datasets', path: '/datasets' },
             datasetSlug && ds ? {
                 name: ds,
                 path: '/datasets/' + encodeURIComponent(datasetSlug)

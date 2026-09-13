@@ -4,6 +4,7 @@ const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const catalogRead = require('../db/catalogReadQueries');
+const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
 
 // The built index.html is immutable for the life of the process (a deploy
 // restarts the API), so read it once and reuse.
@@ -28,24 +29,51 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
 }
 
 const STATIC_PATHS = Object.freeze({
-    home: '/', insights: '/insights', organizations: '/organizations',
+    home: '/', datasets: '/datasets', insights: '/insights', organizations: '/organizations',
     places: '/places', docs: '/docs', privacy: '/privacy'
 });
 
 function searchArgs(overrides) {
     return {
         q: null, org: null, format: null, keyword: null, place: null,
-        source: null, mappable: null, limit: 12, offset: 0, ...overrides
+        source: null, mappable: null, limit: PAGE_SIZE + 1, offset: 0, ...overrides
     };
 }
 
 // Resolve the head, semantic initial body, canonical path and response status
 // in one pass. The same HTML is sent to every user agent; React replaces the
 // bounded snapshot when the application starts.
-async function resolvePage(reqPath, deps = catalogRead) {
+function missingPage(path) {
+    return { status: 404, meta: seoMeta.notFoundMeta(path),
+        body: seoSnapshot.errorSnapshot('Page not found', 'This catalogue page does not exist.') };
+}
+
+function paginatedPage(path, meta, rows, page, render) {
+    const pagination = pageSlice(rows, page, path);
+    if (page > 1 && !pagination.items.length) return missingPage(pagePath(path, page));
+    const canonical = seoMeta.SITE_URL + pagePath(path, page);
+    const jsonLd = meta.jsonLd?.map(item => item['@type'] === 'CollectionPage' ? {
+        ...item, url: canonical,
+        mainEntity: { ...item.mainEntity,
+            itemListElement: item.mainEntity.itemListElement.map(entry => ({
+                ...entry, position: entry.position + (page - 1) * PAGE_SIZE
+            })) }
+    } : item);
+    return { status: 200, canonicalPath: path, paginated: true,
+        meta: { ...meta, canonical, ...(jsonLd ? { jsonLd } : {}) },
+        body: render(pagination) };
+}
+
+async function resolvePage(requestTarget, deps = catalogRead) {
+    const [reqPath, ...query] = requestTarget.split('?');
+    const params = new URLSearchParams(query.join('?'));
     const blog = resolveBlogPage(reqPath);
     if (blog) return blog;
     const route = seoMeta.classifyRoute(reqPath);
+    const paginated = ['dataset', 'datasets', 'organization', 'organizations', 'place', 'places'].includes(route.type);
+    const page = paginated ? pageNumber(params) : 1;
+    if (page === null) return missingPage(requestTarget);
+    const offset = (page - 1) * PAGE_SIZE;
     if (route.type === 'dataset') {
         const dataset = await deps.getDatasetByIdOrName(route.id);
         if (!dataset) return {
@@ -55,12 +83,9 @@ async function resolvePage(reqPath, deps = catalogRead) {
         };
         const resources = await deps.listResourcesForDataset(dataset.id);
         const canonicalPath = '/datasets/' + encodeURIComponent(dataset.name || dataset.id);
-        return {
-            status: 200,
-            canonicalPath,
-            meta: seoMeta.datasetMeta(dataset, resources),
-            body: seoSnapshot.datasetSnapshot(dataset, resources)
-        };
+        return paginatedPage(canonicalPath, seoMeta.datasetMeta(dataset, resources),
+            resources.slice(offset, offset + PAGE_SIZE + 1), page,
+            pagination => seoSnapshot.datasetSnapshot(dataset, resources, pagination));
     }
     if (route.type === 'resource') {
         const resource = await deps.getResourceById(route.id);
@@ -84,14 +109,10 @@ async function resolvePage(reqPath, deps = catalogRead) {
             meta: seoMeta.notFoundMeta(reqPath),
             body: seoSnapshot.errorSnapshot('Place not found', 'The requested place is not available in the CanQuery directory.')
         };
-        const datasets = await deps.searchDatasets(searchArgs({ place: place.slug || place.id }));
+        const datasets = await deps.searchDatasets(searchArgs({ place: place.slug || place.id, offset }));
         const canonicalPath = '/places/' + encodeURIComponent(place.slug || place.id);
-        return {
-            status: 200,
-            canonicalPath,
-            meta: seoMeta.placeMeta(place, datasets),
-            body: seoSnapshot.placeSnapshot(place, datasets)
-        };
+        return paginatedPage(canonicalPath, seoMeta.placeMeta(place, datasets), datasets, page,
+            pagination => seoSnapshot.placeSnapshot(place, pagination.items, pagination));
     }
     if (route.type === 'organization') {
         const organization = await deps.getOrganizationByName(route.id);
@@ -100,14 +121,10 @@ async function resolvePage(reqPath, deps = catalogRead) {
             meta: seoMeta.notFoundMeta(reqPath),
             body: seoSnapshot.errorSnapshot('Organization not found', 'The requested organization is not available in the CanQuery directory.')
         };
-        const datasets = await deps.searchDatasets(searchArgs({ org: organization.name }));
+        const datasets = await deps.searchDatasets(searchArgs({ org: organization.name, offset }));
         const canonicalPath = '/organizations/' + encodeURIComponent(organization.name);
-        return {
-            status: 200,
-            canonicalPath,
-            meta: seoMeta.organizationMeta(organization, datasets),
-            body: seoSnapshot.organizationSnapshot(organization, datasets)
-        };
+        return paginatedPage(canonicalPath, seoMeta.organizationMeta(organization, datasets), datasets, page,
+            pagination => seoSnapshot.organizationSnapshot(organization, pagination.items, pagination));
     }
     if (route.type === 'other') {
         return {
@@ -117,13 +134,17 @@ async function resolvePage(reqPath, deps = catalogRead) {
         };
     }
     let items = [];
-    if (route.type === 'organizations') {
-        items = (await deps.listOrganizations({ source: null, place: null, limit: 12, offset: 0 })).slice(0, 12);
+    if (route.type === 'datasets') {
+        items = await deps.searchDatasets(searchArgs({ offset }));
+    } else if (route.type === 'organizations') {
+        items = await deps.listOrganizations({ q: null, source: null, place: null, limit: PAGE_SIZE + 1, offset });
     } else if (route.type === 'places') {
         items = await deps.listPlaces({
-            q: null, kind: null, parent: null, featured: true, limit: 12, offset: 0
+            q: null, kind: null, parent: null, featured: true, limit: PAGE_SIZE + 1, offset
         });
     }
+    if (paginated) return paginatedPage(STATIC_PATHS[route.type], seoMeta.staticMeta(route.type, reqPath), items, page,
+        pagination => seoSnapshot.staticSnapshot(route.type, pagination.items, pagination));
     return {
         status: 200,
         canonicalPath: STATIC_PATHS[route.type],
@@ -154,7 +175,7 @@ function serveSpa(distDir) {
         const template = loadTemplate(distDir);
         let page;
         try {
-            page = await resolvePage(req.path);
+            page = await resolvePage(req.originalUrl);
         } catch (err) {
             console.error('SPA page resolution failed:', err.message);
             page = {
@@ -166,9 +187,16 @@ function serveSpa(distDir) {
                 )
             };
         }
-        if (page.status === 200 && page.canonicalPath && requestPath(req) !== page.canonicalPath) {
+        const query = new URLSearchParams(querySuffix(req));
+        const normalizeFirst = page.paginated && query.get('page') === '1';
+        if (page.status === 200 && page.canonicalPath && (requestPath(req) !== page.canonicalPath || normalizeFirst)) {
+            let suffix = querySuffix(req);
+            if (normalizeFirst) {
+                query.delete('page');
+                suffix = query.size ? '?' + query.toString() : '';
+            }
             res.set('Cache-Control', 'public, max-age=3600');
-            return res.redirect(301, page.canonicalPath + querySuffix(req));
+            return res.redirect(301, page.canonicalPath + suffix);
         }
         let html = seoMeta.renderHtml(template, page.meta, page.body);
         html = injectAnalytics(html);

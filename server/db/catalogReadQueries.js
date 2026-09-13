@@ -170,6 +170,7 @@ async function getResourceById(id) {
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
                d.name AS dataset_name, d.title_en AS dataset_title_en, d.title_fr AS dataset_title_fr,
+               d.notes_en AS dataset_notes_en, d.notes_fr AS dataset_notes_fr,
                o.name AS org_name, o.title_en AS org_title_en, o.title_fr AS org_title_fr,
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
                ir.byte_size AS ingested_byte_size, ir.columns AS ingested_columns,
@@ -242,8 +243,8 @@ async function getResourceMapById(id) {
     return result.rows[0] || null;
 }
 
-async function listOrganizations({ source, place, limit, offset }) {
-    const result = await pool.query(`WITH RECURSIVE selected_place AS (
+async function listOrganizations({ q, source, place, limit, offset }, db = pool) {
+    const result = await db.query(`WITH RECURSIVE selected_place AS (
         SELECT p.id, p.parent_id, 0 AS depth FROM places p
         WHERE $2::text IS NOT NULL AND (p.id = $2 OR p.slug = $2)
         UNION ALL
@@ -275,9 +276,10 @@ async function listOrganizations({ source, place, limit, offset }) {
             JOIN selected_place sp ON sp.id = dp.place_id
             WHERE d.org_id = o.id AND (sp.depth = 0 OR dp.includes_descendants)
         ))
+        AND ($5::text IS NULL OR position(lower($5) in lower(concat_ws(' ', o.name, o.title_en, o.title_fr))) > 0)
         ORDER BY dataset_count DESC, o.name ASC
         LIMIT $3 OFFSET $4
-    `, [source || null, place || null, limit, offset]);
+    `, [source || null, place || null, limit, offset, q || null]);
     return result.rows;
 }
 
@@ -373,7 +375,7 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }) {
         LEFT JOIN places parent_place ON parent_place.id = p.parent_id
         ORDER BY CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
                      WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END,
-                 p.name_en
+                 p.name_en, p.id
         LIMIT $5 OFFSET $6
     `, [q || null, kind || null, parent || null, featured, limit, offset]);
     return result.rows;
@@ -439,52 +441,33 @@ async function getStats() {
     return result.rows[0];
 }
 
-const SITEMAP_DATASET_PREDICATE = `EXISTS (
-        SELECT 1 FROM resources r
-        WHERE r.dataset_id = d.id
-          AND (r.datastore_active
-               OR EXISTS (SELECT 1 FROM ingested_resources ir
-                          WHERE ir.resource_id = r.id AND ir.status = 'ready')
-               OR EXISTS (SELECT 1 FROM resource_maps rm WHERE rm.resource_id = r.id)))`;
-
-const SITEMAP_RESOURCE_PREDICATE = `(r.datastore_active
-        OR EXISTS (SELECT 1 FROM ingested_resources ir
-                   WHERE ir.resource_id = r.id AND ir.status = 'ready')
-        OR EXISTS (SELECT 1 FROM resource_maps rm WHERE rm.resource_id = r.id))`;
-
-async function countSitemapDatasets() {
-    const result = await pool.query(`SELECT count(*)::int AS n FROM datasets d WHERE ${SITEMAP_DATASET_PREDICATE}`);
+// Every public catalogue detail page is eligible, including download-only files.
+// Resource pages require a parent dataset, matching getResourceById's join.
+async function countSitemapDatasets(db = pool) {
+    const result = await db.query('SELECT count(*)::int AS n FROM datasets');
     return result.rows[0].n;
 }
 
-async function listDatasetSitemap({ limit, offset }) {
-    const result = await pool.query(`
+async function listDatasetSitemap({ limit, offset }, db = pool) {
+    const result = await db.query(`
         SELECT d.id, d.name, d.metadata_modified FROM datasets d
-        WHERE ${SITEMAP_DATASET_PREDICATE}
         ORDER BY d.id LIMIT $1 OFFSET $2
     `, [limit, offset]);
     return result.rows;
 }
 
-async function countSitemapResources() {
-    const result = await pool.query(`
-        SELECT count(*)::int AS n FROM resources r
-        WHERE ${SITEMAP_RESOURCE_PREDICATE}
+async function countSitemapResources(db = pool) {
+    const result = await db.query(`
+        SELECT count(*)::int AS n FROM resources r JOIN datasets d ON d.id = r.dataset_id
     `);
     return result.rows[0].n;
 }
 
-async function listResourceSitemap({ limit, offset }) {
-    const result = await pool.query(`
-        WITH eligible_resources AS MATERIALIZED (
-            SELECT r.id, r.dataset_id
-            FROM resources r
-            WHERE ${SITEMAP_RESOURCE_PREDICATE}
-        )
-        SELECT eligible.id, d.metadata_modified
-        FROM eligible_resources eligible
-        JOIN datasets d ON d.id = eligible.dataset_id
-        ORDER BY eligible.id LIMIT $1 OFFSET $2
+async function listResourceSitemap({ limit, offset }, db = pool) {
+    const result = await db.query(`
+        SELECT r.id, d.metadata_modified FROM resources r
+        JOIN datasets d ON d.id = r.dataset_id
+        ORDER BY r.id LIMIT $1 OFFSET $2
     `, [limit, offset]);
     return result.rows;
 }

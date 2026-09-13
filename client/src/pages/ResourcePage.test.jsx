@@ -70,7 +70,7 @@ describe('ResourcePage navigation', () => {
     );
 
     const breadcrumb = await screen.findByRole('navigation', { name: ariaLabel });
-    expect(within(breadcrumb).getByRole('link', { name: rootLabel })).toHaveAttribute('href', '/');
+    expect(within(breadcrumb).getByRole('link', { name: rootLabel })).toHaveAttribute('href', '/datasets');
     expect(within(breadcrumb).getByRole('link', { name: datasetLabel }))
       .toHaveAttribute('href', '/datasets/dataset-slug-a');
     expect(within(breadcrumb).getByText(resourceLabel)).toHaveAttribute('aria-current', 'page');

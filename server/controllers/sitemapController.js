@@ -50,8 +50,8 @@ const robots = (req, res) => {
     res.send('User-agent: *\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 
-// GET /sitemap.xml - the index: static/place pages plus quality-gated dataset
-// and interactive-resource chunks.
+// GET /sitemap.xml - the index: static/place pages plus complete dataset
+// and resource catalogue chunks.
 const sitemapIndex = catchAsync(async (req, res) => {
     const [datasetTotal, resourceTotal] = await Promise.all([
         catalogRead.countSitemapDatasets(),
@@ -84,6 +84,7 @@ const sitemapPages = (req, res) => {
     res.send(
         urlset([
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0' },
+            { loc: SITE_URL + '/datasets', changefreq: 'daily', priority: '0.9' },
             { loc: SITE_URL + '/insights', changefreq: 'daily', priority: '0.9' },
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7' },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8' },
@@ -142,9 +143,7 @@ const sitemapDatasets = catchAsync(async (req, res, next) => {
     res.send(urlset(entries));
 });
 
-// GET /sitemap-resources-:n.xml - datastore, locally ingested, and mapped
-// resource pages only. Loadable/file-only resources remain discoverable through
-// their dataset page without expanding the crawl surface.
+// GET /sitemap-resources-:n.xml - all public resource detail pages.
 const sitemapResources = catchAsync(async (req, res, next) => {
     const n = chunkNumber(req.params.n);
     if (n === null) return next(new AppError('Not found', 404));

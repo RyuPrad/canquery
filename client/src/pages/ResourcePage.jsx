@@ -389,7 +389,7 @@ function ResourceExplorer({ id }) {
           <Breadcrumbs
             label={t('breadcrumbs.label')}
             items={[
-              { label: t('nav.datasets'), to: '/' },
+              { label: t('nav.datasets'), to: '/datasets' },
               {
                 label: resource.dataset.title?.[lang] || resource.dataset.title?.en || resource.dataset.name,
                 to: `/datasets/${resource.dataset.name || resource.dataset.id}`
@@ -430,6 +430,7 @@ function ResourceExplorer({ id }) {
           )}
           {resource.last_modified && <p className="text-xs text-base-content/60">{t('preview.resource_updated')} {new Date(resource.last_modified).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA')}</p>}
           <Provenance provenance={resource.provenance} compact />
+          {resource.presentation?.context?.[lang] && <p className="max-w-3xl whitespace-pre-wrap break-words text-base-content/70">{resource.presentation.context[lang]}</p>}
           <CatalogOverview presentation={resource.presentation} />
         </div>
       )}

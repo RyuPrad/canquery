@@ -28,6 +28,8 @@ function resourcePresentation(row) {
     }
     return {
         title, summary,
+        context: { en: truncate(localized(row, 'dataset_notes', 'en'), 1200),
+            fr: truncate(localized(row, 'dataset_notes', 'fr'), 1200) },
         formats: row.format ? [plainText(row.format).toUpperCase()] : [],
         languages: resourceLanguages(row),
         capabilities: { table: ['datastore', 'ingested'].includes(mode) ? 'ready' : mode === 'ingestable' ? 'loadable' : null,

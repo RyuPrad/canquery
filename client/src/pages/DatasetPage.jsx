@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { fetchDataset, enqueueIngest } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import useJobPolling from '../hooks/useJobPolling.js';
@@ -7,6 +7,8 @@ import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import { track } from '../utils/analytics.js';
+import CatalogPagination from '../components/CatalogPagination.jsx';
+import { PAGE_SIZE, pageNumber } from '../utils/catalogPagination.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
@@ -34,7 +36,6 @@ const FMT_STYLES = {
   XML: { color: '#c4b5fd', background: 'rgba(167,139,250,0.13)' },
 };
 const FMT_FALLBACK = { color: '#9aa7bd', background: 'rgba(154,167,189,0.12)' };
-const INITIAL_RESOURCE_COUNT = 12;
 
 function FormatTile({ format }) {
   const style = FMT_STYLES[format] || FMT_FALLBACK;
@@ -84,7 +85,8 @@ function DatasetExplorer({ idOrName }) {
   const [unlockJobs, setUnlockJobs] = useState({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [highlightId, setHighlightId] = useState(null);
-  const [showAllResources, setShowAllResources] = useState(false);
+  const navigate = useNavigate();
+  const page = pageNumber(searchParams);
   const handledHighlightRef = useRef(null);
   const openedRef = useRef(false);
 
@@ -137,11 +139,15 @@ function DatasetExplorer({ idOrName }) {
   // one to open, then drop the param so a refresh doesn't re-trigger it.
   useEffect(() => {
     const focusId = searchParams.get('highlight');
-    if (!focusId || !dataset) return;
+    if (!focusId || !dataset || page === null) return;
     if (handledHighlightRef.current === focusId) return;
     const resourceIndex = (dataset.resources || []).findIndex(resource => resource.id === focusId);
-    if (resourceIndex >= INITIAL_RESOURCE_COUNT && !showAllResources) {
-      setShowAllResources(true);
+    const targetPage = Math.floor(resourceIndex / PAGE_SIZE) + 1;
+    if (resourceIndex >= 0 && targetPage !== page) {
+      const next = new URLSearchParams(searchParams);
+      if (targetPage > 1) next.set('page', String(targetPage));
+      else next.delete('page');
+      setSearchParams(next, { replace: true });
       return;
     }
     const el = document.getElementById('res-' + focusId);
@@ -153,7 +159,7 @@ function DatasetExplorer({ idOrName }) {
     const next = new URLSearchParams(searchParams);
     next.delete('highlight');
     setSearchParams(next, { replace: true });
-  }, [dataset, searchParams, setSearchParams, showAllResources]);
+  }, [dataset, searchParams, setSearchParams, page]);
 
   // The un-highlight timer lives on highlightId, not in the effect above:
   // dropping the param re-runs that effect, and a cleanup there would cancel
@@ -164,7 +170,15 @@ function DatasetExplorer({ idOrName }) {
     return () => clearTimeout(timer);
   }, [highlightId]);
 
-  if (notFound) {
+  useEffect(() => {
+    if (searchParams.getAll('page').length === 1 && searchParams.get('page') === '1') {
+      const next = new URLSearchParams(searchParams);
+      next.delete('page');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  if (notFound || page === null || (dataset && page > 1 && (page - 1) * PAGE_SIZE >= dataset.resources.length)) {
     return (
       <div className="text-center py-28 space-y-3 cq-fade">
         <h1 className="text-2xl font-bold font-display">{t('common.dataset_not_found')}</h1>
@@ -187,16 +201,14 @@ function DatasetExplorer({ idOrName }) {
 
   const handleUnlockDone = () => setRefreshKey(k => k + 1);
   const queryable = (mode) => mode === 'datastore' || mode === 'ingested';
-  const visibleResources = showAllResources
-    ? dataset.resources
-    : dataset.resources.slice(0, INITIAL_RESOURCE_COUNT);
+  const visibleResources = dataset.resources.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 cq-fade">
       <Breadcrumbs
         label={t('breadcrumbs.label')}
         items={[
-          { label: t('nav.datasets'), to: '/' },
+          { label: t('nav.datasets'), to: '/datasets' },
           { label: pick(dataset.title) || dataset.name || dataset.id }
         ]}
       />
@@ -265,17 +277,18 @@ function DatasetExplorer({ idOrName }) {
 
       <div className="flex flex-wrap gap-1.5">
         {(contentLang === 'fr' ? dataset.keywords?.fr : dataset.keywords?.en)?.map(kw => (
-          <Link
+          <button
+            type="button"
             key={kw}
-            to={'/?keyword=' + encodeURIComponent(kw)}
+            onClick={() => navigate('/?keyword=' + encodeURIComponent(kw))}
             className="cq-pill !text-xs !font-medium"
-            title={'Find every dataset tagged ' + kw}
+            title={t('dataset.keyword_search') + ' ' + kw}
             data-analytics-event="catalog_search"
             data-analytics-query={kw}
             data-analytics-source="dataset_keyword"
           >
             {kw}
-          </Link>
+          </button>
         ))}
       </div>
 
@@ -294,9 +307,9 @@ function DatasetExplorer({ idOrName }) {
           >
             <FormatTile format={resource.format} />
             <div className="flex-1 min-w-48">
-              <div className="font-medium text-[0.92rem] leading-snug">
+              <Link to={'/resources/' + resource.id} className="font-medium text-[0.92rem] leading-snug hover:underline">
                 {resource.presentation?.title?.[contentLang] || pick(resource.name) || resource.format || resource.id}
-              </div>
+              </Link>
               <div className="text-xs text-base-content/40 mt-0.5 font-mono">
                 {resource.format}
                 {resource.size_bytes ? ' · ' + Math.round(resource.size_bytes / 1024) + ' KB' : ''}
@@ -408,21 +421,7 @@ function DatasetExplorer({ idOrName }) {
           </div>
         ))}
       </div>
-      {dataset.resources.length > INITIAL_RESOURCE_COUNT && (
-        <div className="text-center pt-1">
-          <button
-            className="btn btn-sm btn-outline rounded-full border-base-content/20 px-6"
-            onClick={() => setShowAllResources(value => !value)}
-            aria-expanded={showAllResources}
-            data-analytics-event="resource_view"
-            data-analytics-dataset-id={dataset.id}
-            data-analytics-view={showAllResources ? 'fewer_resources' : 'all_resources'}
-          >
-            {showAllResources ? t('dataset.show_fewer_resources') : t('dataset.show_all_resources')}
-            <span className="cq-chip cq-chip-mono ml-1">{dataset.resources.length}</span>
-          </button>
-        </div>
-      )}
+      <CatalogPagination page={page} hasMore={page * PAGE_SIZE < dataset.resources.length} path={'/datasets/' + encodeURIComponent(dataset.name || dataset.id)} />
       <LocalGuides dataset={dataset.id} />
     </div>
   );

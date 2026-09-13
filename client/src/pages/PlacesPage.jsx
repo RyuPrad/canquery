@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchFeaturedPlaces, fetchPlaces } from '../api/catalog.js';
+import { fetchPlaces } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import { MapPinIcon, ArrowRightIcon, MapIcon, SearchIcon } from '../components/Icons.jsx';
+import CatalogPagination from '../components/CatalogPagination.jsx';
+import useCatalogPage from '../hooks/useCatalogPage.js';
+import { PAGE_SIZE } from '../utils/catalogPagination.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import { track } from '../utils/analytics.js';
 
 export default function PlacesPage() {
   const { lang, t } = useLang();
-  const [places, setPlaces] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query, 250);
 
@@ -19,23 +19,11 @@ export default function PlacesPage() {
     if (debouncedQuery) track('place_search', { query: debouncedQuery, language: lang });
   }, [debouncedQuery, lang]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const request = debouncedQuery
-      ? fetchPlaces({ q: debouncedQuery, limit: 100 })
-      : fetchFeaturedPlaces();
-    request
-      .then(env => {
-        if (!cancelled) {
-          setPlaces(env.data || []);
-          setError(null);
-        }
-      })
-      .catch(err => { if (!cancelled) setError(err); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [debouncedQuery]);
+  const collection = useCatalogPage(cursor => fetchPlaces({
+    q: debouncedQuery || undefined, featured: debouncedQuery ? undefined : true,
+    limit: PAGE_SIZE, cursor
+  }), [debouncedQuery], Boolean(debouncedQuery));
+  const { items: places, loading, error } = collection;
 
   const placeCard = (place) => (
     <Link
@@ -53,6 +41,7 @@ export default function PlacesPage() {
       </div>
       <h2 className="font-display font-semibold text-lg mt-4">{place.name?.[lang] || place.name?.en}</h2>
       <p className="text-xs uppercase tracking-wider text-base-content/40 mt-1">{place.type?.[lang] || place.type?.en || place.kind}</p>
+      {place.parent && <p className="text-sm text-base-content/55 mt-2">{place.parent.name?.[lang] || place.parent.name?.en}</p>}
       <div className="flex flex-wrap gap-2 mt-4">
         <span className="cq-chip cq-chip-mono">{place.dataset_count} {t('places.datasets')}</span>
         {place.direct_dataset_count === 0 && place.dataset_count > 0 && (
@@ -72,7 +61,7 @@ export default function PlacesPage() {
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
       <div className="max-w-3xl">
         <span className="cq-chip cq-chip-mono"><MapPinIcon size={11} />{t('places.local_data')}</span>
-        <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight mt-4">{t('places.title')}</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight mt-4">{collection.notFound ? t('common.not_found') : t('places.title')}</h1>
         <p className="text-base-content/60 mt-3 leading-relaxed">{t('places.subtitle')}</p>
       </div>
       <div className="cq-search cq-search-sm max-w-lg mt-7">
@@ -125,6 +114,7 @@ export default function PlacesPage() {
             <h2 className="font-display font-semibold text-xl mb-3">{t('places.other_places')}</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{otherPlaces.map(placeCard)}</div>
           </section>}
+          {!collection.notFound && <CatalogPagination {...collection} />}
           {places.length === 0 && debouncedQuery && (
             <p className="text-center py-12 text-base-content/50">{t('places.not_found')}</p>
           )}

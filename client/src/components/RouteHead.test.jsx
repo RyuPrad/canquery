@@ -22,6 +22,7 @@ function Navigation() {
   return <><RouteHead />
     <Link to="/datasets/roads">Dataset</Link>
     <Link to="/resources/r1">Resource</Link>
+    <Link to="/datasets/roads?page=2">Second page</Link>
     <Link to="/resources/r1?sort=name#table">Sort</Link>
     <button onClick={() => navigate(-1)}>Back</button>
   </>;
@@ -109,4 +110,16 @@ test('preserves translated alternates while replacing the canonical on client na
   await waitFor(() => expect(document.title).toBe('Road guide'));
   expect(document.querySelectorAll('link[rel=canonical]')).toHaveLength(1);
   expect(document.querySelector('link[hreflang="fr-CA"]').href).toBe('https://canquery.com/fr/blog/routes');
+});
+
+
+test('updates pagination canonicals on the same pathname and restores them on Back', async () => {
+  start();
+  fireEvent.click(screen.getByText('Dataset'));
+  await waitFor(() => expect(document.title).toBe('Roads'));
+  fireEvent.click(screen.getByText('Second page'));
+  await waitFor(() => expect(document.querySelector('link[rel=canonical]').href).toBe('https://canquery.com/datasets/roads?page=2'));
+  expect(fetch).toHaveBeenLastCalledWith('/datasets/roads?page=2', expect.anything());
+  fireEvent.click(screen.getByText('Back'));
+  await waitFor(() => expect(document.querySelector('link[rel=canonical]').href).toBe('https://canquery.com/datasets/roads'));
 });
