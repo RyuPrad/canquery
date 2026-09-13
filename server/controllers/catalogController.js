@@ -56,6 +56,7 @@ const getResource = async (req, res) => {
 
 const listOrganizations = async (req, res) => {
     const result = await catalogService.listOrganizations({
+        q: cleanStr(req.query.q),
         source: cleanStr(req.query.source),
         place: cleanStr(req.query.place),
         limit: req.query.limit,

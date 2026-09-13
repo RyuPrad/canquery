@@ -33,6 +33,9 @@ export default function Navbar() {
           <NavLink to="/" end className={navClass}>
             {t('nav.datasets')}
           </NavLink>
+          <NavLink to="/datasets" className={navClass}>
+            {t('nav.browse')}
+          </NavLink>
           <NavLink to="/insights" className={navClass}>
             <SparklesIcon size={13} className="text-secondary" />
             {t('nav.insights')}

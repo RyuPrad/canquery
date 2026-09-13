@@ -223,10 +223,10 @@ const getOrganization = async (name) => {
     };
 };
 
-const listOrganizations = async ({ source, place, limit, cursor }) => {
+const listOrganizations = async ({ q, source, place, limit, cursor }) => {
     const lim = clampLimit(limit, 50, 100);
     const offset = parseCursor(cursor);
-    const rows = await catalogReadQueries.listOrganizations({ source, place, limit: lim + 1, offset });
+    const rows = await catalogReadQueries.listOrganizations({ q, source, place, limit: lim + 1, offset });
     const hasMore = rows.length > lim;
     const page = rows.slice(0, lim);
     const items = page.map((r) => ({

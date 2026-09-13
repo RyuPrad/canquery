@@ -81,13 +81,13 @@ describe('DatasetPage ingestion', () => {
     );
 
     const breadcrumb = await screen.findByRole('navigation', { name: ariaLabel });
-    expect(within(breadcrumb).getByRole('link', { name: rootLabel })).toHaveAttribute('href', '/');
+    expect(within(breadcrumb).getByRole('link', { name: rootLabel })).toHaveAttribute('href', '/datasets');
     expect(within(breadcrumb).getByText(currentLabel)).toHaveAttribute('aria-current', 'page');
   });
 
-  test('collapses long resource lists and expands a hidden deep-link target before focusing it', async () => {
+  test('opens the correct resource page for a highlight and keeps every file reachable', async () => {
     const env = datasetEnvelope('datastore');
-    env.data.resources = Array.from({ length: 15 }, (_, index) => ({
+    env.data.resources = Array.from({ length: 55 }, (_, index) => ({
       ...env.data.resources[0],
       id: 'resource-' + (index + 1),
       name: { en: 'Resource ' + (index + 1), fr: null },
@@ -96,16 +96,18 @@ describe('DatasetPage ingestion', () => {
     fetchDataset.mockResolvedValue(env);
 
     render(
-      <MemoryRouter initialEntries={['/datasets/dataset-a?highlight=resource-15']}>
+      <MemoryRouter initialEntries={['/datasets/dataset-a?highlight=resource-55']}>
         <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
       </MemoryRouter>
     );
 
-    expect(await screen.findByText('Resource 15')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Show fewer resources/i })).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.click(screen.getByRole('button', { name: /Show fewer resources/i }));
-    expect(screen.queryByText('Resource 15')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Show all resources/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(await screen.findByText('Resource 55')).toBeInTheDocument();
+    expect(screen.getByText('Page 2')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Resource 55' })).toHaveAttribute('href', '/resources/resource-55');
+    fireEvent.click(screen.getByRole('link', { name: 'Previous' }));
+    expect(await screen.findByText('Resource 1')).toBeInTheDocument();
+    expect(screen.queryByText('Resource 55')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Next' })).toHaveAttribute('href', '/datasets/dataset-a?page=2');
   });
 
   test('offers the map before a spatial snapshot has been loaded', async () => {
@@ -172,4 +174,22 @@ describe('DatasetPage ingestion', () => {
     await act(async () => { resolveDatasetB(datasetEnvelope('ingestable', 'b')); });
     expect(await screen.findByRole('heading', { name: 'Dataset B' })).toBeInTheDocument();
   });
+});
+
+
+test('links download-only files and keeps keyword search as an action', async () => {
+  const env = datasetEnvelope('file-only');
+  env.data.resources[0].format = 'PDF';
+  env.data.keywords.en = ['waiting times'];
+  fetchDataset.mockReset();
+  fetchDataset.mockResolvedValue(env);
+  render(<MemoryRouter initialEntries={['/datasets/dataset-a']}><Routes>
+    <Route path="/datasets/:idOrName" element={<DatasetPage />} />
+    <Route path="/" element={<p>Filtered search</p>} />
+  </Routes></MemoryRouter>);
+  expect(await screen.findByRole('link', { name: 'Resource A' })).toHaveAttribute('href', '/resources/resource-a');
+  expect(screen.queryByRole('link', { name: 'waiting times' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'waiting times' }));
+  expect(await screen.findByText('Filtered search')).toBeInTheDocument();
+  expect(enqueueIngest).not.toHaveBeenCalled();
 });

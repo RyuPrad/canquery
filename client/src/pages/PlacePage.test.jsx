@@ -48,7 +48,7 @@ describe('PlacePage', () => {
     expect(within(breadcrumb).getByText('Oshawa')).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText('Oshawa Hub')).toBeInTheDocument();
     expect(await screen.findByText('Road network')).toBeInTheDocument();
-    expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ place: 'oshawa-on', limit: 20 }));
+    expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ place: 'oshawa-on', limit: 50 }));
   });
 
   test('localizes the place breadcrumb in French', async () => {

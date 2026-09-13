@@ -6,6 +6,15 @@ import { createContext, useContext, useState, useCallback, useEffect } from 'rea
 // including the API docs prose (code samples and field names stay literal).
 export const STRINGS = {
   en: {
+    'nav.browse': 'Browse catalogue',
+    'catalogue.title': 'Browse all Canadian datasets',
+    'catalogue.description': 'Explore the complete catalogue, including downloadable files, live tables and maps.',
+    'pagination.label': 'Catalogue pages',
+    'pagination.previous': 'Previous',
+    'pagination.next': 'Next',
+    'pagination.page': 'Page',
+    'dataset.keyword_search': 'Find datasets tagged',
+
     "preview.title": "Data overview",
     "preview.formats": "Formats",
     "preview.languages": "File languages",
@@ -322,6 +331,15 @@ export const STRINGS = {
     'docs.ep_ops': 'Background-job health for uptime monitors: catalogue jobs plus local-map queue counts, failures and oldest pending/running work. Job status is pending, ok, stale or failed; the latest failed catalogue attempt returns 503 immediately without exposing its raw error. Expected cap skips remain visible without alarming.',
   },
   fr: {
+    'nav.browse': 'Catalogue',
+    'catalogue.title': 'Parcourir tous les jeux de données canadiens',
+    'catalogue.description': 'Explorez le catalogue complet : fichiers à télécharger, tableaux interactifs et cartes.',
+    'pagination.label': 'Pages du catalogue',
+    'pagination.previous': 'Précédente',
+    'pagination.next': 'Suivante',
+    'pagination.page': 'Page',
+    'dataset.keyword_search': 'Rechercher les jeux de données portant le mot-clé',
+
     "preview.title": "Aperçu des données",
     "preview.formats": "Formats",
     "preview.languages": "Langues des fichiers",

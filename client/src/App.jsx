@@ -4,6 +4,7 @@ import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
 import DatasetPage from './pages/DatasetPage'
+import DatasetsPage from './pages/DatasetsPage.jsx'
 import ResourcePage from './pages/ResourcePage'
 import OrganizationsPage from './pages/OrganizationsPage'
 import OrganizationPage from './pages/OrganizationPage'
@@ -23,10 +24,11 @@ const BlogPage = lazy(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazy(() => import('./pages/InsightsPage'))
 
 function ScrollToTop() {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
+  const page = new URLSearchParams(search).get('page')
   useEffect(() => {
     window.scrollTo(0, 0)
-  }, [pathname])
+  }, [pathname, page])
   return null
 }
 
@@ -55,6 +57,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/datasets" element={<DatasetsPage />} />
             <Route path="/datasets/:idOrName" element={<DatasetPage />} />
             <Route path="/resources/:id" element={<ResourcePage />} />
             <Route path="/organizations" element={<OrganizationsPage />} />

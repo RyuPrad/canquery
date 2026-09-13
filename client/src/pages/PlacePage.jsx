@@ -4,7 +4,9 @@ import { Link, useParams } from 'react-router-dom';
 import { fetchPlace, fetchSources, searchDatasets } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
-import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
+import useCatalogPage from '../hooks/useCatalogPage.js';
+import CatalogPagination from '../components/CatalogPagination.jsx';
+import { PAGE_SIZE } from '../utils/catalogPagination.js';
 import { writePlace } from '../utils/placeStore.js';
 import { track } from '../utils/analytics.js';
 import { useLang } from '../i18n.jsx';
@@ -46,16 +48,18 @@ export default function PlacePage() {
     return () => { cancelled = true; };
   }, [slug]);
 
-  const { items, meta, loading, loadingMore, error: searchError, hasMore, loadMore } = usePaginatedCollection(
+  const collection = useCatalogPage(
     cursor => searchDatasets({
       q: debouncedQuery || undefined,
       place: slug,
       mappable: mappable || undefined,
-      limit: 20,
+      limit: PAGE_SIZE,
       cursor
     }),
-    [slug, debouncedQuery, mappable]
+    [slug, debouncedQuery, mappable],
+    Boolean(debouncedQuery || mappable)
   );
+  const { items, meta, loading, error: searchError } = collection;
 
   const reportedSearch = useRef(null);
   useEffect(() => {
@@ -66,7 +70,7 @@ export default function PlacePage() {
     });
   }, [loading, searchError, debouncedQuery, slug, lang, items.length, meta]);
 
-  if (notFound) return <div className="text-center py-28"><h1 className="text-2xl font-bold font-display">{t('places.not_found')}</h1></div>;
+  if (notFound || collection.notFound) return <div className="text-center py-28"><h1 className="text-2xl font-bold font-display">{t('places.not_found')}</h1></div>;
   if (error) return <div className="max-w-5xl mx-auto px-4 py-8"><div className="alert alert-error">{error.message}</div></div>;
   if (!place) return <LoadingSpinner label={t('places.loading')} />;
 
@@ -189,7 +193,7 @@ export default function PlacePage() {
               </div> :
               items.map(dataset => <DatasetRow key={dataset.id} dataset={dataset} />)}
       </section>
-      {hasMore && <div className="text-center mt-6"><button className="btn btn-outline btn-sm rounded-full px-7" onClick={() => { track('catalog_filter', { action: 'load_more', place: slug }); loadMore(); }} disabled={loadingMore}>{loadingMore ? t('home.loading') : t('home.load_more')}</button></div>}
+      {!searchError && !collection.notFound && <CatalogPagination {...collection} />}
     </div>
   );
 }

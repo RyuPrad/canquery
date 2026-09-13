@@ -30,7 +30,8 @@ export function readSeoElements(html, responseUrl) {
   }
   const canonical = new URL(canonicals[0].getAttribute('href'), responseUrl);
   if (!['http:', 'https:'].includes(canonical.protocol) ||
-      canonical.pathname !== new URL(responseUrl).pathname) {
+      canonical.pathname !== new URL(responseUrl).pathname ||
+      JSON.stringify(canonical.searchParams.getAll('page')) !== JSON.stringify(new URL(responseUrl).searchParams.getAll('page'))) {
     throw new Error('SEO response belongs to a different page');
   }
   return elements.map(node => {

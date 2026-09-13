@@ -46,7 +46,7 @@ describe('OrganizationPage', () => {
     expect(screen.getByText('8 mappable')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Example' })).toHaveAttribute('href', '/places/example-on');
     expect(await screen.findByText('Road network')).toBeInTheDocument();
-    expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ org: 'city-works', limit: 20 }));
+    expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ org: 'city-works', limit: 50 }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Has a map' }));
     await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({

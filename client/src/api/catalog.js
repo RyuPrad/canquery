@@ -28,8 +28,8 @@ export function fetchJob(id) {
   return getJSON('/api/v1/jobs/' + encodeURIComponent(id));
 }
 
-export function fetchOrganizations({ place, source, limit, cursor } = {}) {
-  return getJSON('/api/v1/organizations', { place, source, limit, cursor });
+export function fetchOrganizations({ q, place, source, limit, cursor } = {}) {
+  return getJSON('/api/v1/organizations', { q, place, source, limit, cursor });
 }
 
 export function fetchOrganization(name) {

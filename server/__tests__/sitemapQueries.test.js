@@ -6,16 +6,15 @@ const queries = require('../db/catalogReadQueries');
 beforeEach(() => jest.clearAllMocks());
 
 describe('resource sitemap queries', () => {
-    it('counts only resources with a live table, local table, or map capability', async () => {
+    it('counts public resource pages with a parent dataset', async () => {
         pool.query.mockResolvedValue({ rows: [{ n: 13 }] });
 
         await expect(queries.countSitemapResources()).resolves.toBe(13);
 
         const sql = pool.query.mock.calls[0][0];
         expect(sql).toContain('FROM resources r');
-        expect(sql).toContain('r.datastore_active');
-        expect(sql).toContain("ir.status = 'ready'");
-        expect(sql).toContain('resource_maps');
+        expect(sql).toContain('JOIN datasets d ON d.id = r.dataset_id');
+        expect(sql).not.toMatch(/datastore_active|ingested_resources|resource_maps/);
     });
 
     it('lists each qualifying resource once with its parent dataset modification time', async () => {
@@ -26,11 +25,9 @@ describe('resource sitemap queries', () => {
             .resolves.toEqual(rows);
 
         const [sql, params] = pool.query.mock.calls[0];
-        expect(sql).toContain('WITH eligible_resources AS MATERIALIZED');
-        expect(sql).toContain('JOIN datasets d ON d.id = eligible.dataset_id');
-        expect(sql).toContain('ORDER BY eligible.id LIMIT $1 OFFSET $2');
-        expect(sql).toContain('EXISTS (SELECT 1 FROM ingested_resources');
-        expect(sql).toContain('EXISTS (SELECT 1 FROM resource_maps');
+        expect(sql).toContain('JOIN datasets d ON d.id = r.dataset_id');
+        expect(sql).toContain('ORDER BY r.id LIMIT $1 OFFSET $2');
+        expect(sql).not.toMatch(/datastore_active|ingested_resources|resource_maps/);
         expect(params).toEqual([25000, 50000]);
     });
 });
