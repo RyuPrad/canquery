@@ -42,7 +42,8 @@ export default function useCatalogPage(fetchPage, deps, filtered = false) {
   }, [requestKey]);
 
   const current = state.key === requestKey ? state : { items: [], loading: page !== null, error: null, meta: null, hasMore: false };
-  return { ...current, page, path: pathname,
+  return { items: current.items, loading: current.loading, error: current.error,
+    meta: current.meta, hasMore: current.hasMore, page, path: pathname,
     notFound: page === null || (!current.loading && !current.error && page > 1 && current.items.length === 0),
     onPage: filtered ? number => setSelection({ key: filterKey, page: number }) : undefined };
 }
