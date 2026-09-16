@@ -1,5 +1,12 @@
 const catchAsync = require('../utils/catchAsync');
 const ingestService = require('../services/ingestService');
+const { prepareResource } = require('../services/preparationService');
+
+const prepare = catchAsync(async (req, res) => {
+    const job = await prepareResource(req.params.id, req.ip);
+    res.set('Cache-Control', 'no-store');
+    res.status(job.already_loaded ? 200 : 202).json(envelope(job));
+});
 const { envelope } = require('../utils/envelope');
 
 async function enqueueIngest(req, res) {
@@ -14,4 +21,4 @@ async function getJob(req, res) {
     res.json(envelope(job));
 }
 
-module.exports = { enqueueIngest: catchAsync(enqueueIngest), getJob: catchAsync(getJob) };
+module.exports = { prepareResource: prepare, enqueueIngest: catchAsync(enqueueIngest), getJob: catchAsync(getJob) };

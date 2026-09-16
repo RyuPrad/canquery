@@ -126,28 +126,19 @@ describe('DatasetPage ingestion', () => {
 
     const mapLink = await screen.findByRole('link', { name: 'Map' });
     expect(mapLink).toHaveAttribute('href', '/resources/resource-a?view=map');
-    expect(screen.getByRole('button', { name: 'Load' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Explore data' })).toHaveAttribute('href', '/resources/resource-a');
   });
 
-  test('an already-loaded response refreshes the dataset without storing or polling a null job', async () => {
-    enqueueIngest.mockResolvedValue({
-      data: { id: null, resource_id: 'resource-a', status: 'done', already_loaded: true, row_count: 20 },
-    });
-
+  test('lists unprepared resources without admitting jobs or polling them', async () => {
     render(
       <MemoryRouter initialEntries={['/datasets/dataset-a']}>
-        <Routes>
-          <Route path="/datasets/:idOrName" element={<DatasetPage />} />
-        </Routes>
+        <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
       </MemoryRouter>
     );
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Load' }));
-
-    await waitFor(() => expect(fetchDataset).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole('link', { name: /Explore data/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Explore data' })).toHaveAttribute('href', '/resources/resource-a');
+    expect(enqueueIngest).not.toHaveBeenCalled();
     expect(fetchJob).not.toHaveBeenCalled();
-    expect(localStorage.getItem('cq-unlock-job-resource-a')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load' })).toBeNull();
   });
 
   test('route id changes discard the previous dataset state while the next dataset loads', async () => {

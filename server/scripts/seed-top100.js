@@ -4,6 +4,7 @@ process.on('unhandledRejection', (err) => { console.error(err); process.exit(1);
 process.on('uncaughtException', (err) => { console.error(err); process.exit(1); });
 
 const pool = require('../db/pool');
+const { withSnapshot } = require('../db/snapshotRead');
 const { getResourceById, listResourcesForDataset } = require('../db/catalogReadQueries');
 const { queryStoreTable } = require('../db/storeQueries');
 const { ingestCapBytesFor } = require('../services/catalogService');
@@ -44,10 +45,11 @@ async function main() {
             return;
         }
 
-        const columns = Array.isArray(res.ingested_columns) ? res.ingested_columns.map(c => c.id) : [];
-        const { records } = await queryStoreTable({
-            tableName: res.table_name, knownColumns: columns,
-            q: undefined, filters: [], sortSql: '"_id" ASC', limit: 1000000, offset: 0
+        const { records } = await withSnapshot(resourceId, async () => {
+            const current = await getResourceById(resourceId);
+            const columns = Array.isArray(current.ingested_columns) ? current.ingested_columns.map(c => c.id) : [];
+            return queryStoreTable({ tableName: current.table_name, knownColumns: columns,
+                q: undefined, filters: [], sortSql: '"_id" ASC', limit: 1000000, offset: 0 });
         });
 
         const snap = computeSnapshot(records);

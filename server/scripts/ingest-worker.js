@@ -22,6 +22,10 @@ const pool = require('../db/pool');
 const longRunningPool = require('../db/longRunningPool');
 const { getResourceById } = require('../db/catalogReadQueries');
 const { ingestResource, validateStorageFilesystems } = require('../services/ingestPipeline');
+const { resourceVersion } = require('../services/resourceVersion');
+const { isIngestableFile } = require('../services/resourceCapabilities');
+const { cleanRetiredTables } = require('../services/retiredIngestTables');
+const { withStoreBudgetLock } = require('../services/evictService');
 const {
     acquireWorkerLock,
     releaseWorkerLock,
@@ -99,10 +103,16 @@ async function processJob(job, workerId) {
     try {
         const resource = await getResourceById(job.resource_id);
         if (!resource) throw new Error('resource vanished from catalog');
+        const version = resourceVersion(resource);
+        if (job.preparation) {
+            await pool.query(`UPDATE ingest_jobs SET source_version = $3
+                WHERE id = $1 AND worker_id = $2 AND status = 'running'`, [job.id, workerId, version]);
+        }
         // A crash can happen after the store transaction commits but before the
         // queue row is marked done. Recovery requeues that row; never rebuild a
         // table that is already ready just to repair queue bookkeeping.
-        if (resource.ingest_status === 'ready' && resource.table_name) {
+        if (resource.ingest_status === 'ready' && resource.table_name &&
+            (!job.preparation || resource.ingested_source_version === version)) {
             rowsLoaded = resource.ingested_row_count == null ? null : Number(resource.ingested_row_count);
             bytesLoaded = resource.ingested_byte_size == null ? null : Number(resource.ingested_byte_size);
             const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'done', null);
@@ -110,6 +120,11 @@ async function processJob(job, workerId) {
             ok = true;
             console.log('[job ' + job.id + '] reconciled already-loaded resource ' + job.resource_id);
             return;
+        }
+        if (!isIngestableFile(resource)) {
+            const error = new Error('resource no longer meets preparation limits');
+            error.code = 'CAP_RESOURCE';
+            throw error;
         }
         console.log('[job ' + job.id + '] ingesting ' + job.resource_id + ' (attempt ' + job.attempts + ')');
         const result = await ingestResource(resource, caps);
@@ -122,11 +137,14 @@ async function processJob(job, workerId) {
     } catch (err) {
         error = err.message;
         console.error('[job ' + job.id + '] failed: ' + err.message);
-        if (job.attempts >= MAX_ATTEMPTS) {
-            const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'failed', err.message);
+        const permanent = /^(CAP_|CSV_|XLSX_|XLS_|EXCEL_|DOWNLOAD_URL_BLOCKED|DOWNLOAD_ENCODING)/.test(err.code || '') &&
+            !/TIMEOUT/.test(err.code || '');
+        if (job.attempts >= MAX_ATTEMPTS || permanent) {
+            const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'failed', err.message,
+                { code: permanent ? 'INVALID_FILE' : 'TEMPORARY', seconds: permanent ? 86400 : 3600 });
             if (!finished) console.error('[job ' + job.id + '] could not record failure: worker lease lost');
         } else {
-            const requeued = await requeueJob(pool, job.id, workerId, err.message);
+            const requeued = await requeueJob(pool, job.id, workerId, err.message, job.attempts === 1 ? 30 : 120);
             if (!requeued) console.error('[job ' + job.id + '] could not requeue: worker lease lost');
         }
     } finally {
@@ -165,7 +183,12 @@ async function main() {
             console.log('requeued ' + recovered.rowCount + ' orphaned running job(s)');
         }
 
+        let lastCleanup = 0;
         while (!stopRequested) {
+            if (Date.now() - lastCleanup > 30000) {
+                await withStoreBudgetLock(pool, () => cleanRetiredTables(pool));
+                lastCleanup = Date.now();
+            }
             const job = await claimJob(pool, workerId);
             if (job) {
                 await processJob(job, workerId);

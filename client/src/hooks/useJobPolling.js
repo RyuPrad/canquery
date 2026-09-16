@@ -2,7 +2,7 @@ import React from 'react';
 import { fetchJob } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 
-export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone } = {}) {
+export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone, enabled = true } = {}) {
   const [job, setJob] = React.useState(null);
   const [polling, setPolling] = React.useState(false);
 
@@ -19,9 +19,11 @@ export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone
 
   React.useEffect(() => {
     if (!jobId) {
-      setJob(null);
-      return;
+        setJob(null);
+        setPolling(false);
+        return;
     }
+    if (!enabled) { setPolling(false); return; }
     let cancelled = false;
     setPolling(true);
     let timer;
@@ -43,7 +45,7 @@ export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone
           // the queue was cleaned): stop for good and let the caller drop its
           // persisted state instead of spinning forever.
           setPolling(false);
-          if (onGoneRef.current) onGoneRef.current();
+          if (onGoneRef.current) onGoneRef.current(jobId);
           return;
         }
         // Anything else is transient (API restart during a deploy, a network
@@ -56,7 +58,7 @@ export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [jobId, intervalMs]);
+  }, [jobId, intervalMs, enabled]);
 
   return { job, polling };
 }

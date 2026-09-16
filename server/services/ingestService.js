@@ -62,6 +62,7 @@ function shapeJob(job) {
         resource_id: job.resource_id,
         status: job.status,
         attempts: job.attempts,
+        retry_at: job.retry_at || null,
         // Worker messages may contain upstream URLs, filesystem paths, SQL or
         // network details. The UI only needs a safe retryable failure state.
         error: job.status === 'failed' ? 'Resource ingestion failed' : null,

@@ -1,11 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { fetchDataset, enqueueIngest } from '../api/catalog.js';
+import { fetchDataset } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
-import useJobPolling from '../hooks/useJobPolling.js';
-import useElapsed from '../hooks/useElapsed.js';
-import { formatDuration } from '../utils/time.js';
-import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import { track } from '../utils/analytics.js';
 import CatalogPagination from '../components/CatalogPagination.jsx';
 import { PAGE_SIZE, pageNumber } from '../utils/catalogPagination.js';
@@ -21,7 +17,6 @@ import {
   BuildingIcon,
   CalendarIcon,
   DownloadIcon,
-  UnlockIcon,
   MapIcon,
   MapPinIcon,
 } from '../components/Icons.jsx';
@@ -47,33 +42,6 @@ function FormatTile({ format }) {
   );
 }
 
-function PollBadge({ jobId, onDone, onGone, onRetry }) {
-  const { t } = useLang();
-  const { job } = useJobPolling(jobId, { onDone, onGone });
-  const active = !job || job.status === 'pending' || job.status === 'running';
-  const elapsed = useElapsed(job?.age_seconds, active);
-  if (job && job.status === 'failed') {
-    return (
-      <span className="flex items-center gap-1.5">
-        <span className="cq-badge cq-badge-fileonly" title={job.error || t('dataset.load_failed')}>
-          {t('dataset.load_failed')}
-        </span>
-        <button className="btn btn-xs btn-outline rounded-lg border-base-content/20" onClick={onRetry}>
-          {t('common.retry')}
-        </button>
-      </span>
-    );
-  }
-  const label = !job || job.status === 'pending' ? t('dataset.queued') : t('dataset.loading_data');
-  return (
-    <span className="cq-badge cq-badge-ingestable">
-      <span className="loading loading-spinner loading-xs"></span>
-      {label}
-      {job?.age_seconds != null && <span className="font-mono tabular-nums opacity-70 ml-0.5">{formatDuration(elapsed)}</span>}
-    </span>
-  );
-}
-
 function DatasetExplorer({ idOrName }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { lang: uiLang, t } = useLang();
@@ -82,8 +50,6 @@ function DatasetExplorer({ idOrName }) {
   const [error, setError] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [contentLang, setContentLang] = useState(uiLang);
-  const [unlockJobs, setUnlockJobs] = useState({});
-  const [refreshKey, setRefreshKey] = useState(0);
   const [highlightId, setHighlightId] = useState(null);
   const navigate = useNavigate();
   const page = pageNumber(searchParams);
@@ -109,16 +75,7 @@ function DatasetExplorer({ idOrName }) {
             });
           }
           setNotFound(false);
-          // Resume any unlocks left in flight before a refresh so their
-          // loading badges reappear instead of reverting to "Unlock".
-          const resumed = {};
-          for (const r of (env.data.resources || [])) {
-            const stored = readUnlockJob(r.id);
-            if (stored) resumed[r.id] = stored;
-          }
-          if (Object.keys(resumed).length) {
-            setUnlockJobs(prev => ({ ...resumed, ...prev }));
-          }
+
         }
       })
       .catch(err => {
@@ -132,7 +89,7 @@ function DatasetExplorer({ idOrName }) {
     return () => { cancelled = true; };
     // dataset is intentionally omitted: it only gates the first-load spinner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idOrName, refreshKey]);
+  }, [idOrName]);
 
   // Deep-link from an insight card (/datasets/:id?highlight=:resourceId): scroll
   // the representative resource into view and pulse it so the visitor sees which
@@ -199,8 +156,7 @@ function DatasetExplorer({ idOrName }) {
     );
   }
 
-  const handleUnlockDone = () => setRefreshKey(k => k + 1);
-  const queryable = (mode) => mode === 'datastore' || mode === 'ingested';
+  const queryable = (mode) => ['datastore', 'ingested', 'ingestable'].includes(mode);
   const visibleResources = dataset.resources.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
@@ -342,66 +298,6 @@ function DatasetExplorer({ idOrName }) {
                   <MapIcon size={11} />
                   {t('places.map')}
                 </Link>
-              )}
-              {resource.query_mode === 'ingestable' && (
-                unlockJobs[resource.id] ? (
-                  <PollBadge
-                    jobId={unlockJobs[resource.id]}
-                    onDone={(job) => {
-                      track('resource_load', { resource_id: resource.id, status: job?.status || 'done', source: 'dataset_page' });
-                      clearUnlockJob(resource.id);
-                      handleUnlockDone();
-                    }}
-                    onGone={() => {
-                      clearUnlockJob(resource.id);
-                      setUnlockJobs(prev => {
-                        const next = { ...prev };
-                        delete next[resource.id];
-                        return next;
-                      });
-                    }}
-                    onRetry={() => {
-                      track('resource_load', { resource_id: resource.id, status: 'retry', source: 'dataset_page' });
-                      clearUnlockJob(resource.id);
-                      setUnlockJobs(prev => {
-                        const next = { ...prev };
-                        delete next[resource.id];
-                        return next;
-                      });
-                    }}
-                  />
-                ) : (
-                  <button
-                    className="btn btn-xs btn-primary rounded-lg gap-1"
-                    onClick={async () => {
-                      track('resource_load', { resource_id: resource.id, status: 'requested', source: 'dataset_page' });
-                      try {
-                        const env = await enqueueIngest(resource.id);
-                        const job = env?.data;
-                        if (job?.already_loaded) {
-                          track('resource_load', { resource_id: resource.id, status: 'already_loaded', source: 'dataset_page' });
-                          clearUnlockJob(resource.id);
-                          setUnlockJobs(prev => {
-                            const next = { ...prev };
-                            delete next[resource.id];
-                            return next;
-                          });
-                          handleUnlockDone();
-                          return;
-                        }
-                        if (job?.id == null) throw new Error('Ingest did not return a job id');
-                        setUnlockJobs(prev => ({ ...prev, [resource.id]: job.id }));
-                        writeUnlockJob(resource.id, job.id);
-                      } catch (err) {
-                        track('resource_load', { resource_id: resource.id, status: 'failed', source: 'dataset_page' });
-                        setError(err);
-                      }
-                    }}
-                  >
-                    <UnlockIcon size={11} />
-                    {t('dataset.unlock')}
-                  </button>
-                )
               )}
               <a
                 href={resource.url}

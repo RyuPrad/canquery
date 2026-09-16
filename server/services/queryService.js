@@ -13,6 +13,8 @@ const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, 
 // Ingested data is immutable until a re-ingest replaces it, so a profile can be
 // cached hard. The key folds in ingested_at so a refresh busts a stale profile.
 const profileCache = createCache({ name: 'store-profile', ttlMs: 30 * 60 * 1000, negativeTtlMs: 30 * 1000, maxEntries: 250 });
+const aggregateCache = createCache({ name: 'store-aggregates', ttlMs: 300000, negativeTtlMs: 1000,
+    maxEntries: 256, cacheable: value => Buffer.byteLength(JSON.stringify(value)) <= 256 * 1024 });
 const MAX_QUERY_LENGTH = 200;
 const MAX_QUERY_OFFSET = (() => {
     const raw = process.env.MAX_QUERY_OFFSET;
@@ -105,7 +107,11 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
         const aggSpec = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
         if (aggSpec) {
             const sortInfo = validateSort(sort, ['key', 'value']);
-            const { records, total } = await aggregateStoreTable({ tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
+            const options = { tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off };
+            const key = JSON.stringify([row.table_name, row.ingested_at, options]);
+            const { records, total } = row.ingested_at
+                ? await aggregateCache.get(key, () => aggregateStoreTable(options))
+                : await aggregateStoreTable(options);
             touchLastAccessed(id).catch(() => {});
             logQueryHit(id, 'ingested').catch(() => {});
             return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket }, provenance };

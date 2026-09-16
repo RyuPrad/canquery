@@ -1,5 +1,6 @@
 const { TABLE_NAME_RE } = require('../db/storeQueries');
 const { quoteIdent } = require('../utils/filterGrammar');
+const { snapshotKey } = require('../db/snapshotRead');
 
 const STORE_BUDGET_LOCK = 'canquery-store-budget-v1';
 
@@ -33,14 +34,16 @@ async function evictLocked(db, {
     const { rows } = await db.query(
         `SELECT ir.resource_id, ir.table_name,
                 coalesce(ir.byte_size, 0)::bigint AS byte_size,
-                ir.last_accessed_at, ir.ingested_at,
+                ir.last_accessed_at, ir.ingested_at, ir.resource_id = ANY($1::text[]) AS excluded,
                 EXISTS (
                     SELECT 1 FROM pinned_resources p
                     WHERE p.resource_id = ir.resource_id
                 ) AS pinned
          FROM ingested_resources ir
-         WHERE NOT (ir.resource_id = ANY($1::text[]))
-         ORDER BY ir.last_accessed_at ASC`,
+         UNION ALL
+         SELECT resource_id, table_name, byte_size, retired_at, retired_at, true, true
+         FROM retired_ingest_tables
+         ORDER BY last_accessed_at ASC`,
         [excluded]
     );
     let totalBytes = rows.reduce((sum, row) => sum + Number(row.byte_size), 0);
@@ -51,6 +54,7 @@ async function evictLocked(db, {
 
     for (const candidate of rows) {
         if (totalBytes <= budgetBytes) break;
+        if (candidate.excluded || excluded.includes(candidate.resource_id)) continue;
         if (candidate.pinned) {
             skippedPinned += 1;
             continue;
@@ -72,6 +76,12 @@ async function evictLocked(db, {
         const client = await db.connect();
         try {
             await client.query('BEGIN');
+            const lock = await client.query('SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked', [snapshotKey(candidate.resource_id)]);
+            if (!lock.rows[0]?.locked) {
+                skippedChanged += 1;
+                await client.query('ROLLBACK');
+                continue;
+            }
             // SHARE blocks concurrent INSERT/DELETE pin changes for the short
             // recheck/drop transaction, including the otherwise-unlockable
             // "no pin row exists" case.

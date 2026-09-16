@@ -1,21 +1,20 @@
 import { describe, beforeEach, vi, expect, test } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import ResourcePage from './ResourcePage.jsx';
-import { NotIngestedError } from '../api/client.js';
 import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../api/catalog.js', () => ({
   fetchBlog: vi.fn(() => Promise.resolve({ data: [] })),
   fetchResource: vi.fn(),
   queryResource: vi.fn(),
-  enqueueIngest: vi.fn(),
+  prepareResource: vi.fn(),
   fetchJob: vi.fn(),
 }));
 vi.mock('../components/MapPanel.jsx', () => ({
   default: ({ resourceId }) => <div>live-map-{resourceId}</div>,
 }));
-import { enqueueIngest, fetchJob, fetchResource, queryResource } from '../api/catalog.js';
+import { prepareResource, fetchJob, fetchResource, queryResource } from '../api/catalog.js';
 
 function resourceEnvelope(id) {
   return {
@@ -90,6 +89,7 @@ describe('ResourcePage navigation', () => {
 
     expect(await screen.findByText('live-map-a')).toBeInTheDocument();
     expect(queryResource).not.toHaveBeenCalled();
+    expect(prepareResource).not.toHaveBeenCalled();
     expect(screen.queryByPlaceholderText('Full-text search in this table...')).not.toBeInTheDocument();
   });
 
@@ -108,7 +108,7 @@ describe('ResourcePage navigation', () => {
       sort: undefined,
       limit: 50,
       offset: 10000,
-    }));
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
   });
 
   test('route id changes reset explorer state before querying the next resource', async () => {
@@ -128,7 +128,7 @@ describe('ResourcePage navigation', () => {
       sort: 'name desc',
       limit: 50,
       offset: 150,
-    }));
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
 
     fireEvent.click(screen.getByRole('button', { name: 'Open resource B' }));
 
@@ -139,14 +139,14 @@ describe('ResourcePage navigation', () => {
       sort: undefined,
       limit: 50,
       offset: 0,
-    }));
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(screen.getByPlaceholderText('Full-text search in this table...')).toHaveValue('');
     expect(screen.getByText('row-b')).toBeInTheDocument();
   });
 
   test('an already-loaded enqueue response refreshes without persisting or polling a null job', async () => {
-    queryResource.mockRejectedValueOnce(new NotIngestedError('Not loaded', 409, { hint: 'Load it' }));
-    enqueueIngest.mockResolvedValue({
+    fetchResource.mockResolvedValueOnce({ data: { ...resourceEnvelope('a').data, query_mode: 'ingestable', preparation: { supported: true, enabled: true, freshness: 'unprepared' } } });
+    prepareResource.mockResolvedValue({
       data: { id: null, resource_id: 'a', status: 'done', already_loaded: true, row_count: 200 },
     });
 
@@ -158,12 +158,37 @@ describe('ResourcePage navigation', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Load this resource' }));
+    await waitFor(() => expect(prepareResource).toHaveBeenCalledWith('a'));
+    expect(screen.queryByRole('button', { name: 'Load this resource' })).toBeNull();
 
-    await waitFor(() => expect(queryResource).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(queryResource).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('row-a')).toBeInTheDocument();
     expect(fetchResource).toHaveBeenCalledTimes(2);
     expect(fetchJob).not.toHaveBeenCalled();
     expect(localStorage.getItem('cq-unlock-job-a')).toBeNull();
+  });
+
+  test('a refreshed schema clears removed filters and sorting while keeping the old copy usable', async () => {
+    const before = { ...resourceEnvelope('a').data,
+      preparation: { supported: true, freshness: 'stale' },
+      ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'name', type: 'TEXT' }] } };
+    const after = { ...before, preparation: { supported: true, freshness: 'current' },
+      ingestion: { ingested_at: '2026-09-02', fields: [{ id: 'province', type: 'TEXT' }] } };
+    fetchResource.mockResolvedValueOnce({ data: before }).mockResolvedValue({ data: after });
+    prepareResource.mockResolvedValue({ data: { id: 777, status: 'pending' } });
+    let finish;
+    fetchJob.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const filters = encodeURIComponent(JSON.stringify({ name: 'old-name' }));
+    render(<MemoryRouter initialEntries={[`/resources/a?cf=${filters}&sort=name%20desc&page=1`]}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('row-a')).toBeInTheDocument();
+    await waitFor(() => expect(fetchJob).toHaveBeenCalled());
+    await act(async () => finish({ data: { id: 777, status: 'done' } }));
+    expect(await screen.findByText('The updated file has different columns. Affected filters or sorting were cleared.')).toBeInTheDocument();
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({
+      filters: undefined, sort: undefined, offset: 0, limit: 50
+    }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    expect(prepareResource).toHaveBeenCalledTimes(1);
   });
 });

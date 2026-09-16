@@ -1,4 +1,6 @@
 const topDownloadsQueries = require('../db/topDownloadsQueries');
+const { withSnapshot } = require('../db/snapshotRead');
+const { getResourceById } = require('../db/catalogReadQueries');
 const { profileStoreTable, aggregateStoreTable } = require('../db/storeQueries');
 const { pickChartSpec } = require('./featuredChart');
 const { createCache } = require('../utils/cache');
@@ -56,27 +58,31 @@ async function computeFeatured(lang) {
     for (const c of candidates) {
         if (out.length >= FEATURED_LIMIT) break;
         try {
-            const columns = Array.isArray(c.columns) ? c.columns : [];
-            const profile = await profileStoreTable({ tableName: c.table_name, columns });
-            const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns });
-            if (!spec) continue;
-            const agg = await aggregateStoreTable({
-                tableName: c.table_name,
-                knownColumns: columns.map((x) => x.id),
-                q: undefined, filters: [],
-                groupBy: spec.groupBy, agg: spec.agg, aggColumn: spec.aggColumn || null, bucket: spec.bucket || null,
-                sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" ASC',
-                limit: spec.limit, offset: 0
-            });
-            const points = (agg.records || [])
-                .map((r) => ({ label: cleanLabel(r.key, spec.bucket), value: Number(r.value) }))
-                .filter((p) => p.label !== null && Number.isFinite(p.value));
-            if (points.length < 2) continue;
-            out.push({
-                dataset_id: c.dataset_id,
-                title: { en: c.title_en, fr: c.title_fr },
-                kind: spec.kind,
-                points
+            await withSnapshot(c.resource_id, async () => {
+                const current = await getResourceById(c.resource_id);
+                if (!current || current.ingest_status !== 'ready') return;
+                const columns = Array.isArray(current.ingested_columns) ? current.ingested_columns : [];
+                const profile = await profileStoreTable({ tableName: current.table_name, columns });
+                const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns });
+                if (!spec) return;
+                const agg = await aggregateStoreTable({
+                    tableName: current.table_name,
+                    knownColumns: columns.map((x) => x.id),
+                    q: undefined, filters: [],
+                    groupBy: spec.groupBy, agg: spec.agg, aggColumn: spec.aggColumn || null, bucket: spec.bucket || null,
+                    sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" ASC',
+                    limit: spec.limit, offset: 0
+                });
+                const points = (agg.records || [])
+                    .map((r) => ({ label: cleanLabel(r.key, spec.bucket), value: Number(r.value) }))
+                    .filter((p) => p.label !== null && Number.isFinite(p.value));
+                if (points.length < 2) return;
+                out.push({
+                    dataset_id: c.dataset_id,
+                    title: { en: c.title_en, fr: c.title_fr },
+                    kind: spec.kind,
+                    points
+                });
             });
         } catch {
             // A dataset that fails to profile/aggregate is simply skipped.

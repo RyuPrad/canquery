@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const os = require('node:os');
+const { createHash, randomBytes } = require('node:crypto');
 const metadataPool = require('../db/pool');
 const ingestPool = require('../db/longRunningPool');
 const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
@@ -8,12 +9,14 @@ const { convertXlsxToCsv, convertXlsToCsv } = require('./xlsxConvert');
 const { TABLE_NAME_RE } = require('../db/storeQueries');
 const { evictUntilUnderBudget, withStoreBudgetLock } = require('./evictService');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
+const { resourceVersion } = require('./resourceVersion');
+const { cleanRetiredTables } = require('./retiredIngestTables');
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 
 function tableNameFor(resourceId) {
-    return 'r_' + String(resourceId).toLowerCase().replace(/[^0-9a-f]/g, '_');
+    return 'r_' + createHash('sha256').update(String(resourceId)).digest('hex').slice(0, 32) + '_' + randomBytes(8).toString('hex');
 }
 
 function finiteNonNegative(value, fallback) {
@@ -89,6 +92,7 @@ async function validateStorageFilesystems(caps) {
 }
 
 async function ingestResourceLocked(resource, caps, tableName) {
+    await cleanRetiredTables(metadataPool);
     const storage = storageOptions(caps);
     if (process.env.NODE_ENV === 'production' && !storage.storeDataPath) {
         throw budgetError('STORE_DATA_PATH is required in production', 'DISK_CHECK');
@@ -166,11 +170,12 @@ async function ingestResourceLocked(resource, caps, tableName) {
 
         // Reserve likely relation growth before COPY. The exact relation size is
         // checked again inside the uncommitted load transaction below.
-        await evictUntilUnderBudget(metadataPool, {
+        const reserved = await evictUntilUnderBudget(metadataPool, {
             budgetBytes: Math.max(0, storage.budgetBytes - reserveBytes),
             excludeResourceIds: [resource.id],
             lockHeld: true
         });
+        if (!reserved.budgetSatisfied) throw budgetError('store budget cannot reserve space for this preparation');
 
         const client = await ingestPool.connect();
         let committed = false;
@@ -196,9 +201,8 @@ async function ingestResourceLocked(resource, caps, tableName) {
                 throw budgetError('resource is larger than the entire store budget');
             }
 
-            // The new table is still invisible to other sessions. Evict against
-            // an exact target that leaves byteSize free, excluding any previous
-            // version of this same resource from the committed usage total.
+            // Both versions count until retirement. Exclusion only protects
+            // the serving copy from eviction; it never removes its byte cost.
             const exact = await evictUntilUnderBudget(metadataPool, {
                 budgetBytes: storage.budgetBytes - byteSize,
                 excludeResourceIds: [resource.id],
@@ -211,20 +215,31 @@ async function ingestResourceLocked(resource, caps, tableName) {
                 );
             }
 
+            // Lock the catalogue row only for publication. A sync can continue
+            // throughout the download/COPY, but cannot race this final check.
+            const current = await client.query('SELECT * FROM resources WHERE id = $1 FOR SHARE', [resource.id]);
+            if (!current.rows[0] || resourceVersion(current.rows[0]) !== resourceVersion(resource)) {
+                throw budgetError('source changed during preparation', 'SOURCE_CHANGED');
+            }
+            await client.query(`INSERT INTO retired_ingest_tables (resource_id, table_name, byte_size)
+                SELECT resource_id, table_name, coalesce(byte_size, 0) FROM ingested_resources
+                WHERE resource_id = $1 AND table_name <> $2 ON CONFLICT (table_name) DO NOTHING`, [resource.id, tableName]);
+
             await client.query(
                 `INSERT INTO ingested_resources
                     (resource_id, table_name, row_count, byte_size, columns,
-                     ingested_at, last_accessed_at, status)
-                 VALUES ($1, $2, $3, $4, $5, now(), now(), 'ready')
+                     ingested_at, last_accessed_at, status, source_version)
+                 VALUES ($1, $2, $3, $4, $5, now(), now(), 'ready', $6)
                  ON CONFLICT (resource_id) DO UPDATE SET
                     table_name = EXCLUDED.table_name,
                     row_count = EXCLUDED.row_count,
                     byte_size = EXCLUDED.byte_size,
                     columns = EXCLUDED.columns,
+                    source_version = EXCLUDED.source_version,
                     ingested_at = now(),
                     last_accessed_at = now(),
                     status = 'ready'`,
-                [resource.id, tableName, rowCount, byteSize, JSON.stringify(columns)]
+                [resource.id, tableName, rowCount, byteSize, JSON.stringify(columns), resourceVersion(resource)]
             );
             await client.query('COMMIT');
             committed = true;
@@ -235,6 +250,7 @@ async function ingestResourceLocked(resource, caps, tableName) {
             // make the worker retry and rebuild it). The nightly enforcer will
             // also retry any transient post-commit database failure.
             try {
+                await cleanRetiredTables(metadataPool);
                 const postCommit = await evictUntilUnderBudget(metadataPool, {
                     budgetBytes: storage.budgetBytes,
                     lockHeld: true

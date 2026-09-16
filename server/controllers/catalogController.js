@@ -50,7 +50,7 @@ const getDataset = async (req, res) => {
 
 const getResource = async (req, res) => {
     const resource = await catalogService.getResource(req.params.id);
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set('Cache-Control', 'no-cache');
     res.json(envelope(resource, { meta: provenanceMeta(resource) }));
 };
 

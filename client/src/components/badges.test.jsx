@@ -12,7 +12,7 @@ describe('badges and rows', () => {
     expect(screen.getByText('Loaded')).toBeInTheDocument();
 
     render(<ResourceBadge mode="ingestable" />);
-    expect(screen.getByText('Loadable')).toBeInTheDocument();
+    expect(screen.getByText('Table available')).toBeInTheDocument();
 
     render(<ResourceBadge mode="file-only" />);
     expect(screen.getByText('Download only')).toBeInTheDocument();

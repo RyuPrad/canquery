@@ -155,7 +155,7 @@ async function listResourcesForDataset(datasetId) {
     const result = await pool.query(`
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
-               ir.status AS ingest_status, ir.row_count AS ingested_row_count, ir.ingested_at,
+               ir.status AS ingest_status, ir.row_count AS ingested_row_count, ir.ingested_at, ir.source_version AS ingested_source_version,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
                rm.indexed_at AS map_indexed_at,
@@ -180,7 +180,7 @@ async function listResourcesForDataset(datasetId) {
 }
 
 async function getResourceById(id) {
-    const result = await pool.query(`
+    const result = await require('./snapshotRead').snapshotDb().query(`
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
                d.name AS dataset_name, d.title_en AS dataset_title_en, d.title_fr AS dataset_title_fr,
@@ -188,7 +188,10 @@ async function getResourceById(id) {
                o.name AS org_name, o.title_en AS org_title_en, o.title_fr AS org_title_fr,
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
                ir.byte_size AS ingested_byte_size, ir.columns AS ingested_columns,
-               ir.ingested_at, ir.last_accessed_at,
+               ir.ingested_at, ir.last_accessed_at, ir.source_version AS ingested_source_version,
+               (SELECT jsonb_build_object('id', j.id, 'status', j.status, 'source_version', j.source_version, 'retry_at', j.retry_at)
+                FROM ingest_jobs j WHERE j.resource_id = r.id
+                ORDER BY (j.status IN ('pending','running')) DESC, j.id DESC LIMIT 1) AS preparation_job,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
                rm.indexed_at AS map_indexed_at,
@@ -608,7 +611,16 @@ async function getJobHealth() {
         FROM map_index_jobs j
         LEFT JOIN resources r ON r.id = j.resource_id
     `);
+    const preparationResult = await pool.query(`
+        SELECT count(*) FILTER (WHERE status = 'pending')::int AS pending,
+               count(*) FILTER (WHERE status = 'running')::int AS running,
+               count(*) FILTER (WHERE status = 'failed' AND finished_at > now() - interval '24 hours')::int AS failed_last_day,
+               count(*) FILTER (WHERE status = 'done' AND finished_at > now() - interval '24 hours')::int AS completed_last_day,
+               min(created_at) FILTER (WHERE status = 'pending') AS oldest_pending_at
+        FROM ingest_jobs WHERE preparation
+    `);
     return {
+        preparations: preparationResult.rows[0],
         syncRows: syncResult.rows,
         evictLastOkAt: evictResult.rows[0] ? evictResult.rows[0].last_ok_at : null,
         evictLatestFinishedAt: evictResult.rows[0] ? evictResult.rows[0].latest_finished_at : null,

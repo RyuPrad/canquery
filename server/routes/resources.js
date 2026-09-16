@@ -13,5 +13,6 @@ router.get('/:id', catalogController.getResource);
 router.get('/:id/query', aggregationLimiter, queryController.queryResource);
 router.get('/:id/query.csv', exportLimiter, queryController.exportResourceCsv);
 router.get('/:id/profile', profileLimiter, queryController.profileResource);
+router.post('/:id/prepare', ingestController.prepareResource);
 router.post('/:id/ingest', ingestLimiter, ingestController.enqueueIngest);
 module.exports = router;

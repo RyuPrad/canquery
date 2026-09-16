@@ -7,7 +7,7 @@ import ChartBuilder from './ChartBuilder.jsx';
 import { SparklesIcon, ChartIcon } from './Icons.jsx';
 import { track } from '../utils/analytics.js';
 
-export default function ChartPanel({ resourceId, q, filters, fields, queryMode, onLoad, loadState }) {
+export default function ChartPanel({ resourceId, q, filters, fields, queryMode }) {
   const { t } = useLang();
   const [tab, setTab] = useState('insights');
   const [profile, setProfile] = useState(null);
@@ -21,18 +21,19 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode, 
   useEffect(() => {
     if (!ingested) return;
     let cancelled = false;
+    const controller = new AbortController();
     setProfile(null);
     setProfileError(null);
-    fetchResourceProfile(resourceId)
+    fetchResourceProfile(resourceId, { signal: controller.signal })
       .then((env) => { if (!cancelled) setProfile(env.data); })
       .catch((err) => { if (!cancelled) setProfileError(err); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [resourceId, ingested]);
 
-  // Datastore resources can't be aggregated server-side - go straight to the
-  // simple series builder.
+  // Preparation belongs to the resource page. Never present a limited live
+  // row preview as a full-data chart.
   if (!ingested) {
-    return <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} onLoad={onLoad} loadState={loadState} />;
+    return <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} />;
   }
 
   const classified = profile ? classifyColumns(profile) : null;

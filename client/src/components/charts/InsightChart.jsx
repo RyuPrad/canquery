@@ -14,6 +14,7 @@ import { humanize, cleanRecords } from './theme.js';
 export default function InsightChart({ resourceId, q, filters, spec, framed = true, height }) {
   const { t, lang } = useLang();
   const [rows, setRows] = useState(null);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState(null);
 
   const filtersKey = JSON.stringify(filters || {});
@@ -21,6 +22,7 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setRows(null);
     setError(null);
     queryResource(resourceId, {
@@ -32,10 +34,10 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
       bucket: spec.bucket,
       sort: isTime ? 'key asc' : 'value desc',
       limit: isTime ? 100 : 12,
-    })
-      .then((env) => { if (!cancelled) setRows(cleanRecords(env.data.records)); })
+    }, { signal: controller.signal })
+      .then((env) => { if (!cancelled) { setRows(cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
       .catch((err) => { if (!cancelled) setError(err); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resourceId, q, filtersKey, spec.column, spec.agg, spec.aggColumn, spec.bucket, isTime]);
 
@@ -50,7 +52,7 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
   if (error) body = <ChartEmpty label={t('chart.no_data')} height={height} />;
   else if (rows === null) body = <ChartSkeleton height={height} />;
   else if (rows.length === 0) body = <ChartEmpty label={t('chart.no_data')} height={height} />;
-  else if (spec.kind === 'donut') {
+  else if (spec.kind === 'donut' && !truncated) {
     body = <DonutChart records={rows} lang={lang} colorOffset={spec.colorOffset} totalLabel={t('chart.total_records')} height={height} />;
   } else if (spec.kind === 'timeseries') {
     body = <TimeSeriesChart records={rows} lang={lang} bucket={spec.bucket} categorical={spec.categorical} colorOffset={spec.colorOffset} height={height} />;
@@ -58,9 +60,9 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
     body = <CategoryBar records={rows} lang={lang} colorOffset={spec.colorOffset} height={height} />;
   }
 
-  if (!framed) return body;
+  if (!framed) return <>{body}{truncated && <p className="text-xs text-base-content/60">{t('preparation.limited_groups')}</p>}</>;
   return (
-    <ChartCard title={title} subtitle={subtitle} accent={spec.colorOffset}>
+    <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + t('preparation.limited_groups') : subtitle} accent={spec.colorOffset}>
       {body}
     </ChartCard>
   );

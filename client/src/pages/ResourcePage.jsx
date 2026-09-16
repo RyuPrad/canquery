@@ -3,7 +3,6 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   fetchResource,
   queryResource,
-  enqueueIngest,
 } from '../api/catalog.js';
 import {
   NotFoundError,
@@ -13,9 +12,9 @@ import {
   apiUrl,
 } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
-import useJobPolling from '../hooks/useJobPolling.js';
+import useResourcePreparation from '../hooks/useResourcePreparation.js';
+import PreparationStatus from '../components/PreparationStatus.jsx';
 import useElapsed from '../hooks/useElapsed.js';
-import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
 import { track } from '../utils/analytics.js';
@@ -35,7 +34,6 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   DownloadIcon,
-  LockIcon,
   SearchIcon,
   TableIcon,
   LineChartIcon,
@@ -47,12 +45,6 @@ import {
 const PAGE_SIZE = 50;
 const MAX_QUERY_OFFSET = 10000;
 const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
-// Auto-upgrade (ingest) a proxied datastore resource only when its file is this
-// size or smaller, so the transparent upgrade stays quick. Larger ones keep the
-// live proxy (equality + full-text search). size_bytes is often unknown
-// upstream, in which case we proceed and rely on the hard ingest cap.
-const AUTO_INGEST_MAX_BYTES = 100 * 1024 * 1024;
-
 function ResourceExplorer({ id }) {
   const { lang, t } = useLang();
 
@@ -82,137 +74,48 @@ function ResourceExplorer({ id }) {
   const [dataError, setDataError] = useState(null);
   const [dataLoading, setDataLoading] = useState(true);
 
-  // Seed from storage so an unlock already in flight keeps showing the loading
-  // indicator across a refresh instead of snapping back to the Unlock button.
-  const [unlockState, setUnlockState] = useState(() => (readUnlockJob(id) ? 'queued' : null));
-  const [unlockJobId, setUnlockJobId] = useState(() => readUnlockJob(id));
   const [view, setView] = useState(() => {
     const requested = searchParams.get('view');
     return requested === 'chart' || requested === 'map' ? requested : 'table';
   });
   const [reloadKey, setReloadKey] = useState(0);
-  // Transparent upgrade of a proxied datastore resource into local storage when
-  // the user needs a filter the upstream can't serve:
-  // null | 'preparing' | 'blocked' (too large) | 'unavailable' (not loadable) | 'failed'.
-  const [upgrade, setUpgrade] = useState(null);
-  const resourceRef = useRef(null);
-  const upgradeRequestedRef = useRef(false);
-  const upgradedRef = useRef(false);
-
-  // Resume (or reset) the in-flight unlock when the resource changes - covers
-  // both a fresh refresh and client-side navigation between resources.
-  useEffect(() => {
-    const stored = readUnlockJob(id);
-    setUnlockJobId(stored);
-    setUnlockState(stored ? 'queued' : null);
-    setUpgrade(null);
-  }, [id]);
-
-  // Keep a ref to the loaded resource so the query effect can read its mode/size
-  // without taking it as a dependency. The upgrade guards reset only when the
-  // resource id changes (not on the post-upgrade reload), so a given resource is
-  // upgraded at most once per visit and the reload query is allowed through.
-  useEffect(() => { resourceRef.current = resource; }, [resource]);
+  const [filterUpgrade, setFilterUpgrade] = useState(false);
+  const [schemaChanged, setSchemaChanged] = useState(false);
+  const onPrepared = useCallback(() => setReloadKey(k => k + 1), []);
   useEffect(() => {
     if (resource && view === 'map' && !resource.map) setView('table');
   }, [resource, view]);
-  useEffect(() => {
-    upgradeRequestedRef.current = false;
-    upgradedRef.current = false;
-  }, [id]);
-
-  // Stable per-resource callback: an inline arrow here would re-arm the polling
-  // effect on every render and turn it into a 0ms fetch loop.
-  const onUnlockDone = useCallback((job) => {
-    track('resource_load', { resource_id: id, status: job.status === 'done' ? 'done' : 'failed', source: 'resource_page' });
-    clearUnlockJob(id);
-    if (job.status === 'done') {
-      // The resource is now ingested; let the reload query run against local
-      // storage instead of re-detecting it as a datastore resource.
-      upgradedRef.current = true;
-      setUnlockJobId(null);
-      setUnlockState(null);
-      setUpgrade(null);
-      setReloadKey((k) => k + 1);
-    } else {
-      setUnlockState('failed');
-      setUpgrade((u) => (u === 'preparing' ? 'failed' : u));
-    }
-  }, [id]);
-  // The polled job no longer exists (stale localStorage id after the queue was
-  // cleaned): drop the persisted state and snap back to the Load button.
-  const onUnlockGone = useCallback(() => {
-    track('resource_load', { resource_id: id, status: 'gone', source: 'resource_page' });
-    clearUnlockJob(id);
-    setUnlockJobId(null);
-    setUnlockState(null);
-    setUpgrade(null);
-  }, [id]);
-  // POST /ingest can race with a completed load, or be called after another
-  // visitor already loaded the resource. In that case the API returns the
-  // loaded state with no job id: refresh immediately and never persist/poll
-  // the null id. Missing ids without that explicit state fail closed.
-  const handleEnqueueResult = useCallback((env) => {
-    const job = env?.data;
-    if (job?.already_loaded) {
-      track('resource_load', { resource_id: id, status: 'already_loaded', source: 'resource_page' });
-      onUnlockDone(job);
-      return;
-    }
-    if (job?.id == null) throw new Error('Ingest did not return a job id');
-    writeUnlockJob(id, job.id);
-    setUnlockJobId(job.id);
-    track('resource_load', { resource_id: id, status: 'queued', source: 'resource_page' });
-  }, [id, onUnlockDone]);
-  const { job: unlockJob } = useJobPolling(unlockJobId, { onDone: onUnlockDone, onGone: onUnlockGone });
-  const loadElapsed = useElapsed(unlockJob?.age_seconds, unlockState === 'queued');
-
-  // Pull a proxied (datastore) resource into local storage so the full filter
-  // grammar works. Idempotent per visit; used both proactively (mode known) and
-  // as a fallback when a query returns the upgrade hint.
-  const triggerUpgrade = useCallback(() => {
-    if (upgradeRequestedRef.current) return;
-    const size = resourceRef.current?.size_bytes;
-    if (typeof size === 'number' && size > AUTO_INGEST_MAX_BYTES) {
-      upgradeRequestedRef.current = true;
-      setUpgrade('blocked');
-      track('resource_load', { resource_id: id, status: 'blocked', source: 'filter_upgrade' });
-      return;
-    }
-    upgradeRequestedRef.current = true;
-    setUpgrade('preparing');
-    track('resource_load', { resource_id: id, status: 'requested', source: 'filter_upgrade' });
-    enqueueIngest(id)
-      .then(handleEnqueueResult)
-      .catch(() => {
-        track('resource_load', { resource_id: id, status: 'unavailable', source: 'filter_upgrade' });
-        setUpgrade('unavailable');
-      });
-  }, [id, handleEnqueueResult]);
-
-  // Explicit "load this to chart it" from the Chart tab on a proxied datastore
-  // resource. Unlike triggerUpgrade (the transparent filter upgrade) this is a
-  // deliberate click, so it skips the auto-ingest size gate and relies on the
-  // server cap. It reuses the unlock job machinery, so onUnlockDone flips
-  // upgradedRef and reloads onto local storage - the panel then swaps to the
-  // full insights dashboard once the table is ready.
-  const loadForChart = useCallback(() => {
-    track('resource_load', { resource_id: id, status: 'requested', source: 'chart_prompt' });
-    setUnlockState('queued');
-    enqueueIngest(id)
-      .then(handleEnqueueResult)
-      .catch(() => {
-        track('resource_load', { resource_id: id, status: 'failed', source: 'chart_prompt' });
-        setUnlockState('failed');
-      });
-  }, [id, handleEnqueueResult]);
 
   const debouncedQ = useDebouncedValue(q, 250);
   const debouncedFilters = useDebouncedValue(columnFilters, 250);
+  const hasNonEq = Object.values(buildColumnFilters(debouncedFilters)).some(f => f.op !== 'eq');
+  const preparation = useResourcePreparation({ id, resource, active: view !== 'map',
+    needsLocal: view === 'chart' || hasNonEq || filterUpgrade, onReady: onPrepared });
+  const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
+  const preparationRequired = resource && (resource.query_mode === 'ingestable' ||
+    (view === 'chart' && resource.query_mode !== 'ingested'));
+  const previousSnapshot = useRef(null);
+  useEffect(() => {
+    const stamp = resource?.ingestion?.ingested_at;
+    const fields = resource?.ingestion?.fields;
+    if (stamp && previousSnapshot.current && previousSnapshot.current !== stamp && fields) {
+      const names = new Set(fields.map(f => f.id));
+      const valid = Object.fromEntries(Object.entries(columnFilters).filter(([name]) => names.has(name)));
+      const removedFilter = Object.keys(valid).length !== Object.keys(columnFilters).length;
+      const removedSort = sort && !names.has(sort.replace(/\s+(asc|desc)$/i, ''));
+      if (removedFilter) setColumnFilters(valid);
+      if (removedSort) setSort(null);
+      if (removedFilter || removedSort) setSchemaChanged(true);
+      setPage(0);
+    }
+    if (stamp) previousSnapshot.current = stamp;
+  }, [resource, columnFilters, sort]);
+
 
   useEffect(() => {
     let cancelled = false;
-    fetchResource(id)
+    const controller = new AbortController();
+    fetchResource(id, { signal: controller.signal })
       .then((env) => {
         if (!cancelled) {
           setResource(env.data);
@@ -231,7 +134,7 @@ function ResourceExplorer({ id }) {
           else setResourceError(err);
         }
       });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [id, reloadKey]);
 
   useEffect(() => {
@@ -276,25 +179,19 @@ function ResourceExplorer({ id }) {
     }
     setDataLoading(true);
 
-    const filters = buildColumnFilters(debouncedFilters);
-    const hasNonEq = Object.values(filters).some((f) => f.op !== 'eq');
-
-    // Known proxied datastore resource + a filter the upstream can't serve:
-    // upgrade it locally instead of firing a query that would 400. Once the
-    // upgrade has completed (upgradedRef) the reload query is allowed through.
-    if (resourceRef.current?.query_mode === 'datastore' && hasNonEq && !upgradedRef.current) {
-      triggerUpgrade();
+    if (!resource || preparationRequired || (resource.query_mode === 'datastore' && hasNonEq)) {
       setDataLoading(false);
       return () => { cancelled = true; };
     }
-
+    const filters = buildColumnFilters(debouncedFilters);
+    const controller = new AbortController();
     queryResource(id, {
       q: debouncedQ || undefined,
       filters: Object.keys(filters).length ? filters : undefined,
       sort: sort || undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
-    })
+    }, { signal: controller.signal })
       .then((env) => {
         if (!cancelled) {
           setData({
@@ -304,7 +201,6 @@ function ResourceExplorer({ id }) {
             mode: env.meta.query_mode,
           });
           setDataError(null);
-          setUpgrade(null);
           track('resource_query', {
             resource_id: id,
             query: debouncedQ || '',
@@ -323,7 +219,7 @@ function ResourceExplorer({ id }) {
           // Fallback for the first load before the mode is known: the proxy
           // rejected a non-equality filter, so upgrade to local storage. The
           // rows already on screen stay visible while the ingest runs.
-          triggerUpgrade();
+          setFilterUpgrade(true);
           return;
         }
         track('resource_query', {
@@ -334,6 +230,7 @@ function ResourceExplorer({ id }) {
           page: page + 1,
           status: err instanceof NotIngestedError ? 'not_loaded' : err instanceof FileOnlyError ? 'file_only' : 'failed',
         });
+        if (err instanceof NotIngestedError && resource.query_mode !== 'ingestable') onPrepared();
         setData(null);
         setDataError(err);
       })
@@ -341,8 +238,8 @@ function ResourceExplorer({ id }) {
         if (!cancelled) setDataLoading(false);
       });
 
-    return () => { cancelled = true; };
-  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, triggerUpgrade]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, hasNonEq, onPrepared]);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
@@ -350,18 +247,6 @@ function ResourceExplorer({ id }) {
     filters: Object.keys(exportFilters).length ? exportFilters : undefined,
     sort: sort || undefined,
   });
-
-  const handleUnlock = async () => {
-    track('resource_load', { resource_id: id, status: 'requested', source: 'resource_page' });
-    try {
-      setUnlockState('queued');
-      const env = await enqueueIngest(id);
-      handleEnqueueResult(env);
-    } catch {
-      track('resource_load', { resource_id: id, status: 'failed', source: 'resource_page' });
-      setUnlockState('failed');
-    }
-  };
 
   if (notFound) {
     return (
@@ -377,7 +262,7 @@ function ResourceExplorer({ id }) {
   const totalPages = data
     ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(data.total / PAGE_SIZE)))
     : 1;
-  const unlockWorking = unlockState === 'queued';
+
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6 space-y-4">
@@ -433,6 +318,18 @@ function ResourceExplorer({ id }) {
           {resource.presentation?.context?.[lang] && <p className="max-w-3xl whitespace-pre-wrap break-words text-base-content/70">{resource.presentation.context[lang]}</p>}
           <CatalogOverview presentation={resource.presentation} />
         </div>
+      )}
+
+      {view !== 'map' && resource?.ingestion?.ingested_at && (
+        <p className="text-xs text-base-content/60">
+          {t('preparation.prepared_at')}{' '}
+          <time dateTime={resource.ingestion.ingested_at}>{new Date(resource.ingestion.ingested_at).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}</time>
+          {resource.preparation?.freshness !== 'current' && <> · {t('preparation.older_copy')}</>}
+        </p>
+      )}
+      {schemaChanged && <p role="status" className="text-sm">{t('preparation.schema_changed')}</p>}
+      {view !== 'map' && !preparationRequired && (preparation.phase !== 'idle' || (resource?.query_mode === 'datastore' && hasNonEq)) && (
+        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} compact />
       )}
 
       {view !== 'map' && <div className="flex flex-wrap gap-2.5 items-center">
@@ -501,57 +398,13 @@ function ResourceExplorer({ id }) {
             <MapPanel resourceId={id} map={resource.map} />
           </Suspense>
         ) : <LoadingSpinner label={t('map.loading')} />
-      ) : dataLoading && !data ? (
+      ) : dataLoading && !data && !preparationRequired ? (
         <div className="space-y-3">
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
         </div>
-      ) : dataError instanceof NotIngestedError ? (
-        <div className="cq-card p-10 sm:p-14 text-center space-y-5 max-w-xl mx-auto cq-fade">
-          <span
-            className={
-              'w-14 h-14 rounded-2xl bg-primary/15 cq-fg-red inline-flex items-center justify-center' +
-              (unlockWorking ? ' cq-pulse' : '')
-            }
-          >
-            <LockIcon size={24} />
-          </span>
-          <p className="text-base-content/70 leading-relaxed">
-            {resource?.format === 'XLSX' || resource?.format === 'XLS'
-              ? t('resource.not_unlocked_excel')
-              : t('resource.not_unlocked_csv')}{' '}
-            {t('resource.one_click')}
-          </p>
-          <div className="flex justify-center">
-            <button
-              className="btn btn-primary rounded-xl px-7 shadow-lg shadow-primary/25"
-              onClick={handleUnlock}
-              disabled={unlockWorking && !unlockJob}
-            >
-              {unlockWorking && (
-                <span className="loading loading-spinner loading-xs"></span>
-              )}
-              {unlockState === null
-                ? t('resource.unlock')
-                : unlockState === 'queued'
-                  ? (unlockJob && unlockJob.status === 'running' ? t('resource.loading_data') : t('resource.queued'))
-                  : t('resource.failed_retry')}
-            </button>
-          </div>
-          {unlockState === 'queued' && (
-            <div className="text-xs space-y-1">
-              {unlockJob?.age_seconds != null && (
-                <p className="font-mono tabular-nums text-base-content/60">
-                  {t('resource.elapsed')} {formatDuration(loadElapsed)}
-                </p>
-              )}
-              <p className="text-base-content/40">{t('resource.will_appear')}</p>
-            </div>
-          )}
-          {unlockState === 'failed' && unlockJob && unlockJob.error && (
-            <p className="text-xs text-base-content/40">{unlockJob.error}</p>
-          )}
-        </div>
+      ) : preparationRequired || dataError instanceof NotIngestedError ? (
+        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
       ) : dataError instanceof FileOnlyError ? (
         <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
           <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
@@ -573,25 +426,9 @@ function ResourceExplorer({ id }) {
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
         <>
-          {upgrade && (
-            <div className="rounded-xl border border-base-content/10 bg-base-200/50 px-4 py-3 text-sm flex items-center gap-2.5 cq-fade">
-              {upgrade === 'preparing' && (
-                <span className="loading loading-spinner loading-xs shrink-0" />
-              )}
-              <span className="text-base-content/70">
-                {upgrade === 'preparing'
-                  ? t('resource.upgrading')
-                  : upgrade === 'blocked'
-                    ? t('resource.upgrade_blocked')
-                    : upgrade === 'unavailable'
-                      ? t('resource.upgrade_unavailable')
-                      : t('resource.upgrade_failed')}
-              </span>
-            </div>
-          )}
           {view === 'chart' ? (
             <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-              <ChartPanel resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={data.fields} queryMode={data.mode} onLoad={loadForChart} loadState={unlockState} />
+              <ChartPanel key={resource?.ingestion?.ingested_at || id} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={resource?.ingestion?.fields || data.fields} queryMode={data.mode} />
             </Suspense>
           ) : (
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>

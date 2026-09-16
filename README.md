@@ -175,10 +175,14 @@ curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"g
 # bounded GeoJSON compatibility view for ArcGIS, PostGIS, or PMTiles resources
 curl 'http://localhost:3100/api/v1/resources/<id>/map?bbox=-79,43.8,-78.7,44&zoom=11&limit=1000'
 
-# load a tabular file (idempotent; 5/hour/IP), then poll a newly-enqueued job.
-# A resource already loaded returns 200 with already_loaded: true and no job id.
-curl -X POST 'http://localhost:3100/api/v1/resources/<id>/ingest'
+# Prepare or refresh one file, then poll the shared job. Current copies return
+# 200 with already_loaded: true and no job id. New jobs: 20/hour/IP by default;
+# a full queue or a failure cooldown returns 429 with Retry-After.
+curl -X POST 'http://localhost:3100/api/v1/resources/<id>/prepare'
 curl 'http://localhost:3100/api/v1/jobs/<jobId>'
+
+# Legacy API remains idempotent (5/hour/IP); it never refreshes a ready copy.
+curl -X POST 'http://localhost:3100/api/v1/resources/<id>/ingest'
 
 curl 'http://localhost:3100/api/v1/organizations?limit=10'
 curl 'http://localhost:3100/api/v1/organizations/<name>'
@@ -262,13 +266,44 @@ implying a municipal feed exists. Source filters remain secondary, and every
 dataset/resource shows its publisher and licence. The resource explorer has a
 sortable/filterable table, CSV export, and
 a lazy Map tab for spatial resources; the map follows its own viewport and does
-not imply that table filters are spatial filters. Unlocked resources also get an
+not imply that table filters are spatial filters. Opening Table or Chart prepares
+only that eligible resource automatically, without a Load button. The server
+imports the selected file within the existing CSV/Excel, row, column, memory and
+disk caps; the browser requests 50 table rows at a time. Browsing dataset lists,
+opening Map, and fetching metadata or initial HTML do not start table jobs.
+Live CKAN tables keep their bounded upstream queries until a full-data chart or
+non-equality filter requires an eligible local copy. Prepared resources get an
 auto **Insights** dashboard that profiles the table and renders KPIs + charts
 (donuts, bars, time-series) with zero configuration. The **`/insights`** section
 is a live **Top 100 Downloaded Datasets** leaderboard: the most-downloaded
 datasets on open.canada.ca for the latest month, each ingested and visualized,
 shown as a top-3 chart podium over a ranked list with download-history
 sparklines. English/French throughout.
+
+Charts aggregate the complete prepared file with the active table search and
+filters; only the returned groups are bounded. Truncated group lists are labelled,
+and a truncated donut is shown as bars rather than incomplete percentages.
+Whole-file overview statistics are labelled separately. Repeated aggregates use
+a five-minute, 256-entry cache with a 256 KiB per-entry limit and snapshot keys.
+
+Scheduled catalogue syncs continue to discover publisher changes. A later visit
+refreshes a prepared resource when its recorded URL, format, size, timestamp,
+hash or provider revision changes. Titles and sync timestamps do not trigger a
+refresh. This detects catalogue-advertised revisions, not silent upstream file
+changes. Existing copies remain queryable through a refresh or failure. Each
+replacement is published atomically after another source-version check; exports
+already in progress finish on the old copy before its table is retired.
+Migration 032 leaves legacy snapshots usable and revalidates them on demand.
+
+One worker serves shared jobs. By default, automatic admissions stop when ten
+ingest jobs are pending/running, and each IP may admit twenty new jobs per hour;
+joining a job or reading a current copy does not consume that allowance. The IP
+allowance is in API-process memory and resets on restart; the queue bound is
+serialized in PostgreSQL. Hidden tabs pause admission and polling. Transient
+failures get at most three attempts with delayed retries, then a one-hour
+cooldown; invalid files wait 24 hours. A changed source version can retry sooner.
+`AUTO_PREPARE_ENABLED=false` pauses automatic admission. See
+`deploy/RELEASE_RUNBOOK_automatic_preparation.md` for rollout and rollback.
 
 ## Tests & lint
 

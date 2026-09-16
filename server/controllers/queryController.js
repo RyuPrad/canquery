@@ -1,5 +1,6 @@
 const catchAsync = require('../utils/catchAsync');
 const queryService = require('../services/queryService');
+const { withSnapshot } = require('../db/snapshotRead');
 const { envelope } = require('../utils/envelope');
 
 const NUMERIC_TYPE_RE = /^(smallint|integer|bigint|int[248]?|numeric|decimal|real|float[48]?|double( precision)?|money)$/i;
@@ -31,7 +32,7 @@ function hasSpreadsheetFormulaPrefix(value) {
 async function queryResource(req, res) {
     const { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = req.query;
     const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket });
-    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Cache-Control', 'no-cache');
     res.json(envelope(
         { fields: result.fields, records: result.records, total: result.total },
         { meta: Object.assign(
@@ -86,7 +87,7 @@ function shouldNeutralizeCell(field, value) {
 
 async function profileResource(req, res) {
     const result = await queryService.profileResource(req.params.id);
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set('Cache-Control', 'no-cache');
     res.json(envelope(
         { row_count: result.row_count, columns: result.columns },
         { meta: { query_mode: result.query_mode, ...provenanceMeta(result.provenance) } }
@@ -99,7 +100,7 @@ async function exportResourceCsv(req, res) {
     const safeFilenameId = String(req.params.id).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'attachment; filename="resource-' + safeFilenameId + '.csv"');
-    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Cache-Control', 'no-cache');
     const sourceIds = (provenance && provenance.sources || []).map(source => source.id);
     if (sourceIds.length) res.set('X-CanQuery-Sources', sourceIds.join(','));
     if (provenance && provenance.primary_license && provenance.primary_license.url) {
@@ -117,4 +118,5 @@ async function exportResourceCsv(req, res) {
     res.end();
 }
 
-module.exports = { queryResource: catchAsync(queryResource), profileResource: catchAsync(profileResource), exportResourceCsv: catchAsync(exportResourceCsv) };
+const pin = handler => catchAsync((req, res) => withSnapshot(req.params.id, () => handler(req, res)));
+module.exports = { queryResource: pin(queryResource), profileResource: pin(profileResource), exportResourceCsv: pin(exportResourceCsv) };

@@ -430,7 +430,7 @@ function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = 
     if (capability === 'datastore' || capability === 'ingested') {
         action = 'Query, filter, chart and export this live ' + (format ? format + ' ' : '') + 'table';
     } else if (capability === 'ingestable') {
-        action = 'Load this ' + (format ? format + ' ' : '') + 'resource into a live table';
+        action = 'Explore this ' + (format ? format + ' ' : '') + 'resource in an automatically prepared table';
     } else {
         action = 'View metadata and access the original ' + (format ? format + ' ' : '') + 'file';
     }
@@ -440,7 +440,7 @@ function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = 
         if (capability === 'datastore' || capability === 'ingested') {
             action = 'Recherchez, filtrez et exportez ce tableau ' + localizedFormat;
         } else if (capability === 'ingestable') {
-            action = 'Chargez ce fichier ' + localizedFormat + ' pour explorer son tableau';
+            action = 'Explorez le tableau préparé automatiquement de ce fichier ' + localizedFormat;
         } else {
             action = 'Consultez les métadonnées et le fichier original ' + localizedFormat;
         }

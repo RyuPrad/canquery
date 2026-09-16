@@ -1,4 +1,5 @@
 const pool = require('./pool');
+const { snapshotDb } = require('./snapshotRead');
 const AppError = require('../utils/AppError');
 const { buildWhere, quoteIdent } = require('../utils/filterGrammar');
 
@@ -39,13 +40,13 @@ async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, l
 
     let total = null;
     if (includeTotal) {
-        const countResult = await pool.query('SELECT count(*)::bigint AS total FROM ' + table + whereSql, params);
+        const countResult = await snapshotDb().query('SELECT count(*)::bigint AS total FROM ' + table + whereSql, params);
         total = Number(countResult.rows[0].total);
     }
 
     const limitIdx = params.length + 1;
     const offsetIdx = params.length + 2;
-    const pageResult = await pool.query(
+    const pageResult = await snapshotDb().query(
         'SELECT * FROM ' + table + whereSql + orderSql + ' LIMIT $' + limitIdx + ' OFFSET $' + offsetIdx,
         params.concat([limit, offset])
     );
@@ -72,7 +73,7 @@ async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupB
 
     let total = null;
     if (includeTotal) {
-        const countResult = await pool.query(
+        const countResult = await snapshotDb().query(
             'SELECT count(*)::int AS total FROM (SELECT 1 FROM ' + table + whereSql + ' GROUP BY ' + keyExpr + ') g',
             params
         );
@@ -80,7 +81,7 @@ async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupB
     }
 
     const orderSql = sortSql ? (sortSql.indexOf('"value"') === 0 ? sortSql + ', "key" ASC' : sortSql) : '"key" ASC';
-    const pageResult = await pool.query(
+    const pageResult = await snapshotDb().query(
         'SELECT ' + keyExpr + ' AS "key", ' + valueExpr + ' AS "value" FROM ' + table + whereSql + ' GROUP BY 1 ORDER BY ' + orderSql + ' LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2),
         params.concat([limit, offset])
     );
@@ -116,7 +117,7 @@ async function profileStoreTable({ tableName, columns }) {
         }
     });
 
-    const { rows } = await pool.query('SELECT ' + selects.join(', ') + ' FROM ' + table);
+    const { rows } = await snapshotDb().query('SELECT ' + selects.join(', ') + ' FROM ' + table);
     const r = rows[0] || {};
     const profiled = cols.map((c, i) => {
         const out = { id: c.id, type: c.type, distinct: Number(r['d' + i]), nulls: Number(r['n' + i]) };

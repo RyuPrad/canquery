@@ -5,6 +5,7 @@ function makeDb(rows, { currentById = {} } = {}) {
     const client = {
         query: jest.fn(async (sql, params) => {
             executed.push({ sql, params });
+            if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: true }] };
             if (sql.includes('FROM ingested_resources ir') && sql.includes('WHERE ir.resource_id = $1')) {
                 const current = Object.hasOwn(currentById, params[0])
                     ? currentById[params[0]]
@@ -19,11 +20,7 @@ function makeDb(rows, { currentById = {} } = {}) {
         release: jest.fn()
     };
     const db = {
-        query: jest.fn(async (sql, params) => ({
-            rows: params && Array.isArray(params[0])
-                ? rows.filter(row => !params[0].includes(row.resource_id))
-                : rows
-        })),
+        query: jest.fn(async () => ({ rows })),
         connect: jest.fn(async () => client),
         executed,
         client
@@ -125,7 +122,7 @@ describe('eviction budget', () => {
         expect(sql).toContain('SELECT pg_advisory_unlock(hashtext($1))');
     });
 
-    test('excludes the resource being replaced from exact capacity accounting', async () => {
+    test('protects the serving copy while counting its bytes during replacement', async () => {
         const rows = [
             { resource_id: 'same', table_name: 'r_a', byte_size: String(10 * GB), last_accessed_at: '2026-01-01' },
             { resource_id: 'keep', table_name: 'r_b', byte_size: String(4 * GB), last_accessed_at: '2026-02-01' }
@@ -136,8 +133,9 @@ describe('eviction budget', () => {
             excludeResourceIds: ['same'],
             lockHeld: true
         });
-        expect(out.dropped).toBe(0);
-        expect(out.totalBytesAfter).toBe(4 * GB);
+        expect(out.dropped).toBe(1);
+        expect(out.totalBytesAfter).toBe(10 * GB);
+        expect(out.budgetSatisfied).toBe(false);
         expect(db.query).toHaveBeenCalledWith(expect.stringContaining('ANY($1::text[])'), [['same']]);
     });
 });

@@ -1,8 +1,10 @@
+jest.mock('../db/snapshotRead', () => ({ withSnapshot: async (_id, callback) => callback(), snapshotDb: () => require('../db/pool') }));
 jest.mock('../db/catalogReadQueries', () => ({ searchDatasets: jest.fn(), getDatasetByIdOrName: jest.fn(), listResourcesForDataset: jest.fn(), getResourceById: jest.fn(), listOrganizations: jest.fn(), getStats: jest.fn(), pingDb: jest.fn(), getLastSyncTime: jest.fn(), listRecentlyIngested: jest.fn() }));
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 jest.mock('../db/ingestQueries', () => ({ enqueueJob: jest.fn(), getJobById: jest.fn() }));
+jest.mock('../services/preparationService', () => ({ prepareResource: jest.fn() }));
 // The real ingest limiter (5/hour) would 429 the later requests in this suite.
 jest.mock('../middleware/rateLimits', () => ({
     generalLimiter: (req, res, next) => next(),
@@ -16,6 +18,8 @@ jest.mock('../middleware/rateLimits', () => ({
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
 const ingestQueries = require('../db/ingestQueries');
+const { prepareResource } = require('../services/preparationService');
+const AppError = require('../utils/AppError');
 const app = require('../app');
 beforeEach(() => { jest.clearAllMocks(); });
 function makeRow(overrides) { return Object.assign({ id: 'r-x', dataset_id: 'd1', url: 'https://example.org/file.csv', format: 'CSV', size_bytes: null, datastore_active: false, ingest_status: null, table_name: null, ingested_columns: null }, overrides); }
@@ -163,5 +167,45 @@ describe('ingest API', () => {
         ingestQueries.getJobById.mockResolvedValue(null);
         expect((await request(app).get('/api/v1/jobs/999')).status).toBe(404);
         expect((await request(app).get('/api/v1/jobs/abc')).status).toBe(400);
+    });
+});
+
+describe('automatic preparation API', () => {
+    it('returns a shared preparation job with no cache', async () => {
+        prepareResource.mockResolvedValue({ id: 21, resource_id: 'csv-1', status: 'running', serving_cached: true });
+        const response = await request(app).post('/api/v1/resources/csv-1/prepare');
+        expect(response.status).toBe(202);
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(response.body.data).toMatchObject({ id: 21, serving_cached: true });
+        expect(prepareResource).toHaveBeenCalledWith('csv-1', expect.any(String));
+        expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 when the current source is already prepared', async () => {
+        prepareResource.mockResolvedValue({ id: null, already_loaded: true });
+        const response = await request(app).post('/api/v1/resources/csv-1/prepare');
+        expect(response.status).toBe(200);
+        expect(response.body.data.already_loaded).toBe(true);
+    });
+
+    it('publishes Retry-After and a safe cooldown code', async () => {
+        const error = Object.assign(new AppError('Try again later', 429), { retryAfter: 3600, publicCode: 'PREPARATION_COOLDOWN' });
+        prepareResource.mockRejectedValue(error);
+        const response = await request(app).post('/api/v1/resources/csv-1/prepare');
+        expect(response.status).toBe(429);
+        expect(response.headers['retry-after']).toBe('3600');
+        expect(response.body).toMatchObject({ retry_after: 3600, code: 'PREPARATION_COOLDOWN' });
+    });
+
+    it('resource metadata, queries and initial HTML never admit preparation jobs', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'csv-1' }));
+        const detail = await request(app).get('/api/v1/resources/csv-1');
+        expect(detail.status).toBe(200);
+        expect(detail.body.data.preparation).toMatchObject({ supported: true, freshness: 'unprepared' });
+        expect((await request(app).get('/api/v1/resources/csv-1/query')).status).toBe(409);
+        const { resolvePage } = require('../controllers/spaController');
+        expect((await resolvePage('/resources/csv-1')).status).toBe(200);
+        expect(prepareResource).not.toHaveBeenCalled();
+        expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
     });
 });
