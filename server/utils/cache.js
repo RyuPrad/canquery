@@ -12,7 +12,7 @@
 // another dependency. The hard cap matters most for the datastore proxy: its
 // key contains caller-controlled query parameters, so TTL alone is not a
 // memory bound.
-function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight = maxEntries }) {
+function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight = maxEntries, cacheable = () => true }) {
     if (!Number.isInteger(maxEntries) || maxEntries < 1) {
         throw new TypeError('cache maxEntries must be a positive integer');
     }
@@ -82,7 +82,7 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
             const promise = Promise.resolve()
                 .then(fn)
                 .then(result => {
-                    if (generation === requestGeneration) {
+                    if (generation === requestGeneration && cacheable(result)) {
                         const ttl = result == null ? negativeTtlMs : ttlMs;
                         setEntry(key, { data: result, expiresAt: Date.now() + ttl });
                     }

@@ -1,6 +1,17 @@
 const { createCache } = require('../utils/cache');
 
 describe('createCache', () => {
+    it('shares an in-flight result but does not retain oversized values', async () => {
+        const cache = createCache({ name: 'byte-bound', ttlMs: 1000, negativeTtlMs: 1, maxEntries: 2,
+            cacheable: value => Buffer.byteLength(value) <= 10 });
+        const load = jest.fn(async () => 'x'.repeat(11));
+        await Promise.all([cache.get('a', load), cache.get('a', load)]);
+        expect(load).toHaveBeenCalledTimes(1);
+        expect(cache.stats().size).toBe(0);
+        await cache.get('a', load);
+        expect(load).toHaveBeenCalledTimes(2);
+    });
+
     it('never exceeds maxEntries under high-cardinality use', async () => {
         const cache = createCache({ name: 'bounded', ttlMs: 60000, negativeTtlMs: 1000, maxEntries: 25 });
 

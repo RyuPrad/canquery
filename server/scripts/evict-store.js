@@ -20,7 +20,8 @@ const budgetGb = (budgetGbRaw !== null && Number.isFinite(Number(budgetGbRaw)))
 const budgetBytes = budgetGb * 1024 * 1024 * 1024;
 
 const pool = require('../db/pool');
-const { evictUntilUnderBudget } = require('../services/evictService');
+const { evictUntilUnderBudget, withStoreBudgetLock } = require('../services/evictService');
+const { cleanRetiredTables } = require('../services/retiredIngestTables');
 
 async function main() {
     const startedAt = new Date();
@@ -29,7 +30,10 @@ async function main() {
     let result = { dropped: 0, freedBytes: 0 };
     try {
         console.log('budget: ' + budgetBytes + ' bytes' + (dryRun ? ' (dry-run)' : ''));
-        result = await evictUntilUnderBudget(pool, { budgetBytes, dryRun });
+        result = await withStoreBudgetLock(pool, async () => {
+            if (!dryRun) await cleanRetiredTables(pool);
+            return evictUntilUnderBudget(pool, { budgetBytes, dryRun, lockHeld: true });
+        });
         console.log('evicted ' + result.dropped + ' tables, freed ' + result.freedBytes + ' bytes');
         ok = true;
     } catch (err) {

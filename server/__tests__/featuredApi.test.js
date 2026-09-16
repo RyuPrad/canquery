@@ -1,3 +1,5 @@
+jest.mock('../db/catalogReadQueries', () => ({ getResourceById: jest.fn() }));
+jest.mock('../db/snapshotRead', () => ({ withSnapshot: async (_id, callback) => callback(), snapshotDb: () => require('../db/pool') }));
 jest.mock('../db/topDownloadsQueries', () => ({
     listIngestedTop: jest.fn(),
     listTopDownloads: jest.fn(),
@@ -25,6 +27,7 @@ describe('GET /api/v1/insights/featured', () => {
             { dataset_id: 'd1', title_en: 'Grants', title_fr: 'Subventions', resource_id: 'r1', table_name: 'r_aaa',
               columns: [{ id: 'status', type: 'TEXT' }, { id: 'amount', type: 'NUMERIC' }], row_count: 100 }
         ]);
+        require('../db/catalogReadQueries').getResourceById.mockResolvedValue({ ingest_status: 'ready', table_name: 'r_aaa', ingested_columns: [{ id: 'status', type: 'TEXT' }, { id: 'amount', type: 'NUMERIC' }] });
         store.profileStoreTable.mockResolvedValue({ rowCount: 100, columns: [
             { id: 'status', type: 'TEXT', distinct: 3, nulls: 0 },
             { id: 'amount', type: 'NUMERIC', distinct: 80, nulls: 0, avg: 5, min: 1, max: 9 }

@@ -48,12 +48,12 @@ async function claimJob(db, workerId) {
         WHERE id = (
             SELECT id
             FROM ingest_jobs
-            WHERE status = 'pending'
+            WHERE status = 'pending' AND next_attempt_at <= now()
             ORDER BY id
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, resource_id, attempts
+        RETURNING id, resource_id, attempts, preparation, source_version
     `, [workerId]);
     return result.rows[0] || null;
 }
@@ -67,7 +67,7 @@ async function heartbeatJob(db, id, workerId) {
     return result.rowCount === 1;
 }
 
-async function finishJob(db, id, workerId, resourceId, status, error) {
+async function finishJob(db, id, workerId, resourceId, status, error, failure = {}) {
     const client = await db.connect();
     try {
         await client.query('BEGIN');
@@ -77,9 +77,10 @@ async function finishJob(db, id, workerId, resourceId, status, error) {
             SET status = $3,
                 error = $4,
                 finished_at = now(),
-                heartbeat_at = now()
+                heartbeat_at = now(), failure_code = $5,
+                retry_at = CASE WHEN $6::int IS NULL THEN NULL ELSE now() + $6 * interval '1 second' END
             WHERE id = $1 AND status = 'running' AND worker_id = $2
-        `, [id, workerId, status, error]);
+        `, [id, workerId, status, error, failure.code || null, failure.seconds || null]);
         await client.query('COMMIT');
         return result.rowCount === 1;
     } catch (err) {
@@ -90,7 +91,7 @@ async function finishJob(db, id, workerId, resourceId, status, error) {
     }
 }
 
-async function requeueJob(db, id, workerId, error) {
+async function requeueJob(db, id, workerId, error, delaySeconds = 0) {
     const result = await db.query(`
         UPDATE ingest_jobs
         SET status = 'pending',
@@ -98,9 +99,10 @@ async function requeueJob(db, id, workerId, error) {
             claimed_at = NULL,
             finished_at = NULL,
             worker_id = NULL,
-            heartbeat_at = NULL
+            heartbeat_at = NULL,
+            next_attempt_at = now() + $4 * interval '1 second'
         WHERE id = $1 AND status = 'running' AND worker_id = $2
-    `, [id, workerId, error]);
+    `, [id, workerId, error, delaySeconds]);
     return result.rowCount === 1;
 }
 

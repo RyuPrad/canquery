@@ -40,9 +40,12 @@ function errorHandler(err, req, res, next) {
         }));
     }
 
+    if (operational && err.retryAfter) res.set('Retry-After', String(err.retryAfter));
     res.status(statusCode).json({
         error: message,
         request_id: requestId,
+        ...(operational && err.publicCode && { code: err.publicCode }),
+        ...(operational && err.retryAfter && { retry_after: err.retryAfter }),
         ...(operational && err.hint && { hint: err.hint }),
         ...(operational && err.download_url && { download_url: err.download_url }),
         ...(process.env.NODE_ENV !== 'production' && err && err.stack && { stack: err.stack })

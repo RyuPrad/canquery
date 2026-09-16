@@ -86,7 +86,7 @@ function overviewSnapshot(presentation, dataset = false) {
         capabilities.loadable && capabilities.loadable + ' loadable resources',
         capabilities.mapped && capabilities.mapped + ' mapped resources'
     ].filter(Boolean) : [
-        capabilities.table === 'ready' && 'Query table', capabilities.table === 'loadable' && 'Load table',
+        capabilities.table === 'ready' && 'Query table', capabilities.table === 'loadable' && 'Explore table (prepared automatically)',
         capabilities.map && 'Explore map', capabilities.download && 'Access original file'
     ].filter(Boolean);
     const fields = presentation.fields;

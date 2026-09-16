@@ -187,7 +187,7 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
     test.each([
         [{ ...base, ingest_status: 'ready' }, /query, filter, chart and export.*live CSV table/i],
         [{ ...base, datastore_active: true }, /query, filter, chart and export.*live CSV table/i],
-        [base, /Load this CSV resource.*live table/i],
+        [base, /Explore this CSV resource.*automatically prepared table/i],
         [{ ...base, format: 'PDF', map_provider: 'arcgis' }, /interactive map.*original PDF file/i],
         [{ ...base, format: 'PDF' }, /metadata.*original PDF file/i]
     ])('writes truthful capability-specific copy for %#', (resource, expected) => {

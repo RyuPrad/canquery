@@ -6,7 +6,6 @@ import {
   DonutChart, CategoryBar, TimeSeriesChart,
 } from './charts/Visuals.jsx';
 import { humanize, cleanRecords } from './charts/theme.js';
-import { UnlockIcon } from './Icons.jsx';
 import { track } from '../utils/analytics.js';
 
 const selectClass = 'select select-sm bg-base-200 border-base-content/10 rounded-lg font-mono text-xs';
@@ -88,6 +87,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
   }, [agg, aggCol, numericCols]);
 
   const [rows, setRows] = useState(null);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState(null);
   const filtersKey = JSON.stringify(filters || {});
 
@@ -95,6 +95,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
     if (!groupBy) return;
     if (wantsAggCol && !aggCol) return;
     let cancelled = false;
+    const controller = new AbortController();
     setRows(null);
     setError(null);
     const isLine = chartType === 'line';
@@ -106,11 +107,11 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
       agg_column: wantsAggCol ? aggCol : undefined,
       bucket: isDate ? bucket : undefined,
       sort: (isDate || isLine) ? 'key asc' : 'value desc',
-      limit: chartType === 'donut' ? 16 : (isDate ? 200 : 50),
-    })
-      .then((env) => { if (!cancelled) setRows(cleanRecords(env.data.records)); })
+      limit: chartType === 'donut' ? 16 : (isDate ? 100 : 50),
+    }, { signal: controller.signal })
+      .then((env) => { if (!cancelled) { setRows(cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
       .catch((err) => { if (!cancelled) setError(err); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resourceId, q, filtersKey, groupBy, agg, aggCol, bucket, isDate, chartType, wantsAggCol]);
 
@@ -120,7 +121,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
   if (error) body = <ChartEmpty label={error.message || t('chart.no_data')} height={320} />;
   else if (rows === null) body = <ChartSkeleton height={320} />;
   else if (!rows.length) body = <ChartEmpty label={t('chart.no_data')} height={320} />;
-  else if (chartType === 'donut') body = <DonutChart records={rows} lang={lang} height={320} totalLabel={t('chart.total')} />;
+  else if (chartType === 'donut' && !truncated) body = <DonutChart records={rows} lang={lang} height={320} totalLabel={t('chart.total')} />;
   else if (chartType === 'line') body = <TimeSeriesChart records={rows} lang={lang} bucket={isDate ? bucket : null} categorical={!isDate} type="area" height={320} />;
   else body = <CategoryBar records={rows} lang={lang} height={320} />;
 
@@ -130,7 +131,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
     : agg + ' ' + t('chart.by') + ' ' + humanize(groupBy);
 
   return (
-    <ChartCard title={title} subtitle={subtitle}>
+    <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + t('preparation.limited_groups') : subtitle}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
         <Label>{t('chart.x')}</Label>
         <select className={selectClass} value={groupBy} onChange={(e) => {
@@ -194,123 +195,14 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
   );
 }
 
-// Datastore resources are served live from the upstream proxy, which can only
-// plot a numeric column over the current page and has no aggregation, profiling
-// or column-type inference. When the live table exposes nothing numeric there is
-// no chart to draw - so instead of a dead end, tell the user what unlocks charts:
-// loading the file into canquery (which types the columns and builds the full
-// auto-insights dashboard). The button reuses the resource's load machinery.
-function ChartLoadPrompt({ onLoad, loadState }) {
-  const { t } = useLang();
-  const preparing = loadState === 'queued' || loadState === 'preparing' || loadState === 'running';
-  const failed = loadState === 'failed';
-  return (
-    <div className="cq-card p-10 sm:p-12 text-center space-y-5 max-w-lg mx-auto cq-fade">
-      <span className="w-14 h-14 rounded-2xl bg-primary/15 cq-fg-red inline-flex items-center justify-center mx-auto">
-        <UnlockIcon size={24} />
-      </span>
-      <div className="space-y-1.5">
-        <h3 className="font-display font-semibold text-lg tracking-tight">{t('chart.load_title')}</h3>
-        <p className="text-sm text-base-content/60 leading-relaxed">{t('chart.load_body')}</p>
-      </div>
-      {onLoad && (
-        <div className="flex justify-center">
-          <button
-            className="btn btn-primary rounded-xl px-7 shadow-lg shadow-primary/25"
-            onClick={onLoad}
-            disabled={preparing}
-          >
-            {preparing && <span className="loading loading-spinner loading-xs" />}
-            {preparing ? t('chart.load_preparing') : t('resource.unlock')}
-          </button>
-        </div>
-      )}
-      {failed && <p className="text-xs text-base-content/50">{t('chart.load_failed')}</p>}
-    </div>
-  );
-}
-
-// Datastore resources can't aggregate (CKAN limitation): plot a numeric column
-// against an X column over the current page, the way the old explorer did - but
-// with the new themed visuals.
-function SeriesBuilder({ resourceId, q, filters, fields, onLoad, loadState }) {
-  const { t, lang } = useLang();
-  const cols = useMemo(() => fields.filter((f) => f.id !== '_id'), [fields]);
-  const numericCols = useMemo(() => cols.filter((c) => NUM_RE.test(c.type)), [cols]);
-
-  const [xField, setXField] = useState(() => (cols.find((c) => DATE_RE.test(c.type))?.id) || cols[0]?.id || '');
-  const [yField, setYField] = useState(numericCols[0]?.id || '');
-  const [chartType, setChartType] = useState('line');
-  const [rows, setRows] = useState(null);
-  const [error, setError] = useState(null);
-  const filtersKey = JSON.stringify(filters || {});
-
-  useEffect(() => {
-    if (!xField || !yField) return;
-    let cancelled = false;
-    setRows(null);
-    setError(null);
-    queryResource(resourceId, { q, filters, sort: xField + ' asc', limit: 200, offset: 0 })
-      .then((env) => {
-        if (cancelled) return;
-        setRows(env.data.records
-          .map((r) => ({ key: r[xField], value: Number(r[yField]) }))
-          .filter((p) => !Number.isNaN(p.value)));
-      })
-      .catch((err) => { if (!cancelled) setError(err); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resourceId, q, filtersKey, xField, yField]);
-
-  if (!numericCols.length) return <ChartLoadPrompt onLoad={onLoad} loadState={loadState} />;
-
-  let body;
-  if (error) body = <ChartEmpty label={error.message || t('chart.no_data')} height={320} />;
-  else if (rows === null) body = <ChartSkeleton height={320} />;
-  else if (rows.length < 2) body = <ChartEmpty label={t('chart.not_enough')} height={320} />;
-  else if (chartType === 'bars') body = <CategoryBar records={rows} lang={lang} height={320} />;
-  else body = <TimeSeriesChart records={rows} lang={lang} categorical type={chartType === 'area' ? 'area' : 'line'} height={320} />;
-
-  return (
-    <ChartCard title={humanize(yField)} subtitle={t('chart.by') + ' ' + humanize(xField)}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
-        <Label>{t('chart.x')}</Label>
-        <select className={selectClass} value={xField} onChange={(e) => {
-          track('chart_config', { resource_id: resourceId, setting: 'x_axis', value: e.target.value });
-          setXField(e.target.value);
-        }}>
-          {cols.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
-        </select>
-        <Label>{t('chart.y')}</Label>
-        <select className={selectClass} value={yField} onChange={(e) => {
-          track('chart_config', { resource_id: resourceId, setting: 'y_axis', value: e.target.value });
-          setYField(e.target.value);
-        }}>
-          {numericCols.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
-        </select>
-        <div className="ml-auto">
-          <TypeToggle
-            value={chartType}
-            onChange={(value) => {
-              track('chart_config', { resource_id: resourceId, setting: 'chart_type', value });
-              setChartType(value);
-            }}
-            options={[
-              { value: 'line', label: t('chart.type_line') },
-              { value: 'area', label: t('chart.type_area') },
-              { value: 'bars', label: t('chart.type_bars') },
-            ]}
-          />
-        </div>
-      </div>
-      {body}
-    </ChartCard>
-  );
-}
-
-export default function ChartBuilder({ resourceId, q, filters, fields, queryMode, classified, onLoad, loadState }) {
+export default function ChartBuilder({ resourceId, q, filters, fields, queryMode, classified }) {
   if (queryMode === 'ingested') {
     return <AggregateBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} classified={classified} />;
   }
-  return <SeriesBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} onLoad={onLoad} loadState={loadState} />;
+  return <ChartUnavailable />;
+}
+
+function ChartUnavailable() {
+  const { t } = useLang();
+  return <ChartEmpty label={t('preparation.chart_unavailable')} height={200} />;
 }

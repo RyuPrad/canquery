@@ -11,8 +11,6 @@ export default function ResourceBadge({ mode }) {
   const { t } = useLang();
   const m = MODES[mode] || FALLBACK;
   return (
-    <span className="tooltip tooltip-bottom" data-tip={t(m.tipKey)}>
-      <span className={m.classes}>{t(m.labelKey)}</span>
-    </span>
+    <span className={m.classes} title={t(m.tipKey)}>{t(m.labelKey)}</span>
   );
 }

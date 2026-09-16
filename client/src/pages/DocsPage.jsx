@@ -177,6 +177,12 @@ export default function DocsPage() {
         />
         <Endpoint
           method="POST"
+          path="/api/v1/resources/:id/prepare"
+          desc={t('docs.ep_prepare')}
+          example={'curl -X POST "' + BASE + '/api/v1/resources/RESOURCE_ID/prepare"'}
+        />
+        <Endpoint
+          method="POST"
           path="/api/v1/resources/:id/ingest"
           desc={t('docs.ep_ingest')}
           example={'curl -X POST "' + BASE + '/api/v1/resources/RESOURCE_ID/ingest"'}

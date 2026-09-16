@@ -88,6 +88,8 @@ const shapePlaceMatch = (row) => row.matched_place_id ? {
     }
 } : null;
 
+const { preparationInfo } = require('./resourceVersion');
+
 const shapeResource = (row) => ({
     id: row.id,
     dataset_id: row.dataset_id,
@@ -99,6 +101,7 @@ const shapeResource = (row) => ({
     language: row.language,
     last_modified: row.last_modified,
     query_mode: computeQueryMode(row),
+    preparation: preparationInfo(row),
     map: row.map_provider ? {
         available: true,
         provider: row.map_provider,
@@ -116,7 +119,7 @@ const shapeResource = (row) => ({
         } : {})
     } : null,
     ingestion: row.ingest_status
-        ? { status: row.ingest_status, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at }
+        ? { status: row.ingest_status, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at, fields: Array.isArray(row.ingested_columns) ? row.ingested_columns : undefined }
         : null
 });
 
@@ -497,7 +500,7 @@ const opsStatus = async () => {
     const anyUnhealthyJob = Object.values(jobs).some(j => ['failed', 'stale'].includes(j.status));
     return {
         ok: !anyUnhealthyJob && !mapStale && maps.failed === 0 && maps.retrying_sources === 0,
-        jobs, maps
+        jobs, maps, preparations: health.preparations || { pending: 0, running: 0, failed_last_day: 0, completed_last_day: 0, oldest_pending_at: null }
     };
 };
 

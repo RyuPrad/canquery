@@ -8,16 +8,20 @@ export function fetchDataset(idOrName) {
   return getJSON('/api/v1/datasets/' + encodeURIComponent(idOrName));
 }
 
-export function fetchResource(id) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id));
+export function fetchResource(id, options) {
+  return getJSON('/api/v1/resources/' + encodeURIComponent(id), undefined, options);
 }
 
-export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket });
+export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}, options) {
+  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket }, options);
 }
 
-export function fetchResourceProfile(id) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/profile');
+export function fetchResourceProfile(id, options) {
+  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/profile', undefined, options);
+}
+
+export function prepareResource(id) {
+  return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/prepare');
 }
 
 export function enqueueIngest(id) {

@@ -75,7 +75,7 @@ async function readSample(filePath, { delimiter, encoding }) {
 
 async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols }) {
     const { headers, rows, skipRecords } = await readSample(filePath, { delimiter, encoding });
-    if (!headers || headers.length === 0) throw new Error('empty CSV');
+    if (!headers || headers.length === 0) throw Object.assign(new Error('empty CSV'), { code: 'CSV_EMPTY' });
     if (headers.length > maxCols) {
         const err = new Error('column count ' + headers.length + ' exceeds cap ' + maxCols);
         err.code = 'CAP_COLS';

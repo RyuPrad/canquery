@@ -1,3 +1,4 @@
+jest.mock('../db/snapshotRead', () => ({ withSnapshot: async (_id, callback) => callback(), snapshotDb: () => require('../db/pool') }));
 jest.mock('../db/catalogReadQueries', () => ({
     searchDatasets: jest.fn(),
     getDatasetByIdOrName: jest.fn(),

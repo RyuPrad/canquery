@@ -45,7 +45,10 @@ export default function InsightsDashboard({ resourceId, q, filters, classified, 
 
   return (
     <div className="space-y-4 cq-fade">
-      <KpiRow kpis={plan.kpis} />
+      <div>
+        <p className="text-xs text-base-content/60 mb-2">{t('preparation.whole_file')}</p>
+        <KpiRow kpis={plan.kpis} />
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {plan.insights.map((spec) => (
           <InsightChart key={spec.key} resourceId={resourceId} q={q} filters={filters} spec={spec} />

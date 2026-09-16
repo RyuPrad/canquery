@@ -22,6 +22,7 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.body = body || null;
+    this.retryAfter = Number(body?.retry_after) || null;
   }
 }
 
@@ -72,8 +73,8 @@ export async function getJSON(path, params, options = {}) {
   throw new ApiError(message, res.status, body);
 }
 
-export async function postJSON(path) {
-  const res = await fetch(apiUrl(path), { method: 'POST' });
+export async function postJSON(path, options = {}) {
+  const res = await fetch(apiUrl(path), { method: 'POST', signal: options.signal });
   let body;
   try {
     body = await res.json();

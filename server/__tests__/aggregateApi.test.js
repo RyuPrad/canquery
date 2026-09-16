@@ -1,3 +1,4 @@
+jest.mock('../db/snapshotRead', () => ({ withSnapshot: async (_id, callback) => callback(), snapshotDb: () => require('../db/pool') }));
 jest.mock('../db/catalogReadQueries', () => ({ searchDatasets: jest.fn(), getDatasetByIdOrName: jest.fn(), listResourcesForDataset: jest.fn(), getResourceById: jest.fn(), listOrganizations: jest.fn(), getStats: jest.fn(), pingDb: jest.fn(), getLastSyncTime: jest.fn(), listRecentlyIngested: jest.fn() }));
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), aggregateStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
@@ -15,6 +16,22 @@ function ingestedRow() {
 }
 
 describe('aggregation API', () => {
+    it('shares aggregates for the same snapshot and filter, then invalidates on replacement', async () => {
+        const row = { ...ingestedRow(), table_name: 'r_ca11', ingested_at: '2026-09-16T00:00:00Z' };
+        queries.getResourceById.mockResolvedValue(row);
+        storeQueries.aggregateStoreTable.mockResolvedValue({ records: [{ key: 'ON', value: '500' }], total: 1 });
+        const path = '/api/v1/resources/ing-1/query?group_by=province&agg=count';
+        expect((await request(app).get(path)).status).toBe(200);
+        expect((await request(app).get(path)).status).toBe(200);
+        expect(storeQueries.aggregateStoreTable).toHaveBeenCalledTimes(1);
+        await request(app).get(path).query({ filters: JSON.stringify({ province: 'ON' }) });
+        expect(storeQueries.aggregateStoreTable).toHaveBeenCalledTimes(2);
+        queries.getResourceById.mockResolvedValue({ ...row, table_name: 'r_ca12', ingested_at: '2026-09-16T01:00:00Z' });
+        storeQueries.aggregateStoreTable.mockResolvedValue({ records: [{ key: 'ON', value: '600' }], total: 1 });
+        expect((await request(app).get(path)).body.data.records[0].value).toBe('600');
+        expect(storeQueries.aggregateStoreTable).toHaveBeenCalledTimes(3);
+    });
+
     it('aggregated query returns key/value fields and meta echo', async () => {
         queries.getResourceById.mockResolvedValue(ingestedRow());
         storeQueries.aggregateStoreTable.mockResolvedValue({ records: [{ key: 'ON', value: '4' }], total: 1 });
