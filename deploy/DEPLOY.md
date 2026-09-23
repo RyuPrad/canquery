@@ -305,6 +305,32 @@ upstream-deleted datasets, with a configurable maximum-delete-fraction guard.
 
 ## 7. Database backups
 
+`deploy/canquery-backup.sh` provides a host backup script for the application and
+analytics databases. Install it as a root-owned executable and invoke it under
+the host's existing backup lock. It requires Bash, Python 3, PostgreSQL client
+tools and a local `postgres` account with peer access.
+
+The caller can set `CANQUERY_BACKUP_APP_DATABASE` (default `canquery`),
+`CANQUERY_BACKUP_ANALYTICS_DATABASE` (default `canquery_analytics`),
+`CANQUERY_BACKUP_DIR` (default `/var/backups/canquery`),
+`CANQUERY_BACKUP_KEEP_DAYS` (default `7`) and
+`CANQUERY_BACKUP_MIN_FREE_GB` (default `2`, in GiB). Set the filesystem floor
+for the complete host workload, including worker headroom, rather than just
+the dump itself. The script checks free space before and during each dump.
+
+Each database is attempted independently. A dump is published only after a
+successful exit, a nonempty file and a readable `pg_restore --list` manifest.
+Failures remove that attempt's partial file and produce a nonzero script exit.
+Retention runs even after a failed attempt, but always preserves the newest
+two manifest-readable backups per database regardless of age. Other files and
+release evidence directories are outside scheduled retention. Manifest checks
+do not replace isolated restore drills or verified encrypted off-host copies.
+
+Large numbers of prepared tables and sequences can exceed PostgreSQL's shared
+lock capacity during a full dump. Size `max_locks_per_transaction` for the
+actual relation count and concurrent workload; changing it requires a database
+restart. A failed dump must not be treated as a recovery point.
+
 The local map feature cache and PMTiles archives are reproducible. To keep logical dumps compact,
 exclude only its data while retaining its schema, queue, and map metadata:
 

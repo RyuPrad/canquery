@@ -120,17 +120,35 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
         client.query(copyFrom(copySql))
     );
 
-    for (const col of columns) {
-        if (col.type === 'TEXT') continue;
-        const ident = quoteIdent(col.id);
-        try {
-            await client.query('SAVEPOINT cast_col');
-            await client.query('ALTER TABLE ' + table + ' ALTER COLUMN ' + ident + ' TYPE ' + pgTypeFor(col.type) + ' USING nullif(' + ident + ', \'\')::' + pgTypeFor(col.type));
-            await client.query('RELEASE SAVEPOINT cast_col');
-        } catch {
-            await client.query('ROLLBACK TO SAVEPOINT cast_col');
-            col.type = 'TEXT';
-            col.cast_failed = true;
+    const typedColumns = columns.filter(col => col.type !== 'TEXT');
+    if (typedColumns.length) {
+        // Validate the complete file before changing types. PostgreSQL 16's
+        // input validator distinguishes bad publisher values from infrastructure
+        // failures, which must abort the import instead of silently using TEXT.
+        const checks = typedColumns.map((col, index) =>
+            'coalesce(bool_and(pg_input_is_valid(nullif(' + quoteIdent(col.id) +
+            ', \'\'), $' + (index + 1) + ')), true) AS "cast_' + index + '"'
+        );
+        const { rows: validity } = await client.query(
+            'SELECT ' + checks.join(', ') + ' FROM ' + table,
+            typedColumns.map(col => pgTypeFor(col.type))
+        );
+        const alterations = [];
+        typedColumns.forEach((col, index) => {
+            if (validity[0]['cast_' + index] !== true) {
+                col.type = 'TEXT';
+                col.cast_failed = true;
+                return;
+            }
+            const ident = quoteIdent(col.id);
+            const type = pgTypeFor(col.type);
+            alterations.push('ALTER COLUMN ' + ident + ' TYPE ' + type +
+                ' USING nullif(' + ident + ', \'\')::' + type);
+        });
+        if (alterations.length) {
+            // A separate ALTER for each column keeps many rewritten relations
+            // alive until commit. Combine conversions into one table rewrite.
+            await client.query('ALTER TABLE ' + table + ' ' + alterations.join(', '));
         }
     }
 
