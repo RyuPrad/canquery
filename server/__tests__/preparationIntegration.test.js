@@ -97,6 +97,43 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         });
     });
 
+    test('wide files rewrite once and preserve values that invalidate a sampled type', async () => {
+        const id = await seed();
+        await pool.query('CREATE TABLE public.prepare_test_rewrites (relation_oid oid NOT NULL)');
+        try {
+            await pool.query(`CREATE FUNCTION public.prepare_test_record_rewrite() RETURNS event_trigger
+                LANGUAGE plpgsql AS $$ BEGIN
+                    INSERT INTO public.prepare_test_rewrites VALUES (pg_event_trigger_table_rewrite_oid());
+                END $$`);
+            await pool.query(`CREATE EVENT TRIGGER prepare_test_rewrite ON table_rewrite
+                EXECUTE FUNCTION public.prepare_test_record_rewrite()`);
+            const headers = [...Array.from({ length: 32 }, (_, n) => 'number_' + n), 'late_invalid', 'date', 'time', 'amount'];
+            const records = Array.from({ length: 1200 }, (_, n) => [
+                ...Array.from({ length: 32 }, () => n === 1100 ? '' : '3000000000'),
+                n === 1150 ? 'publisher suppression' : '1',
+                n === 1100 ? '' : '2026-09-23',
+                n === 1100 ? '' : '2026-09-23T01:00:00Z',
+                n === 1100 ? '' : '1.25'
+            ].join(','));
+            const text = headers.join(',') + '\n' + records.join('\n');
+            const prepared = await ingestResource(await getResourceById(id), { ...caps(text), maxRows: 2000 });
+            const rewrites = await pool.query('SELECT count(*)::int AS n FROM public.prepare_test_rewrites WHERE relation_oid=to_regclass($1)', ['store.' + prepared.tableName]);
+            expect(rewrites.rows[0].n).toBe(1);
+            const resource = await getResourceById(id);
+            expect(resource.ingested_columns.find(col => col.id === 'late_invalid')).toMatchObject({ type: 'TEXT', cast_failed: true });
+            const values = await pool.query('SELECT number_0,late_invalid,date,time,amount FROM store."' + prepared.tableName + '" WHERE _id IN (1,1101,1151) ORDER BY _id');
+            expect(values.rows[0]).toMatchObject({ number_0: '3000000000', amount: '1.25' });
+            expect(values.rows[0].date).not.toBeNull();
+            expect(values.rows[0].time).toBeInstanceOf(Date);
+            expect(values.rows[1]).toMatchObject({ number_0: null, date: null, time: null, amount: null });
+            expect(values.rows[2].late_invalid).toBe('publisher suppression');
+        } finally {
+            await pool.query('DROP EVENT TRIGGER IF EXISTS prepare_test_rewrite');
+            await pool.query('DROP FUNCTION IF EXISTS public.prepare_test_record_rewrite()');
+            await pool.query('DROP TABLE public.prepare_test_rewrites');
+        }
+    });
+
     test('refresh publishes a new snapshot while an existing export finishes on its old one', async () => {
         const id = await seed();
         const first = await ingestResource(await getResourceById(id), caps(csv(1)));
@@ -132,6 +169,28 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         expect(row.table_name).toBe(first.tableName);
         expect(preparationInfo(row).freshness).toBe('stale');
         expect((await queryResource(id, { limit: 1 })).records).toHaveLength(1);
+    });
+
+    test('a database failure during conversion aborts replacement instead of publishing TEXT', async () => {
+        const id = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv(1)));
+        const updated = await modify(id);
+        try {
+            await pool.query(`CREATE FUNCTION public.prepare_test_fail_rewrite() RETURNS event_trigger
+                LANGUAGE plpgsql AS $$ BEGIN
+                    RAISE EXCEPTION USING ERRCODE='53100', MESSAGE='simulated disk full';
+                END $$`);
+            await pool.query(`CREATE EVENT TRIGGER prepare_test_fail_rewrite ON table_rewrite
+                EXECUTE FUNCTION public.prepare_test_fail_rewrite()`);
+            await expect(ingestResource(updated, caps(csv(2)))).rejects.toMatchObject({ code: '53100' });
+            const resource = await getResourceById(id);
+            expect(resource.table_name).toBe(first.tableName);
+            expect(resource.ingested_columns.find(col => col.id === 'amount')).toEqual({ id: 'amount', type: 'INTEGER' });
+            expect((await queryResource(id, { limit: 1 })).records[0].amount).toBe('1');
+        } finally {
+            await pool.query('DROP EVENT TRIGGER IF EXISTS prepare_test_fail_rewrite');
+            await pool.query('DROP FUNCTION IF EXISTS public.prepare_test_fail_rewrite()');
+        }
     });
 
     test('a source changed during download cannot publish an obsolete build', async () => {
