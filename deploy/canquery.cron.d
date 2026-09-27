@@ -14,8 +14,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Refresh every enabled non-federal source (ArcGIS Hub and CKAN)
 30 6 * * * root /usr/local/sbin/canquery-run-job.sh sync-municipal-sources
 
-# Enforce STORE_BUDGET_GB on the store schema
-45 3 * * * root /usr/local/sbin/canquery-run-job.sh evict-store
+# Expire idle unpinned tables and enforce STORE_BUDGET_GB; busy runs skip
+*/15 * * * * root /usr/local/sbin/canquery-run-job.sh evict-store
 
 # Rebuild the Top 100 leaderboard from the latest analytics snapshot
 # (ingests + pins each dataset's representative resource; cheap once warmed)

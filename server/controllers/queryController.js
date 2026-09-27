@@ -119,4 +119,9 @@ async function exportResourceCsv(req, res) {
 }
 
 const pin = handler => catchAsync((req, res) => withSnapshot(req.params.id, () => handler(req, res)));
-module.exports = { queryResource: pin(queryResource), profileResource: pin(profileResource), exportResourceCsv: pin(exportResourceCsv) };
+const recordResourceActivity = pin(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    await queryService.recordResourceActivity(req.params.id);
+    res.status(204).end();
+});
+module.exports = { queryResource: pin(queryResource), profileResource: pin(profileResource), exportResourceCsv: pin(exportResourceCsv), recordResourceActivity };

@@ -42,6 +42,16 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
   const key = JSON.stringify([id, resource?.ingestion?.ingested_at, resource?.last_modified, info?.freshness, attempt]);
 
   useEffect(() => {
+    // Once publication is visible, a later eviction is a new preparation
+    // lifecycle even if its unprepared metadata matches the original visit.
+    if (resource?.query_mode === 'ingested' && info?.freshness === 'current' && !jobId) {
+      requested.current = null;
+      setPhase('idle');
+      setRetryAt(null);
+    }
+  }, [resource?.query_mode, info?.freshness, jobId]);
+
+  useEffect(() => {
     const update = () => setVisible(document.visibilityState !== 'hidden');
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);

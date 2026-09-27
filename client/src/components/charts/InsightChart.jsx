@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { NotIngestedError } from '../../api/client.js';
 import { queryResource } from '../../api/catalog.js';
 import { useLang } from '../../i18n.jsx';
 import {
@@ -11,7 +12,7 @@ import { humanize, cleanRecords } from './theme.js';
 // current search + filters) and renders the matching visual. Shared by the
 // resource dashboard (framed in a card) and the Insights gallery (framed=false,
 // the gallery card is the frame).
-export default function InsightChart({ resourceId, q, filters, spec, framed = true, height }) {
+export default function InsightChart({ resourceId, q, filters, spec, framed = true, height, onUnavailable }) {
   const { t, lang } = useLang();
   const [rows, setRows] = useState(null);
   const [truncated, setTruncated] = useState(false);
@@ -36,7 +37,7 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
       limit: isTime ? 100 : 12,
     }, { signal: controller.signal })
       .then((env) => { if (!cancelled) { setRows(cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
-      .catch((err) => { if (!cancelled) setError(err); });
+      .catch((err) => { if (!cancelled) { setError(err); if (err instanceof NotIngestedError) onUnavailable?.(); } });
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resourceId, q, filtersKey, spec.column, spec.agg, spec.aggColumn, spec.bucket, isTime]);

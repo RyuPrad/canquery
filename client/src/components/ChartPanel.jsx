@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { NotIngestedError } from '../api/client.js';
 import { fetchResourceProfile } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import { classifyColumns } from './charts/classify.js';
@@ -7,7 +8,7 @@ import ChartBuilder from './ChartBuilder.jsx';
 import { SparklesIcon, ChartIcon } from './Icons.jsx';
 import { track } from '../utils/analytics.js';
 
-export default function ChartPanel({ resourceId, q, filters, fields, queryMode }) {
+export default function ChartPanel({ resourceId, q, filters, fields, queryMode, onUnavailable }) {
   const { t } = useLang();
   const [tab, setTab] = useState('insights');
   const [profile, setProfile] = useState(null);
@@ -26,14 +27,14 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode }
     setProfileError(null);
     fetchResourceProfile(resourceId, { signal: controller.signal })
       .then((env) => { if (!cancelled) setProfile(env.data); })
-      .catch((err) => { if (!cancelled) setProfileError(err); });
+      .catch((err) => { if (!cancelled) { setProfileError(err); if (err instanceof NotIngestedError) onUnavailable?.(); } });
     return () => { cancelled = true; controller.abort(); };
-  }, [resourceId, ingested]);
+  }, [resourceId, ingested, onUnavailable]);
 
   // Preparation belongs to the resource page. Never present a limited live
   // row preview as a full-data chart.
   if (!ingested) {
-    return <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} />;
+    return <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} onUnavailable={onUnavailable} />;
   }
 
   const classified = profile ? classifyColumns(profile) : null;
@@ -58,9 +59,9 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode }
       </div>
 
       {tab === 'insights' ? (
-        <InsightsDashboard resourceId={resourceId} q={q} filters={filters} classified={classified} error={profileError} />
+        <InsightsDashboard resourceId={resourceId} q={q} filters={filters} classified={classified} error={profileError} onUnavailable={onUnavailable} />
       ) : classified || profileError ? (
-        <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} classified={classified} />
+        <ChartBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} queryMode={queryMode} onUnavailable={onUnavailable} classified={classified} />
       ) : (
         <div className="cq-skel h-[420px] rounded-xl" />
       )}

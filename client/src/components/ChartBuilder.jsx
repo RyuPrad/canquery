@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { NotIngestedError } from '../api/client.js';
 import { queryResource } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import {
@@ -56,7 +57,7 @@ function initialConfig(cols, classified) {
 }
 
 // Ingested resources: full group-by + aggregate builder.
-function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
+function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavailable }) {
   const { t, lang } = useLang();
   const cols = useMemo(() => fields.filter((f) => f.id !== '_id'), [fields]);
   const numericCols = useMemo(() => cols.filter((c) => NUM_RE.test(c.type)), [cols]);
@@ -110,7 +111,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
       limit: chartType === 'donut' ? 16 : (isDate ? 100 : 50),
     }, { signal: controller.signal })
       .then((env) => { if (!cancelled) { setRows(cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
-      .catch((err) => { if (!cancelled) setError(err); });
+      .catch((err) => { if (!cancelled) { setError(err); if (err instanceof NotIngestedError) onUnavailable?.(); } });
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resourceId, q, filtersKey, groupBy, agg, aggCol, bucket, isDate, chartType, wantsAggCol]);
@@ -195,9 +196,9 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified }) {
   );
 }
 
-export default function ChartBuilder({ resourceId, q, filters, fields, queryMode, classified }) {
+export default function ChartBuilder({ resourceId, q, filters, fields, queryMode, classified, onUnavailable }) {
   if (queryMode === 'ingested') {
-    return <AggregateBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} classified={classified} />;
+    return <AggregateBuilder resourceId={resourceId} q={q} filters={filters} fields={fields} classified={classified} onUnavailable={onUnavailable} />;
   }
   return <ChartUnavailable />;
 }

@@ -1,4 +1,3 @@
-const pool = require('./pool');
 const { snapshotDb } = require('./snapshotRead');
 const AppError = require('../utils/AppError');
 const { buildWhere, quoteIdent } = require('../utils/filterGrammar');
@@ -130,8 +129,13 @@ async function profileStoreTable({ tableName, columns }) {
     return { rowCount: Number(r.__total || 0), columns: profiled };
 }
 
-async function touchLastAccessed(resourceId) {
-    await pool.query('UPDATE ingested_resources SET last_accessed_at = now() WHERE resource_id = $1', [resourceId]);
+async function touchLastAccessed(resourceId, tableName) {
+    // Reuse the reader's connection: waiting on a second pool connection while
+    // all readers hold one would deadlock. Only renew the snapshot actually used.
+    const result = await snapshotDb().query(`UPDATE ingested_resources
+        SET last_accessed_at = GREATEST(last_accessed_at, clock_timestamp())
+        WHERE resource_id = $1 AND table_name = $2 AND status = 'ready'`, [resourceId, tableName]);
+    return result.rowCount === 1;
 }
 
 module.exports = { queryStoreTable, touchLastAccessed, TABLE_NAME_RE, aggregateStoreTable, profileStoreTable };

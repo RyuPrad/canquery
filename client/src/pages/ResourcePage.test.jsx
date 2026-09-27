@@ -9,12 +9,13 @@ vi.mock('../api/catalog.js', () => ({
   fetchResource: vi.fn(),
   queryResource: vi.fn(),
   prepareResource: vi.fn(),
+  recordResourceActivity: vi.fn(() => Promise.resolve()),
   fetchJob: vi.fn(),
 }));
 vi.mock('../components/MapPanel.jsx', () => ({
   default: ({ resourceId }) => <div>live-map-{resourceId}</div>,
 }));
-import { prepareResource, fetchJob, fetchResource, queryResource } from '../api/catalog.js';
+import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity } from '../api/catalog.js';
 
 function resourceEnvelope(id) {
   return {
@@ -191,4 +192,22 @@ describe('ResourcePage navigation', () => {
     }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(prepareResource).toHaveBeenCalledTimes(1);
   });
+});
+
+
+test('a keepalive detecting expiry refreshes metadata and prepares once', async () => {
+  const { NotIngestedError } = await import('../api/client.js');
+  recordResourceActivity.mockRejectedValueOnce(new NotIngestedError('expired', 409));
+  const cold = { ...resourceEnvelope('a').data, query_mode: 'ingestable', preparation: { supported: true, enabled: true, freshness: 'unprepared' } };
+  const ready = { ...resourceEnvelope('a').data, ingestion: { ingested_at: '2026-09-27' }, preparation: { supported: true, enabled: true, freshness: 'current' } };
+  fetchResource.mockResolvedValueOnce(resourceEnvelope('a')).mockResolvedValueOnce({ data: cold }).mockResolvedValue({ data: ready });
+  prepareResource.mockResolvedValue({ data: { id: 888, status: 'pending' } });
+  fetchJob.mockResolvedValue({ data: { id: 888, status: 'done' } });
+  render(<MemoryRouter initialEntries={['/resources/a']}>
+    <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+  </MemoryRouter>);
+  await waitFor(() => expect(fetchResource).toHaveBeenCalledTimes(3));
+  expect(await screen.findByText('row-a')).toBeInTheDocument();
+  expect(prepareResource).toHaveBeenCalledTimes(1);
+  expect(recordResourceActivity).toHaveBeenCalled();
 });

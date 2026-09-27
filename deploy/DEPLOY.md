@@ -66,6 +66,7 @@ CANQUERY_DATABASE_URL=postgres://canquery:<password>@127.0.0.1:5432/canquery
 CKAN_USER_AGENT=canquery/1.0 (<contact-email>)
 CORS_ALLOWED_ORIGINS=https://<your-domain>
 STORE_BUDGET_GB=15
+STORE_IDLE_TTL_HOURS=24
 # Required: an app-readable path on PostgreSQL's data filesystem.
 # A readable mount anchor such as /var/lib is preferable when a Docker volume's
 # data directory itself is 0700. Worker startup and ingests fail closed if this
@@ -232,7 +233,7 @@ cp deploy/canquery.cron.d /etc/cron.d/canquery
 ```
 
 Schedule (see `deploy/canquery.cron.d`): `catalog-sync` daily, `incremental-sync`
-every 30 min, municipal sources daily, `evict-store` daily, and the Top 100 seed
+every 30 min, municipal sources daily, `evict-store` every 15 minutes, and the Top 100 seed
 daily. Unreferenced PMTiles objects are pruned daily after a 24-hour recovery
 grace period. The versioned SGC place import runs during deployment (and again when its
 configured vintage changes). The ingest worker is the systemd service from step
@@ -397,3 +398,9 @@ nft delete table inet canquery_egress
 ```
 
 The database can stay; it lives in its own role/db and is safe to leave in place.
+
+### Idle table expiry
+
+`STORE_IDLE_TTL_HOURS` is an integer from 0 through 876000, default 24; 0 disables inactivity expiry while keeping budget enforcement. It is read by each scheduled `evict-store` invocation. The schedule uses the existing application-user wrapper and skips a busy store lock. Expiry affects only unpinned ready table snapshots; active readers and pending/running refresh jobs are protected. Metadata and Map visits do not renew table retention. Successful local row/aggregate/profile/export reads renew it, including cached responses. A visible Table/Chart view calls bodyless `POST /api/v1/resources/:id/activity` immediately and every five minutes. This returns 204 for a renewed ready snapshot, 409 without one, or 404 for an unknown resource; it is no-store, rate limited and creates no job or popularity event.
+
+For rollout, verify backups and the exact release, deploy the API/client with expiry explicitly set to 0, then run `STORE_IDLE_TTL_HOURS=24 node scripts/evict-store.js --dry-run` as the application user. This preview performs no cleanup or run-history writes. After reviewing the candidate/pin/active counts and bytes, set 24 and install the 15-minute schedule. Observe at least two scheduled runs; zero candidates is a valid result. A returning visitor uses normal preparation or the original download when a copy has expired. To disable expiry, set 0; no API restart or schema rollback is required. Preserve budget/floor settings and the existing disk-recovery protections. Restore the previous schedule before rolling back the release. Cache removals are not undone by a code rollback.

@@ -112,13 +112,13 @@ async function queryResource(id, { q, filters, sort, limit, offset, group_by, ag
             const { records, total } = row.ingested_at
                 ? await aggregateCache.get(key, () => aggregateStoreTable(options))
                 : await aggregateStoreTable(options);
-            touchLastAccessed(id).catch(() => {});
+            await touchLastAccessed(id, row.table_name);
             logQueryHit(id, 'ingested').catch(() => {});
             return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket }, provenance };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
         const { records, total } = await queryStoreTable({ tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
-        touchLastAccessed(id).catch(() => {});
+        await touchLastAccessed(id, row.table_name);
         logQueryHit(id, 'ingested').catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);
         return { query_mode: 'ingested', fields, records, total, provenance };
@@ -182,7 +182,6 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
         const aggSpec = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
         if (aggSpec) {
             const sortInfo = validateSort(sort, ['key', 'value']);
-            touchLastAccessed(id).catch(() => {});
             logQueryHit(id, 'ingested').catch(() => {});
             const records = (async function *streamAggregates() {
                 let offset = 0;
@@ -207,10 +206,9 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
                     offset += page.records.length;
                 }
             })();
-            return { fields: aggSpec.fields, records, provenance };
+            return { fields: aggSpec.fields, records: trackExportActivity(records, id, row.table_name), provenance };
         }
         const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
-        touchLastAccessed(id).catch(() => {});
         logQueryHit(id, 'ingested').catch(() => {});
         const fields = [{ id: '_id', type: 'int' }].concat(columns);
         const records = (async function *streamRows() {
@@ -232,7 +230,7 @@ async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg
                 offset += page.records.length;
             }
         })();
-        return { fields, records, provenance };
+        return { fields, records: trackExportActivity(records, id, row.table_name), provenance };
     }
 
     if (mode === 'ingestable') {
@@ -257,6 +255,7 @@ async function profileResource(id) {
         const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
         const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
         const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }));
+        await touchLastAccessed(id, row.table_name);
         return { query_mode: 'ingested', row_count: profile.rowCount, columns: profile.columns, provenance };
     }
 
@@ -277,4 +276,27 @@ async function profileResource(id) {
     throw err;
 }
 
-module.exports = { queryResource, queryResourceForExport, profileResource, datastoreTarget };
+async function *trackExportActivity(records, id, tableName) {
+    let read = false;
+    try {
+        for await (const record of records) {
+            read = true;
+            yield record;
+        }
+        read = true; // A successful empty export counts too.
+    } finally {
+        // Also renew a partially consumed successful stream before releasing
+        // its snapshot lock. A failure before the first row doesn't count.
+        if (read) await touchLastAccessed(id, tableName);
+    }
+}
+
+async function recordResourceActivity(id) {
+    const row = await getResourceById(id);
+    if (!row) throw new AppError('Resource not found', 404);
+    if (row.ingest_status !== 'ready' || !row.table_name || !await touchLastAccessed(id, row.table_name)) {
+        throw new AppError('Resource has no prepared copy', 409);
+    }
+}
+
+module.exports = { queryResource, queryResourceForExport, profileResource, datastoreTarget, recordResourceActivity };

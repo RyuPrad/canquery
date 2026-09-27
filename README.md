@@ -214,14 +214,14 @@ expensive profile, aggregation, and export routes have dedicated rate limits.
 | `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
 | `scripts/map-worker.js` | exclusively owns the versioned map queue; keeps CKAN/Opendatasoft maps in PostGIS and builds bounded Socrata GeoJSON into immutable private-R2 PMTiles; validates source identity, versions, geometry, object integrity and budgets; `--once`, `--drain`, or `--resource=<id>` |
 | `scripts/prune-map-objects.js` | removes private PMTiles objects that have been unreferenced for at least 24 hours; bounded daily cleanup, `--dry-run` |
-| `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
+| `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and expires idle unpinned tables and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
 | `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
 
 Every script writes a run-log row (`sync_runs` / `ingest_runs`) in a `finally` block
 and exits non-zero on failure.
 
 Safety rails (env-tunable): `MAX_FILE_MB=50`, `MAX_ROWS=1000000`, `MAX_COLS=120`,
-`STORE_BUDGET_GB=15`. Downloads accept only public HTTP(S) destinations, validate
+`STORE_BUDGET_GB=15`. Scheduled cleanup runs every 15 minutes and expires unpinned prepared tables after `STORE_IDLE_TTL_HOURS=24` hours without activity (`0` disables expiry). Successful local queries, profiles and exports renew the full window; visible Table/Chart views also renew every five minutes. Hidden views stop renewing. Pins, active snapshot readers and pending/running refresh jobs are protected; the storage budget remains an independent limit. Eligible evicted files prepare again on a later visit. Downloads accept only public HTTP(S) destinations, validate
 and DNS-pin every redirect hop, stream to disk, and abort mid-stream past the cap.
 Excel archives are preflighted for expansion bombs and converted in a
 memory/time-limited child process. Ingest reserves capacity, checks the exact

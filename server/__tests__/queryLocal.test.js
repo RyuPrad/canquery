@@ -20,7 +20,7 @@ describe('query API local and unqueryable paths', () => {
         expect(res.body.meta.query_mode).toBe('ingested');
         expect(res.body.data.fields[0]).toEqual({ id: '_id', type: 'int' });
         expect(store.queryStoreTable).toHaveBeenCalledWith({ tableName: 'r_abc123', knownColumns: ['col1'], q: undefined, filters: [{ column: 'col1', op: 'eq', value: 'v' }], sortSql: '"col1" DESC', limit: 10, offset: 0 });
-        expect(store.touchLastAccessed).toHaveBeenCalledWith('ing-1');
+        expect(store.touchLastAccessed).toHaveBeenCalledWith('ing-1', 'r_abc123');
         expect(queryLog.logQueryHit).toHaveBeenCalledWith('ing-1', 'ingested');
     });
 
