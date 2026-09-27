@@ -24,6 +24,10 @@ export function prepareResource(id) {
   return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/prepare');
 }
 
+export function recordResourceActivity(id, options) {
+  return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/activity', options);
+}
+
 export function enqueueIngest(id) {
   return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/ingest');
 }

@@ -20,7 +20,7 @@ function makeDb(rows, { currentById = {} } = {}) {
         release: jest.fn()
     };
     const db = {
-        query: jest.fn(async () => ({ rows })),
+        query: jest.fn(async sql => sql.includes('AS cutoff') ? { rows: [{ cutoff: '2026-02-01T00:00:00Z' }] } : { rows }),
         connect: jest.fn(async () => client),
         executed,
         client
@@ -137,5 +137,56 @@ describe('eviction budget', () => {
         expect(out.totalBytesAfter).toBe(10 * GB);
         expect(out.budgetSatisfied).toBe(false);
         expect(db.query).toHaveBeenCalledWith(expect.stringContaining('ANY($1::text[])'), [['same']]);
+    });
+});
+
+describe('idle table expiry', () => {
+    const old = { resource_id: 'a', table_name: 'r_aaa', byte_size: '100', ready: true,
+        ingested_at: '2026-01-01', last_accessed_at: '2026-01-31T23:59:59Z' };
+    const options = { budgetBytes: 1000, idleHours: 24, lockHeld: true };
+
+    test('expires at the cutoff below budget, with ingested_at fallback and unknown-age protection', async () => {
+        const rows = [old, { ...old, resource_id: 'b', table_name: 'r_bbb', last_accessed_at: '2026-02-01T00:00:00Z' },
+            { ...old, resource_id: 'c', table_name: 'r_ccc', last_accessed_at: '2026-02-01T00:00:00.001Z' },
+            { ...old, resource_id: 'd', table_name: 'r_ddd', last_accessed_at: null },
+            { ...old, resource_id: 'e', table_name: 'r_eee', last_accessed_at: null, ingested_at: null }];
+        const db = makeDb(rows);
+        expect(await evictUntilUnderBudget(db, options)).toMatchObject({ dropped: 3, expiredDropped: 3, budgetDropped: 0, freedBytes: 300 });
+        expect(db.executed.filter(x => x.sql.startsWith('DROP')).map(x => x.sql)).toEqual([
+            'DROP TABLE IF EXISTS store."r_aaa"', 'DROP TABLE IF EXISTS store."r_bbb"', 'DROP TABLE IF EXISTS store."r_ddd"'
+        ]);
+    });
+
+    test('rechecks activity, snapshot identity and refresh admission after the candidate scan', async () => {
+        for (const changed of [{ last_accessed_at: '2026-02-02' }, { table_name: 'r_bbb' }, { active_job: true }]) {
+            const db = makeDb([old], { currentById: { a: { ...old, ...changed } } });
+            expect((await evictUntilUnderBudget(db, options)).dropped).toBe(0);
+            expect(db.executed.some(x => x.sql.startsWith('DROP'))).toBe(false);
+        }
+    });
+
+    test('pins and active refreshes remain protected even during budget pressure', async () => {
+        const db = makeDb([{ ...old, pinned: true }, { ...old, resource_id: 'b', active_job: true }]);
+        expect(await evictUntilUnderBudget(db, { ...options, budgetBytes: 0 })).toMatchObject({ dropped: 0, skippedPinned: 1, skippedActive: 1, budgetSatisfied: false });
+    });
+
+    test('zero disables expiry; default ingestion eviction remains budget only', async () => {
+        for (const opts of [{ budgetBytes: 1000, lockHeld: true }, { ...options, idleHours: 0 }]) {
+            const db = makeDb([old]);
+            expect((await evictUntilUnderBudget(db, opts)).dropped).toBe(0);
+            expect(db.connect).not.toHaveBeenCalled();
+        }
+    });
+
+    test('dry run reports expiry without any mutation or transaction', async () => {
+        const db = makeDb([old]);
+        expect(await evictUntilUnderBudget(db, { ...options, dryRun: true })).toMatchObject({ expiredDropped: 1, inventory: { expired: 1, expiredBytes: 100 } });
+        expect(db.executed).toEqual([]);
+    });
+
+    test('skips busy resource admission without waiting or opening a snapshot lock', async () => {
+        const db = makeDb([old]);
+        db.client.query.mockImplementation(async sql => ({ rows: sql.includes('pg_try_advisory_xact_lock') ? [{ locked: false }] : [] }));
+        expect(await evictUntilUnderBudget(db, options)).toMatchObject({ dropped: 0, skippedActive: 1 });
     });
 });

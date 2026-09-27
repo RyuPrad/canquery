@@ -68,3 +68,20 @@ describe('ChartPanel', () => {
     await waitFor(() => expect(screen.getByDisplayValue('amount')).toBeInTheDocument());
   });
 });
+
+test('an expired profile asks the resource page to recover', async () => {
+  const { NotIngestedError } = await import('../api/client.js');
+  fetchResourceProfile.mockRejectedValueOnce(new NotIngestedError('expired', 409));
+  const onUnavailable = vi.fn();
+  render(<ChartPanel resourceId="expired" fields={FIELDS} queryMode="ingested" onUnavailable={onUnavailable} />);
+  await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1));
+});
+
+test.each(['Insights', 'Custom'])('expired %s aggregates ask the resource page to recover', async tab => {
+  const { NotIngestedError } = await import('../api/client.js');
+  queryResource.mockRejectedValue(new NotIngestedError('expired', 409));
+  const onUnavailable = vi.fn();
+  render(<ChartPanel resourceId="expired-aggregate" fields={FIELDS} queryMode="ingested" onUnavailable={onUnavailable} />);
+  if (tab === 'Custom') fireEvent.click(screen.getByText('Custom'));
+  await waitFor(() => expect(onUnavailable).toHaveBeenCalled());
+});

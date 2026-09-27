@@ -9,7 +9,7 @@ const { ingestResource } = require('../services/ingestPipeline');
 const { withSnapshot } = require('../db/snapshotRead');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 const { withStoreBudgetLock, evictUntilUnderBudget } = require('../services/evictService');
-const { queryResource, queryResourceForExport } = require('../services/queryService');
+const { queryResource, queryResourceForExport, profileResource, recordResourceActivity } = require('../services/queryService');
 const { claimJob, recoverOrphanedJobs } = require('../db/ingestWorkerQueries');
 const { processJob } = require('../scripts/ingest-worker');
 
@@ -42,7 +42,7 @@ async function cleanup() {
     for (const row of rows) {
         if (/^r_[a-f0-9_]+$/.test(row.table_name)) await pool.query('DROP TABLE IF EXISTS store."' + row.table_name + '"');
     }
-    for (const table of ['retired_ingest_tables', 'ingested_resources', 'ingest_jobs', 'ingest_runs']) {
+    for (const table of ['retired_ingest_tables', 'ingested_resources', 'ingest_jobs', 'ingest_runs', 'pinned_resources']) {
         await pool.query('DELETE FROM ' + table + " WHERE resource_id LIKE 'prepare-test-%'");
     }
     await pool.query("DELETE FROM resources WHERE id LIKE 'prepare-test-%'");
@@ -243,4 +243,80 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         expect(done.status).toBe('done');
         expect((await getResourceById(id)).ingested_source_version).toBe(resourceVersion(await getResourceById(id)));
     });
+
+    const age = id => pool.query("UPDATE ingested_resources SET last_accessed_at=clock_timestamp()-interval '25 hours' WHERE resource_id=$1", [id]);
+    const sweepIdle = () => evictUntilUnderBudget(pool, { budgetBytes: 10485760, idleHours: 24 });
+
+    test('idle sweep deletes only the cache, preserving catalogue and pins', async () => {
+        const id = await seed();
+        await ingestResource(await getResourceById(id), caps(csv()));
+        await age(id);
+        await pool.query('INSERT INTO pinned_resources(resource_id) VALUES ($1)', [id]);
+        expect((await sweepIdle()).dropped).toBe(0);
+        await pool.query('DELETE FROM pinned_resources WHERE resource_id=$1', [id]);
+        expect((await sweepIdle()).expiredDropped).toBe(1);
+        expect((await getResourceById(id)).table_name).toBeNull();
+        expect((await prepareResource(id, id)).status).toBe('pending');
+    });
+
+    test('every read path including cached aggregate/profile and partial export restarts a full day', async () => {
+        const id = await seed();
+        await ingestResource(await getResourceById(id), caps(csv()));
+        const aggregate = () => queryResource(id, { group_by: 'province', agg: 'count' });
+        const reads = [() => queryResource(id), aggregate, aggregate, () => profileResource(id), () => profileResource(id),
+            () => recordResourceActivity(id), async () => {
+                const { records } = await queryResourceForExport(id);
+                for await (const record of records) { expect(record).toBeTruthy(); break; }
+            }];
+        for (const read of reads) {
+            await age(id);
+            await withSnapshot(id, read);
+            const { rows } = await pool.query("SELECT last_accessed_at > clock_timestamp()-interval '10 seconds' AS recent FROM ingested_resources WHERE resource_id=$1", [id]);
+            expect(rows[0].recent).toBe(true);
+            expect((await sweepIdle()).dropped).toBe(0);
+        }
+        await pool.query("UPDATE ingested_resources SET last_accessed_at=clock_timestamp()-interval '23 hours 59 minutes' WHERE resource_id=$1", [id]);
+        await withSnapshot(id, () => recordResourceActivity(id));
+        expect((await sweepIdle()).dropped).toBe(0);
+        await age(id);
+        expect((await sweepIdle()).dropped).toBe(1);
+    });
+
+    test('active readers and queued refreshes survive expiry until their protection ends', async () => {
+        const id = await seed();
+        await ingestResource(await getResourceById(id), caps(csv()));
+        await age(id);
+        await withSnapshot(id, async () => expect((await sweepIdle()).dropped).toBe(0));
+        await modify(id);
+        const job = await prepareResource(id, id);
+        expect((await sweepIdle()).dropped).toBe(0);
+        await pool.query("UPDATE ingest_jobs SET status='failed' WHERE id=$1", [job.id]);
+        expect((await sweepIdle()).dropped).toBe(1);
+    });
+
+    test('maintenance lock contention skips immediately; dry run changes no state or telemetry', async () => {
+        const { runEviction } = require('../scripts/evict-store');
+        const id = await seed();
+        await ingestResource(await getResourceById(id), caps(csv()));
+        await age(id);
+        const options = { budgetBytes: 10485760, idleHours: 24, dryRun: true };
+        const before = (await pool.query('SELECT count(*) AS n FROM ingest_runs')).rows[0].n;
+        await withStoreBudgetLock(pool, async () => expect(await runEviction(pool, options)).toBeNull());
+        expect((await runEviction(pool, options)).expiredDropped).toBe(1);
+        expect((await getResourceById(id)).table_name).toBeTruthy();
+        expect((await pool.query('SELECT count(*) AS n FROM ingest_runs')).rows[0].n).toBe(before);
+    });
+
+    test('invalid reads do not renew and stale snapshot touches cannot renew a replacement', async () => {
+        const id = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv()));
+        await ingestResource(await modify(id), caps(csv(2)));
+        await age(id);
+        await withSnapshot(id, async () => {
+            await expect(queryResource(id, { sort: 'unknown' })).rejects.toMatchObject({ statusCode: 400 });
+            expect(await require('../db/storeQueries').touchLastAccessed(id, first.tableName)).toBe(false);
+        });
+        expect((await sweepIdle()).expiredDropped).toBe(1);
+    });
+
 });

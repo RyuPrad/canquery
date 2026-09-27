@@ -168,3 +168,15 @@ describe('automatic preparation lifecycle', () => {
     expect(fetchJob.mock.calls.filter(([id]) => id === 901)).toHaveLength(1);
   });
 });
+
+test('a completed preparation can run again after the observed ready copy expires', async () => {
+  prepareResource.mockResolvedValue({ data: { already_loaded: true, id: null } });
+  const input = props();
+  const view = renderHook(useResourcePreparation, { initialProps: input });
+  await waitFor(() => expect(input.onReady).toHaveBeenCalledTimes(1));
+  view.rerender({ ...input, resource: { ...resource, query_mode: 'ingested', preparation: { supported: true, freshness: 'current' }, ingestion: { ingested_at: '2026-09-27' } } });
+  await act(async () => {});
+  view.rerender(input);
+  await waitFor(() => expect(prepareResource).toHaveBeenCalledTimes(2));
+  expect(input.onReady).toHaveBeenCalledTimes(2);
+});

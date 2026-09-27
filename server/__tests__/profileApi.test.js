@@ -62,3 +62,36 @@ describe('profile API', () => {
         expect(res.status).toBe(404);
     });
 });
+
+describe('resource activity API', () => {
+    it('renews only an existing ready table without a popularity hit', async () => {
+        queries.getResourceById.mockResolvedValue(ingestedRow('active'));
+        storeQueries.touchLastAccessed.mockResolvedValueOnce(true);
+        const res = await request(app).post('/api/v1/resources/active/activity');
+        expect(res.status).toBe(204);
+        expect(res.headers['cache-control']).toBe('no-store');
+        expect(storeQueries.touchLastAccessed).toHaveBeenCalledWith('active', 'r_abc123');
+        expect(require('../db/queryLogQueries').logQueryHit).not.toHaveBeenCalled();
+    });
+    it('never prepares an expired resource', async () => {
+        queries.getResourceById.mockResolvedValue({ ...ingestedRow('cold'), ingest_status: null, table_name: null });
+        const res = await request(app).post('/api/v1/resources/cold/activity');
+        expect(res.status).toBe(409);
+        expect(res.headers['cache-control']).toBe('no-store');
+        expect(storeQueries.touchLastAccessed).not.toHaveBeenCalled();
+    });
+    it('returns 404 for an unknown resource and 409 for a replaced snapshot', async () => {
+        queries.getResourceById.mockResolvedValueOnce(null).mockResolvedValueOnce(ingestedRow('race'));
+        storeQueries.touchLastAccessed.mockResolvedValueOnce(false);
+        expect((await request(app).post('/api/v1/resources/missing/activity')).status).toBe(404);
+        expect((await request(app).post('/api/v1/resources/race/activity')).status).toBe(409);
+    });
+    it('cached profiles still renew each access', async () => {
+        queries.getResourceById.mockResolvedValue({ ...ingestedRow('profile-renew'), table_name: 'r_abcded' });
+        storeQueries.profileStoreTable.mockResolvedValue({ rowCount: 5, columns: [] });
+        await request(app).get('/api/v1/resources/profile-renew/profile');
+        await request(app).get('/api/v1/resources/profile-renew/profile');
+        expect(storeQueries.profileStoreTable).toHaveBeenCalledTimes(1);
+        expect(storeQueries.touchLastAccessed).toHaveBeenCalledTimes(2);
+    });
+});

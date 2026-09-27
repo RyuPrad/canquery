@@ -13,6 +13,7 @@ import {
 } from '../api/client.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
+import useResourceActivity from '../hooks/useResourceActivity.js';
 import PreparationStatus from '../components/PreparationStatus.jsx';
 import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
@@ -82,6 +83,15 @@ function ResourceExplorer({ id }) {
   const [filterUpgrade, setFilterUpgrade] = useState(false);
   const [schemaChanged, setSchemaChanged] = useState(false);
   const onPrepared = useCallback(() => setReloadKey(k => k + 1), []);
+  const expiredResource = useRef(null);
+  const onUnavailable = useCallback(() => {
+    if (!resource || expiredResource.current === resource) return;
+    expiredResource.current = resource;
+    setData(null);
+    setDataError(new NotIngestedError('Resource has no prepared copy', 409));
+    onPrepared();
+  }, [resource, onPrepared]);
+  useResourceActivity({ id, resource, active: view !== 'map', onUnavailable });
   useEffect(() => {
     if (resource && view === 'map' && !resource.map) setView('table');
   }, [resource, view]);
@@ -230,7 +240,7 @@ function ResourceExplorer({ id }) {
           page: page + 1,
           status: err instanceof NotIngestedError ? 'not_loaded' : err instanceof FileOnlyError ? 'file_only' : 'failed',
         });
-        if (err instanceof NotIngestedError && resource.query_mode !== 'ingestable') onPrepared();
+        if (err instanceof NotIngestedError && resource.query_mode !== 'ingestable') onUnavailable();
         setData(null);
         setDataError(err);
       })
@@ -239,7 +249,7 @@ function ResourceExplorer({ id }) {
       });
 
     return () => { cancelled = true; controller.abort(); };
-  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, hasNonEq, onPrepared]);
+  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, hasNonEq, onUnavailable]);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
@@ -428,7 +438,7 @@ function ResourceExplorer({ id }) {
         <>
           {view === 'chart' ? (
             <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-              <ChartPanel key={resource?.ingestion?.ingested_at || id} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={resource?.ingestion?.fields || data.fields} queryMode={data.mode} />
+              <ChartPanel key={resource?.ingestion?.ingested_at || id} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={resource?.ingestion?.fields || data.fields} queryMode={data.mode} onUnavailable={onUnavailable} />
             </Suspense>
           ) : (
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>

@@ -5,7 +5,7 @@ import { ChartEmpty } from './charts/Visuals.jsx';
 import InsightChart from './charts/InsightChart.jsx';
 import KpiRow from './charts/KpiRow.jsx';
 
-export default function InsightsDashboard({ resourceId, q, filters, classified, error }) {
+export default function InsightsDashboard({ resourceId, q, filters, classified, error, onUnavailable }) {
   const { t } = useLang();
 
   const plan = useMemo(() => {
@@ -51,7 +51,7 @@ export default function InsightsDashboard({ resourceId, q, filters, classified, 
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {plan.insights.map((spec) => (
-          <InsightChart key={spec.key} resourceId={resourceId} q={q} filters={filters} spec={spec} />
+          <InsightChart key={spec.key} resourceId={resourceId} q={q} filters={filters} spec={spec} onUnavailable={onUnavailable} />
         ))}
       </div>
     </div>

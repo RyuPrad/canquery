@@ -1,53 +1,71 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-process.on('unhandledRejection', (err) => { console.error(err); process.exit(1); });
-process.on('uncaughtException', (err) => { console.error(err); process.exit(1); });
-
-const argv = process.argv.slice(2);
-function getArgValue(name) {
-    const eq = argv.find(a => a.startsWith(name + '='));
-    if (eq) return eq.split('=')[1];
-    const idx = argv.indexOf(name);
-    if (idx !== -1 && argv[idx + 1] !== undefined) return argv[idx + 1];
-    return null;
-}
-
-const dryRun = argv.includes('--dry-run');
-const budgetGbRaw = getArgValue('--budget-gb');
-const budgetGb = (budgetGbRaw !== null && Number.isFinite(Number(budgetGbRaw)))
-    ? Number(budgetGbRaw)
-    : (Number(process.env.STORE_BUDGET_GB) || 15);
-const budgetBytes = budgetGb * 1024 * 1024 * 1024;
-
 const pool = require('../db/pool');
 const { evictUntilUnderBudget, withStoreBudgetLock } = require('../services/evictService');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 
-async function main() {
+function parseOptions(argv = process.argv.slice(2), env = process.env) {
+    const index = argv.indexOf('--budget-gb');
+    const budgetArg = argv.find(arg => arg.startsWith('--budget-gb='));
+    if (index !== -1 && (!argv[index + 1] || argv[index + 1].startsWith('--'))) {
+        throw new Error('--budget-gb requires a value');
+    }
+    const budgetRaw = budgetArg ? budgetArg.slice('--budget-gb='.length)
+        : index !== -1 ? argv[index + 1] : env.STORE_BUDGET_GB || '15';
+    const budgetGb = Number(budgetRaw);
+    const idleRaw = env.STORE_IDLE_TTL_HOURS ?? '';
+    const idleHours = idleRaw === '' ? 24 : Number(idleRaw);
+    if (String(budgetRaw).trim() === '' || !Number.isFinite(budgetGb) || budgetGb < 0) {
+        throw new Error('store budget must be a non-negative finite number');
+    }
+    if ((idleRaw !== '' && String(idleRaw).trim() === '') || !Number.isSafeInteger(idleHours) || idleHours < 0 || idleHours > 876000) {
+        throw new Error('STORE_IDLE_TTL_HOURS must be an integer between 0 and 876000');
+    }
+    return { budgetBytes: budgetGb * 1024 ** 3, idleHours, dryRun: argv.includes('--dry-run') };
+}
+
+async function runEviction(db, options) {
     const startedAt = new Date();
-    let ok = false;
+    let completed = false;
     let error;
-    let result = { dropped: 0, freedBytes: 0 };
+    let result;
     try {
-        console.log('budget: ' + budgetBytes + ' bytes' + (dryRun ? ' (dry-run)' : ''));
-        result = await withStoreBudgetLock(pool, async () => {
-            if (!dryRun) await cleanRetiredTables(pool);
-            return evictUntilUnderBudget(pool, { budgetBytes, dryRun, lockHeld: true });
-        });
-        console.log('evicted ' + result.dropped + ' tables, freed ' + result.freedBytes + ' bytes');
-        ok = true;
+        result = await withStoreBudgetLock(db, async () => {
+            completed = true;
+            if (!options.dryRun) await cleanRetiredTables(db);
+            return evictUntilUnderBudget(db, { ...options, lockHeld: true });
+        }, { tryLock: true });
+        return result;
     } catch (err) {
+        completed = true;
         error = err.message;
-        console.error('evict-store failed:', err);
+        throw err;
     } finally {
-        try {
-            await pool.query('INSERT INTO ingest_runs (resource_id, started_at, finished_at, ok, rows_loaded, bytes_loaded, error) VALUES ($1, $2, $3, $4, $5, $6, $7)', [null, startedAt, new Date(), ok, null, result.freedBytes ? -result.freedBytes : 0, error ? 'evict: ' + error : 'evict: dropped ' + result.dropped]);
-        } catch (logErr) {
-            console.error('run log failed:', logErr.message);
+        // A preview must not even write telemetry. Expected lock contention is
+        // a skip, not a new successful/failed maintenance attempt.
+        if (!options.dryRun && completed) {
+            await db.query(`INSERT INTO ingest_runs
+                (resource_id, started_at, finished_at, ok, rows_loaded, bytes_loaded, error)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)`, [null, startedAt, new Date(), !error, null,
+                -(result?.freedBytes || 0), error ? 'evict: ' + error : 'evict: ' + JSON.stringify(result)
+            ]).catch(logErr => console.error('run log failed:', logErr.message));
         }
-        await pool.end();
-        process.exit(ok ? 0 : 1);
     }
 }
 
-main();
+async function main() {
+    try {
+        const options = parseOptions();
+        console.log(JSON.stringify({ startedAt: new Date().toISOString(), ...options }));
+        const result = await runEviction(pool, options);
+        console.log(result === null ? 'evict-store skipped: store budget lock busy' : JSON.stringify(result));
+    } catch (err) {
+        console.error('evict-store failed:', err);
+        process.exitCode = 1;
+    } finally {
+        await pool.end();
+    }
+}
+
+if (require.main === module) main();
+module.exports = { parseOptions, runEviction };
