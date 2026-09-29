@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
 import {
   fetchResource,
   queryResource,
@@ -46,8 +46,9 @@ import {
 const PAGE_SIZE = 50;
 const MAX_QUERY_OFFSET = 10000;
 const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
-function ResourceExplorer({ id }) {
+function ResourceExplorer({ id, navigationKey }) {
   const { lang, t } = useLang();
+  const location = useLocation();
 
   const [resource, setResource] = useState(null);
   const [resourceError, setResourceError] = useState(null);
@@ -104,15 +105,16 @@ function ResourceExplorer({ id }) {
   const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
   const preparationRequired = resource && (resource.query_mode === 'ingestable' ||
     (view === 'chart' && resource.query_mode !== 'ingested'));
+  const filtersNeedPreparation = resource?.query_mode === 'datastore' && hasNonEq;
   const previousSnapshot = useRef(null);
   useEffect(() => {
     const stamp = resource?.ingestion?.ingested_at;
     const fields = resource?.ingestion?.fields;
     if (stamp && previousSnapshot.current && previousSnapshot.current !== stamp && fields) {
-      const names = new Set(fields.map(f => f.id));
+      const names = new Set(['_id', ...fields.map(f => f.id)]);
       const valid = Object.fromEntries(Object.entries(columnFilters).filter(([name]) => names.has(name)));
       const removedFilter = Object.keys(valid).length !== Object.keys(columnFilters).length;
-      const removedSort = sort && !names.has(sort.replace(/\s+(asc|desc)$/i, ''));
+      const removedSort = sort && !names.has(sort) && !names.has(sort.replace(/\s+(asc|desc)$/i, ''));
       if (removedFilter) setColumnFilters(valid);
       if (removedSort) setSort(null);
       if (removedFilter || removedSort) setSchemaChanged(true);
@@ -129,6 +131,7 @@ function ResourceExplorer({ id }) {
       .then((env) => {
         if (!cancelled) {
           setResource(env.data);
+          setResourceError(null);
           track('resource_open', {
             resource_id: env.data.id,
             dataset_id: env.data.dataset?.id || '',
@@ -178,8 +181,10 @@ function ResourceExplorer({ id }) {
     if (sort) next.sort = sort;
     if (page > 0) next.page = String(page);
     if (view !== 'table') next.view = view;
-    setSearchParams(next, { replace: true });
-  }, [debouncedQ, debouncedFilters, sort, page, view, setSearchParams]);
+    if (new URLSearchParams(next).toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true, state: { ...location.state, resourceExplorerKey: navigationKey } });
+    }
+  }, [debouncedQ, debouncedFilters, sort, page, view, setSearchParams, searchParams, location.state, navigationKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,7 +282,10 @@ function ResourceExplorer({ id }) {
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6 space-y-4">
       {resourceError && (
-        <div className="alert alert-error my-4">{resourceError.message}</div>
+        <div className="alert alert-error my-4" role="alert">
+          <span>{resourceError.message}</span>
+          <button type="button" className="btn btn-sm" onClick={onPrepared}>{t('common.retry')}</button>
+        </div>
       )}
       {resource && (
         <div className="space-y-2.5 cq-fade">
@@ -338,8 +346,18 @@ function ResourceExplorer({ id }) {
         </p>
       )}
       {schemaChanged && <p role="status" className="text-sm">{t('preparation.schema_changed')}</p>}
-      {view !== 'map' && !preparationRequired && (preparation.phase !== 'idle' || (resource?.query_mode === 'datastore' && hasNonEq)) && (
+      {view !== 'map' && !preparationRequired && !filtersNeedPreparation && preparation.phase !== 'idle' && (
         <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} compact />
+      )}
+      {view === 'table' && filtersNeedPreparation && (
+        <div className="cq-card p-4 space-y-2" role="status">
+          <p>{t(!preparation.supported || !preparation.enabled || preparation.phase === 'unavailable' ? 'resource.upgrade_unavailable' : preparation.phase === 'failed' ? 'resource.upgrade_failed' : 'resource.upgrading')}</p>
+          {data && <p className="text-sm text-base-content/60">{t('resource.filters_not_applied')}</p>}
+          {preparation.supported && preparation.enabled && <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} compact />}
+          <button type="button" className="btn btn-sm btn-outline" onClick={() => { setColumnFilters({}); setFilterUpgrade(false); }}>
+            {t('resource.clear_column_filters')}
+          </button>
+        </div>
       )}
 
       {view !== 'map' && <div className="flex flex-wrap gap-2.5 items-center">
@@ -347,6 +365,7 @@ function ResourceExplorer({ id }) {
           <SearchIcon size={14} className="opacity-40 shrink-0" />
           <input
             placeholder={t('resource.search_placeholder')}
+            aria-label={t('resource.search_placeholder')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -356,7 +375,7 @@ function ResourceExplorer({ id }) {
             {data.total.toLocaleString()} {t('resource.rows')}
           </span>
         )}
-        {data && (
+        {data && !filtersNeedPreparation && (
           <a
             className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
             href={exportHref}
@@ -378,6 +397,7 @@ function ResourceExplorer({ id }) {
         <div className="cq-seg w-fit">
           <button
             className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}
+            aria-pressed={view === 'table'}
             onClick={() => { track('resource_view', { resource_id: id, view: 'table' }); setView('table'); }}
           >
             <TableIcon size={13} />
@@ -385,6 +405,7 @@ function ResourceExplorer({ id }) {
           </button>
           <button
             className={'cq-seg-btn' + (view === 'chart' ? ' cq-seg-active' : '')}
+            aria-pressed={view === 'chart'}
             onClick={() => { track('resource_view', { resource_id: id, view: 'chart' }); setView('chart'); }}
           >
             <LineChartIcon size={13} />
@@ -393,6 +414,7 @@ function ResourceExplorer({ id }) {
           {resource.map && (
             <button
               className={'cq-seg-btn' + (view === 'map' ? ' cq-seg-active' : '')}
+              aria-pressed={view === 'map'}
               onClick={() => { track('resource_view', { resource_id: id, view: 'map' }); setView('map'); }}
             >
               <MapIcon size={13} />
@@ -408,7 +430,7 @@ function ResourceExplorer({ id }) {
             <MapPanel resourceId={id} map={resource.map} />
           </Suspense>
         ) : <LoadingSpinner label={t('map.loading')} />
-      ) : dataLoading && !data && !preparationRequired ? (
+      ) : filtersNeedPreparation && view === 'table' && !data ? null : dataLoading && !data && !preparationRequired ? (
         <div className="space-y-3">
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
@@ -500,7 +522,12 @@ function ResourceExplorer({ id }) {
 // refs from one resource can never carry into the next resource.
 function ResourcePage() {
   const { id } = useParams();
-  return <ResourceExplorer key={id} id={id} />;
+  const location = useLocation();
+  // Local edits replace the current history entry without remounting the
+  // controls. A new link or Back/Forward visit restores all state from its URL,
+  // even when the resource id is unchanged.
+  const navigationKey = location.state?.resourceExplorerKey || location.key;
+  return <ResourceExplorer key={id + ':' + navigationKey} id={id} navigationKey={navigationKey} />;
 }
 
 export default ResourcePage;

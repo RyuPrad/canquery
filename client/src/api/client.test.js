@@ -11,6 +11,14 @@ function stubFetch(status, body) {
 }
 
 describe('api client', () => {
+  test('GET errors retain Retry-After even when the JSON response omits it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 429,
+      headers: { get: name => name === 'Retry-After' ? '30' : null },
+      json: async () => ({ error: 'Too many requests' }),
+    })));
+    const error = await getJSON('/api/v1/jobs/7').catch(error => error);
+    expect(error.retryAfter).toBe(30);
+  });
   test('apiUrl skips empty params and serializes objects', () => {
     expect(apiUrl('/api/v1/datasets', { q: 'water', org: undefined, format: '', limit: 5 })).toBe('/api/v1/datasets?q=water&limit=5');
     expect(apiUrl('/x', { filters: { a: 1 } })).toBe('/x?filters=' + encodeURIComponent(JSON.stringify({ a: 1 })));

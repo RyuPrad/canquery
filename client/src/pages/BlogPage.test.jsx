@@ -5,6 +5,7 @@ import BlogPage from './BlogPage.jsx';
 import Navbar from '../components/Navbar.jsx';
 import { LangProvider } from '../i18n.jsx';
 import { ThemeProvider } from '../theme.jsx';
+import { NotFoundError } from '../api/client.js';
 
 vi.mock('../api/catalog.js', () => ({ fetchBlog: vi.fn(), fetchBlogArticle: vi.fn() }));
 import { fetchBlog, fetchBlogArticle } from '../api/catalog.js';
@@ -72,4 +73,14 @@ test('a national download guide has no place links and opens explicit download d
   expect(await screen.findByRole('heading', { name: 'City parks guide' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /View download details/ })).toHaveAttribute('href', '/resources/archive');
   expect(document.querySelector('a[href^="/places/"]')).toBeNull();
+});
+
+test('language switching remains available after an article fails to load', async () => {
+  fetchBlogArticle.mockRejectedValue(new NotFoundError('Missing article'));
+  start('/blog/missing');
+  expect(await screen.findByRole('heading', { name: 'Guide not found' })).toBeInTheDocument();
+  const french = screen.getByRole('button', { name: 'FR', exact: true });
+  expect(french).toBeEnabled();
+  fireEvent.click(french);
+  expect(await screen.findByRole('heading', { name: 'Guides des données' })).toBeInTheDocument();
 });

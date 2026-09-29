@@ -16,8 +16,7 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { ArrowRightIcon, MapIcon, MapPinIcon } from '../components/Icons.jsx';
 
-export default function PlacePage() {
-  const { slug } = useParams();
+function PlaceExplorer({ slug }) {
   const { lang, t } = useLang();
   const [place, setPlace] = useState(null);
   const [sources, setSources] = useState([]);
@@ -152,7 +151,7 @@ export default function PlacePage() {
           {sources.map(source => (
             <a
               key={source.id}
-              className="cq-chip"
+              className="cq-chip !whitespace-normal max-w-full break-words"
               href={source.homepage_url}
               target="_blank"
               rel="noreferrer"
@@ -196,4 +195,9 @@ export default function PlacePage() {
       {!searchError && !collection.notFound && <CatalogPagination {...collection} />}
     </div>
   );
+}
+
+export default function PlacePage() {
+  const { slug } = useParams();
+  return <PlaceExplorer key={slug} slug={slug} />;
 }

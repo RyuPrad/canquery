@@ -30,7 +30,9 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
   const reduced = usePrefersReducedMotion();
   const [perView, setPerView] = useState(perViewFor);
   const [page, setPage] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = hovered || focused;
 
   // Group slides into pages that are each exactly one container width, so paging
   // by translateX(-page * 100%) lands cleanly with no peek/clipping at the edges.
@@ -74,10 +76,12 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
       role="region"
       aria-roledescription="carousel"
       aria-label={ariaLabel}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={() => setPaused(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
     >
       <div className="relative">
         <div className="overflow-hidden">
@@ -89,6 +93,8 @@ export default function InsightCarousel({ items, getId, renderSlide, ariaLabel, 
               <div
                 key={gi}
                 className="shrink-0 w-full grid gap-5"
+                inert={gi !== page ? true : undefined}
+                aria-hidden={gi !== page ? true : undefined}
                 style={{ gridTemplateColumns: 'repeat(' + perView + ', minmax(0, 1fr))' }}
               >
                 {group.map((it, i) => (

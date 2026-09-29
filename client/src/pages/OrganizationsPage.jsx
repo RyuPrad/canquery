@@ -15,7 +15,7 @@ function OrgCard({ org, t, lang }) {
     <Link
       key={org.id}
       to={'/organizations/' + encodeURIComponent(org.name)}
-      title={'See every dataset from ' + title}
+      title={t('orgs.dataset_list') + ': ' + title}
       className="cq-card p-4 grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3.5 gap-y-2 lg:flex lg:gap-3.5 group"
       data-analytics-event="organization_open"
       data-analytics-organization={org.name}

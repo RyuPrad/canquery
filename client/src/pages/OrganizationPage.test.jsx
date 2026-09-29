@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import OrganizationPage from './OrganizationPage.jsx';
 import { LangProvider } from '../i18n.jsx';
@@ -31,6 +31,24 @@ beforeEach(() => {
 });
 
 describe('OrganizationPage', () => {
+  test('another publisher starts with its own unfiltered catalogue', async () => {
+    function Navigation() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/organizations/other-publisher')}>Other publisher</button>;
+    }
+    render(<MemoryRouter initialEntries={['/organizations/city-works']}>
+      <Navigation /><Routes><Route path="/organizations/:name" element={<OrganizationPage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole('heading', { name: 'City Works' });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'roads' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Has a map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Other publisher' }));
+    await screen.findByRole('heading', { name: 'City Works' });
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Has a map' })).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ org: 'other-publisher', q: undefined, mappable: undefined })));
+  });
+
   test('shows publisher capability counts, place context, and filtered datasets', async () => {
     render(
       <MemoryRouter initialEntries={['/organizations/city-works']}>

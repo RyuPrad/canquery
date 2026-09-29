@@ -1,6 +1,6 @@
 import { describe, beforeEach, vi, expect, test } from 'vitest';
 import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import ResourcePage from './ResourcePage.jsx';
 import { LangProvider } from '../i18n.jsx';
 
@@ -39,6 +39,16 @@ function Navigation() {
   return <button onClick={() => navigate('/resources/b')}>Open resource B</button>;
 }
 
+function ResourceHistoryNavigation() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return <>
+    <button onClick={() => navigate('/resources/a?q=second&sort=name%20desc&page=2')}>Open another resource view</button>
+    <button onClick={() => navigate(-1)}>History back</button>
+    <output aria-label="Current resource URL">{location.search}</output>
+  </>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -54,6 +64,93 @@ beforeEach(() => {
 });
 
 describe('ResourcePage navigation', () => {
+  test('unsupported live-filter deep links explain the limitation and can return to live rows', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data, query_mode: 'datastore', preparation: { supported: false, enabled: true } } });
+    queryResource.mockResolvedValue({ data: { fields: [{ id: 'name', type: 'TEXT' }], records: [{ name: 'live-row' }], total: 1 }, meta: { query_mode: 'datastore' } });
+    const filters = encodeURIComponent(JSON.stringify({ name: 'Ottawa' }));
+    render(<MemoryRouter initialEntries={['/resources/a?cf=' + filters]}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Resource a' });
+    expect(await screen.findByText('Precise per-column filtering is not available for this dataset. Use the full-text search box above.')).toBeInTheDocument();
+    expect(screen.queryByText('Querying')).toBeNull();
+    expect(queryResource).not.toHaveBeenCalled();
+    expect(prepareResource).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear column filters' }));
+    expect(await screen.findByText('live-row')).toBeInTheDocument();
+    expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ filters: undefined }), expect.any(Object));
+  });
+
+  test('live rows never offer a CSV export with incompatible pending filters', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data, query_mode: 'datastore', preparation: { supported: false, enabled: true } } });
+    queryResource.mockResolvedValue({ data: { fields: [{ id: 'name', type: 'TEXT' }], records: [{ name: 'live-row' }], total: 1 }, meta: { query_mode: 'datastore' } });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('live-row');
+    expect(screen.getByRole('link', { name: 'Download CSV (filtered)' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: /name.*filter/ }), { target: { value: '>2' } });
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Download CSV (filtered)' })).toBeNull());
+    expect(screen.getByText('live-row')).toBeInTheDocument();
+    expect(screen.getByText('Showing the previous live results. The current search and column filters are not applied.')).toBeInTheDocument();
+  });
+  test('a failed metadata read can be retried without reloading the browser', async () => {
+    fetchResource.mockRejectedValueOnce(new Error('Metadata temporarily unavailable'));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Metadata temporarily unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('row-a')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test.each(['status desc', '_id desc'])('refresh preserves the valid sort %s', async sort => {
+    const before = { ...resourceEnvelope('a').data,
+      preparation: { supported: true, freshness: 'stale' },
+      ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'status desc', type: 'TEXT' }] } };
+    const after = { ...before, preparation: { supported: true, freshness: 'current' },
+      ingestion: { ...before.ingestion, ingested_at: '2026-09-02' } };
+    fetchResource.mockResolvedValueOnce({ data: before }).mockResolvedValue({ data: after });
+    prepareResource.mockResolvedValue({ data: { id: 778, status: 'pending' } });
+    let finish;
+    fetchJob.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    render(<MemoryRouter initialEntries={['/resources/a?sort=' + encodeURIComponent(sort)]}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    await waitFor(() => expect(fetchJob).toHaveBeenCalled());
+    await act(async () => finish({ data: { id: 778, status: 'done' } }));
+    await waitFor(() => expect(fetchResource).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ sort }), expect.any(Object)));
+    expect(screen.queryByText('The updated file has different columns. Affected filters or sorting were cleared.')).toBeNull();
+  });
+  test('same-resource links and Back restore the URL search, sorting and page', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a?q=first&page=1']}>
+      <ResourceHistoryNavigation />
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ q: 'first', offset: 50 }), expect.any(Object)));
+    fireEvent.click(screen.getByRole('button', { name: 'Open another resource view' }));
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ q: 'second', sort: 'name desc', offset: 100 }), expect.any(Object)));
+    expect(screen.getByPlaceholderText('Full-text search in this table...')).toHaveValue('second');
+    fireEvent.click(screen.getByRole('button', { name: 'History back' }));
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ q: 'first', sort: undefined, offset: 50 }), expect.any(Object)));
+    expect(screen.getByLabelText('Current resource URL')).toHaveTextContent('?q=first&page=1');
+  });
+
+  test('editing a query keeps input focus and uses its updated filters for export', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    const input = screen.getByPlaceholderText('Full-text search in this table...');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'Ottawa' } });
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ q: 'Ottawa', offset: 0 }), expect.any(Object)));
+    expect(input).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'Download CSV (filtered)' }).getAttribute('href')).toContain('q=Ottawa');
+  });
   test.each([
     ['en', 'Breadcrumb', 'Datasets', 'Dataset a', 'Resource a'],
     ['fr', 'Fil d’Ariane', 'Jeux de données', 'Jeu de données a', 'Ressource a'],
@@ -89,6 +186,7 @@ describe('ResourcePage navigation', () => {
     );
 
     expect(await screen.findByText('live-map-a')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Map', pressed: true })).toBeInTheDocument();
     expect(queryResource).not.toHaveBeenCalled();
     expect(prepareResource).not.toHaveBeenCalled();
     expect(screen.queryByPlaceholderText('Full-text search in this table...')).not.toBeInTheDocument();

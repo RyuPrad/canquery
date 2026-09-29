@@ -37,6 +37,7 @@ export default function SearchBar({ value, onChange, placeholder }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={ph}
+        aria-label={ph}
       />
       <kbd className="cq-kbd hidden sm:block">/</kbd>
     </div>

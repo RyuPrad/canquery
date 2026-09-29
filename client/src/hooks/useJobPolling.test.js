@@ -1,7 +1,7 @@
 import { describe, beforeEach, afterEach, vi, expect, test } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import useJobPolling from './useJobPolling.js';
-import { NotFoundError } from '../api/client.js';
+import { ApiError, NotFoundError } from '../api/client.js';
 
 vi.mock('../api/catalog.js', () => ({ fetchJob: vi.fn() }));
 import { fetchJob } from '../api/catalog.js';
@@ -10,7 +10,7 @@ const running = { data: { id: 7, status: 'running', age_seconds: 3 } };
 const done = { data: { id: 7, status: 'done', age_seconds: 9 } };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   vi.useFakeTimers();
 });
 
@@ -21,6 +21,60 @@ afterEach(() => {
 const tickAsync = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
 describe('useJobPolling', () => {
+  test('honors a rate-limit delay before resuming polling', async () => {
+    fetchJob.mockRejectedValueOnce(new ApiError('Too many requests', 429, { retry_after: 30 })).mockResolvedValueOnce(done);
+    const onDone = vi.fn();
+    renderHook(() => useJobPolling(7, { onDone }));
+    await tickAsync(0);
+    await tickAsync(29999);
+    expect(fetchJob).toHaveBeenCalledTimes(1);
+    await tickAsync(1);
+    expect(fetchJob).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps a rate-limit delay across hidden and visible views', async () => {
+    fetchJob.mockRejectedValueOnce(new ApiError('Too many requests', 429, { retry_after: 30 })).mockResolvedValueOnce(done);
+    const view = renderHook(({ enabled }) => useJobPolling(7, { enabled }), { initialProps: { enabled: true } });
+    await tickAsync(0);
+    view.rerender({ enabled: false });
+    await tickAsync(15000);
+    view.rerender({ enabled: true });
+    await tickAsync(14999);
+    expect(fetchJob).toHaveBeenCalledTimes(1);
+    await tickAsync(1);
+    expect(fetchJob).toHaveBeenCalledTimes(2);
+  });
+  test('aborts hung requests and continues polling without overlapping requests', async () => {
+    fetchJob.mockImplementationOnce((_id, { signal } = {}) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    })).mockResolvedValueOnce(done);
+    const onDone = vi.fn();
+    const view = renderHook(() => useJobPolling(7, { onDone }));
+    await tickAsync(0);
+    await tickAsync(29999);
+    expect(fetchJob).toHaveBeenCalledTimes(1);
+    await tickAsync(1);
+    expect(fetchJob.mock.calls[0][1]?.signal.aborted).toBe(true);
+    await tickAsync(2000);
+    expect(fetchJob).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  test('hiding the view aborts its active poll and ignores its late result', async () => {
+    let finish;
+    fetchJob.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const onDone = vi.fn();
+    const view = renderHook(({ enabled }) => useJobPolling(7, { enabled, onDone }), { initialProps: { enabled: true } });
+    await tickAsync(0);
+    const signal = fetchJob.mock.calls[0][1]?.signal;
+    view.rerender({ enabled: false });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => finish(done));
+    expect(onDone).not.toHaveBeenCalled();
+    expect(view.result.current.polling).toBe(false);
+  });
   test('polls until the job is done, then reports it once', async () => {
     fetchJob.mockResolvedValueOnce(running).mockResolvedValueOnce(done);
     const onDone = vi.fn();

@@ -14,8 +14,7 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { BuildingIcon, MapIcon, MapPinIcon, TableIcon } from '../components/Icons.jsx';
 
-export default function OrganizationPage() {
-  const { name } = useParams();
+function OrganizationExplorer({ name }) {
   const { lang, t } = useLang();
   const [organization, setOrganization] = useState(null);
   const [query, setQuery] = useState('');
@@ -135,4 +134,9 @@ export default function OrganizationPage() {
       {!searchError && !collection.notFound && <CatalogPagination {...collection} />}
     </div>
   );
+}
+
+export default function OrganizationPage() {
+  const { name } = useParams();
+  return <OrganizationExplorer key={name} name={name} />;
 }

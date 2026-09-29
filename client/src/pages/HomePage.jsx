@@ -1,6 +1,6 @@
 import LocalGuides from '../components/LocalGuides.jsx';
 import { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
@@ -68,13 +68,18 @@ function StepCard({ icon, number, title, desc, tone, delay }) {
 
 export default function HomePage() {
   const { t, lang } = useLang();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [query, setQuery] = useState(searchParams.get('q') || '');
-  const [org, setOrg] = useState(searchParams.get('org') || '');
-  const [format, setFormat] = useState(searchParams.get('format') || '');
-  const [place, setPlace] = useState(() => searchParams.get('place') || readPlace());
-  const [source, setSource] = useState(searchParams.get('source') || '');
-  const [mappable, setMappable] = useState(searchParams.get('mappable') === 'true');
+  const [arrival] = useState(() => ({ key: location.key, place: searchParams.has('place') ? '' : readPlace() }));
+  const searchQuery = searchParams.get('q') || '';
+  const [draft, setDraft] = useState({ key: location.key, value: searchQuery });
+  const query = draft.key === location.key ? draft.value : searchQuery;
+  const setQuery = value => setDraft({ key: location.key, value });
+  const org = searchParams.get('org') || '';
+  const format = searchParams.get('format') || '';
+  const place = searchParams.get('place') || (location.key === arrival.key ? arrival.place : '');
+  const source = searchParams.get('source') || '';
+  const mappable = ['true', '1'].includes(searchParams.get('mappable'));
   const keyword = searchParams.get('keyword') || '';
   const [stats, setStats] = useState(null);
   const [orgs, setOrgs] = useState([]);
@@ -83,12 +88,42 @@ export default function HomePage() {
   const [sources, setSources] = useState([]);
   const reduced = usePrefersReducedMotion();
 
-  const debouncedQuery = useDebouncedValue(query, 250);
+  const debouncedDraft = useDebouncedValue(query, 250);
+
+  const updateSearch = changes => {
+    const next = new URLSearchParams(searchParams);
+    if (query) next.set('q', query);
+    else next.delete('q');
+    if (place) next.set('place', place);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  // The URL owns the applied filters. A draft belongs to one navigation, so
+  // its pending debounce cannot overwrite a different search opened via Back,
+  // Forward or an in-app link. Filter controls apply the current draft too.
+  useEffect(() => {
+    if (draft.key !== location.key || debouncedDraft !== draft.value || debouncedDraft === searchQuery) return;
+    const next = new URLSearchParams(searchParams);
+    if (debouncedDraft) next.set('q', debouncedDraft);
+    else next.delete('q');
+    setSearchParams(next, { replace: true });
+  }, [debouncedDraft, draft, location.key, searchQuery, searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (!debouncedQuery) return;
+    if (location.key !== arrival.key || searchParams.has('place') || !arrival.place) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('place', arrival.place);
+    setSearchParams(next, { replace: true });
+  }, [arrival, location.key, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!searchQuery) return;
     track('catalog_search', {
-      query: debouncedQuery,
+      query: searchQuery,
       organization: org,
       format,
       place,
@@ -97,34 +132,17 @@ export default function HomePage() {
       mappable,
       language: lang,
     });
-  }, [debouncedQuery, org, format, place, source, keyword, mappable, lang]);
-
-  // Keep the URL shareable: reflect the active search in the query string.
-  useEffect(() => {
-    const next = {};
-    if (debouncedQuery) next.q = debouncedQuery;
-    if (org) next.org = org;
-    if (format) next.format = format;
-    if (place) next.place = place;
-    if (source) next.source = source;
-    if (mappable) next.mappable = 'true';
-    if (keyword) next.keyword = keyword;
-    setSearchParams(next, { replace: true });
-  }, [debouncedQuery, org, format, place, source, mappable, keyword, setSearchParams]);
+  }, [searchQuery, org, format, place, source, keyword, mappable, lang]);
 
   const changePlace = (next) => {
     track('catalog_filter', { filter: 'place', value: next });
-    setPlace(next);
-    setOrg('');
-    setSource('');
+    updateSearch({ place: next, org: '', source: '' });
     writePlace(next);
   };
 
   const clearKeyword = () => {
     track('catalog_filter', { filter: 'keyword', value: '', action: 'clear' });
-    const next = new URLSearchParams(searchParams);
-    next.delete('keyword');
-    setSearchParams(next, { replace: true });
+    updateSearch({ keyword: '' });
   };
 
   useEffect(() => {
@@ -137,11 +155,21 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchOrganizations({ place: place || undefined, source: source || undefined, limit: 50 })
-      .then((env) => {
-        if (!cancelled) setOrgs(env.data || []);
-      })
-      .catch(() => {});
+    const loadOrganizations = async () => {
+      const rows = [];
+      const seenCursors = new Set();
+      let cursor;
+      do {
+        const env = await fetchOrganizations({ place: place || undefined, source: source || undefined, limit: 100, cursor });
+        if (cancelled) return;
+        rows.push(...(env.data || []));
+        cursor = env.pagination?.nextCursor || null;
+        if (cursor && seenCursors.has(cursor)) throw new Error('Organization pagination returned a repeated cursor');
+        if (cursor) seenCursors.add(cursor);
+      } while (cursor);
+      setOrgs(rows);
+    };
+    loadOrganizations().catch(() => {});
     return () => { cancelled = true; };
   }, [place, source]);
 
@@ -172,7 +200,7 @@ export default function HomePage() {
   const { items, meta, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>
       searchDatasets({
-        q: debouncedQuery || undefined,
+        q: searchQuery || undefined,
         org: org || undefined,
         format: format || undefined,
         keyword: keyword || undefined,
@@ -182,19 +210,19 @@ export default function HomePage() {
         limit: 20,
         cursor,
       }),
-    [debouncedQuery, org, format, keyword, place, source, mappable]
+    [searchQuery, org, format, keyword, place, source, mappable]
   );
 
   const reportedSearch = useRef(null);
   useEffect(() => {
-    if (loading || error || !debouncedQuery || meta?.search?.query !== debouncedQuery.trim() || reportedSearch.current === meta) return;
+    if (loading || error || !searchQuery || meta?.search?.query !== searchQuery.trim() || reportedSearch.current === meta) return;
     reportedSearch.current = meta;
     track('catalog_search_result', {
       place, language: lang, returned: items.length, empty: items.length === 0,
     });
-  }, [loading, error, debouncedQuery, place, lang, items.length, meta]);
+  }, [loading, error, searchQuery, place, lang, items.length, meta]);
 
-  const filtering = Boolean(debouncedQuery || org || format || keyword || place || source || mappable);
+  const filtering = Boolean(searchQuery || org || format || keyword || place || source || mappable);
   const synced = stats?.last_synced_at ? formatRelativeTime(stats.last_synced_at, lang) : null;
 
   return (
@@ -332,12 +360,13 @@ export default function HomePage() {
           </section>
         )}
 
-        {!debouncedQuery && !org && !format && !source && !keyword && <LocalGuides place={place} />}
+        {!searchQuery && !org && !format && !source && !keyword && <LocalGuides place={place} />}
 
         <div className="flex flex-wrap gap-2 items-center mt-10">
           <button
             className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
-            onClick={() => { track('catalog_filter', { filter: 'format', value: '' }); setFormat(''); }}
+            aria-pressed={format === ''}
+            onClick={() => { track('catalog_filter', { filter: 'format', value: '' }); updateSearch({ format: '' }); }}
           >
             {t('home.all_formats')}
           </button>
@@ -345,17 +374,18 @@ export default function HomePage() {
             <button
               key={f}
               className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
-              onClick={() => { track('catalog_filter', { filter: 'format', value: f }); setFormat(f); }}
+              aria-pressed={format === f}
+              onClick={() => { track('catalog_filter', { filter: 'format', value: f }); updateSearch({ format: f }); }}
             >
               {f}
             </button>
           ))}
           <button
             className={'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
-            onClick={() => setMappable(value => {
-              track('catalog_filter', { filter: 'mappable', value: !value });
-              return !value;
-            })}
+            onClick={() => {
+              track('catalog_filter', { filter: 'mappable', value: !mappable });
+              updateSearch({ mappable: mappable ? '' : 'true' });
+            }}
             aria-pressed={mappable}
           >
             <MapIcon size={12} />
@@ -366,8 +396,7 @@ export default function HomePage() {
             value={source}
             onChange={(event) => {
               track('catalog_filter', { filter: 'source', value: event.target.value });
-              setSource(event.target.value);
-              setOrg('');
+              updateSearch({ source: event.target.value, org: '' });
             }}
             aria-label={t('source.choose')}
           >
@@ -381,13 +410,14 @@ export default function HomePage() {
             value={org}
             onChange={(e) => {
               track('catalog_filter', { filter: 'organization', value: e.target.value });
-              setOrg(e.target.value);
+              updateSearch({ org: e.target.value });
             }}
+            aria-label={t('home.all_organizations')}
           >
             <option value="">{t('home.all_organizations')}</option>
             {orgs.map((o) => (
               <option key={o.name} value={o.name}>
-                {o.title?.en || o.name} ({o.dataset_count})
+                {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
               </option>
             ))}
           </select>

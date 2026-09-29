@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { circleMarker } from 'leaflet';
-import { GeoJSON, MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
+import { GeoJSON, MapContainer, TileLayer, ZoomControl, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchResourceMap } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
@@ -13,12 +13,14 @@ const GEOMETRY_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/res
 const ENGLISH_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_TXT_3857/MapServer/tile/{z}/{y}/{x}';
 const FRENCH_TILES = 'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBCT_TXT_3857/MapServer/tile/{z}/{y}/{x}';
 const ATTRIBUTION = '&copy; <a href="https://natural-resources.canada.ca/">Natural Resources Canada</a>, Open Government Licence - Canada';
+const WORLD_BOUNDS = [[-85, -180], [85, 180]];
 const PmtilesMapPanel = lazy(() => import('./PmtilesMapPanel.jsx'));
 
 function viewportOf(map) {
   const bounds = map.getBounds();
   return {
-    bbox: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+    bbox: [Math.max(-180, bounds.getWest()), Math.max(-90, bounds.getSouth()),
+      Math.min(180, bounds.getEast()), Math.min(90, bounds.getNorth())]
       .map(value => value.toFixed(5)).join(','),
     zoom: map.getZoom()
   };
@@ -71,6 +73,7 @@ function LegacyMapPanel({ resourceId, mapInfo }) {
     setLoading(true);
     fetchResourceMap(resourceId, { ...debouncedViewport, limit: 1000, signal: controller.signal })
       .then(env => {
+        if (controller.signal.aborted) return;
         setFeatures(env.data);
         setMeta(env.meta?.map || null);
         setError(null);
@@ -84,7 +87,7 @@ function LegacyMapPanel({ resourceId, mapInfo }) {
         });
       })
       .catch(err => {
-        if (err?.name !== 'AbortError') {
+        if (!controller.signal.aborted && err?.name !== 'AbortError') {
           track('map_viewport', {
             resource_id: resourceId,
             bbox: debouncedViewport.bbox,
@@ -123,21 +126,26 @@ function LegacyMapPanel({ resourceId, mapInfo }) {
       container.append(term, detail);
     }
     layer.bindPopup(container, { maxWidth: 320 });
-    layer.on('popupopen', () => track('map_feature_open', {
-      resource_id: resourceId,
-      geometry_type: feature?.geometry?.type || mapInfo?.geometry_type || '',
-    }));
-  }, [mapInfo?.fields, mapInfo?.geometry_type, resourceId]);
+    layer.on('popupopen', event => {
+      const closeButton = event.popup.getElement()?.querySelector('.leaflet-popup-close-button');
+      closeButton?.setAttribute('aria-label', t('map.close_popup'));
+      track('map_feature_open', {
+        resource_id: resourceId,
+        geometry_type: feature?.geometry?.type || mapInfo?.geometry_type || '',
+      });
+    });
+  }, [mapInfo?.fields, mapInfo?.geometry_type, resourceId, t]);
 
   return (
-    <div className="cq-card overflow-hidden relative">
-      <MapContainer bounds={bounds} maxZoom={18} minZoom={3} scrollWheelZoom className="cq-map" preferCanvas>
-        <TileLayer url={GEOMETRY_TILES} attribution={ATTRIBUTION} maxZoom={18} />
-        <TileLayer url={lang === 'fr' ? FRENCH_TILES : ENGLISH_TILES} maxZoom={18} />
+    <div role="region" aria-label={t('map.live')} className="cq-card overflow-hidden relative">
+      <MapContainer bounds={bounds} maxBounds={WORLD_BOUNDS} maxBoundsViscosity={1} maxZoom={18} minZoom={3} zoomControl={false} scrollWheelZoom className="cq-map" preferCanvas>
+        <ZoomControl key={lang} zoomInTitle={t('map.zoom_in_control')} zoomOutTitle={t('map.zoom_out_control')} />
+        <TileLayer url={GEOMETRY_TILES} attribution={ATTRIBUTION} maxZoom={18} noWrap />
+        <TileLayer url={lang === 'fr' ? FRENCH_TILES : ENGLISH_TILES} maxZoom={18} noWrap />
         <ViewportEvents onChange={reportViewport} />
         {features && (
           <GeoJSON
-            key={resourceId + ':' + debouncedViewport?.bbox + ':' + dark}
+            key={resourceId + ':' + debouncedViewport?.bbox + ':' + dark + ':' + lang}
             data={features}
             style={layerStyle}
             onEachFeature={bindFeatureDetails}
@@ -163,7 +171,7 @@ function LegacyMapPanel({ resourceId, mapInfo }) {
         )}
       </div>
       {error && (
-        <div className="absolute inset-x-4 bottom-8 z-[500] alert alert-error text-sm shadow-xl">
+        <div role="alert" className="absolute inset-x-4 bottom-8 z-[500] alert alert-error text-sm shadow-xl">
           {error.status === 413 ? t('map.zoom_in') : t('map.failed')}
         </div>
       )}

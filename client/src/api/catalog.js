@@ -32,8 +32,8 @@ export function enqueueIngest(id) {
   return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/ingest');
 }
 
-export function fetchJob(id) {
-  return getJSON('/api/v1/jobs/' + encodeURIComponent(id));
+export function fetchJob(id, options) {
+  return getJSON('/api/v1/jobs/' + encodeURIComponent(id), undefined, options);
 }
 
 export function fetchOrganizations({ q, place, source, limit, cursor } = {}) {

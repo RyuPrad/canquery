@@ -9,6 +9,7 @@ import { PAGE_SIZE } from '../utils/catalogPagination.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import { track } from '../utils/analytics.js';
+import { writePlace } from '../utils/placeStore.js';
 
 export default function PlacesPage() {
   const { lang, t } = useLang();
@@ -77,7 +78,7 @@ export default function PlacesPage() {
         <div className="alert alert-error mt-6">{error.message}</div>
       ) : (
         <div className="mt-8 space-y-9">
-          {!debouncedQuery && <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"><Link to="/" className="cq-card cq-card-hover p-5 group">
+          {!debouncedQuery && <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"><Link to="/" onClick={() => writePlace('')} className="cq-card cq-card-hover p-5 group">
             <div className="flex items-start justify-between gap-3">
               <span className="w-10 h-10 rounded-xl bg-primary/15 cq-fg-red flex items-center justify-center"><MapPinIcon size={18} /></span>
               <ArrowRightIcon size={15} className="opacity-35 group-hover:opacity-70" />

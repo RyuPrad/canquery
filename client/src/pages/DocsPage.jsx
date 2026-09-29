@@ -70,11 +70,11 @@ function Endpoint({ method, path, desc, example, runPath }) {
         </div>
       </div>
       <p className="text-sm text-base-content/60 leading-relaxed">{desc}</p>
-      <pre className="cq-code">
+      <pre className="cq-code" tabIndex={0} aria-label={path + ' · ' + t('docs.example')}>
         <code>{example}</code>
       </pre>
       {result && (
-        <pre className="cq-code max-h-64 overflow-y-auto">
+        <pre className="cq-code max-h-64 overflow-y-auto" tabIndex={0} aria-label={path + ' · ' + t('docs.response')}>
           <code>{result}</code>
         </pre>
       )}
@@ -109,7 +109,7 @@ export default function DocsPage() {
           method="GET"
           path="/api/v1/resources/:id/query.csv"
           desc={t('docs.ep_query_csv')}
-          example={'curl -OJ "' + BASE + '/api/v1/resources/RESOURCE_ID/query.csv?filters={' + '"year":{"op":"gte","value":2020}' + '}"'}
+          example={"curl -OJ --get '" + BASE + "/api/v1/resources/RESOURCE_ID/query.csv' \\\n  --data-urlencode 'filters={\"year\":{\"op\":\"gte\",\"value\":2020}}'"}
         />
         <Endpoint
           method="GET"
@@ -161,7 +161,7 @@ export default function DocsPage() {
           method="GET"
           path="/api/v1/resources/:id/query"
           desc={t('docs.ep_query')}
-          example={'curl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?filters={"year":{"op":"gte","value":2020}}&limit=10"'}
+          example={"curl --get '" + BASE + "/api/v1/resources/RESOURCE_ID/query' \\\n  --data-urlencode 'filters={\"year\":{\"op\":\"gte\",\"value\":2020}}' \\\n  --data-urlencode 'limit=10'"}
         />
         <Endpoint
           method="GET"
@@ -173,7 +173,7 @@ export default function DocsPage() {
           method="GET"
           path="/api/v1/resources/:id/query (aggregated)"
           desc={t('docs.ep_query_agg')}
-          example={'curl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?group_by=province&agg=count&sort=value desc"\ncurl "' + BASE + '/api/v1/resources/RESOURCE_ID/query?group_by=date&agg=sum&agg_column=amount&bucket=month&sort=key asc"'}
+          example={"curl --get '" + BASE + "/api/v1/resources/RESOURCE_ID/query' \\\n  --data-urlencode 'group_by=province' --data-urlencode 'agg=count' \\\n  --data-urlencode 'sort=value desc'\n\ncurl --get '" + BASE + "/api/v1/resources/RESOURCE_ID/query' \\\n  --data-urlencode 'group_by=date' --data-urlencode 'agg=sum' \\\n  --data-urlencode 'agg_column=amount' --data-urlencode 'bucket=month' \\\n  --data-urlencode 'sort=key asc'"}
         />
         <Endpoint
           method="POST"

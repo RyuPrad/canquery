@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useId } from 'react';
 import { NotIngestedError } from '../api/client.js';
 import { queryResource } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
@@ -14,8 +14,8 @@ const NUM_RE = /int|numeric|float|double|money|real|decimal/i;
 const DATE_RE = /date|time/i;
 const BAD_DEFAULT_RE = /(^|[_\s])(id|uuid|guid|code|number|num|no|key|name|title)([_\s]|$)/i;
 
-function Label({ children }) {
-  return <span className="text-xs text-base-content/50">{children}</span>;
+function Label({ children, htmlFor }) {
+  return <label htmlFor={htmlFor} className="text-xs text-base-content/50">{children}</label>;
 }
 
 function TypeToggle({ value, onChange, options }) {
@@ -25,6 +25,7 @@ function TypeToggle({ value, onChange, options }) {
         <button
           key={o.value}
           className={'cq-seg-btn' + (value === o.value ? ' cq-seg-active' : '')}
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
         >
           {o.label}
@@ -59,6 +60,7 @@ function initialConfig(cols, classified) {
 // Ingested resources: full group-by + aggregate builder.
 function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavailable }) {
   const { t, lang } = useLang();
+  const controlId = useId();
   const cols = useMemo(() => fields.filter((f) => f.id !== '_id'), [fields]);
   const numericCols = useMemo(() => cols.filter((c) => NUM_RE.test(c.type)), [cols]);
   const init = useMemo(() => initialConfig(cols, classified), [cols, classified]);
@@ -72,6 +74,8 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
   const groupCol = cols.find((c) => c.id === groupBy);
   const isDate = groupCol ? DATE_RE.test(groupCol.type) : false;
   const wantsAggCol = agg !== 'count';
+  const aggColOptions = (agg === 'sum' || agg === 'avg') ? numericCols : cols;
+  const nonNumericAggregate = wantsAggCol && !NUM_RE.test(cols.find(c => c.id === aggCol)?.type || '');
 
   // When the user switches group-by to/from a date, follow with a sensible chart
   // type - but don't clobber the smart initial choice (e.g. a donut) on mount.
@@ -80,12 +84,13 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
     if (!mounted.current) { mounted.current = true; return; }
     setChartType(isDate ? 'line' : 'bars');
   }, [isDate]);
-  // sum/avg need a numeric target.
+  // Keep the selected target valid, including min/max on text-only files.
   useEffect(() => {
-    if ((agg === 'sum' || agg === 'avg') && !numericCols.some((c) => c.id === aggCol)) {
-      setAggCol(numericCols[0]?.id || '');
+    const options = (agg === 'sum' || agg === 'avg') ? numericCols : cols;
+    if (wantsAggCol && !options.some((c) => c.id === aggCol)) {
+      setAggCol(options[0]?.id || '');
     }
-  }, [agg, aggCol, numericCols]);
+  }, [agg, aggCol, numericCols, cols, wantsAggCol]);
 
   const [rows, setRows] = useState(null);
   const [truncated, setTruncated] = useState(false);
@@ -94,7 +99,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
 
   useEffect(() => {
     if (!groupBy) return;
-    if (wantsAggCol && !aggCol) return;
+    if (wantsAggCol && !aggColOptions.some(column => column.id === aggCol)) return;
     let cancelled = false;
     const controller = new AbortController();
     setRows(null);
@@ -110,18 +115,25 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
       sort: (isDate || isLine) ? 'key asc' : 'value desc',
       limit: chartType === 'donut' ? 16 : (isDate ? 100 : 50),
     }, { signal: controller.signal })
-      .then((env) => { if (!cancelled) { setRows(cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
+      .then((env) => { if (!cancelled) { setRows(nonNumericAggregate ? env.data.records : cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
       .catch((err) => { if (!cancelled) { setError(err); if (err instanceof NotIngestedError) onUnavailable?.(); } });
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resourceId, q, filtersKey, groupBy, agg, aggCol, bucket, isDate, chartType, wantsAggCol]);
-
-  const aggColOptions = (agg === 'sum' || agg === 'avg') ? numericCols : cols;
+  }, [resourceId, q, filtersKey, groupBy, agg, aggCol, bucket, isDate, chartType, wantsAggCol, nonNumericAggregate, aggColOptions]);
 
   let body;
-  if (error) body = <ChartEmpty label={error.message || t('chart.no_data')} height={320} />;
+  if (!cols.length) body = <ChartEmpty label={t('chart.no_data')} height={320} />;
+  else if (error) body = <ChartEmpty label={error.message || t('chart.no_data')} height={320} />;
   else if (rows === null) body = <ChartSkeleton height={320} />;
   else if (!rows.length) body = <ChartEmpty label={t('chart.no_data')} height={320} />;
+  else if (nonNumericAggregate) body = (
+    <div className="cq-table-wrap">
+      <table className="cq-table">
+        <thead><tr><th scope="col">{groupBy}</th><th scope="col">{agg} · {aggCol}</th></tr></thead>
+        <tbody>{rows.map((row, index) => <tr key={index}><td>{row.key == null ? '∅' : String(row.key)}</td><td>{row.value == null ? '∅' : String(row.value)}</td></tr>)}</tbody>
+      </table>
+    </div>
+  );
   else if (chartType === 'donut' && !truncated) body = <DonutChart records={rows} lang={lang} height={320} totalLabel={t('chart.total')} />;
   else if (chartType === 'line') body = <TimeSeriesChart records={rows} lang={lang} bucket={isDate ? bucket : null} categorical={!isDate} type="area" height={320} />;
   else body = <CategoryBar records={rows} lang={lang} height={320} />;
@@ -133,16 +145,16 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
 
   return (
     <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + t('preparation.limited_groups') : subtitle}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
-        <Label>{t('chart.x')}</Label>
-        <select className={selectClass} value={groupBy} onChange={(e) => {
+      {cols.length > 0 && <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
+        <Label htmlFor={controlId + '-group'}>{t('chart.x')}</Label>
+        <select id={controlId + '-group'} className={selectClass} value={groupBy} onChange={(e) => {
           track('chart_config', { resource_id: resourceId, setting: 'group_by', value: e.target.value });
           setGroupBy(e.target.value);
         }}>
           {cols.map((c) => <option key={c.id} value={c.id}>{c.id}</option>)}
         </select>
-        <Label>{t('chart.fn')}</Label>
-        <select className={selectClass} value={agg} onChange={(e) => {
+        <Label htmlFor={controlId + '-agg'}>{t('chart.fn')}</Label>
+        <select id={controlId + '-agg'} className={selectClass} value={agg} onChange={(e) => {
           track('chart_config', { resource_id: resourceId, setting: 'aggregation', value: e.target.value });
           setAgg(e.target.value);
         }}>
@@ -154,8 +166,8 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
         </select>
         {wantsAggCol && (
           <>
-            <Label>{t('chart.value_col')}</Label>
-            <select className={selectClass} value={aggCol} onChange={(e) => {
+            <Label htmlFor={controlId + '-value'}>{t('chart.value_col')}</Label>
+            <select id={controlId + '-value'} className={selectClass} value={aggCol} onChange={(e) => {
               track('chart_config', { resource_id: resourceId, setting: 'value_column', value: e.target.value });
               setAggCol(e.target.value);
             }}>
@@ -165,8 +177,8 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
         )}
         {isDate && (
           <>
-            <Label>{t('chart.bucket')}</Label>
-            <select className={selectClass} value={bucket} onChange={(e) => {
+            <Label htmlFor={controlId + '-bucket'}>{t('chart.bucket')}</Label>
+            <select id={controlId + '-bucket'} className={selectClass} value={bucket} onChange={(e) => {
               track('chart_config', { resource_id: resourceId, setting: 'bucket', value: e.target.value });
               setBucket(e.target.value);
             }}>
@@ -176,7 +188,7 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
             </select>
           </>
         )}
-        <div className="ml-auto">
+        {!nonNumericAggregate && <div className="ml-auto">
           <TypeToggle
             value={chartType}
             onChange={(value) => {
@@ -189,8 +201,8 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
               { value: 'line', label: t('chart.type_line') },
             ]}
           />
-        </div>
-      </div>
+        </div>}
+      </div>}
       {body}
     </ChartCard>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import InsightCarousel from './InsightCarousel.jsx';
 
 // matchMedia is stubbed to matches:false in test setup, so perView resolves to 1
@@ -59,5 +59,33 @@ describe('InsightCarousel', () => {
     renderCarousel(4, { focusId: 'd2' });
     const dots = screen.getAllByLabelText(/Go to page/);
     expect(dots[2]).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('off-screen slides are hidden from assistive technology and keyboard navigation', () => {
+    renderCarousel(3);
+    const firstPage = screen.getByText('slide d0').parentElement.parentElement;
+    const secondPage = screen.getByText('slide d1').parentElement.parentElement;
+    expect(firstPage).not.toHaveAttribute('inert');
+    expect(secondPage).toHaveAttribute('inert');
+    expect(secondPage).toHaveAttribute('aria-hidden', 'true');
+    fireEvent.click(screen.getByLabelText('Next'));
+    expect(firstPage).toHaveAttribute('inert');
+    expect(secondPage).not.toHaveAttribute('inert');
+    expect(secondPage).not.toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('keeps the carousel paused while keyboard focus remains inside after the pointer leaves', () => {
+    vi.useFakeTimers();
+    try {
+      renderCarousel(3);
+      const region = screen.getByRole('region', { name: 'Featured' });
+      fireEvent.mouseEnter(region);
+      fireEvent.focus(screen.getByLabelText('Next'));
+      fireEvent.mouseLeave(region);
+      act(() => vi.advanceTimersByTime(6500));
+      expect(screen.getAllByLabelText(/Go to page/)[0]).toHaveAttribute('aria-current', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
