@@ -47,8 +47,9 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
   const ref = useRef(null);
   // Eager when IntersectionObserver is unavailable (tests / old browsers).
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
-  const [classified, setClassified] = useState(null);
-  const [error, setError] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const classified = profile?.resourceId === id ? profile.classified : null;
+  const error = profile?.resourceId === id && profile.error;
 
   useEffect(() => {
     if (!id || visible) return;
@@ -65,8 +66,8 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
     if (!id || !visible) return;
     let cancelled = false;
     fetchResourceProfile(id)
-      .then((env) => { if (!cancelled) setClassified(classifyColumns(env.data)); })
-      .catch(() => { if (!cancelled) setError(true); });
+      .then((env) => { if (!cancelled) setProfile({ resourceId: id, classified: classifyColumns(env.data), error: false }); })
+      .catch(() => { if (!cancelled) setProfile({ resourceId: id, classified: null, error: true }); });
     return () => { cancelled = true; };
   }, [visible, id]);
 

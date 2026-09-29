@@ -54,6 +54,11 @@ export async function getJSON(path, params, options = {}) {
   } catch {
     body = null;
   }
+  const retryHeader = res.headers?.get('Retry-After');
+  if (!res.ok && retryHeader && !body?.retry_after) {
+    const seconds = /^\d+$/.test(retryHeader) ? Number(retryHeader) : Math.ceil((Date.parse(retryHeader) - Date.now()) / 1000);
+    if (Number.isFinite(seconds) && seconds > 0) body = { ...body, retry_after: seconds };
+  }
   const message = body && body.error ? body.error : 'Request failed (' + res.status + ')';
   if (res.ok) {
     return body;

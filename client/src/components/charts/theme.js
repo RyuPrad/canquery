@@ -25,7 +25,7 @@ const MONO = "'JetBrains Mono Variable', ui-monospace, monospace";
 // light mode. The categorical PALETTE above reads on both. Pass `dark` from
 // useTheme() so charts re-render with the right chrome on toggle.
 export const axisTick = (dark) => ({
-  fill: dark ? 'rgba(230,238,250,0.45)' : 'rgba(20,30,52,0.55)',
+  fill: dark ? 'rgba(230,238,250,0.7)' : 'rgba(20,30,52,0.7)',
   fontSize: 11,
   fontFamily: MONO,
 });
@@ -33,7 +33,7 @@ export const axisTick = (dark) => ({
 export const gridStroke = (dark) => (dark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.09)');
 export const sliceStroke = (dark) => (dark ? 'rgba(10,14,22,0.65)' : '#ffffff');
 export const cursorFill = (dark) => (dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.05)');
-export const tooltipMuted = (dark) => (dark ? 'rgba(230,238,250,0.6)' : 'rgba(20,30,52,0.62)');
+export const tooltipMuted = (dark) => (dark ? 'rgba(230,238,250,0.7)' : 'rgba(20,30,52,0.7)');
 export const tooltipValue = (dark) => (dark ? '#ffffff' : '#0c1422');
 
 export const tooltipStyle = (dark) => ({
@@ -59,7 +59,10 @@ export function fmtNum(n, lang) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
   const v = Number(n);
   const abs = Math.abs(v);
-  if (abs >= 100000 || (abs > 0 && abs < 0.01)) {
+  if (abs > 0 && abs < 0.01) {
+    return new Intl.NumberFormat(localeFor(lang), { notation: 'scientific', maximumFractionDigits: 2 }).format(v);
+  }
+  if (abs >= 100000) {
     return new Intl.NumberFormat(localeFor(lang), { notation: 'compact', maximumFractionDigits: 1 }).format(v);
   }
   return new Intl.NumberFormat(localeFor(lang), { maximumFractionDigits: 2 }).format(v);

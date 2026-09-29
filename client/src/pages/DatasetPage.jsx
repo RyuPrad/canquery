@@ -22,15 +22,15 @@ import {
 } from '../components/Icons.jsx';
 
 const FMT_STYLES = {
-  CSV: { color: '#5eead4', background: 'rgba(45,212,191,0.12)' },
-  XLSX: { color: '#86efac', background: 'rgba(74,222,128,0.12)' },
-  XLS: { color: '#86efac', background: 'rgba(74,222,128,0.12)' },
-  JSON: { color: '#fcd34d', background: 'rgba(251,191,36,0.12)' },
-  GEOJSON: { color: '#93c5fd', background: 'rgba(106,166,255,0.14)' },
-  PDF: { color: '#ff958c', background: 'rgba(213,43,30,0.14)' },
-  XML: { color: '#c4b5fd', background: 'rgba(167,139,250,0.13)' },
+  CSV: { color: 'var(--cq-format-csv, #5eead4)', background: 'rgba(45,212,191,0.12)' },
+  XLSX: { color: 'var(--cq-format-excel, #86efac)', background: 'rgba(74,222,128,0.12)' },
+  XLS: { color: 'var(--cq-format-excel, #86efac)', background: 'rgba(74,222,128,0.12)' },
+  JSON: { color: 'var(--cq-format-json, #fcd34d)', background: 'rgba(251,191,36,0.12)' },
+  GEOJSON: { color: 'var(--cq-format-geojson, #93c5fd)', background: 'rgba(106,166,255,0.14)' },
+  PDF: { color: 'var(--cq-format-pdf, #ff958c)', background: 'rgba(213,43,30,0.14)' },
+  XML: { color: 'var(--cq-format-xml, #c4b5fd)', background: 'rgba(167,139,250,0.13)' },
 };
-const FMT_FALLBACK = { color: '#9aa7bd', background: 'rgba(154,167,189,0.12)' };
+const FMT_FALLBACK = { color: 'var(--cq-format-file, #9aa7bd)', background: 'rgba(154,167,189,0.12)' };
 
 function FormatTile({ format }) {
   const style = FMT_STYLES[format] || FMT_FALLBACK;
@@ -176,12 +176,14 @@ function DatasetExplorer({ idOrName }) {
         <div className="cq-seg shrink-0 mt-1.5">
           <button
             className={'cq-seg-btn' + (contentLang === 'en' ? ' cq-seg-active' : '')}
+            aria-pressed={contentLang === 'en'}
             onClick={() => { track('catalog_filter', { filter: 'dataset_language', value: 'en', dataset_id: dataset.id }); setContentLang('en'); }}
           >
             EN
           </button>
           <button
             className={'cq-seg-btn' + (contentLang === 'fr' ? ' cq-seg-active' : '')}
+            aria-pressed={contentLang === 'fr'}
             onClick={() => { track('catalog_filter', { filter: 'dataset_language', value: 'fr', dataset_id: dataset.id }); setContentLang('fr'); }}
           >
             FR

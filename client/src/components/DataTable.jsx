@@ -20,9 +20,10 @@ function DataTable({
   const { t } = useLang();
 
   const handleSort = (fieldId) => {
-    if (sort === `${fieldId} asc`) {
+    const direction = getSortDirection(fieldId);
+    if (direction === 'asc') {
       onSortChange(`${fieldId} desc`);
-    } else if (sort === `${fieldId} desc`) {
+    } else if (direction === 'desc') {
       onSortChange(null);
     } else {
       onSortChange(`${fieldId} asc`);
@@ -30,9 +31,10 @@ function DataTable({
   };
 
   const getSortDirection = (fieldId) => {
-    if (sort === `${fieldId} asc`) return 'asc';
-    if (sort === `${fieldId} desc`) return 'desc';
-    return null;
+    const value = sort?.trim();
+    if (fields.some(field => field.id === value)) return value === fieldId ? 'asc' : null;
+    const match = /^([\s\S]+?)\s+(asc|desc)$/i.exec(value || '');
+    return match?.[1] === fieldId ? match[2].toLowerCase() : null;
   };
 
   return (
@@ -43,16 +45,16 @@ function DataTable({
             {fields.map((field) => {
               const dir = getSortDirection(field.id);
               return (
-                <th key={field.id} onClick={() => handleSort(field.id)}>
-                  <span className="inline-flex items-center gap-1.5">
+                <th key={field.id} scope="col" aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}>
+                  <button type="button" onClick={() => handleSort(field.id)} className="inline-flex items-center gap-1.5 text-left cursor-pointer">
                     {field.id}
                     <span className={typeChipClass(field.type)}>{field.type}</span>
                     {dir && (
-                      <span className="cq-fg-red font-bold">
+                      <span className="cq-fg-red font-bold" aria-hidden="true">
                         {dir === 'asc' ? '↑' : '↓'}
                       </span>
                     )}
-                  </span>
+                  </button>
                 </th>
               );
             })}
@@ -67,6 +69,7 @@ function DataTable({
                     className="cq-filter-input"
                     placeholder={t('table.filter')}
                     title={t('table.filter_tip')}
+                    aria-label={field.id + ' · ' + t('table.filter')}
                     value={columnFilters[field.id] || ''}
                     onChange={(e) => onColumnFilterChange(field.id, e.target.value)}
                   />

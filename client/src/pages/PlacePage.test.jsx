@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import PlacePage from './PlacePage.jsx';
 import { LangProvider } from '../i18n.jsx';
+import { ApiError, NotFoundError } from '../api/client.js';
 
 vi.mock('../api/catalog.js', () => ({
   fetchBlog: vi.fn(() => Promise.resolve({ data: [] })),
@@ -35,6 +36,41 @@ beforeEach(() => {
 });
 
 describe('PlacePage', () => {
+  test.each([
+    new NotFoundError('Missing place', 404), new ApiError('Temporary catalogue failure', 503)
+  ])('recovers from $message when navigating to another place', async error => {
+    fetchPlace.mockRejectedValueOnce(error);
+    function Navigation() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/places/oshawa-on')}>Valid place</button>;
+    }
+    render(<MemoryRouter initialEntries={['/places/missing']}>
+      <Navigation /><Routes><Route path="/places/:slug" element={<PlacePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText(error.status === 404 ? 'Place not found' : error.message)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Valid place' }));
+    expect(await screen.findByRole('heading', { name: 'Oshawa' })).toBeInTheDocument();
+    expect(screen.queryByText(error.message)).not.toBeInTheDocument();
+  });
+
+  test('a different place starts with its own unfiltered catalogue', async () => {
+    function Navigation() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/places/another-place')}>Other place</button>;
+    }
+    render(<MemoryRouter initialEntries={['/places/oshawa-on']}>
+      <Navigation /><Routes><Route path="/places/:slug" element={<PlacePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Oshawa' });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'roads' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Has a map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Other place' }));
+    await screen.findByRole('heading', { name: 'Oshawa' });
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Has a map' })).toHaveAttribute('aria-pressed', 'false');
+    expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ place: 'another-place', q: undefined, mappable: undefined }));
+  });
+
   test('shows ancestry, sources and geographically filtered datasets', async () => {
     render(
       <MemoryRouter initialEntries={['/places/oshawa-on']}>

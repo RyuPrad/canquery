@@ -24,7 +24,11 @@ export default function BlogPage({ language = 'en' }) {
       if (cancelled) return;
       setContent({ pathname, data: env.data });
       setBlogTranslations({ pathname, paths: slug ? env.data.translations : { en: '/blog', fr: '/fr/blog' } });
-    }).catch(err => { if (!cancelled) setError({ pathname, cause: err }); });
+    }).catch(err => {
+      if (cancelled) return;
+      setError({ pathname, cause: err });
+      setBlogTranslations({ pathname, paths: { en: '/blog', fr: '/fr/blog' } });
+    });
     return () => { cancelled = true; setBlogTranslations(null); };
   }, [slug, language, pathname, setBlogTranslations]);
 

@@ -141,7 +141,7 @@ describe('automatic preparation lifecycle', () => {
     await act(async () => finish({ data: { id: 901, status: 'pending' } }));
     expect(fetchJob).not.toHaveBeenCalled();
     act(() => visibility('visible'));
-    await waitFor(() => expect(fetchJob).toHaveBeenCalledWith('901'));
+    await waitFor(() => expect(fetchJob).toHaveBeenCalledWith('901', expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(prepareResource).toHaveBeenCalledTimes(1);
   });
 
@@ -163,7 +163,7 @@ describe('automatic preparation lifecycle', () => {
     prepareResource.mockResolvedValue({ data: { id: 902, status: 'pending' } });
     fetchJob.mockResolvedValue({ data: { id: 902, status: 'running' } });
     renderHook(useResourcePreparation, { initialProps: props({ resource: { ...resource, preparation: { ...resource.preparation, job_id: 901 } } }) });
-    await waitFor(() => expect(fetchJob).toHaveBeenCalledWith(902));
+    await waitFor(() => expect(fetchJob).toHaveBeenCalledWith(902, expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(prepareResource).toHaveBeenCalledTimes(1);
     expect(fetchJob.mock.calls.filter(([id]) => id === 901)).toHaveLength(1);
   });

@@ -44,6 +44,7 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode, 
       <div className="cq-seg w-fit">
         <button
           className={'cq-seg-btn' + (tab === 'insights' ? ' cq-seg-active' : '')}
+          aria-pressed={tab === 'insights'}
           onClick={() => { track('chart_config', { resource_id: resourceId, setting: 'tab', value: 'insights' }); setTab('insights'); }}
         >
           <SparklesIcon size={13} />
@@ -51,6 +52,7 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode, 
         </button>
         <button
           className={'cq-seg-btn' + (tab === 'custom' ? ' cq-seg-active' : '')}
+          aria-pressed={tab === 'custom'}
           onClick={() => { track('chart_config', { resource_id: resourceId, setting: 'tab', value: 'custom' }); setTab('custom'); }}
         >
           <ChartIcon size={13} />

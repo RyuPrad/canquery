@@ -5,6 +5,7 @@ import { NotFoundError } from '../api/client.js';
 export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone, enabled = true } = {}) {
   const [job, setJob] = React.useState(null);
   const [polling, setPolling] = React.useState(false);
+  const retryWindowRef = React.useRef({ jobId, at: 0 });
 
   // The callbacks live in refs so a parent passing inline arrows (a new
   // identity every render) does not tear down and re-arm the polling effect -
@@ -13,6 +14,7 @@ export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone
   const onDoneRef = React.useRef(onDone);
   const onGoneRef = React.useRef(onGone);
   React.useEffect(() => {
+    if (retryWindowRef.current.jobId !== jobId) retryWindowRef.current = { jobId, at: 0 };
     onDoneRef.current = onDone;
     onGoneRef.current = onGone;
   });
@@ -27,10 +29,16 @@ export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone
     let cancelled = false;
     setPolling(true);
     let timer;
+    let deadline;
+    let controller;
     const tick = async () => {
+      controller = new AbortController();
+      deadline = setTimeout(() => controller.abort(), 30000);
+      let delay = intervalMs;
       try {
-        const env = await fetchJob(jobId);
+        const env = await fetchJob(jobId, { signal: controller.signal });
         if (cancelled) return;
+        retryWindowRef.current.at = 0;
         const j = env.data;
         setJob(j);
         if (j.status === 'done' || j.status === 'failed') {
@@ -50,13 +58,19 @@ export default function useJobPolling(jobId, { intervalMs = 2000, onDone, onGone
         }
         // Anything else is transient (API restart during a deploy, a network
         // blip): keep the cadence and pick the job back up on the next tick.
+        if (Number.isFinite(err.retryAfter) && err.retryAfter > 0) delay = Math.max(delay, err.retryAfter * 1000);
+        retryWindowRef.current.at = Date.now() + delay;
+      } finally {
+        clearTimeout(deadline);
       }
-      timer = setTimeout(tick, intervalMs);
+      timer = setTimeout(tick, delay);
     };
-    timer = setTimeout(tick, 0);
+    timer = setTimeout(tick, Math.max(0, retryWindowRef.current.at - Date.now()));
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearTimeout(deadline);
+      controller?.abort();
     };
   }, [jobId, intervalMs, enabled]);
 

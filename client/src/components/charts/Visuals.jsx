@@ -7,6 +7,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { useTheme } from '../../theme.jsx';
+import { useLang } from '../../i18n.jsx';
 import {
   PALETTE, colorAt, axisTick, gridStroke, tooltipStyle, sliceStroke, cursorFill, tooltipMuted, tooltipValue,
   fmtInt, fmtNum, fmtBucketKey, fmtCategory, truncate,
@@ -83,7 +84,14 @@ export function KpiCard({ label, value, sub, accent = 0, icon }) {
 // ── Donut (proportions) ─────────────────────────────────────────────────────
 export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height = 260 }) {
   const { dark } = useTheme();
+  const { t } = useLang();
   const total = records.reduce((s, r) => s + Number(r.value || 0), 0);
+  if (!(total > 0) || !Number.isFinite(total) || records.some(r => Number(r.value) < 0)) {
+    return <div className="space-y-2">
+      <p className="text-xs text-base-content/60">{t('chart.donut_requires_positive')}</p>
+      <CategoryBar records={records} lang={lang} colorOffset={colorOffset} height={height} />
+    </div>;
+  }
   const data = records.map((r, i) => ({
     label: fmtCategory(r.key),
     value: Number(r.value || 0),
@@ -104,7 +112,7 @@ export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height 
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-xl font-display font-bold tabular-nums leading-none">{fmtInt(total, lang)}</span>
+          <span className="text-xl font-display font-bold tabular-nums leading-none">{Number.isInteger(total) ? fmtInt(total, lang) : fmtNum(total, lang)}</span>
           {totalLabel && <span className="text-[0.66rem] text-base-content/40 mt-1">{totalLabel}</span>}
         </div>
       </div>

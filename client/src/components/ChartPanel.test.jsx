@@ -29,6 +29,8 @@ describe('ChartPanel', () => {
     render(<ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" />);
     expect(screen.getByText('Insights')).toBeInTheDocument();
     expect(screen.getByText('Custom')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Insights', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Custom', pressed: false })).toBeInTheDocument();
 
     await waitFor(() => expect(fetchResourceProfile).toHaveBeenCalledWith('r1', expect.objectContaining({ signal: expect.any(AbortSignal) })));
     // KPI row surfaces the headline row count (locale-formatted).
