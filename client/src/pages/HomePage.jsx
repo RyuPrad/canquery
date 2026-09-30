@@ -12,16 +12,14 @@ import DatasetRow from '../components/DatasetRow.jsx';
 import RecentRail from '../components/RecentRail.jsx';
 import PopularRail from '../components/PopularRail.jsx';
 import HeroChartWidget from '../components/HeroChartWidget.jsx';
-import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { formatRelativeTime } from '../utils/time.js';
 import { readPlace, writePlace } from '../utils/placeStore.js';
 import { track } from '../utils/analytics.js';
+import { selectFeaturedCharts } from '../utils/featuredCharts.js';
 import PlaceSelect from '../components/PlaceSelect.jsx';
 import {
   MapleLeaf,
-  SearchIcon,
   UnlockIcon,
-  ChartIcon,
   DatabaseIcon,
   ZapIcon,
   XIcon,
@@ -31,38 +29,35 @@ import {
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
 const EXAMPLES = { en: ['parks', 'playgrounds', 'building permits', 'water quality', 'census'], fr: ['parcs', 'aires de jeux', 'permis de construction', 'qualité de l’eau', 'recensement'] };
 
-function StatCard({ icon, value, label, tone, delay }) {
+function StatItem({ icon, value, label, tone }) {
   const n = useCountUp(value);
+  const { lang } = useLang();
   return (
-    <div className={`cq-card p-4 sm:p-5 flex items-center gap-3.5 text-left cq-fade ${delay}`}>
-      <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tone}`}>
+    <div className="cq-home-stat">
+      <span className={`hidden sm:flex w-9 h-9 rounded-lg items-center justify-center shrink-0 ${tone}`}>
         {icon}
       </span>
       <div className="min-w-0">
-        <div className="font-display font-bold text-2xl sm:text-[1.7rem] leading-none tabular-nums">
-          {n.toLocaleString()}
+        <div className="font-display font-bold text-xl sm:text-2xl leading-none tabular-nums">
+          {n.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}
         </div>
-        <div className="text-[0.72rem] text-base-content/45 mt-1.5 truncate">{label}</div>
+        <div className="text-xs text-base-content/70 mt-2 leading-snug">{label}</div>
       </div>
     </div>
   );
 }
 
-function StepCard({ icon, number, title, desc, tone, delay }) {
+function StepItem({ number, title, desc }) {
   return (
-    <div className={`cq-card p-5 relative overflow-hidden cq-fade ${delay}`}>
-      <span
-        className="absolute -top-4 right-1 font-display font-bold text-[4.5rem] leading-none text-base-content/5 select-none"
-        aria-hidden="true"
-      >
+    <li className="flex items-start gap-3">
+      <span className="w-8 h-8 rounded-full border border-base-content/15 flex items-center justify-center shrink-0 font-mono text-sm cq-fg-red" aria-hidden="true">
         {number}
       </span>
-      <span className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${tone}`}>
-        {icon}
-      </span>
-      <div className="font-semibold text-[0.95rem]">{title}</div>
-      <p className="text-sm text-base-content/55 mt-1 leading-relaxed">{desc}</p>
-    </div>
+      <div>
+        <h3 className="font-semibold text-base">{title}</h3>
+        <p className="text-sm text-base-content/70 mt-1 leading-relaxed">{desc}</p>
+      </div>
+    </li>
   );
 }
 
@@ -86,7 +81,6 @@ export default function HomePage() {
   const [featured, setFeatured] = useState([]);
   const [places, setPlaces] = useState([]);
   const [sources, setSources] = useState([]);
-  const reduced = usePrefersReducedMotion();
 
   const debouncedDraft = useDebouncedValue(query, 250);
 
@@ -192,10 +186,12 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     fetchFeatured(lang).then((env) => {
-      if (!cancelled && env) setFeatured(env.data || []);
+      if (!cancelled && env) setFeatured(selectFeaturedCharts(env.data));
     });
     return () => { cancelled = true; };
   }, [lang]);
+
+  const filtering = Boolean(searchQuery || org || format || keyword || place || source || mappable);
 
   const { items, meta, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>
@@ -207,7 +203,7 @@ export default function HomePage() {
         place: place || undefined,
         source: source || undefined,
         mappable: mappable || undefined,
-        limit: 20,
+        limit: filtering ? 20 : 6,
         cursor,
       }),
     [searchQuery, org, format, keyword, place, source, mappable]
@@ -222,7 +218,6 @@ export default function HomePage() {
     });
   }, [loading, error, searchQuery, place, lang, items.length, meta]);
 
-  const filtering = Boolean(searchQuery || org || format || keyword || place || source || mappable);
   const synced = stats?.last_synced_at ? formatRelativeTime(stats.last_synced_at, lang) : null;
 
   return (
@@ -231,24 +226,8 @@ export default function HomePage() {
         className="absolute inset-x-0 top-0 h-[440px] cq-grid-bg pointer-events-none"
         aria-hidden="true"
       />
-      {!filtering && featured.length > 0 && (
-        <>
-          <HeroChartWidget
-            items={featured}
-            startIndex={0}
-            reduced={reduced}
-            className="hidden xl:block absolute left-3 2xl:left-10 top-[150px] z-10 cq-fade cq-fade-3"
-          />
-          <HeroChartWidget
-            items={featured}
-            startIndex={Math.floor(featured.length / 2)}
-            reduced={reduced}
-            className="hidden xl:block absolute right-3 2xl:right-10 top-[150px] z-10 cq-fade cq-fade-4"
-          />
-        </>
-      )}
-      <div className="relative max-w-6xl mx-auto px-4 pb-4">
-        <section className="pt-14 pb-2 text-center cq-fade">
+      <div className="relative max-w-6xl mx-auto px-4 pb-12 sm:pb-16">
+        <section className="pt-10 sm:pt-12 pb-2 text-center cq-fade">
           <div className="cq-chip cq-chip-mono mb-5 max-w-full !whitespace-normal !px-3 !py-1.5">
             <MapleLeaf size={11} className="text-primary shrink-0" />
             {t('home.hero_chip')}
@@ -265,7 +244,7 @@ export default function HomePage() {
             {t('home.subtitle')}
           </p>
 
-          <div className="max-w-4xl mx-auto mt-8 grid sm:grid-cols-[minmax(0,1fr)_17rem] gap-2.5">
+          <div className="w-full mx-auto mt-7 grid sm:grid-cols-[minmax(0,1fr)_17rem] gap-2.5">
             <SearchBar value={query} onChange={setQuery} />
             <PlaceSelect value={place} onChange={changePlace} places={places} />
           </div>
@@ -297,175 +276,157 @@ export default function HomePage() {
           </div>
         </section>
 
-        {!filtering && featured.length > 0 && (
-          <div className="xl:hidden mt-6 max-w-xl mx-auto">
-            <HeroChartWidget items={featured} reduced={reduced} horizontal />
+        <section className="cq-home-section" aria-labelledby="home-catalogue-title">
+          <div className="cq-home-section-heading">
+            <h2 id="home-catalogue-title" className="font-display font-semibold text-2xl sm:text-3xl">
+              {t(filtering ? 'home.results_title' : 'home.explore_title')}
+            </h2>
+            {!filtering && <p className="text-sm text-base-content/70 mt-2">{t('home.explore_description')}</p>}
           </div>
-        )}
-
-        {!filtering && <MochiPromotion />}
-
-        {!filtering && stats && (
-          <section className="grid sm:grid-cols-3 gap-3.5 mt-10 max-w-4xl mx-auto">
-            <StatCard
-              icon={<DatabaseIcon size={18} />}
-              tone="bg-accent/10 text-accent"
-              value={stats.datasets}
-              label={t('home.datasets_mirrored')}
-              delay="cq-fade-1"
-            />
-            <StatCard
-              icon={<ZapIcon size={18} />}
-              tone="bg-success/10 text-success"
-              value={stats.datastore_active_resources}
-              label={t('home.queryable_upstream')}
-              delay="cq-fade-2"
-            />
-            <StatCard
-              icon={<UnlockIcon size={18} />}
-              tone="bg-primary/15 cq-fg-red"
-              value={stats.ingested_resources}
-              label={t('home.unlocked_here')}
-              delay="cq-fade-3"
-            />
-          </section>
-        )}
-
-        {!filtering && (
-          <section className="grid sm:grid-cols-3 gap-3.5 mt-4">
-            <StepCard
-              number="1"
-              icon={<SearchIcon size={18} />}
-              tone="bg-accent/10 text-accent"
-              title={t('home.step1_title')}
-              desc={t('home.step1_desc')}
-              delay="cq-fade-2"
-            />
-            <StepCard
-              number="2"
-              icon={<UnlockIcon size={18} />}
-              tone="bg-primary/15 cq-fg-red"
-              title={t('home.step2_title')}
-              desc={t('home.step2_desc')}
-              delay="cq-fade-3"
-            />
-            <StepCard
-              number="3"
-              icon={<ChartIcon size={18} />}
-              tone="bg-secondary/10 text-secondary"
-              title={t('home.step3_title')}
-              desc={t('home.step3_desc')}
-              delay="cq-fade-4"
-            />
-          </section>
-        )}
-
-        {!searchQuery && !org && !format && !source && !keyword && <LocalGuides place={place} />}
-
-        <div className="flex flex-wrap gap-2 items-center mt-10">
-          <button
-            className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
-            aria-pressed={format === ''}
-            onClick={() => { track('catalog_filter', { filter: 'format', value: '' }); updateSearch({ format: '' }); }}
-          >
-            {t('home.all_formats')}
-          </button>
-          {FORMATS.map((f) => (
+          <div className="cq-home-filters flex flex-wrap gap-2 items-center mt-5">
             <button
-              key={f}
-              className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
-              aria-pressed={format === f}
-              onClick={() => { track('catalog_filter', { filter: 'format', value: f }); updateSearch({ format: f }); }}
+              className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
+              aria-pressed={format === ''}
+              onClick={() => { track('catalog_filter', { filter: 'format', value: '' }); updateSearch({ format: '' }); }}
             >
-              {f}
+              {t('home.all_formats')}
             </button>
-          ))}
-          <button
-            className={'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
-            onClick={() => {
-              track('catalog_filter', { filter: 'mappable', value: !mappable });
-              updateSearch({ mappable: mappable ? '' : 'true' });
-            }}
-            aria-pressed={mappable}
-          >
-            <MapIcon size={12} />
-            {t('places.has_map')}
-          </button>
-          <select
-            className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
-            value={source}
-            onChange={(event) => {
-              track('catalog_filter', { filter: 'source', value: event.target.value });
-              updateSearch({ source: event.target.value, org: '' });
-            }}
-            aria-label={t('source.choose')}
-          >
-            <option value="">{t('source.all')}</option>
-            {sources.map(item => (
-              <option key={item.id} value={item.id}>{item.name?.[lang] || item.name?.en || item.id}</option>
+            {FORMATS.map((f) => (
+              <button
+                key={f}
+                className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
+                aria-pressed={format === f}
+                onClick={() => { track('catalog_filter', { filter: 'format', value: f }); updateSearch({ format: f }); }}
+              >
+                {f}
+              </button>
             ))}
-          </select>
-          <select
-            className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
-            value={org}
-            onChange={(e) => {
-              track('catalog_filter', { filter: 'organization', value: e.target.value });
-              updateSearch({ org: e.target.value });
-            }}
-            aria-label={t('home.all_organizations')}
-          >
-            <option value="">{t('home.all_organizations')}</option>
-            {orgs.map((o) => (
-              <option key={o.name} value={o.name}>
-                {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {!filtering && (
-          <>
-            <PopularRail place={place || undefined} />
-            <RecentRail place={place || undefined} />
-          </>
-        )}
-
-        <section className="mt-6 space-y-3">
-          {loading && (
-            <div className="space-y-3" aria-label={t('home.searching')}>
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="cq-skel h-[74px]" />
+            <button
+              className={'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
+              onClick={() => {
+                track('catalog_filter', { filter: 'mappable', value: !mappable });
+                updateSearch({ mappable: mappable ? '' : 'true' });
+              }}
+              aria-pressed={mappable}
+            >
+              <MapIcon size={12} />
+              {t('places.has_map')}
+            </button>
+            <select
+              className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
+              value={source}
+              onChange={(event) => {
+                track('catalog_filter', { filter: 'source', value: event.target.value });
+                updateSearch({ source: event.target.value, org: '' });
+              }}
+              aria-label={t('source.choose')}
+            >
+              <option value="">{t('source.all')}</option>
+              {sources.map(item => (
+                <option key={item.id} value={item.id}>{item.name?.[lang] || item.name?.en || item.id}</option>
               ))}
+            </select>
+            <select
+              className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
+              value={org}
+              onChange={(e) => {
+                track('catalog_filter', { filter: 'organization', value: e.target.value });
+                updateSearch({ org: e.target.value });
+              }}
+              aria-label={t('home.all_organizations')}
+            >
+              <option value="">{t('home.all_organizations')}</option>
+              {orgs.map((o) => (
+                <option key={o.name} value={o.name}>
+                  {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="cq-home-datasets mt-5" aria-busy={loading}>
+            {loading && (
+              <div className="space-y-3" aria-label={t('home.searching')}>
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="cq-skel h-[74px]" />
+                ))}
+              </div>
+            )}
+            {error && <div className="alert alert-error">{error.message}</div>}
+            {items.length === 0 && !loading && !error && (
+              <div className="text-center py-16 space-y-2 cq-fade">
+                <MapleLeaf size={34} className="mx-auto text-base-content/15" />
+                <p className="text-base-content/60">{t('home.no_results')}</p>
+                <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>
+                {meta?.search?.suggestions?.length > 0 && <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
+                  <span>{t('discovery.suggest')}</span>
+                  {meta.search.suggestions.map(suggestion => <button className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>{suggestion}</button>)}
+                </div>}
+              </div>
+            )}
+            {items.map((d) => (
+              <DatasetRow key={d.id} dataset={d} variant="flat" />
+            ))}
+          </div>
+
+          {filtering && hasMore && (
+            <div className="text-center mt-6">
+              <button
+                className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
+                onClick={() => { track('catalog_filter', { action: 'load_more' }); loadMore(); }}
+                disabled={loadingMore}
+              >
+                {loadingMore ? t('home.loading') : t('home.load_more')}
+              </button>
             </div>
           )}
-          {error && <div className="alert alert-error">{error.message}</div>}
-          {items.length === 0 && !loading && !error && (
-            <div className="text-center py-16 space-y-2 cq-fade">
-              <MapleLeaf size={34} className="mx-auto text-base-content/15" />
-              <p className="text-base-content/60">{t('home.no_results')}</p>
-              <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>
-              {meta?.search?.suggestions?.length > 0 && <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
-                <span>{t('discovery.suggest')}</span>
-                {meta.search.suggestions.map(suggestion => <button className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>{suggestion}</button>)}
-              </div>}
+          {!filtering && !loading && !error && items.length > 0 && (
+            <div className="mt-5">
+              <Link to="/datasets" className="btn btn-outline rounded-xl border-base-content/20">
+                {t('home.browse_all')} →
+              </Link>
             </div>
           )}
-          {items.map((d) => (
-            <DatasetRow key={d.id} dataset={d} />
-          ))}
         </section>
 
-        {hasMore && (
-          <div className="text-center mt-6">
-            <button
-              className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
-              onClick={() => { track('catalog_filter', { action: 'load_more' }); loadMore(); }}
-              disabled={loadingMore}
-            >
-              {loadingMore ? t('home.loading') : t('home.load_more')}
-            </button>
+        {!filtering && stats && (
+          <section className="cq-home-stats" aria-label={t('home.stats_label')}>
+            <StatItem icon={<DatabaseIcon size={18} />} tone="bg-accent/10 text-accent"
+              value={stats.datasets} label={t('home.datasets_mirrored')} />
+            <StatItem icon={<ZapIcon size={18} />} tone="bg-success/10 text-success"
+              value={stats.datastore_active_resources} label={t('home.queryable_upstream')} />
+            <StatItem icon={<UnlockIcon size={18} />} tone="bg-primary/15 cq-fg-red"
+              value={stats.ingested_resources} label={t('home.unlocked_here')} />
+          </section>
+        )}
+
+        {!filtering && featured.length > 0 && (
+          <section className="cq-home-section" aria-labelledby="home-insight-title">
+            <h2 id="home-insight-title" className="font-display font-semibold text-2xl sm:text-3xl mb-5">{t('home.insight_title')}</h2>
+            <HeroChartWidget items={featured} />
+          </section>
+        )}
+
+        {!filtering && (
+          <div className="cq-home-discovery">
+            <PopularRail place={place || undefined} />
+            <RecentRail place={place || undefined} />
           </div>
         )}
+
+        {!filtering && (
+          <section className="cq-home-section" aria-labelledby="home-steps-title">
+            <h2 id="home-steps-title" className="font-display font-semibold text-2xl sm:text-3xl mb-6">{t('home.how_it_works')}</h2>
+            <ol className="grid sm:grid-cols-3 gap-6 sm:gap-8">
+              <StepItem number="1" title={t('home.step1_title')} desc={t('home.step1_desc')} />
+              <StepItem number="2" title={t('home.step2_title')} desc={t('home.step2_desc')} />
+              <StepItem number="3" title={t('home.step3_title')} desc={t('home.step3_desc')} />
+            </ol>
+          </section>
+        )}
+
+        {!searchQuery && !org && !format && !source && !keyword && <LocalGuides place={place} limit={3} variant="compact" />}
+        {!filtering && <MochiPromotion variant="slim" />}
       </div>
     </div>
   );

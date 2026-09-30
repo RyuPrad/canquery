@@ -1,5 +1,5 @@
 import { StrictMode, useState } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { LangProvider, useLang } from '../i18n.jsx';
@@ -28,22 +28,24 @@ afterEach(() => {
   delete window.umami;
 });
 
-function Controls() {
+function Controls({ variant }) {
   const navigate = useNavigate();
   const { setLang } = useLang();
   const [shown, setShown] = useState(true);
+  const [appearance, setAppearance] = useState(variant);
   return <>
     <button onClick={() => navigate('/places')}>Navigate</button>
     <button onClick={() => navigate('/places', { replace: true })}>Same URL</button>
     <button onClick={() => setLang('fr')}>French</button>
     <button onClick={() => setShown(value => !value)}>Toggle promotion</button>
-    {shown && <MochiPromotion />}
+    <button onClick={() => setAppearance(value => value === 'slim' ? undefined : 'slim')}>Change appearance</button>
+    {shown && <MochiPromotion variant={appearance} />}
     <MochiPromotion placement="footer" />
   </>;
 }
-function setup() {
+function setup(variant) {
   return render(<StrictMode><MemoryRouter><LangProvider><PromotionTracking>
-    <AnalyticsBridge /><Controls />
+    <AnalyticsBridge /><Controls variant={variant} />
   </PromotionTracking></LangProvider></MemoryRouter></StrictMode>);
 }
 function visibility(placement, ratio) {
@@ -133,4 +135,45 @@ test('unavailable visibility detection and rejected analytics leave links and tr
   fireEvent.click(screen.getByText('French'));
   expect(screen.getByRole('heading', { name: 'Gardez le lien avec les personnes qui comptent.' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Découvrir Hello Mochi/ })).toHaveAttribute('href', 'https://hellomochi.app/');
+});
+
+test('the slim creator note keeps attribution, translated copy and sponsored outbound semantics', () => {
+  setup('slim');
+  const note = screen.getByRole('complementary', { name: 'Hello Mochi promotion' });
+  expect(note).toHaveClass('mochi-promotion-slim');
+  expect(note).toHaveAttribute('data-promotion-placement', 'home_card');
+  expect(within(note).getByText('From the creator of CanQuery')).toBeInTheDocument();
+  expect(within(note).getByRole('heading', { name: 'Hello Mochi' })).toBeInTheDocument();
+  expect(within(note).getByText('A cozy place for notes, birthdays, and thoughtful follow-ups.')).toBeInTheDocument();
+  expect(note.querySelector('img')).toHaveAttribute('alt', '');
+  const link = within(note).getByRole('link', { name: /Discover Hello Mochi\s*\(opens in a new tab\)/ });
+  expect(link).toHaveAttribute('href', 'https://hellomochi.app/');
+  expect(link).toHaveAttribute('target', '_blank');
+  expect(link.rel.split(' ')).toEqual(expect.arrayContaining(['noopener', 'noreferrer', 'sponsored']));
+  fireEvent.click(link);
+  expect(window.umami.track).toHaveBeenCalledWith('outbound_link', {
+    host: 'hellomochi.app', path: '/', label: 'Discover Hello Mochi (opens in a new tab)',
+    promotion: 'hello_mochi', placement: 'home_card', language: 'en',
+  });
+  fireEvent.click(screen.getByText('French'));
+  expect(within(note).getByText('Un autre projet du créateur de CanQuery')).toBeInTheDocument();
+  expect(within(note).getByText('Application en anglais')).toBeInTheDocument();
+  expect(within(note).getByRole('link', { name: /Découvrir Hello Mochi/ })).toHaveAttribute('href', 'https://hellomochi.app/');
+  expect(screen.getByRole('complementary', { name: 'Hello Mochi dans le pied de page' })).toHaveClass('mochi-promotion-compact');
+});
+
+test('changing the home presentation preserves per-placement view deduplication', () => {
+  setup('slim');
+  visibility('home_card', 1); tick(1000);
+  expect(views()).toEqual([['promotion_view', { promotion: 'hello_mochi', placement: 'home_card', language: 'en' }]]);
+  fireEvent.click(screen.getByText('Change appearance'));
+  expect(screen.getByRole('complementary', { name: 'Hello Mochi promotion' })).toHaveClass('mochi-promotion-home');
+  fireEvent.click(screen.getByText('Change appearance'));
+  fireEvent.click(screen.getByText('French'));
+  fireEvent.click(screen.getByText('Toggle promotion')); fireEvent.click(screen.getByText('Toggle promotion'));
+  visibility('home_card', 1); tick(1500);
+  expect(views()).toHaveLength(1);
+  visibility('footer', 1); tick(1000);
+  expect(views()).toHaveLength(2);
+  expect(views().at(-1)[1]).toMatchObject({ placement: 'footer', language: 'fr' });
 });

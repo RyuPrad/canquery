@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, expect, test, vi } from 'vitest';
 import HomePage from './HomePage.jsx';
@@ -53,6 +53,32 @@ beforeEach(() => {
     { id: 'federal', name: { en: 'Federal' } }, { id: 'city', name: { en: 'City' } }
   ] });
   fetchPlaces.mockResolvedValue({ data: [], pagination: { nextCursor: null } });
+});
+
+const contextualPreview = () => ({
+  dataset_id: 'chart-dataset', title: { en: 'Grants by status' }, kind: 'donut',
+  points: [{ key: 'Approved', label: 'Approved', value: 3 }, { key: 'Pending', label: 'Pending', value: 1 }],
+  context: { resource_id: 'chart-resource', group_by: 'status', agg: 'count', agg_column: null,
+    bucket: null, group_type: 'TEXT', snapshot_at: '2026-09-29T23:30:00.000Z', snapshot_rows: 4,
+    total_groups: 2, displayed_groups: 2, limited: false, missing_periods: [] },
+});
+
+test('the chart section is omitted when every preview is metadata-poor, malformed or flat', async () => {
+  const flat = contextualPreview();
+  flat.points = flat.points.map(point => ({ ...point, value: 2 }));
+  const legacy = contextualPreview();
+  delete legacy.context;
+  fetchFeatured.mockResolvedValue({ data: [legacy, flat, { ...contextualPreview(), kind: 'unknown' }] });
+  start();
+  expect(await screen.findByText('Results for all')).toBeInTheDocument();
+  await waitFor(() => expect(fetchFeatured).toHaveBeenCalled());
+  expect(screen.queryByRole('heading', { name: 'A closer look at the data' })).not.toBeInTheDocument();
+});
+
+test('one explainable preview is enough to display the chart section', async () => {
+  fetchFeatured.mockResolvedValue({ data: [contextualPreview()] });
+  start();
+  expect(await screen.findByRole('heading', { name: 'A closer look at the data' })).toBeInTheDocument();
 });
 
 test('same-route searches and Back/Forward update every filter and the displayed results', async () => {
@@ -134,4 +160,69 @@ test('the publisher selector is labelled, translated and includes publishers aft
   expect(screen.getByRole('combobox', { name: 'Toutes les organisations' })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Premier diffuseur (1)' })).toBeInTheDocument();
   expect(fetchOrganizations).toHaveBeenCalledWith(expect.objectContaining({ limit: 100, cursor: '100' }));
+});
+
+test('an unfiltered visit offers six previews and a link to the full catalogue', async () => {
+  searchDatasets.mockImplementation(async ({ limit }) => ({
+    data: Array.from({ length: limit }, (_, i) => row('preview-' + i)),
+    pagination: { nextCursor: String(limit) },
+  }));
+  start();
+  expect(await screen.findAllByRole('link', { name: /^Results for preview-/ })).toHaveLength(6);
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 6 }));
+  expect(screen.getByRole('link', { name: /Browse all datasets/ })).toHaveAttribute('href', '/datasets');
+  expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+});
+
+test.each(['q=parks', 'org=old', 'format=CSV', 'keyword=roads', 'place=oshawa-on', 'source=federal', 'mappable=true'])(
+  'an active %s criterion retains full search pagination', async params => {
+    searchDatasets.mockResolvedValue({ data: [row('filtered')], pagination: { nextCursor: '20' } });
+    start('/?' + params);
+    expect(await screen.findByText('Results for filtered')).toBeInTheDocument();
+    expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20 }));
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Browse all datasets/ })).toBeNull();
+  }
+);
+
+test('Load more and Back/Forward switch cleanly between previews and search results', async () => {
+  searchDatasets.mockImplementation(async ({ q, limit, cursor }) => ({
+    data: Array.from({ length: limit }, (_, i) => row((q || 'preview') + '-' + (Number(cursor) + i))),
+    pagination: { nextCursor: String(Number(cursor) + limit) },
+  }));
+  start();
+  expect(await screen.findAllByRole('link', { name: /^Results for preview-/ })).toHaveLength(6);
+  fireEvent.click(screen.getByRole('button', { name: 'Other search' }));
+  expect(await screen.findAllByRole('link', { name: /^Results for trees-/ })).toHaveLength(20);
+  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  await waitFor(() => expect(screen.getAllByRole('link', { name: /^Results for trees-/ })).toHaveLength(40));
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'trees', limit: 20, cursor: '20' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findAllByRole('link', { name: /^Results for preview-/ })).toHaveLength(6);
+  expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+  expect(await screen.findAllByRole('link', { name: /^Results for trees-/ })).toHaveLength(20);
+});
+
+test('clearing the last filter restores preview mode', async () => {
+  start('/?format=CSV');
+  expect(await screen.findByText('Results for all')).toBeInTheDocument();
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20 }));
+  fireEvent.click(screen.getByRole('button', { name: 'All formats' }));
+  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ format: undefined, limit: 6 })));
+  expect(await screen.findByRole('link', { name: /Browse all datasets/ })).toBeInTheDocument();
+});
+
+test('an obsolete preview request cannot replace a newly navigated search', async () => {
+  let resolvePreview;
+  searchDatasets.mockImplementation(({ q }) => q
+    ? Promise.resolve({ data: [row(q)], pagination: { nextCursor: '20' } })
+    : new Promise(resolve => { resolvePreview = resolve; }));
+  start();
+  fireEvent.click(screen.getByRole('button', { name: 'Other search' }));
+  expect(await screen.findByText('Results for trees')).toBeInTheDocument();
+  await act(async () => resolvePreview({ data: [row('obsolete')], pagination: { nextCursor: null } }));
+  expect(screen.queryByText('Results for obsolete')).toBeNull();
+  expect(screen.getByText('Results for trees')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument();
 });

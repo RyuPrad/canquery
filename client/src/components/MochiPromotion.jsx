@@ -6,10 +6,11 @@ import './MochiPromotion.css';
 
 const DESTINATION = 'https://hellomochi.app/';
 
-export default function MochiPromotion({ placement = 'home_card' }) {
+export default function MochiPromotion({ placement = 'home_card', variant }) {
   const { t, lang } = useLang();
   const ref = usePromotionView(placement);
   const compact = placement === 'footer';
+  const slim = !compact && variant === 'slim';
   const link = <a href={DESTINATION} target="_blank" rel="noopener noreferrer sponsored" className="mochi-promotion-link">
     {compact ? 'Hello Mochi' : t('promotion.cta')}
     <ArrowUpRightIcon size={16} />
@@ -17,12 +18,15 @@ export default function MochiPromotion({ placement = 'home_card' }) {
   </a>;
 
   return <aside ref={ref} aria-label={t(compact ? 'promotion.footer_label' : 'promotion.label')}
-    className={`mochi-promotion ${compact ? 'mochi-promotion-compact' : 'mochi-promotion-home'}`}
+    className={`mochi-promotion ${compact ? 'mochi-promotion-compact' : slim ? 'mochi-promotion-slim' : 'mochi-promotion-home'}`}
     data-promotion="hello_mochi" data-promotion-placement={placement} data-promotion-language={lang}>
     <img className="mochi-promotion-cat" src={cat} width="180" height="150" alt="" />
     <div className="mochi-promotion-copy">
       <p className="mochi-promotion-attribution">{t(compact ? 'promotion.footer_attribution' : 'promotion.attribution')}</p>
-      {compact ? link : <>
+      {compact ? link : slim ? <>
+        <h2 className="mochi-promotion-brand">Hello Mochi</h2>
+        <p className="mochi-promotion-description">{t('promotion.description')}</p>
+      </> : <>
         <p className="mochi-promotion-brand">Hello Mochi</p>
         <h2>{t('promotion.headline')}</h2>
         <p className="mochi-promotion-description">{t('promotion.description')}</p>
