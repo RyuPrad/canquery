@@ -21,10 +21,10 @@ export default function PopularRail({ place }) {
 
   return (
     <section className="mt-10 cq-fade">
-      <div className="flex items-center gap-2 text-sm font-semibold text-base-content/55 mb-3">
+      <h2 className="flex items-center gap-2 font-semibold mb-4">
         <ZapIcon size={15} className="text-warning" />
         {t('rails.popular')}
-      </div>
+      </h2>
       <div className="cq-rail">
         {items.map(item => (
           <Link
@@ -45,11 +45,11 @@ export default function PopularRail({ place }) {
                 {formatRelativeTime(item.last_queried_at, lang)}
               </span>
             </div>
-            <div className="font-medium text-sm truncate">
-              {item.name?.en || item.dataset?.title?.en || item.dataset?.name}
+            <div className="font-medium text-sm line-clamp-2 min-h-[2.5rem]">
+              {item.name?.[lang] || item.name?.en || item.dataset?.title?.[lang] || item.dataset?.title?.en || item.dataset?.name}
             </div>
             <div className="text-xs text-base-content/45 truncate">
-              {item.dataset?.title?.en || item.dataset?.name}
+              {item.dataset?.title?.[lang] || item.dataset?.title?.en || item.dataset?.name}
               {item.format ? ' · ' + item.format : ''}
             </div>
           </Link>

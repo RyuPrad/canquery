@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { BuildingIcon, CalendarIcon, ArrowRightIcon, MapPinIcon, MapIcon } from './Icons.jsx';
 
-export default function DatasetRow({ dataset }) {
+export default function DatasetRow({ dataset, variant = 'card' }) {
   const { t, lang } = useLang();
   const title = dataset.title?.[lang] || dataset.title?.en || dataset.title?.fr || dataset.name;
   const orgTitle = dataset.organization?.title?.[lang] || dataset.organization?.title?.en || dataset.organization?.title?.fr;
@@ -14,7 +14,7 @@ export default function DatasetRow({ dataset }) {
 
   return (
     <article
-      className="cq-card block p-4 sm:px-5 group"
+      className={variant === 'flat' ? 'cq-home-dataset group py-5' : 'cq-card block p-4 sm:px-5 group'}
     >
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div className="min-w-0 sm:flex-1">

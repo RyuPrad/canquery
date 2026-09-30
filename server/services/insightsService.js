@@ -30,21 +30,124 @@ const topDownloads = async (lang = 'en') => {
 };
 
 // --- Featured hero charts -------------------------------------------------
-// Compact chart specs for the landing-page hero teasers: the top ingested
-// datasets, each reduced to one chart (kind + a handful of points) so the
-// landing page can animate them in plain SVG without loading Recharts. The
-// whole payload is cached, so the per-dataset profile/aggregate runs rarely.
+// Bounded previews of prepared Top 100 resources. The aggregate describes the
+// whole snapshot; context discloses the grouping, measure and displayed groups.
+// Reject ambiguous or uninformative candidates rather than inventing context.
+// The whole payload is cached, so per-dataset profile/aggregate runs rarely.
 
 const featuredCache = createCache({ name: 'insights-featured', ttlMs: 10 * 60 * 1000, negativeTtlMs: 60 * 1000 });
 
-function cleanLabel(key, bucket) {
-    if (key === null || key === undefined || key === '') return null;
-    if (bucket) {
-        const d = new Date(key);
-        if (!Number.isNaN(d.getTime())) return bucket === 'year' ? String(d.getUTCFullYear()) : d.toISOString().slice(0, 7);
+const LABEL_LIMIT = 200;
+const DATE_TYPE_RE = /date|time/i;
+const PLACEHOLDER_RE = /^(?:[-_.…]+|n\/?a|n\.a\.|null|undefined|unknown|inconnu|not applicable|sans objet|non applicable)$/i;
+const FOOTNOTE_RE = /^(?:for (?:further|more) information|pour (?:plus|de plus amples) (?:de |d[’'])?(?:informations?|renseignements)|notes?\s*[:：]|sources?\s*[:：]|footnotes?\b|notes? de bas de page|see (?:note|table)|voir (?:la |les )?(?:note|tableau))/i;
+const NUMERIC_LABEL_RE = /^[+-]?\d+(?:[.,]\d+)?$/;
+const cleanText = value => String(value).trim().replace(/\s+/g, ' ');
+
+function snapshotAt(value) {
+    if (value === null || value === undefined || typeof value === 'string' && !value.trim()) return null;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function temporalKey(value, type) {
+    if (value === null || value === undefined || cleanText(value) === '') return null;
+    if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.toISOString() : false;
+    const text = cleanText(value);
+    if (!DATE_TYPE_RE.test(type) && /^\d{4}$/.test(text) && Number(text) >= 1700 && Number(text) <= 2200) return text;
+    if (!/^\d{4}-\d{2}-\d{2}(?:$|[T\s])/.test(text)) return false;
+    // Validate the calendar day independently of an optional time-zone offset.
+    const day = text.slice(0, 10);
+    const dayDate = new Date(day + 'T00:00:00.000Z');
+    if (!Number.isFinite(dayDate.getTime()) || dayDate.toISOString().slice(0, 10) !== day) return false;
+    const date = new Date(text);
+    if (!Number.isFinite(date.getTime())) return false;
+    return date.toISOString();
+}
+
+function metricValue(value) {
+    if (value === null || value === undefined || typeof value === 'string' && value.trim() === '') return null;
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
+// Pure output builder also powers faithful local browser fixtures. It never
+// queries a table, renews a snapshot, or admits preparation work.
+function buildFeaturedPreview({ candidate, current, profile, spec, aggregate, lang = 'en' }) {
+    if (!spec || !['donut', 'bars', 'line'].includes(spec.kind) || !['count', 'avg'].includes(spec.agg)) return null;
+    const group = profile.columns.find(column => column.id === spec.groupBy);
+    const preparedAt = snapshotAt(current.ingested_at);
+    const snapshotRows = Number(profile.rowCount);
+    const totalGroups = Number(aggregate.total);
+    const records = aggregate.records || [];
+    if (!group || !preparedAt || !Number.isSafeInteger(snapshotRows) || snapshotRows < 1 ||
+        !Number.isSafeInteger(totalGroups) || totalGroups < records.length) return null;
+
+    const points = [];
+    const missingPeriods = [];
+    let kind = spec.kind;
+    if (kind === 'line') {
+        for (const record of records.slice(0, 30)) {
+            const key = temporalKey(record.key, group.type);
+            if (key === false) return null;
+            if (key === null) continue;
+            const value = metricValue(record.value);
+            if (value === null) {
+                missingPeriods.push(key);
+                continue;
+            }
+            const label = /^\d{4}$/.test(key) ? key : key.slice(0, spec.bucket === 'year' ? 4 : spec.bucket === 'month' ? 7 : 10);
+            points.push({ key, label, value });
+        }
+        points.sort((a, b) => a.key.localeCompare(b.key));
+        missingPeriods.sort();
+    } else {
+        if (spec.agg !== 'count') return null;
+        for (const record of records.slice(0, kind === 'donut' ? 7 : 5)) {
+            const key = record.key === null || record.key === undefined ? null : String(record.key);
+            const label = key === null ? (lang === 'fr' ? 'Non renseigné' : 'Not recorded') : cleanText(key);
+            const value = metricValue(record.value);
+            if (!label || label.length > LABEL_LIMIT || PLACEHOLDER_RE.test(label) || FOOTNOTE_RE.test(label) ||
+                key !== null && label.toLowerCase() === cleanText(spec.groupBy).toLowerCase() || value === null) return null;
+            points.push({ key, label, value });
+        }
+        const namedPoints = points.filter(point => point.key !== null);
+        if (!namedPoints.length || namedPoints.some(point => NUMERIC_LABEL_RE.test(point.label)) ||
+            new Set(points.map(point => point.label.toLowerCase())).size !== points.length) return null;
+        if (kind === 'donut' && (points.length > 6 || totalGroups !== points.length)) {
+            kind = 'bars';
+            points.splice(5);
+        }
     }
-    const s = String(key);
-    return s.length > 24 ? s.slice(0, 23) + '…' : s;
+    if (points.length < 2 || new Set(points.map(point => point.value)).size < 2) return null;
+    if (new Set(points.map(point => point.key)).size !== points.length) return null;
+    if (spec.agg === 'count') {
+        const representedRows = points.reduce((sum, point) => sum + point.value, 0);
+        if (points.some(point => !Number.isSafeInteger(point.value) || point.value < 1) || representedRows > snapshotRows ||
+            totalGroups === points.length && representedRows !== snapshotRows) return null;
+    }
+
+    return {
+        dataset_id: candidate.dataset_id,
+        title: { en: candidate.title_en, fr: candidate.title_fr },
+        kind,
+        points,
+        context: {
+            resource_id: candidate.resource_id,
+            group_by: spec.groupBy,
+            agg: spec.agg,
+            agg_column: spec.aggColumn || null,
+            bucket: spec.bucket || null,
+            group_type: group.type,
+            snapshot_at: preparedAt,
+            snapshot_rows: snapshotRows,
+            total_groups: totalGroups,
+            displayed_groups: points.length,
+            limited: totalGroups > points.length,
+            missing_periods: missingPeriods
+        }
+    };
 }
 
 // How many top ingested datasets to consider, and how many chart specs to keep.
@@ -63,26 +166,18 @@ async function computeFeatured(lang) {
                 if (!current || current.ingest_status !== 'ready') return;
                 const columns = Array.isArray(current.ingested_columns) ? current.ingested_columns : [];
                 const profile = await profileStoreTable({ tableName: current.table_name, columns });
-                const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns });
+                const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns }, columns);
                 if (!spec) return;
                 const agg = await aggregateStoreTable({
                     tableName: current.table_name,
                     knownColumns: columns.map((x) => x.id),
                     q: undefined, filters: [],
                     groupBy: spec.groupBy, agg: spec.agg, aggColumn: spec.aggColumn || null, bucket: spec.bucket || null,
-                    sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" ASC',
+                    sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" DESC NULLS LAST',
                     limit: spec.limit, offset: 0
                 });
-                const points = (agg.records || [])
-                    .map((r) => ({ label: cleanLabel(r.key, spec.bucket), value: Number(r.value) }))
-                    .filter((p) => p.label !== null && Number.isFinite(p.value));
-                if (points.length < 2) return;
-                out.push({
-                    dataset_id: c.dataset_id,
-                    title: { en: c.title_en, fr: c.title_fr },
-                    kind: spec.kind,
-                    points
-                });
+                const preview = buildFeaturedPreview({ candidate: c, current, profile, spec, aggregate: agg, lang });
+                if (preview) out.push(preview);
             });
         } catch {
             // A dataset that fails to profile/aggregate is simply skipped.
@@ -93,4 +188,4 @@ async function computeFeatured(lang) {
 
 const featured = async (lang = 'en') => featuredCache.get('featured:' + lang, () => computeFeatured(lang));
 
-module.exports = { topDownloads, featured };
+module.exports = { topDownloads, featured, buildFeaturedPreview };

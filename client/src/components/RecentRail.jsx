@@ -21,10 +21,10 @@ export default function RecentRail({ place }) {
 
   return (
     <section className="mt-10 cq-fade">
-      <div className="flex items-center gap-2 text-sm font-semibold text-base-content/55 mb-3">
+      <h2 className="flex items-center gap-2 font-semibold mb-4">
         <SparklesIcon size={15} className="text-secondary" />
         {t('rails.recent')}
-      </div>
+      </h2>
       <div className="cq-rail">
         {items.map(item => (
           <Link
@@ -42,11 +42,11 @@ export default function RecentRail({ place }) {
                 {formatRelativeTime(item.ingested_at, lang)}
               </span>
             </div>
-            <div className="font-medium text-sm truncate">
-              {item.name?.en || item.dataset?.title?.en || item.dataset?.name}
+            <div className="font-medium text-sm line-clamp-2 min-h-[2.5rem]">
+              {item.name?.[lang] || item.name?.en || item.dataset?.title?.[lang] || item.dataset?.title?.en || item.dataset?.name}
             </div>
             <div className="text-xs text-base-content/45 truncate">
-              {item.dataset?.title?.en || item.dataset?.name}
+              {item.dataset?.title?.[lang] || item.dataset?.title?.en || item.dataset?.name}
             </div>
             {item.row_count ? (
               <div className="text-[0.68rem] font-mono text-base-content/40">

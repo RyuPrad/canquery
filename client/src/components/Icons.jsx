@@ -331,6 +331,14 @@ export function PlayIcon(props) {
   );
 }
 
+export function PauseIcon(props) {
+  return (
+    <I {...props}>
+      <path d="M8 5v14M16 5v14" />
+    </I>
+  );
+}
+
 export function XIcon(props) {
   return (
     <I {...props}>
