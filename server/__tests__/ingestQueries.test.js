@@ -3,9 +3,10 @@ jest.mock('../db/pool', () => ({ connect: jest.fn() }));
 const pool = require('../db/pool');
 const { enqueueJob } = require('../db/ingestQueries');
 
-function clientFor({ loaded = [], queued = [] } = {}) {
+function clientFor({ loaded = [], queued = [], resource = [{ id: 'public-resource' }] } = {}) {
     const client = {
         query: jest.fn(async (sql) => {
+            if (sql.includes('FROM resources r JOIN datasets')) return { rows: resource };
             if (sql.includes('FROM ingested_resources')) return { rows: loaded };
             if (sql.startsWith('INSERT INTO ingest_jobs')) return { rows: queued };
             return { rows: [], rowCount: 0 };
@@ -34,9 +35,11 @@ describe('enqueueJob', () => {
         const sql = client.query.mock.calls.map(call => call[0]);
         expect(sql[0]).toBe('BEGIN');
         expect(sql[1]).toContain('pg_advisory_xact_lock');
-        expect(sql[2]).toContain('FROM ingested_resources');
-        expect(sql[3]).toMatch(/ON CONFLICT \(resource_id\).*DO UPDATE/s);
-        expect(sql[4]).toBe('COMMIT');
+        expect(sql[2]).toContain('FROM resources r JOIN datasets');
+        expect(sql[2]).toContain('FOR KEY SHARE OF r, d');
+        expect(sql[3]).toContain('FROM ingested_resources');
+        expect(sql[4]).toMatch(/ON CONFLICT \(resource_id\).*DO UPDATE/s);
+        expect(sql[5]).toBe('COMMIT');
         expect(client.query.mock.calls[1][1]).toEqual([1667329650, 'resource-1']);
     });
 
@@ -64,12 +67,25 @@ describe('enqueueJob', () => {
         const client = clientFor();
         client.query.mockImplementation(async (sql) => {
             if (sql.startsWith('INSERT INTO ingest_jobs')) throw new Error('database failed');
+            if (sql.includes('FROM resources r JOIN datasets')) return { rows: [{ id: 'resource-3' }] };
             if (sql.includes('FROM ingested_resources')) return { rows: [] };
             return { rows: [] };
         });
 
         await expect(enqueueJob('resource-3')).rejects.toThrow('database failed');
         expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    it('rejects a retired resource or missing public parent after obtaining the resource lock', async () => {
+        const client = clientFor({ resource: [], loaded: [{ resource_id: 'retired' }] });
+        await expect(enqueueJob('retired')).rejects.toMatchObject({ statusCode: 404 });
+        const sql = client.query.mock.calls.map(call => call[0]);
+        expect(sql[1]).toContain('pg_advisory_xact_lock');
+        expect(sql[2]).toContain('FROM resources r JOIN datasets');
+        expect(sql).not.toEqual(expect.arrayContaining([expect.stringContaining('FROM ingested_resources')]));
+        expect(sql.some(statement => statement.startsWith('INSERT INTO ingest_jobs'))).toBe(false);
+        expect(sql.at(-1)).toBe('ROLLBACK');
         expect(client.release).toHaveBeenCalled();
     });
 });

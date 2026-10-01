@@ -60,6 +60,9 @@ describe('ingest worker reconciliation', () => {
         ['CAP_ROWS', 1, 86400, 'INVALID_FILE'],
         ['CSV_EMPTY', 1, 86400, 'INVALID_FILE'],
         ['CSV_INVALID_CLOSING_QUOTE', 1, 86400, 'INVALID_FILE'],
+        ['DISK_FREE', 1, 3600, 'CAPACITY'],
+        ['BUDGET', 1, 3600, 'CAPACITY'],
+        ['DOWNLOAD_DNS', 1, 86400, 'UPSTREAM_UNAVAILABLE'],
         ['ETIMEDOUT', 3, 3600, 'TEMPORARY']
     ])('records a bounded cooldown for %s', async (code, attempts, seconds, failureCode) => {
         getResourceById.mockResolvedValue({ id: 'resource-a', format: 'CSV', url: 'https://example.org/a.csv' });
@@ -76,6 +79,16 @@ describe('ingest worker reconciliation', () => {
         requeueJob.mockResolvedValue(true);
         await processJob({ id: 8, resource_id: 'resource-a', preparation: true, attempts: 1 }, 'worker-a');
         expect(requeueJob).toHaveBeenCalledWith(pool, 8, 'worker-a', 'timeout', 30);
+        expect(finishJob).not.toHaveBeenCalled();
+    });
+
+    it('respects a bounded publisher delay for a temporary HTTP failure', async () => {
+        getResourceById.mockResolvedValue({ id: 'resource-a', format: 'CSV', url: 'https://example.org/a.csv' });
+        ingestResource.mockRejectedValue(Object.assign(new Error('HTTP 503'), {
+            code: 'DOWNLOAD_HTTP', httpStatus: 503, retryAfterMs: 7200000
+        }));
+        await processJob({ id: 8, resource_id: 'resource-a', preparation: true, attempts: 1 }, 'worker-a');
+        expect(requeueJob).toHaveBeenCalledWith(pool, 8, 'worker-a', 'HTTP 503', 1800);
         expect(finishJob).not.toHaveBeenCalled();
     });
 });

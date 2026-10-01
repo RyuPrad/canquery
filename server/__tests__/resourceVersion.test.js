@@ -22,3 +22,14 @@ test('legacy, current and changed snapshots have distinct freshness states', () 
     expect(preparationInfo({ ...ready, ingested_source_version: resourceVersion(source) }).freshness).toBe('current');
     expect(preparationInfo({ ...ready, ingested_source_version: 'old' }).freshness).toBe('stale');
 });
+
+test.each([
+    ['INVALID_FILE', 'invalid_file'], ['UPSTREAM_UNAVAILABLE', 'upstream_unavailable'],
+    ['CAPACITY', 'capacity'], ['TEMPORARY', 'temporary'], ['private error detail', null]
+])('metadata sanitizes failure category %s for only the failed current version', (failure_code, failure_reason) => {
+    const job = { status: 'failed', source_version: resourceVersion(source), failure_code, retry_at: '2026-10-01' };
+    expect(preparationInfo({ ...source, preparation_job: job })).toMatchObject({ state: 'failed', failure_reason });
+    expect(preparationInfo({ ...source, preparation_job: { ...job, source_version: 'older' } }).failure_reason).toBeNull();
+    expect(preparationInfo({ ...source, preparation_job: { ...job, status: 'pending' } }).failure_reason).toBeNull();
+    expect(preparationInfo(source).failure_reason).toBeNull();
+});

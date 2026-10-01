@@ -16,7 +16,6 @@ const caps = {
 
 const POLL_MS = Number(process.env.INGEST_POLL_MS) || 3000;
 const HEARTBEAT_MS = Math.max(1000, Number(process.env.INGEST_HEARTBEAT_MS) || 15000);
-const MAX_ATTEMPTS = 3;
 
 const pool = require('../db/pool');
 const longRunningPool = require('../db/longRunningPool');
@@ -26,6 +25,7 @@ const { resourceVersion } = require('../services/resourceVersion');
 const { isIngestableFile } = require('../services/resourceCapabilities');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 const { withStoreBudgetLock } = require('../services/evictService');
+const { preparationFailure } = require('../services/preparationFailure');
 const {
     acquireWorkerLock,
     releaseWorkerLock,
@@ -137,14 +137,13 @@ async function processJob(job, workerId) {
     } catch (err) {
         error = err.message;
         console.error('[job ' + job.id + '] failed: ' + err.message);
-        const permanent = /^(CAP_|CSV_|XLSX_|XLS_|EXCEL_|DOWNLOAD_URL_BLOCKED|DOWNLOAD_ENCODING)/.test(err.code || '') &&
-            !/TIMEOUT/.test(err.code || '');
-        if (job.attempts >= MAX_ATTEMPTS || permanent) {
+        const failure = preparationFailure(err, job.attempts);
+        if (failure.seconds) {
             const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'failed', err.message,
-                { code: permanent ? 'INVALID_FILE' : 'TEMPORARY', seconds: permanent ? 86400 : 3600 });
+                failure);
             if (!finished) console.error('[job ' + job.id + '] could not record failure: worker lease lost');
         } else {
-            const requeued = await requeueJob(pool, job.id, workerId, err.message, job.attempts === 1 ? 30 : 120);
+            const requeued = await requeueJob(pool, job.id, workerId, err.message, failure.delaySeconds);
             if (!requeued) console.error('[job ' + job.id + '] could not requeue: worker lease lost');
         }
     } finally {
@@ -186,7 +185,7 @@ async function main() {
         let lastCleanup = 0;
         while (!stopRequested) {
             if (Date.now() - lastCleanup > 30000) {
-                await withStoreBudgetLock(pool, () => cleanRetiredTables(pool));
+                await withStoreBudgetLock(pool, () => cleanRetiredTables(pool), { tryLock: true });
                 lastCleanup = Date.now();
             }
             const job = await claimJob(pool, workerId);

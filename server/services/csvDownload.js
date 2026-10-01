@@ -7,6 +7,7 @@ const http = require('node:http');
 const https = require('node:https');
 const net = require('node:net');
 const zlib = require('node:zlib');
+const { decodeCsvSample } = require('./csvRead');
 
 const MAX_REDIRECTS = 5;
 
@@ -56,6 +57,27 @@ function downloadError(message, code = 'DOWNLOAD_URL_BLOCKED') {
     const err = new Error(message);
     err.code = code;
     return err;
+}
+
+const CERTIFICATE_ERROR_CODES = new Set([
+    'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'CERT_REVOKED',
+    'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'ERR_TLS_CERT_ALTNAME_INVALID'
+]);
+
+function transportError(cause) {
+    // Only called at the DNS/HTTP opening boundary. The same native codes from
+    // PostgreSQL, filesystem or conversion work must retain their meaning.
+    const code = cause && (cause.code || (cause.cause && cause.cause.code));
+    const detail = cause?.cause?.message ? cause.message + ': ' + cause.cause.message : cause?.message;
+    if (code === 'ENOTFOUND' || code === 'ENODATA') {
+        return Object.assign(new Error('download hostname could not be resolved: ' + detail, { cause }), { code: 'DOWNLOAD_DNS' });
+    }
+    if (CERTIFICATE_ERROR_CODES.has(code)) {
+        return Object.assign(new Error('download certificate validation failed: ' + detail, { cause }), { code: 'DOWNLOAD_CERTIFICATE' });
+    }
+    return cause;
 }
 
 function validateDownloadUrl(value) {
@@ -202,8 +224,13 @@ async function openValidatedResponse(initialUrl, {
     for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
         // dns.lookup has no AbortSignal option. Race it with the download's
         // inactivity controller so a wedged resolver cannot strand the worker.
-        const target = await withAbort(resolvePublicTarget(url.hostname, lookupImpl), signal);
-        const response = await requestPinned(url, target, { signal, userAgent, requestImpl });
+        let response;
+        try {
+            const target = await withAbort(resolvePublicTarget(url.hostname, lookupImpl), signal);
+            response = await requestPinned(url, target, { signal, userAgent, requestImpl });
+        } catch (cause) {
+            throw transportError(cause);
+        }
         const status = Number(response.statusCode);
         if (![301, 302, 303, 307, 308].includes(status)) {
             return { response, url };
@@ -234,15 +261,20 @@ async function openInjectedResponse(initialUrl, fetchImpl, {
 } = {}) {
     let url = validateDownloadUrl(initialUrl);
     for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
-        const response = await fetchImpl(url.href, {
-            redirect: 'manual',
-            signal,
-            headers: {
-                Accept: '*/*',
-                'Accept-Encoding': 'identity',
-                'User-Agent': userAgent || 'canquery/1.0'
-            }
-        });
+        let response;
+        try {
+            response = await fetchImpl(url.href, {
+                redirect: 'manual',
+                signal,
+                headers: {
+                    Accept: '*/*',
+                    'Accept-Encoding': 'identity',
+                    'User-Agent': userAgent || 'canquery/1.0'
+                }
+            });
+        } catch (cause) {
+            throw transportError(cause);
+        }
         const status = Number(response.status);
         if (![301, 302, 303, 307, 308].includes(status)) return { response, url };
         const location = responseHeader(response, 'location');
@@ -460,45 +492,55 @@ async function sniffCsvMeta(filePath) {
     try {
         const buf = Buffer.alloc(65536);
         const { bytesRead } = await fd.read(buf, 0, buf.length, 0);
-        let encoding = 'utf8';
-        try {
-            new TextDecoder('utf-8', { fatal: true }).decode(
-                buf.subarray(0, Math.max(0, bytesRead - 3))
-            );
-            encoding = 'utf8';
-        } catch {
-            encoding = 'latin1';
-        }
         const slice = buf.subarray(0, bytesRead);
-        let text = slice.toString(encoding);
+        const complete = (await fd.stat()).size <= bytesRead;
+        let encoding = 'utf8';
+        if (slice[0] === 0xff && slice[1] === 0xfe) encoding = 'utf16le';
+        else if (slice[0] === 0xfe && slice[1] === 0xff) encoding = 'utf16be';
+        else {
+            try {
+                new TextDecoder('utf-8', { fatal: true }).decode(slice, { stream: !complete });
+            } catch {
+                encoding = 'latin1';
+            }
+        }
+        let text = decodeCsvSample(slice, encoding, complete);
         if (text.charCodeAt(0) === 0xFEFF) {
             text = text.slice(1);
         }
-        const firstNewline = text.indexOf('\n');
-        const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
+        assertCsvContent(slice, text);
         let inQuotes = false;
-        const counts = { ',': 0, ';': 0, '\t': 0 };
-        for (const ch of firstLine) {
+        const counts = { ',': 0, ';': 0, '\t': 0, '|': 0 };
+        for (let index = 0; index < text.length; index += 1) {
+            const ch = text[index];
             if (ch === '"') {
+                if (inQuotes && text[index + 1] === '"') { index += 1; continue; }
                 inQuotes = !inQuotes;
             } else if (!inQuotes) {
-                if (ch === ',') counts[',']++;
-                else if (ch === ';') counts[';']++;
-                else if (ch === '\t') counts['\t']++;
+                if (ch === '\r' || ch === '\n') break;
+                if (Object.hasOwn(counts, ch)) counts[ch] += 1;
             }
         }
         let delimiter = ',';
-        let maxCount = counts[','];
-        if (counts[';'] > maxCount) {
-            maxCount = counts[';'];
-            delimiter = ';';
-        }
-        if (counts['\t'] > maxCount) {
-            delimiter = '\t';
+        for (const candidate of [';', '\t', '|']) {
+            if (counts[candidate] > counts[delimiter]) delimiter = candidate;
         }
         return { delimiter, encoding };
     } finally {
         await fd.close();
+    }
+}
+
+function assertCsvContent(bytes, text) {
+    // These are container/workbook signatures, including archives served from
+    // extensionless URLs. No archive extraction or implicit Excel conversion.
+    const signatures = ['504b0304', '504b0506', '504b0708', '377abcaf271c', 'd0cf11e0a1b11ae1'];
+    const prefix = bytes.subarray(0, 8).toString('hex');
+    const htmlRoot = /^(?:\s|<!--[\s\S]*?-->)*(?:<!doctype\s+html\b[^>]*>\s*)?<html\b[^>]*>\s*(?:<!--[\s\S]*?-->\s*)*<(?:head|body)\b/i;
+    if (signatures.some(signature => prefix.startsWith(signature)) || htmlRoot.test(text)) {
+        const error = new Error('CSV download contains an HTML document or an unsupported archive/workbook');
+        error.code = 'CSV_CONTENT_TYPE';
+        throw error;
     }
 }
 

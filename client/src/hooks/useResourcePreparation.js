@@ -7,6 +7,12 @@ import { track } from '../utils/analytics.js';
 // Share the POST across overlapping mounts; the server also deduplicates across
 // tabs and visitors. A departing component never cancels somebody else's job.
 const requests = new Map();
+const FAILURE_REASONS = new Set(['invalid_file', 'upstream_unavailable', 'capacity', 'temporary']);
+const publicReason = value => FAILURE_REASONS.has(value) ? value : null;
+const retryTime = value => {
+  const time = value ? new Date(value).getTime() : null;
+  return Number.isFinite(time) ? time : null;
+};
 function requestPreparation(id) {
   if (!requests.has(id)) {
     const promise = prepareResource(id).then(env => {
@@ -26,11 +32,13 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
   const [jobId, setJobId] = useState(() => readUnlockJob(id));
   const [phase, setPhase] = useState(() => readUnlockJob(id) ? 'pending' : 'idle');
   const [retryAt, setRetryAt] = useState(null);
+  const [failureReason, setFailureReason] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const onReadyRef = useRef(onReady);
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   const requested = useRef(null);
   const settled = useRef(new Set());
+  const metadataFailure = useRef(null);
   const info = resource?.preparation;
   const supported = info?.supported ?? resource?.query_mode === 'ingestable';
   const enabled = info?.enabled !== false;
@@ -39,7 +47,41 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     (resource?.query_mode === 'datastore' && needsLocal) ||
     (resource?.query_mode === 'ingested' && info && info.freshness !== 'current')
   );
-  const key = JSON.stringify([id, resource?.ingestion?.ingested_at, resource?.last_modified, info?.freshness, attempt]);
+  const sourceKey = JSON.stringify([id, resource?.url, resource?.format, resource?.size_bytes,
+    resource?.last_modified, resource?.ingestion?.ingested_at, info?.freshness]);
+  const key = JSON.stringify([sourceKey, attempt]);
+  const metadataRetryAt = info?.state === 'failed' ? retryTime(info.retry_at) : null;
+  const metadataReason = publicReason(info?.failure_reason);
+  const failureKey = metadataRetryAt ? JSON.stringify([sourceKey, metadataRetryAt, metadataReason]) : null;
+  const observedSource = useRef(sourceKey);
+
+  useEffect(() => {
+    if (observedSource.current !== sourceKey && phase === 'failed' && !metadataRetryAt) {
+      requested.current = null;
+      setPhase('idle');
+      setRetryAt(null);
+      setFailureReason(null);
+    }
+    observedSource.current = sourceKey;
+  }, [sourceKey, phase, metadataRetryAt]);
+
+  useEffect(() => {
+    // Metadata already describes a failed attempt for this source version.
+    // Show its cooldown without making another admission request. A source
+    // update clears that failure on the server and can be prepared immediately.
+    if (failureKey && metadataRetryAt > Date.now()) {
+      metadataFailure.current = failureKey;
+      setPhase('failed');
+      setRetryAt(metadataRetryAt);
+      setFailureReason(metadataReason);
+    } else if (!failureKey && metadataFailure.current) {
+      metadataFailure.current = null;
+      requested.current = null;
+      setPhase('idle');
+      setRetryAt(null);
+      setFailureReason(null);
+    }
+  }, [failureKey, metadataRetryAt, metadataReason]);
 
   useEffect(() => {
     // Once publication is visible, a later eviction is a new preparation
@@ -48,6 +90,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
       requested.current = null;
       setPhase('idle');
       setRetryAt(null);
+      setFailureReason(null);
     }
   }, [resource?.query_mode, info?.freshness, jobId]);
 
@@ -67,10 +110,12 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     if (job.status === 'done') {
       setPhase('idle');
       setRetryAt(null);
+      setFailureReason(null);
       onReadyRef.current();
     } else {
       setPhase('failed');
-      setRetryAt(job.retry_at ? new Date(job.retry_at).getTime() : Date.now() + 3600000);
+      setRetryAt(retryTime(job.retry_at) ?? Date.now() + 3600000);
+      setFailureReason(publicReason(job.failure_reason));
     }
     track('resource_load', { resource_id: id, status: job.status, source: 'automatic' });
   }, [id, key]);
@@ -79,6 +124,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     clearUnlockJob(id);
     setJobId(null);
     setPhase('idle');
+    setFailureReason(null);
     setAttempt(n => n + 1);
     onReadyRef.current();
   }, [id]);
@@ -94,7 +140,8 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
   }, [active, visible, discoveredJob, jobId, phase, id, key]);
 
   useEffect(() => {
-    if (!wanted || !visible || jobId || requested.current === key || (retryAt && retryAt > Date.now())) return;
+    if (!wanted || !visible || jobId || requested.current === key ||
+      (retryAt && retryAt > Date.now()) || (metadataRetryAt && metadataRetryAt > Date.now())) return;
     let cancelled = false;
     let answered = false;
     // A deferred start lets StrictMode cleanup/navigation cancel an unopened
@@ -102,6 +149,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     const timer = setTimeout(() => {
       requested.current = key;
       setPhase('requesting');
+      setFailureReason(null);
       track('resource_load', { resource_id: id, status: 'requested', source: 'automatic' });
       requestPreparation(id).then(env => {
         if (cancelled) return;
@@ -112,11 +160,13 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
         setJobId(env.data.id);
         setPhase('pending');
         setRetryAt(null);
+        setFailureReason(null);
       }).catch(error => {
         if (cancelled) return;
         answered = true;
         setPhase(error.status === 422 ? 'unavailable' : error.status === 429 && error.body?.code !== 'PREPARATION_COOLDOWN' ? 'waiting' : 'failed');
         setRetryAt(error.status === 422 ? null : Date.now() + (error.retryAfter || 60) * 1000);
+        setFailureReason(publicReason(error.body?.failure_reason));
       });
     }, 0);
     return () => {
@@ -124,12 +174,13 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
       clearTimeout(timer);
       if (!answered && requested.current === key) requested.current = null;
     };
-  }, [wanted, visible, jobId, key, id, completed, retryAt]);
+  }, [wanted, visible, jobId, key, id, completed, retryAt, metadataRetryAt]);
 
   const retry = useCallback(() => {
     if (retryAt && retryAt > Date.now()) return;
     setPhase('idle');
     setRetryAt(null);
+    setFailureReason(null);
     setAttempt(n => n + 1);
   }, [retryAt]);
   useEffect(() => {
@@ -138,6 +189,6 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     return () => clearTimeout(timer);
   }, [wanted, visible, retryAt, retry]);
 
-  return { phase: job?.status === 'running' ? 'running' : phase, job, retry, retryAt,
+  return { phase: job?.status === 'running' ? 'running' : phase, job, retry, retryAt, failureReason,
     supported, enabled, working: ['requesting', 'pending', 'running'].includes(phase) };
 }

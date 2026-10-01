@@ -189,7 +189,7 @@ async function getResourceById(id) {
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
                ir.byte_size AS ingested_byte_size, ir.columns AS ingested_columns,
                ir.ingested_at, ir.last_accessed_at, ir.source_version AS ingested_source_version,
-               (SELECT jsonb_build_object('id', j.id, 'status', j.status, 'source_version', j.source_version, 'retry_at', j.retry_at)
+               (SELECT jsonb_build_object('id', j.id, 'status', j.status, 'source_version', j.source_version, 'retry_at', j.retry_at, 'failure_code', j.failure_code)
                 FROM ingest_jobs j WHERE j.resource_id = r.id
                 ORDER BY (j.status IN ('pending','running')) DESC, j.id DESC LIMIT 1) AS preparation_job,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,

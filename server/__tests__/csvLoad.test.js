@@ -5,18 +5,20 @@ const { Writable } = require('node:stream');
 
 jest.mock('pg-copy-streams', () => ({ from: sql => ({ copySql: sql }) }));
 const { loadCsvIntoStore } = require('../services/csvLoad');
+const { sniffCsvMeta } = require('../services/csvDownload');
 
 describe('CSV column conversion', () => {
     let directory;
     beforeEach(async () => { directory = await fs.mkdtemp(path.join(os.tmpdir(), 'canquery-casts-')); });
     afterEach(async () => { await fs.rm(directory, { recursive: true, force: true }); });
 
-    async function load(text, { validity = {}, validationError, rewriteError } = {}) {
+    async function load(text, { validity = {}, validationError, rewriteError, sniff = false } = {}) {
         const filePath = path.join(directory, 'data.csv');
         await fs.writeFile(filePath, text);
+        const copied = [];
         const client = {
             query: jest.fn(sql => {
-                if (sql.copySql) return new Writable({ write(chunk, encoding, callback) { callback(); } });
+                if (sql.copySql) return new Writable({ write(chunk, encoding, callback) { copied.push(chunk.toString()); callback(); } });
                 if (sql.startsWith('SELECT ')) {
                     return validationError ? Promise.reject(validationError) : Promise.resolve({ rows: [validity] });
                 }
@@ -24,10 +26,11 @@ describe('CSV column conversion', () => {
                 return Promise.resolve({ rows: [] });
             })
         };
+        const metadata = sniff ? await sniffCsvMeta(filePath) : { delimiter: ',', encoding: 'utf8' };
         const result = loadCsvIntoStore(client, {
-            filePath, tableName: 'r_abc', delimiter: ',', encoding: 'utf8', maxRows: 2000, maxCols: 120
+            filePath, tableName: 'r_abc', ...metadata, maxRows: 2000, maxCols: 120
         });
-        return { result, client };
+        return { result, client, copied };
     }
 
     test('uses database types matching publication and batches valid conversions', async () => {
@@ -58,6 +61,49 @@ describe('CSV column conversion', () => {
         const { result, client } = await load('name,province\nAlice,Ontario\n');
         expect((await result).columns.every(col => col.type === 'TEXT')).toBe(true);
         expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && /^(SELECT|ALTER TABLE)/.test(sql))).toBe(false);
+    });
+
+    test('keeps every publisher _id field separate from the generated row identity', async () => {
+        const { result, client, copied } = await load('_id,_id_1,_id\na,b,c\n');
+        expect((await result).columns.map(column => column.id)).toEqual(['_id_1', '_id_1_2', '_id_3']);
+        const createSql = client.query.mock.calls.find(([sql]) => typeof sql === 'string' && sql.startsWith('CREATE TABLE '))[0];
+        expect(createSql).toBe('CREATE TABLE store."r_abc" (_id bigserial, "_id_1" text, "_id_1_2" text, "_id_3" text)');
+        expect(copied.join('')).toBe('"a","b","c"\n');
+    });
+
+    test.each(['utf16le', 'utf16be'])('uses the same %s decoder for sampling and complete COPY', async encoding => {
+        const text = 'Place,Note\r\nMontréal,"été 🐟"\r\nQuébec,"deux lignes\nensemble"\r\n';
+        const bytes = Buffer.from('\uFEFF' + text, 'utf16le');
+        const { result, copied } = await load(encoding === 'utf16be' ? bytes.swap16() : bytes, { sniff: true });
+        expect(await result).toEqual({
+            rowCount: 2, columns: [{ id: 'Place', type: 'TEXT' }, { id: 'Note', type: 'TEXT' }]
+        });
+        expect(copied.join('')).toBe('"Montréal","été 🐟"\n"Québec","deux lignes\nensemble"\n');
+    });
+
+    test('loads quoted pipe headers and CR-only records without relaxing quote validation', async () => {
+        const { result, copied } = await load('"Place | region"|Note\rMontréal|"été | automne"\r', { sniff: true });
+        expect(await result).toEqual({
+            rowCount: 1, columns: [{ id: 'Place | region', type: 'TEXT' }, { id: 'Note', type: 'TEXT' }]
+        });
+        expect(copied.join('')).toBe('"Montréal","été | automne"\n');
+    });
+
+    test('sampling read failures reject before creating a replacement table', async () => {
+        const client = { query: jest.fn() };
+        await expect(loadCsvIntoStore(client, {
+            filePath: path.join(directory, 'missing.csv'), tableName: 'r_abc',
+            delimiter: ',', encoding: 'utf16le', maxRows: 2000, maxCols: 120
+        })).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(client.query).not.toHaveBeenCalled();
+    });
+
+    test('complete COPY rejects malformed UTF-16 beyond the sampled rows', async () => {
+        const valid = Buffer.from('\uFEFFName,Note\n' + ('x,' + 'y'.repeat(50) + '\n').repeat(1500), 'utf16le');
+        // A final high surrogate is complete in bytes but invalid at EOF.
+        const { result, client } = await load(Buffer.concat([valid, Buffer.from([0x00, 0xd8])]), { sniff: true });
+        await expect(result).rejects.toMatchObject({ code: 'CSV_ENCODING' });
+        expect(client.query.mock.calls.some(([sql]) => sql.copySql)).toBe(true);
     });
 
     test.each(['validation', 'rewrite'])('%s infrastructure failures abort the import', async stage => {

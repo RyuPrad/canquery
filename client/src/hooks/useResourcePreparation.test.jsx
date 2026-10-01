@@ -23,6 +23,68 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); visibility('visible'); });
 
 describe('automatic preparation lifecycle', () => {
+  test('failed metadata displays its reason and waits through the cooldown without posting', async () => {
+    vi.useFakeTimers();
+    const retryAt = new Date(Date.now() + 30000).toISOString();
+    const failed = { ...resource, preparation: { ...resource.preparation, state: 'failed',
+      retry_at: retryAt, failure_reason: 'upstream_unavailable' } };
+    const view = renderHook(useResourcePreparation, { initialProps: props({ resource: failed }), wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    expect(view.result.current.phase).toBe('failed');
+    expect(view.result.current.failureReason).toBe('upstream_unavailable');
+    expect(view.result.current.retryAt).toBe(new Date(retryAt).getTime());
+    expect(prepareResource).not.toHaveBeenCalled();
+    await act(async () => { visibility('hidden'); await vi.advanceTimersByTimeAsync(31000); });
+    expect(prepareResource).not.toHaveBeenCalled();
+    await act(async () => { visibility('visible'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    expect(prepareResource).toHaveBeenCalledTimes(1);
+  });
+
+  test('updated source metadata bypasses an old failure cooldown, including a stale serving copy', async () => {
+    vi.useFakeTimers();
+    const failed = { ...resource, query_mode: 'ingested', url: 'https://publisher.example/old.csv',
+      ingestion: { ingested_at: '2026-09-30' }, preparation: { ...resource.preparation, freshness: 'stale',
+        state: 'failed', retry_at: new Date(Date.now() + 86400000).toISOString(), failure_reason: 'invalid_file' } };
+    const view = renderHook(useResourcePreparation, { initialProps: props({ resource: failed }) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    expect(prepareResource).not.toHaveBeenCalled();
+    view.rerender(props({ resource: { ...failed, url: 'https://publisher.example/new.csv',
+      preparation: { ...failed.preparation, state: 'ready', retry_at: null, failure_reason: null } } }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    expect(prepareResource).toHaveBeenCalledTimes(1);
+    expect(view.result.current.failureReason).toBeNull();
+  });
+
+  test.each(['capacity', 'temporary', 'invalid_file', 'upstream_unavailable'])('polled failure exposes only the sanitized %s reason', async failureReason => {
+    fetchJob.mockResolvedValue({ data: { id: 901, status: 'failed', failure_reason: failureReason,
+      retry_at: new Date(Date.now() + 3600000).toISOString() } });
+    const view = renderHook(useResourcePreparation, { initialProps: props() });
+    await waitFor(() => expect(view.result.current.phase).toBe('failed'));
+    expect(view.result.current.failureReason).toBe(failureReason);
+    expect(prepareResource).toHaveBeenCalledTimes(1);
+  });
+
+  test('unknown failure reasons fall back without exposing private details', async () => {
+    const failed = { ...resource, preparation: { ...resource.preparation, state: 'failed',
+      retry_at: new Date(Date.now() + 3600000).toISOString(), failure_reason: 'SQL private details' } };
+    const view = renderHook(useResourcePreparation, { initialProps: props({ resource: failed }) });
+    await act(async () => {});
+    expect(view.result.current.failureReason).toBeNull();
+    expect(view.result.current.phase).toBe('failed');
+    expect(prepareResource).not.toHaveBeenCalled();
+  });
+
+  test('a source update also bypasses a cooldown received from job polling', async () => {
+    fetchJob.mockResolvedValueOnce({ data: { id: 901, status: 'failed', failure_reason: 'invalid_file',
+      retry_at: new Date(Date.now() + 86400000).toISOString() } });
+    const view = renderHook(useResourcePreparation, { initialProps: props() });
+    await waitFor(() => expect(view.result.current.phase).toBe('failed'));
+    view.rerender(props({ resource: { ...resource, last_modified: '2026-10-01T06:00:00Z' } }));
+    await waitFor(() => expect(prepareResource).toHaveBeenCalledTimes(2));
+    expect(view.result.current.failureReason).toBeNull();
+  });
+
   test('automatically admits once under StrictMode and restores the shared job after remount', async () => {
     const first = renderHook(useResourcePreparation, { initialProps: props(), wrapper });
     await waitFor(() => expect(fetchJob).toHaveBeenCalled());

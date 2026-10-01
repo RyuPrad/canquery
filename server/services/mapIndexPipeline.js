@@ -10,6 +10,7 @@ const streamArray = require('stream-json/streamers/stream-array.js');
 const metadataPool = require('../db/pool');
 const indexPool = require('../db/longRunningPool');
 const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
+const { createCsvReadStream } = require('./csvRead');
 const { escapeCsvValue, csvParseOptions } = require('./csvLoad');
 const { assertDiskHeadroom } = require('./ingestPipeline');
 
@@ -432,7 +433,7 @@ async function copyCandidateToStage({ mode, filePath, csvMeta, caps, client }) {
     } else {
         transform = stagingTransform({ caps, onMetadata: value => { metadata = value; } });
         await pipeline(
-            fs.createReadStream(filePath, { encoding: csvMeta.encoding }),
+            createCsvReadStream(filePath, csvMeta.encoding),
             parse(csvParseOptions({ columns: true, delimiter: csvMeta.delimiter })),
             transform,
             client.query(copyFrom('COPY map_stage (feature_id, geom_json, properties) FROM STDIN WITH (FORMAT csv)'))

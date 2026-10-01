@@ -129,4 +129,51 @@ describe('secure catalogue downloads', () => {
             .filter(name => name.startsWith('canquery-ingest-') && !before.has(name));
         expect(leftovers).toHaveLength(0);
     });
+
+    test.each(['ENOTFOUND', 'ENODATA'])('types transport DNS failure %s and retains its private cause', async code => {
+        const cause = Object.assign(new Error('hostname details'), { code });
+        await expect(downloadToTempFile('https://download.example/data.csv', {
+            maxFileBytes: 1024,
+            lookupImpl: () => Promise.reject(cause)
+        })).rejects.toMatchObject({ code: 'DOWNLOAD_DNS', cause, message: expect.stringContaining(cause.message) });
+    });
+
+    test.each([
+        'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'CERT_REVOKED',
+        'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+        'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+        'ERR_TLS_CERT_ALTNAME_INVALID'
+    ])('types transport certificate failure %s without bypassing validation', async code => {
+        const cause = Object.assign(new Error('certificate details'), { code });
+        const requestImpl = jest.fn((_url, options) => {
+            expect(options).not.toHaveProperty('rejectUnauthorized');
+            expect(options.servername).toBe('download.example');
+            const request = new EventEmitter();
+            request.end = () => queueMicrotask(() => request.emit('error', cause));
+            return request;
+        });
+        await expect(downloadToTempFile('https://download.example/data.csv', {
+            maxFileBytes: 1024,
+            lookupImpl: async () => [{ address: '8.8.8.8', family: 4 }],
+            requestImpl
+        })).rejects.toMatchObject({ code: 'DOWNLOAD_CERTIFICATE', cause, message: expect.stringContaining(cause.message) });
+    });
+
+    test('types a native fetch transport cause at the download boundary', async () => {
+        const cause = new TypeError('fetch failed', {
+            cause: Object.assign(new Error('hostname details'), { code: 'ENOTFOUND' })
+        });
+        await expect(downloadToTempFile('https://download.example/data.csv', {
+            maxFileBytes: 1024,
+            fetchImpl: () => Promise.reject(cause)
+        })).rejects.toMatchObject({ code: 'DOWNLOAD_DNS', cause, message: expect.stringContaining('hostname details') });
+    });
+
+    test.each(['EAI_AGAIN', 'ECONNRESET', 'ERR_SSL_WRONG_VERSION_NUMBER', '08P01', '53100'])('preserves other transport failure %s', async code => {
+        const cause = Object.assign(new Error('temporary failure'), { code });
+        await expect(downloadToTempFile('https://download.example/data.csv', {
+            maxFileBytes: 1024,
+            fetchImpl: () => Promise.reject(cause)
+        })).rejects.toBe(cause);
+    });
 });

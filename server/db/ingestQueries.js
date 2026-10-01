@@ -1,11 +1,20 @@
 const pool = require('./pool');
 const { lockIngestResource } = require('./ingestResourceLock');
+const AppError = require('../utils/AppError');
 
 async function enqueueJob(resourceId) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         await lockIngestResource(client, resourceId);
+
+        // Retirement can finish while admission waits for its resource lock.
+        // Recheck both public identities after that wait and retain row locks
+        // until admission commits so a concurrent removal cannot orphan a job.
+        const resource = await client.query(`SELECT r.id
+            FROM resources r JOIN datasets d ON d.id = r.dataset_id
+            WHERE r.id = $1 FOR KEY SHARE OF r, d`, [resourceId]);
+        if (!resource.rows.length) throw new AppError('Resource not found', 404);
 
         // This is a separate READ COMMITTED statement after the advisory lock,
         // so it observes a worker commit that happened while this request was
@@ -65,7 +74,7 @@ async function getJobById(id) {
     const client = await pool.connect();
     try {
         const result = await client.query(
-            `SELECT id, resource_id, status, attempts, error, retry_at, claimed_at, finished_at, created_at, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds FROM ingest_jobs WHERE id = $1`,
+            `SELECT id, resource_id, status, attempts, error, failure_code, retry_at, claimed_at, finished_at, created_at, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds FROM ingest_jobs WHERE id = $1`,
             [id]
         );
         return result.rows[0] || null;

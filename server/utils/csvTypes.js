@@ -48,7 +48,9 @@ function inferType(values) {
 }
 
 function inferColumns(headers, sampleRows) {
-    const used = new Set();
+    // The store generates its own _id; preserve a publisher's identically
+    // named field using the same suffix rules as other duplicate headers.
+    const used = new Set(['_id']);
     return headers.map((header, i) => {
         const id = sanitizeColumnName(header, i, used);
         const sampleValues = sampleRows
