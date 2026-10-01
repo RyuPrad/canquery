@@ -65,6 +65,31 @@ test('updates title, canonical and schema through navigation and Back without to
   expect(document.querySelector('link[rel=stylesheet]')).not.toBeNull();
 });
 
+test('Back to the homepage restores its government-data metadata and canonical while preserving assets', async () => {
+  const title = 'Canadian open data & government datasets - CanQuery';
+  const description = 'Search Canadian government datasets by place and topic. Find CSV downloads, explore supported tables and maps, and use CanQuery’s free API.';
+  const extra = '<meta name="description" content="' + description + '">' +
+    '<meta property="og:title" content="' + title + '">' +
+    '<meta name="twitter:description" content="' + description + '">';
+  document.head.innerHTML = '<meta name="cq-analytics" content="preserve">' +
+    seo('/', title, extra) + '<link rel="stylesheet" href="/assets/app.css">';
+  fetch.mockImplementation(async path => path === '/' ? response('/', title, 200, extra) : response(path, 'Roads'));
+  render(<MemoryRouter initialEntries={['/']}><Navigation /></MemoryRouter>);
+  expect(fetch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Dataset'));
+  await waitFor(() => expect(document.title).toBe('Roads'));
+  fireEvent.click(screen.getByText('Back'));
+  await waitFor(() => expect(document.title).toBe(title));
+  expect(document.querySelector('link[rel=canonical]').href).toBe('https://canquery.com/');
+  expect(document.querySelector('meta[name=description]').content).toBe(description);
+  expect(document.querySelector('meta[property="og:title"]').content).toBe(title);
+  expect(document.querySelector('meta[name="twitter:description"]').content).toBe(description);
+  expect(document.querySelectorAll('title')).toHaveLength(1);
+  expect(document.querySelectorAll('link[rel=canonical]')).toHaveLength(1);
+  expect(document.querySelector('meta[name=cq-analytics]').content).toBe('preserve');
+  expect(document.querySelector('link[rel=stylesheet]')).not.toBeNull();
+});
+
 test('aborts obsolete navigation and ignores a late response even when transport ignores abort', async () => {
   let finishOld;
   fetch.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));

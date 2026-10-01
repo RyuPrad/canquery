@@ -259,6 +259,19 @@ describe('resolveMeta routing', () => {
 });
 
 describe('resolvePage crawl responses', () => {
+    it('renders homepage metadata, explanation and guides without accessing catalogue data', async () => {
+        const unavailable = new Proxy({}, { get() { throw new Error('Catalogue must not be accessed'); } });
+        const page = await resolvePage('/?q=climate&place=toronto-on', unavailable);
+        expect(page.status).toBe(200);
+        expect(page.canonicalPath).toBe('/');
+        expect(page.meta.canonical).toBe('https://canquery.com/');
+        expect(page.meta.title).toBe('Canadian open data & government datasets - CanQuery');
+        expect(page.meta.description).toBe('Search Canadian government datasets by place and topic. Find CSV downloads, explore supported tables and maps, and use CanQuery’s free API.');
+        expect(page.body).toContain('<h1>Search Canadian open data</h1>');
+        expect(page.body).toContain('<h2>How CanQuery works</h2>');
+        expect(page.body.match(/href="\/blog\//g)).toHaveLength(3);
+    });
+
     it('returns a canonical dataset path and meaningful initial HTML', async () => {
         const deps = {
             getDatasetByIdOrName: jest.fn().mockResolvedValue({
@@ -321,6 +334,19 @@ describe('production SPA response semantics', () => {
     });
 
     afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+
+    it('serves the homepage introduction and guide anchors in initial HTML during a catalogue outage', async () => {
+        for (const method of Object.values(catalogRead)) method.mockRejectedValue(new Error('Catalogue unavailable'));
+        const res = await request(spa).get('/');
+        expect(res.status).toBe(200);
+        expect(res.text.match(/<h1>/g)).toHaveLength(1);
+        expect(res.text).toContain('<title>Canadian open data &amp; government datasets - CanQuery</title>');
+        expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/"');
+        expect(res.text).toContain('Search Canadian government datasets by place and topic.');
+        expect(res.text).toContain('<h2>How CanQuery works</h2>');
+        expect(res.text.match(/href="\/blog\//g)).toHaveLength(3);
+        for (const method of Object.values(catalogRead)) expect(method).not.toHaveBeenCalled();
+    });
 
     it('301s aliases and trailing slashes while preserving the query string', async () => {
         catalogRead.getDatasetByIdOrName.mockResolvedValue({

@@ -4,12 +4,12 @@ const { SITE_URL, escapeHtml: esc, truncate } = require('./seoMeta');
 const LABELS = {
     en: { title: 'Data guides', intro: 'Find the right Canadian dataset, read its fields, and use its tables, maps or downloads.',
         source: 'View the source dataset', explore: 'Explore the data', city: 'More data for',
-        download: 'View download details',
+        download: 'View download details', home: 'Search more Canadian open data',
         published: 'Published', updated: 'Article updated', verified: 'Data links checked', by: 'By',
         missing: 'Guide not found' },
     fr: { title: 'Guides des données', intro: 'Trouvez le bon jeu de données canadien, comprenez ses champs et utilisez ses tableaux, cartes ou fichiers.',
         source: 'Consulter le jeu de données source', explore: 'Explorer les données', city: 'Autres données pour',
-        download: 'Consulter les détails du téléchargement',
+        download: 'Consulter les détails du téléchargement', home: 'Rechercher d’autres données ouvertes canadiennes',
         published: 'Publié le', updated: 'Article mis à jour le', verified: 'Liens vérifiés le', by: 'Par',
         missing: 'Guide introuvable' }
 };
@@ -62,7 +62,8 @@ function resolveBlogPage(pathname) {
             '<div class="cq-article mt-8">' + article.bodyHtml + '</div>' +
             '<p class="mt-8"><a class="btn btn-primary h-auto py-2" href="' + esc(article.explore) + '">' + (article.view === 'download' ? labels.download : labels.explore) + '</a></p>' +
             '<p class="mt-4"><a class="link" href="' + article.dataset + '">' + labels.source + '</a></p>' +
-            (article.place ? '<p class="mt-4"><a class="link" href="/places/' + article.place + '">' + labels.city + ' ' + esc(article.placeName) + '</a></p>' : '') + '</article>';
+            (article.place ? '<p class="mt-4"><a class="link" href="/places/' + article.place + '">' + labels.city + ' ' + esc(article.placeName) + '</a></p>' : '') +
+            '<p class="mt-4"><a class="link" href="/">' + labels.home + '</a></p></article>';
     } else {
         body += '<h1 class="font-display text-4xl font-bold">' + title + '</h1><p class="mt-4">' + description + '</p>' +
             '<p class="mt-4">' + languageLink + '</p><div class="space-y-5 mt-8">' +

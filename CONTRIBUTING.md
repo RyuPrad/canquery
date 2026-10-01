@@ -46,6 +46,40 @@ cd client && npm run lint && npm test && npm run build
 - By contributing you agree your contributions are licensed under the project's
   [MIT License](LICENSE).
 
+## SEO research reviews
+
+Run a review whenever a new Google Trends export is supplied. In chat, provide
+the CSV path and ask: "Run the CanQuery SEO review on this export." The result is
+a research shortlist; content changes remain a separate implementation task.
+
+1. Read the export and record its region, period, query labels, relative interest
+   and growth. Mark missing seed terms, categories and other settings as unknown.
+   Trends interest is relative, not monthly search volume; proposed related
+   keywords remain hypotheses until research supports them.
+2. Read finalized Search Console results for the exact verified property. Use
+   explicit, complete 28-day periods. Report homepage impressions separately
+   from site totals, and Canadian results separately from worldwide results.
+   Keep page totals, reported queries and query-page metrics separate: privacy
+   omissions mean reported queries do not reconstruct page or property totals.
+3. Match useful search tasks to admitted datasets and official publisher
+   evidence. Verify coverage, canonical links and actual download, table, map or
+   API capabilities. Consider the general public, data seekers and developers;
+   qualify preparation and download limits rather than promising universal access.
+4. Return at most five ranked opportunities and identify the three strongest
+   next actions. Include the audience, English/French target queries, supporting
+   evidence, destination page, proposed improvement, effort and uncertainty.
+   Prioritize relevant intent, verified data support, existing visibility and
+   lasting usefulness; use Trends interest and growth as supporting evidence.
+
+For a homepage change, capture a separate private baseline before release and
+measure homepage-only impressions as the primary outcome. Use the existing
+search-intent classifier for reported brand, semantic and diagnostic queries;
+report their populations separately. Compare complete 28-day windows starting
+on the first full Search Console calendar day after deployment, and annotate
+other releases and seasonality. Keep existing frozen cohorts unchanged. Store
+exports, Search Console snapshots and release evidence outside the public
+repository; do not commit private query data, account identifiers or credentials.
+
 ## Reporting bugs / requesting features
 
 Use the GitHub issue templates. For anything security-related, please follow

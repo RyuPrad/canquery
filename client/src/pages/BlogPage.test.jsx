@@ -34,6 +34,7 @@ function start(path) {
     <Route path="/blog/:slug" element={<BlogPage />} />
     <Route path="/fr/blog" element={<BlogPage language="fr" />} />
     <Route path="/fr/blog/:slug" element={<BlogPage language="fr" />} />
+    <Route path="/" element={<h1>Canadian open data search</h1>} />
   </Routes></LangProvider></ThemeProvider></MemoryRouter>);
 }
 
@@ -59,6 +60,20 @@ test('the URL determines article language, including navbar switching and Back',
   expect(await screen.findByRole('heading', { name: 'Les parcs de la ville' })).toBeInTheDocument();
 });
 
+test.each([
+  { path: '/blog/parks', title: 'City parks guide', cta: 'Search more Canadian open data' },
+  { path: '/fr/blog/parcs', title: 'Les parcs de la ville', cta: 'Rechercher d’autres données ouvertes canadiennes' },
+])('the $path guide links back to Canadian open data search after its source and place links', async ({ path, title, cta }) => {
+  start(path);
+  expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+  const link = screen.getByRole('link', { name: cta });
+  expect(link).toHaveAttribute('href', '/');
+  const guideLinks = Array.from(link.closest('aside').querySelectorAll('a')).map(anchor => anchor.getAttribute('href'));
+  expect(guideLinks).toEqual(['/resources/park-map?view=map', '/datasets/parks', '/places/oshawa-on', '/']);
+  fireEvent.click(link);
+  expect(await screen.findByRole('heading', { name: 'Canadian open data search' })).toBeInTheDocument();
+});
+
 test('the blog index links to complete guides', async () => {
   start('/blog');
   expect(await screen.findByRole('heading', { name: 'Data guides' })).toBeInTheDocument();
@@ -73,6 +88,7 @@ test('a national download guide has no place links and opens explicit download d
   expect(await screen.findByRole('heading', { name: 'City parks guide' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /View download details/ })).toHaveAttribute('href', '/resources/archive');
   expect(document.querySelector('a[href^="/places/"]')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Search more Canadian open data' })).toHaveAttribute('href', '/');
 });
 
 test('language switching remains available after an article fails to load', async () => {

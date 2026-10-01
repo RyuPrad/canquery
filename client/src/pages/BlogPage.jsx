@@ -82,6 +82,7 @@ export default function BlogPage({ language = 'en' }) {
         </Link>
         <p><Link className="link text-sm" to={article.dataset}>{t('blog.dataset')}</Link></p>
         {article.place && <p><Link className="link text-sm" to={'/places/' + article.place}>{t('blog.more')} {article.placeName}</Link></p>}
+        <p><Link className="link text-sm" to="/">{t('blog.search_more')}</Link></p>
       </aside>
     </article>
   </div>;
