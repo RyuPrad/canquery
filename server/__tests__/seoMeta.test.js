@@ -214,10 +214,16 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
 describe('seoMeta - site + static meta', () => {
     it('home meta carries a WebSite SearchAction and an Organization', () => {
         const meta = seo.homeMeta();
+        expect(meta.title).toBe('Canadian open data & government datasets - CanQuery');
+        expect(meta.title.length).toBeLessThanOrEqual(80);
+        expect(meta.description).toBe('Search Canadian government datasets by place and topic. Find CSV downloads, explore supported tables and maps, and use CanQuery’s free API.');
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+        expect(meta.canonical).toBe('https://canquery.com/');
         const types = meta.jsonLd.map((o) => o['@type']);
         expect(types).toContain('WebSite');
         expect(types).toContain('Organization');
         const website = meta.jsonLd.find((o) => o['@type'] === 'WebSite');
+        expect(website.description).toBe(meta.description);
         expect(website.potentialAction['@type']).toBe('SearchAction');
         expect(website.potentialAction.target.urlTemplate).toContain('{search_term_string}');
     });

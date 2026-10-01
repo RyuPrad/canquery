@@ -34,6 +34,10 @@ test.each(['en', 'fr'])('renders complete %s articles and metadata without any c
         expect(html).toContain('<html lang="' + lang + '">');
         expect(html.match(/<h1\b/g)).toHaveLength(1);
         expect(html).toContain(getArticle(lang, article.slug).bodyHtml);
+        const homeLabel = lang === 'fr' ? 'Rechercher d’autres données ouvertes canadiennes' : 'Search more Canadian open data';
+        expect(html).toContain('<a class="link" href="/">' + homeLabel + '</a>');
+        expect(html.indexOf(homeLabel)).toBeGreaterThan(html.lastIndexOf(article.dataset));
+        if (article.place) expect(html.indexOf(homeLabel)).toBeGreaterThan(html.lastIndexOf('/places/' + article.place));
         expect(page.meta.alternates).toHaveProperty('fr-CA');
         expect(page.meta.jsonLd.find(item => item['@type'] === 'BlogPosting')).toMatchObject({
             author: { '@type': 'Organization', name: 'CanQuery' }, datePublished: article.published
@@ -99,23 +103,31 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
     const read = fs.readFileSync;
     const manifestPath = path.join(__dirname, '../../content/blog/index.json');
     const manifest = JSON.parse(read(manifestPath, 'utf8'));
-    manifest[0].status = 'draft';
+    const draft = manifest.find(article => article.id === listArticles()[0].id);
+    draft.status = 'draft';
     const spy = jest.spyOn(fs, 'readFileSync').mockImplementation((file, ...args) =>
         file === manifestPath ? JSON.stringify(manifest) : read(file, ...args));
     try {
         jest.isolateModules(() => {
             const content = require('../services/blogContent');
             const { resolveBlogPage } = require('../services/blogPresentation');
+            const { staticSnapshot } = require('../services/seoSnapshot');
             const { sitemapBlog } = require('../controllers/sitemapController');
             const res = { set: jest.fn(), send: jest.fn() };
             sitemapBlog({}, res);
+            const home = staticSnapshot('home');
+            expect(home.match(/href="\/blog\//g)).toHaveLength(3);
+            content.listArticles({ lang: 'en' }).slice(0, 3).forEach(article => {
+                expect(home).toContain('href="' + article.path + '"');
+            });
             for (const lang of ['en', 'fr']) {
-                const slug = manifest[0].editions[lang].slug;
+                const slug = draft.editions[lang].slug;
                 const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + slug;
                 expect(content.listArticles({ lang })).toHaveLength(5);
                 expect(content.getArticle(lang, slug)).toBeNull();
                 expect(resolveBlogPage(articlePath).status).toBe(404);
                 expect(res.send.mock.calls[0][0]).not.toContain(articlePath);
+                expect(home).not.toContain(articlePath);
             }
         });
     } finally { spy.mockRestore(); }

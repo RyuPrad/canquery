@@ -9,9 +9,9 @@ const { plainText, collapse, truncate, resourceLanguages } = require('./catalogT
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
 const SITE_NAME = 'CanQuery';
-const DEFAULT_TITLE = 'CanQuery: Canadian open data search, tables & maps';
+const DEFAULT_TITLE = 'Canadian open data & government datasets - CanQuery';
 const DEFAULT_DESC =
-    'Search Canadian open data by place, load CSV and Excel files into live tables, and explore spatial data on a map. No signup.';
+    'Search Canadian government datasets by place and topic. Find CSV downloads, explore supported tables and maps, and use CanQuery’s free API.';
 const DEFAULT_IMAGE = SITE_URL + '/og-image.svg';
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
 const TITLE_MAX = 80;

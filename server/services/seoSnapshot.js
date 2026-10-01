@@ -261,8 +261,8 @@ function organizationSnapshot(organization, datasets, pagination) {
 
 const STATIC_COPY = {
     home: {
-        title: "Search Canada's open data",
-        summary: 'Find federal, provincial, territorial and municipal datasets, query live tables, and explore spatial resources on maps.',
+        title: 'Search Canadian open data',
+        summary: seo.DEFAULT_DESC,
         links: [
             { path: '/datasets', label: 'Browse all datasets' },
             { path: '/places', label: 'Browse open data by place' },
@@ -301,6 +301,20 @@ const STATIC_COPY = {
     }
 };
 
+function homeExplanation() {
+    const steps = [
+        { title: 'Search government datasets',
+            summary: 'Find Canadian government datasets by place, topic, publisher and format.' },
+        { title: 'Choose a download, table or map',
+            summary: 'Download original files, prepare eligible CSV and Excel files as tables, or explore supported maps.' },
+        { title: 'Filter, export or use the API',
+            summary: 'Filter and sort supported tables, export up to 10,000 rows as CSV, or query data with CanQuery’s free API.' }
+    ];
+    return '<section><h2>How CanQuery works</h2><ol>' + steps.map(step =>
+        '<li><h3>' + text(step.title) + '</h3><p>' + text(step.summary) + '</p></li>'
+    ).join('') + '</ol></section>';
+}
+
 function staticSnapshot(type, items = [], pagination) {
     const copy = STATIC_COPY[type] || STATIC_COPY.home;
     const regions = items.filter(item => item.kind === 'region');
@@ -336,6 +350,10 @@ function staticSnapshot(type, items = [], pagination) {
         breadcrumbs: type === 'home' ? [] : [{ label: 'CanQuery', path: '/' }, { label: copy.title }],
         title: copy.title,
         summary: copy.summary,
+        overviewHtml: type === 'home' ? homeExplanation() : '',
+        guides: type === 'home' ? listArticles({ lang: 'en' }).slice(0, 3).map(article => ({
+            path: article.path, label: article.title, detail: article.description
+        })) : [],
         linksTitle: dynamicLinks.length ? (type === 'places' ? 'Featured places' : type === 'datasets' ? 'Open datasets' : 'Publishing organizations') : 'Explore CanQuery',
         links: dynamicLinks.length ? dynamicLinks : copy.links
     });

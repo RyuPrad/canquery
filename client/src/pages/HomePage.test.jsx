@@ -63,6 +63,28 @@ const contextualPreview = () => ({
     total_groups: 2, displayed_groups: 2, limited: false, missing_periods: [] },
 });
 
+test.each([
+  { lang: 'en', title: 'Search Canadian open data',
+    subtitle: 'Search Canadian government datasets by place and topic. Find CSV downloads, explore supported tables and maps, and use CanQuery’s free API.',
+    search: 'Find Canadian government datasets by place, topic, publisher and format.',
+    explore: 'Download original files, prepare eligible CSV and Excel files as tables, or explore supported maps.',
+    query: 'Filter and sort supported tables, export up to 10,000 rows as CSV, or query data with CanQuery’s free API.' },
+  { lang: 'fr', title: 'Recherchez des données ouvertes canadiennes',
+    subtitle: 'Recherchez des jeux de données des gouvernements canadiens par lieu et sujet. Trouvez des fichiers CSV, explorez les tableaux et cartes pris en charge et utilisez l’API gratuite de CanQuery.',
+    search: 'Trouvez des jeux de données des gouvernements canadiens par lieu, sujet, organisme et format.',
+    explore: 'Téléchargez les fichiers d’origine, préparez les fichiers CSV et Excel admissibles sous forme de tableaux ou explorez les cartes prises en charge.',
+    query: 'Filtrez et triez les tableaux pris en charge, exportez jusqu’à 10 000 lignes en CSV ou interrogez les données avec l’API gratuite de CanQuery.' },
+])('the $lang homepage explains government data discovery and qualified access capabilities', async copy => {
+  localStorage.setItem('cq-lang', copy.lang);
+  start();
+  expect(await screen.findByRole('heading', { level: 1, name: copy.title })).toBeInTheDocument();
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  expect(screen.getByText(copy.subtitle)).toBeInTheDocument();
+  expect(screen.getByText(copy.search)).toBeInTheDocument();
+  expect(screen.getByText(copy.explore)).toBeInTheDocument();
+  expect(screen.getByText(copy.query)).toBeInTheDocument();
+});
+
 test('the chart section is omitted when every preview is metadata-poor, malformed or flat', async () => {
   const flat = contextualPreview();
   flat.points = flat.points.map(point => ({ ...point, value: 2 }));

@@ -1,6 +1,49 @@
 const snapshot = require('../services/seoSnapshot');
+const { listArticles } = require('../services/blogContent');
+const { escapeHtml } = require('../services/seoMeta');
 
 describe('server-rendered crawl snapshots', () => {
+    it('renders the homepage explanation and first three published guides in catalogue order', () => {
+        const html = snapshot.staticSnapshot('home');
+        const guides = listArticles({ lang: 'en' });
+        expect(html.match(/<h1>/g)).toHaveLength(1);
+        expect(html).toContain('<h1>Search Canadian open data</h1>');
+        expect(html).toContain('<h2>How CanQuery works</h2>');
+        expect(html).toContain('prepare eligible CSV and Excel files as tables');
+        expect(html).toContain('explore supported maps');
+        expect(html).toContain('export up to 10,000 rows as CSV');
+        expect(html.match(/href="\/blog\//g)).toHaveLength(3);
+        guides.slice(0, 3).forEach((guide, index) => {
+            expect(html).toContain('href="' + guide.path + '">' + escapeHtml(guide.title) + '</a>');
+            expect(html).toContain(escapeHtml(guide.description));
+            if (index) expect(html.indexOf(guide.path)).toBeGreaterThan(html.indexOf(guides[index - 1].path));
+        });
+        guides.slice(3).forEach(guide => expect(html).not.toContain(guide.path));
+        for (const path of ['/datasets', '/places', '/blog', '/organizations', '/insights', '/docs']) {
+            expect(html).toContain('href="' + path + '"');
+        }
+    });
+
+    it('escapes guide paths, titles and summaries in the homepage snapshot', () => {
+        jest.isolateModules(() => {
+            const content = require('../services/blogContent');
+            const spy = jest.spyOn(content, 'listArticles').mockReturnValue([{
+                path: '/blog/safe?term="&other=1',
+                title: 'A "quoted" title & details',
+                description: '<script>bad()</script> Safe <em>summary</em> & details.'
+            }]);
+            try {
+                const html = require('../services/seoSnapshot').staticSnapshot('home');
+                expect(spy).toHaveBeenCalledWith({ lang: 'en' });
+                expect(html).toContain('href="/blog/safe?term=&quot;&amp;other=1"');
+                expect(html).toContain('A &quot;quoted&quot; title &amp; details');
+                expect(html).toContain('Safe summary &amp; details.');
+                expect(html).not.toContain('<script>');
+                expect(html).not.toContain('<em>');
+            } finally { spy.mockRestore(); }
+        });
+    });
+
     it('links pilot places to their guide without adding unrelated guides', () => {
         expect(snapshot.placeSnapshot({ id: 'p1', slug: 'oshawa-on', name_en: 'Oshawa' }, []))
             .toContain('href="/blog/oshawa-parks-map"');
