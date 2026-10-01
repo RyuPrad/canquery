@@ -10,7 +10,10 @@ const { withSnapshot } = require('../db/snapshotRead');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 const { withStoreBudgetLock, evictUntilUnderBudget } = require('../services/evictService');
 const { queryResource, queryResourceForExport, profileResource, recordResourceActivity } = require('../services/queryService');
-const { claimJob, recoverOrphanedJobs } = require('../db/ingestWorkerQueries');
+const { claimJob, recoverOrphanedJobs, finishJob } = require('../db/ingestWorkerQueries');
+const { enqueueJob } = require('../db/ingestQueries');
+const { lockIngestResource } = require('../db/ingestResourceLock');
+const { preparationFailure } = require('../services/preparationFailure');
 const { processJob } = require('../scripts/ingest-worker');
 
 let serial = 0;
@@ -81,6 +84,63 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         const results = await Promise.allSettled(ids.map(id => prepareResource(id, id)));
         expect(results.filter(x => x.status === 'fulfilled')).toHaveLength(2);
         expect(results.filter(x => x.status === 'rejected').every(x => x.reason.statusCode === 429)).toBe(true);
+    });
+
+    test('legacy admission waiting on retirement cannot recreate a job after resource deletion', async () => {
+        const id = await seed();
+        const retiring = await pool.connect();
+        let admission;
+        try {
+            await retiring.query('BEGIN');
+            await lockIngestResource(retiring, id);
+            await retiring.query('DELETE FROM resources WHERE id=$1', [id]);
+            admission = enqueueJob(id).then(job => ({ job }), error => ({ error }));
+            let waiting = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const { rows } = await pool.query(`SELECT 1 FROM pg_locks
+                    WHERE locktype='advisory' AND classid=1667329650::oid
+                    AND objid=hashtext($1)::oid AND objsubid=2 AND NOT granted`, [id]);
+                if (rows.length) { waiting = true; break; }
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            expect(waiting).toBe(true);
+            await retiring.query('COMMIT');
+        } finally {
+            await retiring.query('ROLLBACK');
+            retiring.release();
+        }
+        expect((await admission).error).toMatchObject({ statusCode: 404 });
+        expect((await pool.query('SELECT count(*)::int AS n FROM ingest_jobs WHERE resource_id=$1', [id])).rows[0].n).toBe(0);
+    });
+
+    test('legacy admission rejects a resource whose public parent was removed', async () => {
+        const id = await seed();
+        await pool.query('DELETE FROM datasets WHERE id=$1', [id]);
+        await expect(enqueueJob(id)).rejects.toMatchObject({ statusCode: 404 });
+        expect((await pool.query('SELECT count(*)::int AS n FROM ingest_jobs WHERE resource_id=$1', [id])).rows[0].n).toBe(0);
+    });
+
+    test.each([
+        ['CSV_CONTENT_TYPE', 'INVALID_FILE', 'invalid_file', 86400],
+        ['DOWNLOAD_DNS', 'UPSTREAM_UNAVAILABLE', 'upstream_unavailable', 86400],
+        ['DISK_FREE', 'CAPACITY', 'capacity', 3600],
+        ['53100', 'TEMPORARY', 'temporary', 3600]
+    ])('stored %s failures enforce their cooldown and a changed version bypasses it', async (code, category, reason, seconds) => {
+        const id = await seed();
+        const admitted = await prepareResource(id, id);
+        const job = await claimJob(pool, 'policy-test-worker');
+        expect(Number(job.id)).toBe(admitted.id);
+        const failure = preparationFailure({ code }, 3);
+        expect(failure).toEqual({ code: category, seconds });
+        expect(await finishJob(pool, job.id, 'policy-test-worker', id, 'failed', 'private failure detail', failure)).toBe(true);
+        expect(preparationInfo(await getResourceById(id))).toMatchObject({ state: 'failed', failure_reason: reason });
+        const retry = await pool.query('SELECT EXTRACT(EPOCH FROM(retry_at-now()))::int AS seconds FROM ingest_jobs WHERE id=$1', [job.id]);
+        expect(retry.rows[0].seconds).toBeGreaterThan(seconds - 5);
+        expect(retry.rows[0].seconds).toBeLessThanOrEqual(seconds);
+        await expect(prepareResource(id, id)).rejects.toMatchObject({ statusCode: 429, publicCode: 'PREPARATION_COOLDOWN' });
+        await modify(id);
+        expect(preparationInfo(await getResourceById(id)).failure_reason).toBeNull();
+        expect(await prepareResource(id, id)).toMatchObject({ status: 'pending' });
     });
 
     test('first preparation persists a version and charts aggregate rows beyond page one', async () => {
@@ -169,6 +229,38 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         expect(row.table_name).toBe(first.tableName);
         expect(preparationInfo(row).freshness).toBe('stale');
         expect((await queryResource(id, { limit: 1 })).records).toHaveLength(1);
+    });
+
+    test('an HTML download is rejected before reservation eviction or store DDL and preserves serving copies', async () => {
+        const id = await seed();
+        const peerId = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv()));
+        const peer = await ingestResource(await getResourceById(peerId), caps(csv(2)));
+        const serving = await getResourceById(id);
+        await pool.query('CREATE TABLE public.prepare_test_payload_ddl (tag text NOT NULL)');
+        try {
+            await pool.query(`CREATE FUNCTION public.prepare_test_record_payload_ddl() RETURNS event_trigger
+                LANGUAGE plpgsql AS $$ BEGIN
+                    INSERT INTO public.prepare_test_payload_ddl VALUES(TG_TAG);
+                END $$`);
+            await pool.query(`CREATE EVENT TRIGGER prepare_test_payload_ddl ON ddl_command_start
+                WHEN TAG IN ('CREATE TABLE','ALTER TABLE','DROP TABLE')
+                EXECUTE FUNCTION public.prepare_test_record_payload_ddl()`);
+            // A valid load under this tiny budget would need eviction or fail
+            // reservation. Invalid content must be rejected before either path.
+            await expect(ingestResource(await modify(id), {
+                ...caps('<!doctype html><html><body>publisher error page</body></html>'), storeBudgetBytes: 1
+            })).rejects.toMatchObject({ code: 'CSV_CONTENT_TYPE' });
+            expect((await pool.query('SELECT count(*)::int AS n FROM public.prepare_test_payload_ddl')).rows[0].n).toBe(0);
+            expect(await getResourceById(id)).toMatchObject({ table_name: first.tableName,
+                ingested_source_version: serving.ingested_source_version, ingested_row_count: '600' });
+            expect((await getResourceById(peerId)).table_name).toBe(peer.tableName);
+            expect((await pool.query('SELECT count(*)::int AS n FROM store."' + peer.tableName + '"')).rows[0].n).toBe(600);
+        } finally {
+            await pool.query('DROP EVENT TRIGGER IF EXISTS prepare_test_payload_ddl');
+            await pool.query('DROP FUNCTION IF EXISTS public.prepare_test_record_payload_ddl()');
+            await pool.query('DROP TABLE public.prepare_test_payload_ddl');
+        }
     });
 
     test('a database failure during conversion aborts replacement instead of publishing TEXT', async () => {

@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { isIngestableFile } = require('./resourceCapabilities');
+const { failureReason } = require('./preparationFailure');
 
 function instant(value) {
     if (!value) return null;
@@ -39,6 +40,7 @@ function preparationInfo(row) {
         state: active ? job.status : failed ? 'failed' : loaded ? 'ready' : 'unprepared',
         job_id: active ? Number(job.id) : null,
         retry_at: failed ? job.retry_at : null,
+        failure_reason: failed ? failureReason(job.failure_code) : null,
         prepared_at: row.ingested_at || null,
         publisher_modified_at: row.last_modified || null
     };

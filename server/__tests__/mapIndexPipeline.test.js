@@ -2,8 +2,10 @@ const { once } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { Writable } = require('node:stream');
 const { parse } = require('csv-parse');
 const { csvParseOptions } = require('../services/csvLoad');
+const { sniffCsvMeta } = require('../services/csvDownload');
 const {
     MapSkipError,
     geometryVertexCount,
@@ -15,7 +17,8 @@ const {
     candidateMode,
     sourceSridFromCrs,
     inspectGeoJsonFile,
-    validWgs84Extent
+    validWgs84Extent,
+    copyCandidateToStage
 } = require('../services/mapIndexPipeline');
 
 describe('bounded local-map conversion', () => {
@@ -195,5 +198,30 @@ describe('bounded local-map conversion', () => {
             rowCount: 2, featureCount: 2, vertexCount: 3
         }));
         expect(metadata.geometryColumn).toBe('geometry');
+    });
+
+    test.each(['utf16le', 'utf16be'])('shares %s decoding with the CKAN map CSV reader', async encoding => {
+        const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'canquery-map-csv-'));
+        const filePath = path.join(directory, 'map.csv');
+        try {
+            const text = '_id,Name,geometry\r\n1,Montréal,"{""type"":""Point"",""coordinates"":[-73.5,45.5]}"\r\n';
+            const bytes = Buffer.from('\uFEFF' + text, 'utf16le');
+            await fs.promises.writeFile(filePath, encoding === 'utf16be' ? bytes.swap16() : bytes);
+            const copied = [];
+            const client = {
+                query: jest.fn(() => new Writable({
+                    write(chunk, _encoding, callback) { copied.push(chunk.toString()); callback(); }
+                }))
+            };
+            const { result, metadata } = await copyCandidateToStage({
+                mode: 'ckan-datastore-csv', filePath, csvMeta: await sniffCsvMeta(filePath),
+                caps: { maxRows: 10, maxVertices: 10 }, client
+            });
+            expect(result).toMatchObject({ rowCount: 1, featureCount: 1, geometryType: 'point' });
+            expect(metadata.geometryColumn).toBe('geometry');
+            expect(copied.join('')).toContain('Montréal');
+        } finally {
+            await fs.promises.rm(directory, { recursive: true, force: true });
+        }
     });
 });

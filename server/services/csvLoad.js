@@ -1,10 +1,10 @@
-const fs = require('node:fs');
 const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader } = require('../utils/csvTypes');
 const { quoteIdent } = require('../utils/filterGrammar');
+const { createCsvReadStream } = require('./csvRead');
 
 // Some CKAN exports use CRLF for the header and LF for later records. Let the
 // parser accept every conventional record delimiter explicitly; otherwise it
@@ -30,7 +30,7 @@ async function readSample(filePath, { delimiter, encoding }) {
     return new Promise((resolve, reject) => {
         const records = [];
         let settled = false;
-        const readStream = fs.createReadStream(filePath, { encoding });
+        const readStream = createCsvReadStream(filePath, encoding);
         const parser = parse(csvParseOptions({ delimiter }));
 
         const finish = () => {
@@ -62,12 +62,16 @@ async function readSample(filePath, { delimiter, encoding }) {
             }
         });
 
-        parser.on('error', (err) => {
+        const fail = (err) => {
             if (!settled) {
                 settled = true;
+                readStream.destroy();
+                parser.destroy();
                 reject(err);
             }
-        });
+        };
+        parser.on('error', fail);
+        readStream.on('error', fail);
 
         readStream.pipe(parser);
     });
@@ -114,7 +118,7 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     });
 
     await pipeline(
-        fs.createReadStream(filePath, { encoding }),
+        createCsvReadStream(filePath, encoding),
         parse(csvParseOptions({ delimiter })),
         toCsv,
         client.query(copyFrom(copySql))

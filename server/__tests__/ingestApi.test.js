@@ -163,6 +163,25 @@ describe('ingest API', () => {
         expect(JSON.stringify(res.body)).not.toContain('/var/tmp');
     });
 
+    it.each([
+        ['INVALID_FILE', 'invalid_file'], ['UPSTREAM_UNAVAILABLE', 'upstream_unavailable'],
+        ['CAPACITY', 'capacity'], ['TEMPORARY', 'temporary'], ['private database text', null]
+    ])('job polling exposes only sanitized failure category %s', async (failure_code, failure_reason) => {
+        ingestQueries.getJobById.mockResolvedValue({ id: 8, resource_id: 'csv-1', status: 'failed',
+            attempts: 1, error: 'private /tmp/path', failure_code, created_at: '2026-01-01' });
+        const response = await request(app).get('/api/v1/jobs/8');
+        expect(response.body.data).toMatchObject({ failure_reason, error: 'Resource ingestion failed' });
+        expect(JSON.stringify(response.body)).not.toContain('private');
+        ingestQueries.getJobById.mockResolvedValue({ id: 8, status: 'done', failure_code });
+        expect((await request(app).get('/api/v1/jobs/8')).body.data.failure_reason).toBeNull();
+    });
+
+    it('returns 404 when a resource retires while legacy enqueue waits for its lock', async () => {
+        queries.getResourceById.mockResolvedValue(makeRow({ id: 'retired' }));
+        ingestQueries.enqueueJob.mockRejectedValue(new AppError('Resource not found', 404));
+        expect((await request(app).post('/api/v1/resources/retired/ingest')).status).toBe(404);
+    });
+
     it('unknown job is 404 and bad id is 400', async () => {
         ingestQueries.getJobById.mockResolvedValue(null);
         expect((await request(app).get('/api/v1/jobs/999')).status).toBe(404);

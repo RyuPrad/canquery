@@ -2,8 +2,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const { fork } = require('node:child_process');
 const ExcelJS = require('exceljs');
+// These readers/xforms belong to the lockfile-pinned ExcelJS installation.
+const WorksheetReader = require('exceljs/lib/stream/xlsx/worksheet-reader');
+const WorkbookXform = require('exceljs/lib/xlsx/xform/book/workbook-xform');
+const RelationshipsXform = require('exceljs/lib/xlsx/xform/core/relationships-xform');
+const SharedStringsXform = require('exceljs/lib/xlsx/xform/strings/shared-strings-xform');
+const { SaxesParser } = require('saxes');
 const XLSX = require('xlsx');
 const { escapeCsvValue } = require('./csvLoad');
 const { makeSafeWriter } = require('./csvDownload');
@@ -13,6 +20,7 @@ const DEFAULT_MEMORY_MB = 384;
 const DEFAULT_TIMEOUT_MS = 120000;
 const ZIP_EOCD_SIGNATURE = 0x06054b50;
 const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
+const ZIP_LOCAL_SIGNATURE = 0x04034b50;
 
 function positiveInt(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
     const parsed = Number(value);
@@ -116,7 +124,8 @@ async function inspectXlsxArchive(filePath, overrides = {}) {
         let offset = 0;
         let totalCompressed = 0;
         let totalUncompressed = 0;
-        let sawWorkbook = false;
+        const parts = new Map();
+        const names = new Set();
 
         for (let index = 0; index < totalEntries; index += 1) {
             if (offset + 46 > central.length || central.readUInt32LE(offset) !== ZIP_CENTRAL_SIGNATURE) {
@@ -141,8 +150,18 @@ async function inspectXlsxArchive(filePath, overrides = {}) {
                 throw capError('ZIP64 XLSX entries are not supported', 'XLSX_ARCHIVE');
             }
 
-            const name = central.subarray(offset + 46, offset + 46 + nameLength).toString('utf8').toLowerCase();
-            sawWorkbook ||= name === 'xl/workbook.xml';
+            const name = central.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
+            const normalizedName = name.toLowerCase();
+            if (!name || name.includes('\\') || name.includes('\0') || name.startsWith('/') ||
+                name.split('/').some(segment => segment === '.' || segment === '..') || names.has(normalizedName)) {
+                throw capError('invalid or duplicate XLSX archive part', 'XLSX_ARCHIVE');
+            }
+            names.add(normalizedName);
+            const localOffset = central.readUInt32LE(offset + 42);
+            if (localOffset === 0xffffffff || localOffset + 30 > centralOffset) {
+                throw capError('invalid XLSX archive part offset', 'XLSX_ARCHIVE');
+            }
+            parts.set(name, { name, flags, method, compressed, uncompressed, localOffset, centralOffset });
             totalCompressed += compressed;
             totalUncompressed += uncompressed;
 
@@ -152,10 +171,10 @@ async function inspectXlsxArchive(filePath, overrides = {}) {
             if (uncompressed > 1024 * 1024 && uncompressed / Math.max(1, compressed) > limits.maxCompressionRatio) {
                 throw capError('XLSX archive entry exceeds compression-ratio cap', 'XLSX_ZIP_BOMB');
             }
-            if (name === 'xl/sharedstrings.xml' && uncompressed > limits.maxSharedStringsBytes) {
+            if (normalizedName === 'xl/sharedstrings.xml' && uncompressed > limits.maxSharedStringsBytes) {
                 throw capError('XLSX shared strings exceed memory cap', 'XLSX_ZIP_BOMB');
             }
-            if (name === 'xl/styles.xml' && uncompressed > limits.maxStylesBytes) {
+            if (normalizedName === 'xl/styles.xml' && uncompressed > limits.maxStylesBytes) {
                 throw capError('XLSX styles exceed memory cap', 'XLSX_ZIP_BOMB');
             }
             if (totalUncompressed > limits.maxUncompressedBytes) {
@@ -164,15 +183,163 @@ async function inspectXlsxArchive(filePath, overrides = {}) {
             offset += entryLength;
         }
 
-        if (!sawWorkbook) throw capError('archive is not an XLSX workbook', 'XLSX_ARCHIVE');
+        if (!parts.has('xl/workbook.xml') || !parts.has('xl/_rels/workbook.xml.rels')) {
+            throw capError('archive is missing XLSX workbook metadata', 'XLSX_ARCHIVE');
+        }
         if (totalUncompressed > 1024 * 1024 &&
             totalUncompressed / Math.max(1, totalCompressed) > limits.maxCompressionRatio) {
             throw capError('XLSX archive exceeds compression-ratio cap', 'XLSX_ZIP_BOMB');
         }
-        return { entries: totalEntries, totalCompressed, totalUncompressed };
+        return { entries: totalEntries, totalCompressed, totalUncompressed, parts, limits };
     } finally {
         await handle.close();
     }
+}
+
+// Read only addressed package parts; ZIP order never selects the worksheet or
+// determines when its string/style caches become available. Nothing is extracted.
+async function* readArchivePart(filePath, part) {
+    const handle = await fs.promises.open(filePath, 'r');
+    let dataOffset;
+    try {
+        const header = Buffer.alloc(30);
+        const { bytesRead } = await handle.read(header, 0, header.length, part.localOffset);
+        if (bytesRead !== 30 || header.readUInt32LE(0) !== ZIP_LOCAL_SIGNATURE ||
+            header.readUInt16LE(6) !== part.flags || header.readUInt16LE(8) !== part.method) {
+            throw capError('invalid XLSX local archive entry', 'XLSX_ARCHIVE');
+        }
+        const nameLength = header.readUInt16LE(26);
+        const extraLength = header.readUInt16LE(28);
+        const name = Buffer.alloc(nameLength);
+        await handle.read(name, 0, name.length, part.localOffset + 30);
+        dataOffset = part.localOffset + 30 + nameLength + extraLength;
+        if (name.toString('utf8') !== part.name || dataOffset + part.compressed > part.centralOffset) {
+            throw capError('invalid XLSX local archive part', 'XLSX_ARCHIVE');
+        }
+    } finally { await handle.close(); }
+    if (part.compressed === 0) {
+        if (part.uncompressed !== 0) throw capError('invalid XLSX archive part size', 'XLSX_ARCHIVE');
+        return;
+    }
+    const source = fs.createReadStream(filePath, { start: dataOffset, end: dataOffset + part.compressed - 1 });
+    const stream = part.method === 8 ? source.pipe(zlib.createInflateRaw()) : source;
+    if (stream !== source) source.on('error', error => stream.destroy(error));
+    let bytes = 0;
+    try {
+        for await (const chunk of stream) {
+            bytes += chunk.length;
+            if (bytes > part.uncompressed) throw capError('XLSX part exceeds declared expansion', 'XLSX_ZIP_BOMB');
+            yield chunk;
+        }
+        if (bytes !== part.uncompressed) throw capError('invalid XLSX archive part size', 'XLSX_ARCHIVE');
+    } catch (error) {
+        if (['Z_DATA_ERROR', 'Z_BUF_ERROR'].includes(error.code)) {
+            throw capError('invalid XLSX compressed part', 'XLSX_ARCHIVE');
+        }
+        throw error;
+    } finally {
+        stream.destroy();
+        source.destroy();
+    }
+}
+
+async function* readXmlPart(filePath, part) {
+    const parser = new SaxesParser();
+    let xmlError;
+    parser.on('error', () => { xmlError = capError('invalid XLSX XML', 'XLSX_XML'); });
+    let decoder;
+    for await (const chunk of readArchivePart(filePath, part)) {
+        if (!decoder) {
+            const encoding = chunk[0] === 0xff && chunk[1] === 0xfe ? 'utf-16le'
+                : chunk[0] === 0xfe && chunk[1] === 0xff ? 'utf-16be' : 'utf-8';
+            decoder = new TextDecoder(encoding, { fatal: true });
+        }
+        let text;
+        try { text = decoder.decode(chunk, { stream: true }); }
+        catch { throw capError('invalid XLSX XML encoding', 'XLSX_XML'); }
+        parser.write(text);
+        if (xmlError) throw xmlError;
+        yield text;
+    }
+    let tail;
+    try { tail = decoder ? decoder.decode() : ''; }
+    catch { throw capError('invalid XLSX XML encoding', 'XLSX_XML'); }
+    parser.write(tail).close();
+    if (xmlError) throw xmlError;
+    if (tail) yield tail;
+}
+
+async function parseArchiveXml(filePath, part, xform) {
+    const iterator = readXmlPart(filePath, part)[Symbol.asyncIterator]();
+    // ExcelJS xforms return at the root closing tag. Keep their early return
+    // from cancelling validation of later bytes/truncated or trailing XML.
+    const input = { [Symbol.asyncIterator]: () => ({ next: () => iterator.next() }) };
+    try {
+        const model = await xform.parseStream(input);
+        for await (const chunk of iterator) { void chunk; }
+        return model;
+    } catch (error) {
+        if (!error.code && /^Unexpected xml node in parse(?:Open|Close):/.test(error.message)) {
+            throw capError('invalid XLSX XML structure', 'XLSX_XML');
+        }
+        throw error;
+    } finally { await iterator.return(); }
+}
+
+function relationshipPart(relationship, parts) {
+    if (!relationship || String(relationship.TargetMode || '').toLowerCase() === 'external' ||
+        typeof relationship.Target !== 'string' || /[\\?#\0]/.test(relationship.Target) ||
+        /^[a-z][a-z\d+.-]*:/i.test(relationship.Target)) {
+        throw capError('invalid XLSX workbook relationship', 'XLSX_ARCHIVE');
+    }
+    let target;
+    try { target = decodeURIComponent(relationship.Target); }
+    catch { throw capError('invalid XLSX workbook relationship target', 'XLSX_ARCHIVE'); }
+    const name = path.posix.normalize(target.startsWith('/') ? target.slice(1) : 'xl/' + target);
+    const part = parts.get(name);
+    if (!part || !name.startsWith('xl/') || name.includes('\\') || name.includes('\0')) {
+        throw capError('missing or invalid XLSX relationship part', 'XLSX_ARCHIVE');
+    }
+    return part;
+}
+
+async function firstWorksheetReader(filePath, archive) {
+    const { parts, limits } = archive;
+    const workbookXform = new WorkbookXform();
+    const model = await parseArchiveXml(filePath, parts.get('xl/workbook.xml'), workbookXform);
+    const rels = await parseArchiveXml(filePath, parts.get('xl/_rels/workbook.xml.rels'), new RelationshipsXform());
+    const first = model?.sheets?.[0];
+    if (!first || !Array.isArray(rels)) throw capError('empty or invalid XLSX workbook', 'XLSX_ARCHIVE');
+    const ids = new Set();
+    for (const rel of rels) {
+        if (!rel.Id || ids.has(rel.Id)) throw capError('duplicate XLSX relationship identity', 'XLSX_ARCHIVE');
+        ids.add(rel.Id);
+    }
+    const sheetRel = rels.find(rel => rel.Id === first.rId);
+    if (!sheetRel || !sheetRel.Type?.endsWith('/worksheet')) {
+        throw capError('first XLSX sheet is not a worksheet', 'XLSX_ARCHIVE');
+    }
+    const sheetPart = relationshipPart(sheetRel, parts);
+    const reader = new ExcelJS.stream.xlsx.WorkbookReader(null, {
+        sharedStrings: 'cache', styles: 'cache', hyperlinks: 'ignore', worksheets: 'emit'
+    });
+    // WorksheetReader expects the workbook-properties xform shape, whereas
+    // WorkbookXform.parseStream returns a model containing plain properties.
+    reader.properties = { model: model.properties || {} };
+    reader.model = model;
+    reader.sharedStrings = [];
+    for (const [type, maxBytes] of [['sharedStrings', limits.maxSharedStringsBytes], ['styles', limits.maxStylesBytes]]) {
+        const matches = rels.filter(rel => rel.Type?.endsWith('/' + type));
+        if (matches.length > 1) throw capError('duplicate XLSX cache relationship', 'XLSX_ARCHIVE');
+        if (!matches.length) continue;
+        const part = relationshipPart(matches[0], parts);
+        if (part.uncompressed > maxBytes) throw capError('XLSX cache exceeds memory cap', 'XLSX_ZIP_BOMB');
+        if (type === 'styles') await parseArchiveXml(filePath, part, reader.styles);
+        else reader.sharedStrings = (await parseArchiveXml(filePath, part, new SharedStringsXform())).values;
+    }
+    return new WorksheetReader({
+        workbook: reader, id: first.id, iterator: readXmlPart(filePath, sheetPart), options: reader.options
+    });
 }
 
 async function convertXlsxInProcess(xlsxPath, {
@@ -182,18 +349,8 @@ async function convertXlsxInProcess(xlsxPath, {
     archiveCaps,
     outputPath
 }) {
-    await inspectXlsxArchive(xlsxPath, archiveCaps);
-
-    // styles must be cached or date cells arrive as raw Excel serial numbers.
-    // The preflight above bounds both styles.xml and sharedStrings.xml before
-    // ExcelJS is allowed to populate either cache.
-    const reader = new ExcelJS.stream.xlsx.WorkbookReader(xlsxPath, {
-        entries: 'ignore',
-        sharedStrings: 'cache',
-        hyperlinks: 'ignore',
-        styles: 'cache',
-        worksheets: 'emit'
-    });
+    const archive = await inspectXlsxArchive(xlsxPath, archiveCaps);
+    const worksheet = await firstWorksheetReader(xlsxPath, archive);
 
     const csvPath = outputPath || path.join(os.tmpdir(), 'canquery-xlsx-' + crypto.randomUUID() + '.csv');
     const stream = fs.createWriteStream(csvPath);
@@ -201,35 +358,32 @@ async function convertXlsxInProcess(xlsxPath, {
     try {
         let rowCount = 0;
         let bytesWritten = 0;
-        for await (const worksheet of reader) {
-            for await (const row of worksheet) {
-                if (row.cellCount > maxCols) {
-                    throw capError('column count ' + row.cellCount + ' exceeds cap ' + maxCols, 'CAP_COLS');
-                }
-                const cells = [];
-                for (let index = 1; index <= row.cellCount; index += 1) {
-                    cells.push(normalizeCellValue(row.getCell(index).value));
-                }
-                while (cells.length > 0 && cells[cells.length - 1] === '') cells.pop();
-                if (cells.length === 0) continue;
-
-                const line = cells.map(escapeCsvValue).join(',') + '\n';
-                const lineBytes = Buffer.byteLength(line);
-                if (bytesWritten + lineBytes > maxCsvBytes) {
-                    throw capError('converted CSV exceeds size cap (' + maxCsvBytes + ' bytes)', 'CAP_FILE');
-                }
-                await writer.write(line);
-                bytesWritten += lineBytes;
-                rowCount += 1;
-                // +10 covers the header-preamble detection window; csvLoad
-                // enforces the exact data-row cap.
-                if (rowCount > maxRows + 10) {
-                    throw capError('row count exceeds cap ' + maxRows, 'CAP_ROWS');
-                }
+        for await (const row of worksheet) {
+            if (row.cellCount > maxCols) {
+                throw capError('column count ' + row.cellCount + ' exceeds cap ' + maxCols, 'CAP_COLS');
             }
-            break;
+            const cells = [];
+            for (let index = 1; index <= row.cellCount; index += 1) {
+                cells.push(normalizeCellValue(row.getCell(index).value));
+            }
+            while (cells.length > 0 && cells[cells.length - 1] === '') cells.pop();
+            if (cells.length === 0) continue;
+
+            const line = cells.map(escapeCsvValue).join(',') + '\n';
+            const lineBytes = Buffer.byteLength(line);
+            if (bytesWritten + lineBytes > maxCsvBytes) {
+                throw capError('converted CSV exceeds size cap (' + maxCsvBytes + ' bytes)', 'CAP_FILE');
+            }
+            await writer.write(line);
+            bytesWritten += lineBytes;
+            rowCount += 1;
+            // +10 covers the header-preamble detection window; csvLoad
+            // enforces the exact data-row cap.
+            if (rowCount > maxRows + 10) {
+                throw capError('row count exceeds cap ' + maxRows, 'CAP_ROWS');
+            }
         }
-        if (rowCount === 0) throw new Error('empty XLSX worksheet');
+        if (rowCount === 0) throw capError('empty XLSX worksheet', 'EXCEL_EMPTY');
         await writer.end();
         return { csvPath, rowCount };
     } catch (err) {
@@ -257,10 +411,10 @@ async function convertXlsInProcess(xlsPath, { maxRows, maxCols, maxCsvBytes, out
         sheetRows: maxRows + 11
     });
     const sheetName = wb.SheetNames[0];
-    if (!sheetName) throw new Error('empty XLS workbook');
+    if (!sheetName) throw capError('empty XLS workbook', 'EXCEL_EMPTY');
     const sheet = wb.Sheets[sheetName];
     const rangeRef = sheet['!fullref'] || sheet['!ref'];
-    if (!rangeRef) throw new Error('empty XLS worksheet');
+    if (!rangeRef) throw capError('empty XLS worksheet', 'EXCEL_EMPTY');
     const range = XLSX.utils.decode_range(rangeRef);
     const declaredRows = range.e.r - range.s.r + 1;
     const declaredCols = range.e.c - range.s.c + 1;
@@ -298,7 +452,7 @@ async function convertXlsInProcess(xlsPath, { maxRows, maxCols, maxCsvBytes, out
                 throw capError('row count exceeds cap ' + maxRows, 'CAP_ROWS');
             }
         }
-        if (rowCount === 0) throw new Error('empty XLS worksheet');
+        if (rowCount === 0) throw capError('empty XLS worksheet', 'EXCEL_EMPTY');
         await writer.end();
         return { csvPath, rowCount };
     } catch (err) {

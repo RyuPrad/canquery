@@ -195,7 +195,7 @@ async function ingestResourceLocked(resource, caps, tableName) {
             );
             const byteSize = Number(sizeResult.rows[0].size);
             if (!Number.isFinite(byteSize) || byteSize < 0) {
-                throw budgetError('PostgreSQL returned an invalid relation size');
+                throw budgetError('PostgreSQL returned an invalid relation size', 'STORE_SIZE_INVALID');
             }
             if (byteSize > storage.budgetBytes) {
                 throw budgetError('resource is larger than the entire store budget');
