@@ -85,7 +85,7 @@ test.each([
   expect(screen.getByText(copy.query)).toBeInTheDocument();
 });
 
-test('the chart section is omitted when every preview is metadata-poor, malformed or flat', async () => {
+test('invalid previews settle with an empty state without rendering a misleading chart', async () => {
   const flat = contextualPreview();
   flat.points = flat.points.map(point => ({ ...point, value: 2 }));
   const legacy = contextualPreview();
@@ -94,7 +94,8 @@ test('the chart section is omitted when every preview is metadata-poor, malforme
   start();
   expect(await screen.findByText('Results for all')).toBeInTheDocument();
   await waitFor(() => expect(fetchFeatured).toHaveBeenCalled());
-  expect(screen.queryByRole('heading', { name: 'A closer look at the data' })).not.toBeInTheDocument();
+  expect(await screen.findByText('No chart previews are available yet.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Pause|Resume/ })).not.toBeInTheDocument();
 });
 
 test('one explainable preview is enough to display the chart section', async () => {

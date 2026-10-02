@@ -246,7 +246,7 @@ const listOrganizations = async ({ q, source, place, limit, cursor }) => {
     return { items, nextCursor: hasMore ? String(offset + lim) : null };
 };
 
-const getStats = async () => {
+const getStats = () => require('./catalogReadCache').get('stats', async () => {
     const row = await catalogReadQueries.getStats();
     const lastSyncedAt = await catalogReadQueries.getLastSyncTime();
     return {
@@ -260,7 +260,7 @@ const getStats = async () => {
         places: row.places || 0,
         last_synced_at: lastSyncedAt
     };
-};
+});
 
 const listSources = async ({ place } = {}) => {
     const rows = await catalogReadQueries.listSources({ place });

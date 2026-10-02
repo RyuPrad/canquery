@@ -74,3 +74,88 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         expect([...first, ...rest]).toEqual(all);
     });
 });
+
+integrationDescribe('paged place discovery PostgreSQL integration', () => {
+    let pool, db;
+    const prefix = 'place_discovery_' + process.pid;
+    const id = name => prefix + '_' + name;
+    const read = overrides => queries.listPlaces({
+        q: null, kind: 'municipality', parent: id('region'), featured: true,
+        limit: 100, offset: 0, ...overrides
+    }, db);
+    const counts = row => [row.dataset_count, row.direct_dataset_count, row.mappable_resource_count];
+
+    beforeAll(async () => {
+        pool = new Pool({ connectionString: url });
+        db = await pool.connect();
+        await db.query('BEGIN');
+        for (const source of ['source1', 'source2']) {
+            await db.query(`INSERT INTO catalog_sources (id, kind, name_en, homepage_url, upstream_host)
+                VALUES ($1, 'ckan', $1, 'https://example.test', 'example.test')`, [id(source)]);
+        }
+        for (const [name, kind, parent, title, french, featured, enabled] of [
+            ['country', 'country', null, 'Country', null, false, true],
+            ['region', 'region', 'country', 'Region', null, true, true],
+            ['a', 'municipality', 'region', 'Alpha', null, true, true],
+            ['a_twin', 'municipality', 'region', 'Alpha', 'Nord spécial', true, true],
+            ['b', 'municipality', 'region', 'Bravo', null, false, true],
+            ['c', 'municipality', 'region', 'Charlie', null, true, true],
+            ['disabled', 'municipality', 'region', 'Disabled', null, true, false],
+            ['isolated', 'municipality', null, 'Isolated', null, true, true]
+        ]) {
+            await db.query(`INSERT INTO places (id, slug, kind, parent_id, name_en, name_fr, featured, enabled)
+                VALUES ($1,$1,$2,$3,$4,$5,$6,$7)`, [id(name), kind, parent ? id(parent) : null, prefix + ' ' + title, french, featured, enabled]);
+        }
+        await db.query('INSERT INTO place_aliases (slug, place_id) VALUES ($1,$2)', [id('historic'), id('a')]);
+        for (const name of ['direct', 'inherited', 'noninherited', 'countrywide', 'localcoverage', 'sibling']) {
+            await db.query('INSERT INTO datasets (id, name, title_en) VALUES ($1,$1,$1)', [id(name)]);
+        }
+        for (const [dataset, place, relationship, descendants, source = 'source1'] of [
+            ['direct', 'a', 'direct', false], ['direct', 'a', 'direct', false, 'source2'],
+            ['inherited', 'region', 'coverage', true], ['inherited', 'a', 'direct', false],
+            ['noninherited', 'region', 'direct', false], ['countrywide', 'country', 'coverage', true],
+            ['localcoverage', 'a', 'coverage', false], ['sibling', 'b', 'direct', false]
+        ]) {
+            await db.query(`INSERT INTO dataset_places (source_id, dataset_id, place_id, relationship, includes_descendants, assignment_method)
+                VALUES ($1,$2,$3,$4,$5,'source')`, [id(source), id(dataset), id(place), relationship, descendants]);
+        }
+        for (const [resource, dataset] of [['map1', 'direct'], ['map2', 'direct'], ['map3', 'inherited']]) {
+            await db.query('INSERT INTO resources (id, dataset_id) VALUES ($1,$2)', [id(resource), id(dataset)]);
+            await db.query(`INSERT INTO resource_maps (resource_id, provider, service_url, geometry_type)
+                VALUES ($1,'arcgis','https://example.test/FeatureServer/0','point')`, [id(resource)]);
+        }
+    });
+    afterAll(async () => {
+        if (db) { await db.query('ROLLBACK'); db.release(); }
+        if (pool) await pool.end();
+    });
+
+    test('deduplicates memberships while distinguishing dataset, direct and mapped-resource counts', async () => {
+        const rows = await read();
+        expect(rows.map(row => row.id)).toEqual(['a', 'a_twin', 'c'].map(id));
+        expect(counts(rows[0])).toEqual([4, 2, 3]);
+        expect(counts(rows[1])).toEqual([2, 0, 1]);
+        expect(counts(rows[2])).toEqual([2, 0, 1]);
+        expect(rows[0].parent_slug).toBe(id('region'));
+    });
+
+    test('filters before paging and preserves tied names, count results and empty later pages', async () => {
+        const all = await read();
+        const paged = [...await read({ limit: 2 }), ...await read({ limit: 2, offset: 2 })];
+        expect(paged).toEqual(all);
+        expect(await read({ limit: 2, offset: 4 })).toEqual([]);
+        expect((await read({ featured: false })).map(row => row.id)).toEqual([id('b')]);
+        const normal = await read({ featured: null });
+        expect(normal.map(row => row.id)).toEqual(['a', 'b'].map(id));
+        expect(counts(normal[1])).toEqual([3, 1, 1]);
+    });
+
+    test('keeps bilingual and alias search and includes a featured place without coverage', async () => {
+        expect((await read({ q: id('historic') })).map(row => row.id)).toEqual([id('a')]);
+        expect((await read({ q: 'Nord spécial' })).map(row => row.id)).toEqual([id('a_twin')]);
+        const isolated = await read({ parent: null, q: id('isolated') });
+        expect(isolated.map(row => row.id)).toEqual([id('isolated')]);
+        expect(counts(isolated[0])).toEqual([0, 0, 0]);
+        expect(await read({ kind: 'province' })).toEqual([]);
+    });
+});

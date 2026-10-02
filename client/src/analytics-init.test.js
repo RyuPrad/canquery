@@ -31,7 +31,7 @@ describe('analytics bootstrap privacy signals', () => {
     expect(startAnalytics(doc, {}, { dispatchEvent: ready })).toBe(true);
     const tracker = doc.querySelector('script[src="/metrics.js"]');
     expect(tracker.dataset.websiteId).toBe(ID);
-    expect(tracker.dataset.performance).toBe('true');
+    expect(tracker.dataset.performance).toBe('false');
     expect(doc.querySelector('script[src="/heatmaps.js"]')).toBeNull();
     tracker.dispatchEvent(new Event('load'));
     expect(ready).toHaveBeenCalledTimes(1);

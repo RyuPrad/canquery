@@ -230,6 +230,12 @@ a.cq-card:hover,
   border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
 }
 
+/* Keep the footer below the first viewport while route/data loaders settle. */
+.cq-app-main {
+  min-height: calc(100vh - 4rem);
+  min-height: calc(100svh - 4rem);
+}
+
 /* A single navigation row; secondary links live in a disclosure panel. */
 .cq-navbar-wrap {
   position: relative;
@@ -316,6 +322,7 @@ a.cq-card:hover,
 
 /* Homepage surfaces stay independent of cards on catalogue/detail pages. */
 .cq-home-section { margin-top: 2.5rem; }
+.cq-home-featured-slot { min-height: 42rem; }
 .cq-home-datasets { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent); }
 .cq-home-dataset { border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent); }
 .cq-home-dataset:hover { background: color-mix(in oklab, var(--color-base-200) 45%, transparent); }

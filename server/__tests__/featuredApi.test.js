@@ -47,6 +47,7 @@ beforeEach(() => {
     service = require('../services/insightsService');
     app = require('../app');
 });
+afterEach(() => jest.restoreAllMocks());
 
 function seed(profile = categoryProfile(), aggregate = categoricalAggregate(), candidates = [candidate()]) {
     topq.listIngestedTop.mockResolvedValue(candidates);
@@ -370,7 +371,7 @@ describe('GET /api/v1/insights/featured', () => {
         expect(snapshots.withSnapshot).toHaveBeenCalledTimes(12);
     });
 
-    it('caches separately by representative language without re-reading snapshots on a cache hit', async () => {
+    it('caches responses by language while sharing computation for the same prepared representative', async () => {
         seed();
         const first = await fetchFeatured();
         expect(await fetchFeatured()).toEqual(first);
@@ -378,7 +379,68 @@ describe('GET /api/v1/insights/featured', () => {
         expect(snapshots.withSnapshot).toHaveBeenCalledTimes(1);
         await fetchFeatured('fr');
         expect(topq.listIngestedTop).toHaveBeenCalledWith(24, 'fr');
+        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
+        expect(snapshots.withSnapshot).toHaveBeenCalledTimes(2);
+        expect(catalog.getResourceById).toHaveBeenCalledTimes(2);
+    });
+
+    it('reuses immutable snapshot work after a response expires, then recomputes after 24 hours', async () => {
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(0);
+        seed();
+        await service.featured('en');
+        clock.mockReturnValue(10 * 60 * 1000);
+        topq.listIngestedTop.mockResolvedValue([candidate({ title_en: 'Updated title' })]);
+        expect((await service.featured('en'))[0].title.en).toBe('Updated title');
+        expect(catalog.getResourceById).toHaveBeenCalledTimes(2);
+        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
+        clock.mockReturnValue(24 * 60 * 60 * 1000);
+        await service.featured('en');
+        expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
+        expect(store.touchLastAccessed).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { table_name: 'r_bbb' },
+        { ingested_at: '2026-10-02T00:00:00Z' },
+        { ingested_columns: [{ id: 'status', type: 'TEXT' }] }
+    ])('recomputes when the serving snapshot identity or schema changes: %j', async change => {
+        seed();
+        await service.featured('en');
+        catalog.getResourceById.mockResolvedValue({
+            ingest_status: 'ready', table_name: 'r_aaa', ingested_at: PREPARED_AT,
+            ingested_columns: categoryProfile().columns.map(({ id, type }) => ({ id, type })), ...change
+        });
+        await service.featured('fr');
+        expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
         expect(store.aggregateStoreTable).toHaveBeenCalledTimes(2);
+    });
+
+    it('rechecks eviction under the reader lock before using cached snapshot work', async () => {
+        seed();
+        await service.featured('en');
+        catalog.getResourceById.mockResolvedValue({ ingest_status: null });
+        expect(await service.featured('fr')).toEqual([]);
+        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
+        expect(snapshots.withSnapshot).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries failed snapshot computation instead of retaining a false unchartable result', async () => {
+        seed();
+        store.profileStoreTable.mockRejectedValueOnce(new Error('temporary read failure'));
+        expect(await service.featured('en')).toEqual([]);
+        expect(await service.featured('fr')).toHaveLength(1);
+        expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
+    });
+
+    it('deduplicates simultaneous language misses and localizes NULL labels afterward', async () => {
+        seed(categoryProfile(), { total: 3, records: [
+            { key: null, value: 60 }, { key: 'Approved', value: 30 }, { key: 'Pending', value: 10 }
+        ] });
+        const [en, fr] = await Promise.all([service.featured('en'), service.featured('fr')]);
+        expect(en[0].points[0].label).toBe('Not recorded');
+        expect(fr[0].points[0].label).toBe('Non renseigné');
+        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
+        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
     });
 
     it('returns no charts when no representative is prepared', async () => {

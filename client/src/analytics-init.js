@@ -1,4 +1,5 @@
 import { analyticsOptedOut } from './utils/analytics.js';
+import { startPerformanceCollection } from './utils/performance.js';
 export { analyticsOptedOut } from './utils/analytics.js';
 
 const WEBSITE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -12,7 +13,7 @@ export function startAnalytics(doc = globalThis.document, nav = globalThis.navig
   tracker.async = true;
   tracker.src = '/metrics.js';
   tracker.setAttribute('data-website-id', websiteId);
-  tracker.setAttribute('data-performance', 'true');
+  tracker.setAttribute('data-performance', 'false');
   tracker.setAttribute('data-do-not-track', 'true');
   tracker.addEventListener('load', () => {
     win.dispatchEvent?.(new Event('canquery:analytics-ready'));
@@ -23,6 +24,7 @@ export function startAnalytics(doc = globalThis.document, nav = globalThis.navig
     doc.head.append(recorder);
   }, { once: true });
   doc.head.append(tracker);
+  void startPerformanceCollection({ websiteId, doc, nav, win });
   return true;
 }
 

@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { useLang } from '../i18n.jsx';
 
 const isNumType = (type) => /int|numeric|float|double|money/i.test(type || '');
@@ -9,6 +10,33 @@ function typeChipClass(type) {
   return 'cq-type cq-type-text';
 }
 
+// Draft search/filter changes update their controls immediately without
+// rebuilding up to 6,000 unchanged cells before the debounced query returns.
+const TableBody = memo(function TableBody({ fields, records }) {
+  const { t } = useLang();
+  const columns = useMemo(() => fields.map(field => ({
+    id: field.id, className: isNumType(field.type) ? 'cq-td-num' : '',
+  })), [fields]);
+  return <tbody>
+    {records.length === 0 ? <tr>
+      <td colSpan={fields.length}>
+        <div className="py-12 text-center space-y-1">
+          <p className="text-base-content/60">{t('table.no_rows')}</p>
+          <p className="text-xs text-base-content/40">{t('table.no_rows_hint')}</p>
+        </div>
+      </td>
+    </tr> : records.map((row, index) => <tr key={index}>
+      {columns.map(field => {
+        const value = row[field.id];
+        const text = value == null ? undefined : String(value);
+        return <td key={field.id} className={field.className} title={text}>
+          {value == null ? <span className="cq-null">{'∅'}</span> : text}
+        </td>;
+      })}
+    </tr>)}
+  </tbody>;
+});
+
 function DataTable({
   fields,
   records,
@@ -18,6 +46,9 @@ function DataTable({
   onColumnFilterChange,
 }) {
   const { t } = useLang();
+  const sortValue = sort?.trim();
+  const exactSort = fields.some(field => field.id === sortValue);
+  const sortMatch = exactSort ? null : /^([\s\S]+?)\s+(asc|desc)$/i.exec(sortValue || '');
 
   const handleSort = (fieldId) => {
     const direction = getSortDirection(fieldId);
@@ -31,10 +62,8 @@ function DataTable({
   };
 
   const getSortDirection = (fieldId) => {
-    const value = sort?.trim();
-    if (fields.some(field => field.id === value)) return value === fieldId ? 'asc' : null;
-    const match = /^([\s\S]+?)\s+(asc|desc)$/i.exec(value || '');
-    return match?.[1] === fieldId ? match[2].toLowerCase() : null;
+    if (exactSort) return sortValue === fieldId ? 'asc' : null;
+    return sortMatch?.[1] === fieldId ? sortMatch[2].toLowerCase() : null;
   };
 
   return (
@@ -78,42 +107,10 @@ function DataTable({
             ))}
           </tr>
         </thead>
-        <tbody>
-          {records.length === 0 ? (
-            <tr>
-              <td colSpan={fields.length}>
-                <div className="py-12 text-center space-y-1">
-                  <p className="text-base-content/60">{t('table.no_rows')}</p>
-                  <p className="text-xs text-base-content/40">{t('table.no_rows_hint')}</p>
-                </div>
-              </td>
-            </tr>
-          ) : (
-            records.map((row, i) => (
-              <tr key={i}>
-                {fields.map((field) => {
-                  const v = row[field.id];
-                  return (
-                    <td
-                      key={field.id}
-                      className={isNumType(field.type) ? 'cq-td-num' : ''}
-                      title={v === null || v === undefined ? undefined : String(v)}
-                    >
-                      {v === null || v === undefined ? (
-                        <span className="cq-null">{'∅'}</span>
-                      ) : (
-                        String(v)
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
-          )}
-        </tbody>
+        <TableBody fields={fields} records={records} />
       </table>
     </div>
   );
 }
 
-export default DataTable;
+export default memo(DataTable);

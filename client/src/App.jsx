@@ -3,23 +3,23 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
-import DatasetPage from './pages/DatasetPage'
-import DatasetsPage from './pages/DatasetsPage.jsx'
-import ResourcePage from './pages/ResourcePage'
-import OrganizationsPage from './pages/OrganizationsPage'
-import OrganizationPage from './pages/OrganizationPage'
-import DocsPage from './pages/DocsPage'
-import PlacesPage from './pages/PlacesPage'
-import PlacePage from './pages/PlacePage'
-import PrivacyPage from './pages/PrivacyPage'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
 import { PromotionTracking } from './components/PromotionTracking.jsx'
 import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
 
-// The gallery renders charts (Recharts) - lazy-load it so the chart bundle only
-// ships when someone opens /insights.
+// Direct visits preload their route through the server's build manifest.
+// Other page code is fetched only when the visitor opens that route.
+const DatasetPage = lazy(() => import('./pages/DatasetPage.jsx'));
+const DatasetsPage = lazy(() => import('./pages/DatasetsPage.jsx'));
+const ResourcePage = lazy(() => import('./pages/ResourcePage.jsx'));
+const OrganizationsPage = lazy(() => import('./pages/OrganizationsPage.jsx'));
+const OrganizationPage = lazy(() => import('./pages/OrganizationPage.jsx'));
+const DocsPage = lazy(() => import('./pages/DocsPage.jsx'));
+const PlacesPage = lazy(() => import('./pages/PlacesPage.jsx'));
+const PlacePage = lazy(() => import('./pages/PlacePage.jsx'));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage.jsx'));
 const BlogPage = lazy(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazy(() => import('./pages/InsightsPage'))
 
@@ -52,7 +52,7 @@ export default function App() {
       <RouteHead />
       <AnalyticsBridge />
       <Navbar />
-      <main className="flex-1 w-full">
+      <main className="cq-app-main flex-1 w-full">
         <Suspense fallback={<div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8"><div className="cq-skel h-[60vh] rounded-2xl" /></div>}>
           <Routes>
             <Route path="/" element={<HomePage />} />

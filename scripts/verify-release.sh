@@ -16,6 +16,7 @@ echo ""
 
 # Validate the repository-authored guides before build or deployment.
 node "${ROOT_DIR}/server/scripts/check-blog.js"
+python3 -m unittest discover -s "${ROOT_DIR}/deploy/analytics" -p 'test_*.py'
 
 # 1. Server Linter
 echo -e "${BLUE}[1/5] Running Server ESLint...${NC}"

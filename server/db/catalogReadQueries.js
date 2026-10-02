@@ -1,5 +1,13 @@
 const { searchExpression, literalPatterns } = require('../services/localSearch');
 const pool = require('./pool');
+const catalogReadCache = require('../services/catalogReadCache');
+
+function cachedRows(name, sql, values, db) {
+    const read = async () => (await db.query(sql, values)).rows;
+    // Transactional callers must read their own snapshot and uncommitted data.
+    if (db !== pool) return read();
+    return catalogReadCache.get(JSON.stringify([name, values]), read);
+}
 
 const PROVENANCE_SELECT = `COALESCE((
     SELECT jsonb_agg(jsonb_build_object(
@@ -68,7 +76,7 @@ const PLACE_CTES = `WITH RECURSIVE selected_place AS (
 async function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, offset }, db = pool) {
     // Select the requested identities before evaluating resource/provenance
     // subqueries. Otherwise OFFSET enriches every skipped dataset as well.
-    const result = await db.query(`${PLACE_CTES}, dataset_page AS MATERIALIZED (
+    return cachedRows('datasets', `${PLACE_CTES}, dataset_page AS MATERIALIZED (
         SELECT d.id AS dataset_id, pm.depth,
                pm.matched_place_id, pm.matched_place_slug,
                pm.matched_place_name_en, pm.matched_place_name_fr, pm.place_relationship,
@@ -132,8 +140,7 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
                  pm.search_rank DESC NULLS LAST,
                  d.metadata_modified DESC NULLS LAST,
                  d.id ASC
-    `, [q || null, org || null, format || null, keyword || null, place || null, source || null, mappable || null, limit, offset, searchExpression(q) || null, literalPatterns(q)]);
-    return result.rows;
+    `, [q || null, org || null, format ? format.toUpperCase() : null, keyword || null, place || null, source || null, mappable || null, limit, offset, searchExpression(q) || null, literalPatterns(q)], db);
 }
 
 async function getDatasetByIdOrName(idOrName) {
@@ -261,7 +268,7 @@ async function getResourceMapById(id) {
 }
 
 async function listOrganizations({ q, source, place, limit, offset }, db = pool) {
-    const result = await db.query(`WITH RECURSIVE selected_place AS (
+    return cachedRows('organizations', `WITH RECURSIVE selected_place AS (
         SELECT p.id, p.parent_id, 0 AS depth FROM places p
         WHERE $2::text IS NOT NULL AND (p.id = $2 OR p.slug = $2)
         UNION ALL
@@ -296,8 +303,7 @@ async function listOrganizations({ q, source, place, limit, offset }, db = pool)
         AND ($5::text IS NULL OR position(lower($5) in lower(concat_ws(' ', o.name, o.title_en, o.title_fr))) > 0)
         ORDER BY dataset_count DESC, o.name ASC
         LIMIT $3 OFFSET $4
-    `, [source || null, place || null, limit, offset, q || null]);
-    return result.rows;
+    `, [source || null, place || null, limit, offset, q || null], db);
 }
 
 async function listSources({ place } = {}) {
@@ -341,8 +347,8 @@ async function listSources({ place } = {}) {
     return result.rows;
 }
 
-async function listPlaces({ q, kind, parent, featured, limit, offset }) {
-    const result = await pool.query(`WITH RECURSIVE candidate_places AS (
+async function listPlaces({ q, kind, parent, featured, limit, offset }, db = pool) {
+    return cachedRows('places', `WITH RECURSIVE candidate_places AS MATERIALIZED (
         SELECT p.*
         FROM places p
         LEFT JOIN places parent_place ON parent_place.id = p.parent_id
@@ -356,6 +362,10 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }) {
           AND ($1::text IS NOT NULL OR $4::boolean IS TRUE OR EXISTS (
               SELECT 1 FROM dataset_places dp WHERE dp.place_id = p.id
           ))
+        ORDER BY CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
+                     WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END,
+                 p.name_en, p.id
+        LIMIT $5 OFFSET $6
     ), ancestry AS (
         SELECT p.id AS selected_id, p.id AS ancestor_id, 0 AS depth
         FROM candidate_places p
@@ -374,28 +384,35 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }) {
         FROM dataset_places dp
         JOIN candidate_places p ON p.id = dp.place_id
         WHERE dp.relationship = 'direct'
+    ), dataset_counts AS (
+        SELECT selected_id, count(*)::int AS dataset_count
+        FROM applicable_datasets GROUP BY selected_id
+    ), direct_counts AS (
+        SELECT selected_id, count(*)::int AS direct_dataset_count
+        FROM direct_datasets GROUP BY selected_id
+    ), map_counts AS (
+        SELECT ad.selected_id, count(DISTINCT rm.resource_id)::int AS mappable_resource_count
+        FROM applicable_datasets ad
+        JOIN resources r ON r.dataset_id = ad.dataset_id
+        JOIN resource_maps rm ON rm.resource_id = r.id
+        GROUP BY ad.selected_id
     )
         SELECT p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr,
                p.parent_id, p.latitude, p.longitude, p.default_zoom, p.featured,
                parent_place.slug AS parent_slug,
                parent_place.name_en AS parent_name_en, parent_place.name_fr AS parent_name_fr,
-               (SELECT count(*)::int FROM applicable_datasets ad
-                WHERE ad.selected_id = p.id) AS dataset_count,
-               (SELECT count(*)::int FROM direct_datasets dd
-                WHERE dd.selected_id = p.id) AS direct_dataset_count,
-               (SELECT count(DISTINCT rm.resource_id)::int
-                FROM applicable_datasets ad
-                JOIN resources r ON r.dataset_id = ad.dataset_id
-                JOIN resource_maps rm ON rm.resource_id = r.id
-                WHERE ad.selected_id = p.id) AS mappable_resource_count
+               coalesce(dc.dataset_count, 0)::int AS dataset_count,
+               coalesce(ddc.direct_dataset_count, 0)::int AS direct_dataset_count,
+               coalesce(mc.mappable_resource_count, 0)::int AS mappable_resource_count
         FROM candidate_places p
         LEFT JOIN places parent_place ON parent_place.id = p.parent_id
+        LEFT JOIN dataset_counts dc ON dc.selected_id = p.id
+        LEFT JOIN direct_counts ddc ON ddc.selected_id = p.id
+        LEFT JOIN map_counts mc ON mc.selected_id = p.id
         ORDER BY CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
                      WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END,
                  p.name_en, p.id
-        LIMIT $5 OFFSET $6
-    `, [q || null, kind || null, parent || null, featured, limit, offset]);
-    return result.rows;
+    `, [q || null, kind || null, parent || null, featured ?? null, limit, offset], db);
 }
 
 async function getPlaceByIdOrSlug(idOrSlug) {

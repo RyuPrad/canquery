@@ -101,9 +101,9 @@ export async function fetchTopDownloads(lang = 'en') {
   }
 }
 
-export async function fetchFeatured(lang = 'en') {
+export async function fetchFeatured(lang = 'en', options) {
   try {
-    return await getJSON('/api/v1/insights/featured?lang=' + encodeURIComponent(lang));
+    return await getJSON('/api/v1/insights/featured?lang=' + encodeURIComponent(lang), undefined, options);
   } catch {
     return null;
   }

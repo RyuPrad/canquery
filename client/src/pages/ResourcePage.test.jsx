@@ -64,6 +64,57 @@ beforeEach(() => {
 });
 
 describe('ResourcePage navigation', () => {
+  test('initial metadata loading reserves the explorer without showing controls or starting work', async () => {
+    let resolveMetadata;
+    fetchResource.mockImplementation(() => new Promise(resolve => { resolveMetadata = resolve; }));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(screen.getByRole('status', { name: 'Loading the data...' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByPlaceholderText('Full-text search in this table...')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Chart' })).toBeNull();
+    expect(queryResource).not.toHaveBeenCalled();
+    expect(prepareResource).not.toHaveBeenCalled();
+    expect(recordResourceActivity).not.toHaveBeenCalled();
+    await act(async () => resolveMetadata(resourceEnvelope('a')));
+    expect(await screen.findByText('row-a')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Full-text search in this table...')).toBeInTheDocument();
+  });
+
+  test.each(['en', 'fr'].flatMap(lang => ['table', 'chart'].map(view => ({ lang, view }))))(
+    'a $lang download-only $view visit uses metadata without querying or preparing', async ({ lang, view }) => {
+      localStorage.setItem('cq-lang', lang);
+      fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
+        query_mode: 'file-only', format: 'PDF', preparation: { supported: false } } });
+      render(<LangProvider><MemoryRouter initialEntries={['/resources/a?view=' + view]}>
+        <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+      </MemoryRouter></LangProvider>);
+      const link = await screen.findByRole('link', { name: lang === 'fr' ? 'Téléchargez-le ici' : 'Download it here' });
+      expect(link).toHaveAttribute('href', 'https://example.test/a.csv');
+      expect(queryResource).not.toHaveBeenCalled();
+      expect(prepareResource).not.toHaveBeenCalled();
+      expect(recordResourceActivity).not.toHaveBeenCalled();
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(screen.queryByRole('status', { name: /Loading|Chargement/ })).toBeNull();
+    }
+  );
+
+  test('a download-only resource can still switch between its map and original file', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
+      query_mode: 'file-only', preparation: { supported: false },
+      map: { available: true, extent: [-79, 43, -78, 44] } } });
+    render(<MemoryRouter initialEntries={['/resources/a?view=map']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('live-map-a')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Chart' }));
+    expect(await screen.findByRole('link', { name: 'Download it here' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Map' }));
+    expect(await screen.findByText('live-map-a')).toBeInTheDocument();
+    expect(queryResource).not.toHaveBeenCalled();
+    expect(prepareResource).not.toHaveBeenCalled();
+  });
+
   test('unsupported live-filter deep links explain the limitation and can return to live rows', async () => {
     fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data, query_mode: 'datastore', preparation: { supported: false, enabled: true } } });
     queryResource.mockResolvedValue({ data: { fields: [{ id: 'name', type: 'TEXT' }], records: [{ name: 'live-row' }], total: 1 }, meta: { query_mode: 'datastore' } });
