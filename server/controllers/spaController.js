@@ -3,6 +3,7 @@ const path = require('path');
 const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
 const { resolveBlogPage } = require('../services/blogPresentation');
+const { injectRouteAssets } = require('../services/routeAssets');
 const catalogRead = require('../db/catalogReadQueries');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
 
@@ -200,6 +201,7 @@ function serveSpa(distDir) {
         }
         let html = seoMeta.renderHtml(template, page.meta, page.body);
         html = injectAnalytics(html);
+        html = injectRouteAssets(html, req.originalUrl, distDir);
         res.set('Content-Type', 'text/html; charset=utf-8');
         // HTML is revalidated each load so a new deploy (and its hashed asset
         // refs) propagates immediately; the hashed assets themselves cache for a year.

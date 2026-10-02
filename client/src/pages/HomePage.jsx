@@ -1,7 +1,7 @@
 import LocalGuides from '../components/LocalGuides.jsx';
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
+import { searchDatasets, fetchOrganizations, fetchStats, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -11,11 +11,10 @@ import MochiPromotion from '../components/MochiPromotion.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import RecentRail from '../components/RecentRail.jsx';
 import PopularRail from '../components/PopularRail.jsx';
-import HeroChartWidget from '../components/HeroChartWidget.jsx';
+import HomeFeaturedCharts from '../components/HomeFeaturedCharts.jsx';
 import { formatRelativeTime } from '../utils/time.js';
 import { readPlace, writePlace } from '../utils/placeStore.js';
 import { track } from '../utils/analytics.js';
-import { selectFeaturedCharts } from '../utils/featuredCharts.js';
 import PlaceSelect from '../components/PlaceSelect.jsx';
 import {
   MapleLeaf,
@@ -78,7 +77,6 @@ export default function HomePage() {
   const keyword = searchParams.get('keyword') || '';
   const [stats, setStats] = useState(null);
   const [orgs, setOrgs] = useState([]);
-  const [featured, setFeatured] = useState([]);
   const [places, setPlaces] = useState([]);
   const [sources, setSources] = useState([]);
 
@@ -182,14 +180,6 @@ export default function HomePage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [place]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchFeatured(lang).then((env) => {
-      if (!cancelled && env) setFeatured(selectFeaturedCharts(env.data));
-    });
-    return () => { cancelled = true; };
-  }, [lang]);
 
   const filtering = Boolean(searchQuery || org || format || keyword || place || source || mappable);
 
@@ -400,12 +390,7 @@ export default function HomePage() {
           </section>
         )}
 
-        {!filtering && featured.length > 0 && (
-          <section className="cq-home-section" aria-labelledby="home-insight-title">
-            <h2 id="home-insight-title" className="font-display font-semibold text-2xl sm:text-3xl mb-5">{t('home.insight_title')}</h2>
-            <HeroChartWidget items={featured} />
-          </section>
-        )}
+        <HomeFeaturedCharts enabled={!filtering} />
 
         {!filtering && (
           <div className="cq-home-discovery">

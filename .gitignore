@@ -6,3 +6,4 @@ dist/
 coverage/
 .DS_Store
 .playwright-cli/
+__pycache__/

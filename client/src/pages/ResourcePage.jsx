@@ -103,7 +103,8 @@ function ResourceExplorer({ id, navigationKey }) {
   const preparation = useResourcePreparation({ id, resource, active: view !== 'map',
     needsLocal: view === 'chart' || hasNonEq || filterUpgrade, onReady: onPrepared });
   const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
-  const preparationRequired = resource && (resource.query_mode === 'ingestable' ||
+  const fileOnly = resource?.query_mode === 'file-only';
+  const preparationRequired = resource && !fileOnly && (resource.query_mode === 'ingestable' ||
     (view === 'chart' && resource.query_mode !== 'ingested'));
   const filtersNeedPreparation = resource?.query_mode === 'datastore' && hasNonEq;
   const previousSnapshot = useRef(null);
@@ -194,6 +195,12 @@ function ResourceExplorer({ id, navigationKey }) {
     }
     setDataLoading(true);
 
+    if (fileOnly) {
+      setData(null);
+      setDataError(null);
+      setDataLoading(false);
+      return () => { cancelled = true; };
+    }
     if (!resource || preparationRequired || (resource.query_mode === 'datastore' && hasNonEq)) {
       setDataLoading(false);
       return () => { cancelled = true; };
@@ -254,7 +261,15 @@ function ResourceExplorer({ id, navigationKey }) {
       });
 
     return () => { cancelled = true; controller.abort(); };
-  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, hasNonEq, onUnavailable]);
+  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, fileOnly, hasNonEq, onUnavailable]);
+
+  const changeSort = useCallback(next => {
+    track('resource_sort', { resource_id: id, sort: next || '' });
+    setSort(next);
+  }, [id]);
+  const changeColumnFilter = useCallback((field, text) => {
+    setColumnFilters(previous => ({ ...previous, [field]: text }));
+  }, []);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
@@ -274,6 +289,26 @@ function ResourceExplorer({ id, navigationKey }) {
     );
   }
 
+  // Metadata owns the layout above the explorer. Showing its controls first
+  // moves them across the viewport when the title and overview arrive.
+  // A refresh retains the existing metadata and serving rows instead.
+  if (!resource) {
+    return <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6">
+      {resourceError ? <div className="alert alert-error" role="alert">
+        <span>{resourceError.message}</span>
+        <button type="button" className="btn btn-sm" onClick={onPrepared}>{t('common.retry')}</button>
+      </div> : <div role="status" aria-label={t('resource.loading_data')} aria-busy="true" className="space-y-4">
+        <span className="sr-only">{t('resource.loading_data')}</span>
+        <div className="cq-skel h-8 w-2/3" aria-hidden="true" />
+        <div className="cq-skel h-40" aria-hidden="true" />
+        <div className="cq-skel h-[420px]" aria-hidden="true" />
+      </div>}
+    </div>;
+  }
+
+  const downloadOnly = fileOnly || dataError instanceof FileOnlyError;
+  const downloadOnlyUrl = fileOnly ? resource.url : dataError?.download_url;
+
   const totalPages = data
     ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(data.total / PAGE_SIZE)))
     : 1;
@@ -288,7 +323,7 @@ function ResourceExplorer({ id, navigationKey }) {
         </div>
       )}
       {resource && (
-        <div className="space-y-2.5 cq-fade">
+        <div className="space-y-2.5">
           <Breadcrumbs
             label={t('breadcrumbs.label')}
             items={[
@@ -360,7 +395,7 @@ function ResourceExplorer({ id, navigationKey }) {
         </div>
       )}
 
-      {view !== 'map' && <div className="flex flex-wrap gap-2.5 items-center">
+      {view !== 'map' && !downloadOnly && <div className="flex flex-wrap gap-2.5 items-center">
         <div className="cq-search cq-search-sm w-full sm:w-80">
           <SearchIcon size={14} className="opacity-40 shrink-0" />
           <input
@@ -435,16 +470,14 @@ function ResourceExplorer({ id, navigationKey }) {
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
         </div>
-      ) : preparationRequired || dataError instanceof NotIngestedError ? (
-        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
-      ) : dataError instanceof FileOnlyError ? (
+      ) : downloadOnly ? (
         <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
           <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
             <FileIcon size={24} />
           </span>
           <p className="text-base-content/70">{t('resource.file_only')}</p>
-          <a
-            href={dataError.download_url}
+          {downloadOnlyUrl && <a
+            href={downloadOnlyUrl}
             className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
             data-analytics-event="resource_download"
             data-analytics-resource-id={id}
@@ -452,8 +485,10 @@ function ResourceExplorer({ id, navigationKey }) {
           >
             <DownloadIcon size={13} />
             {t('resource.download_here')}
-          </a>
+          </a>}
         </div>
+      ) : preparationRequired || dataError instanceof NotIngestedError ? (
+        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
       ) : dataError ? (
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
@@ -468,14 +503,9 @@ function ResourceExplorer({ id, navigationKey }) {
                 fields={data.fields}
                 records={data.records}
                 sort={sort}
-                onSortChange={(next) => {
-                  track('resource_sort', { resource_id: id, sort: next || '' });
-                  setSort(next);
-                }}
+                onSortChange={changeSort}
                 columnFilters={columnFilters}
-                onColumnFilterChange={(id, text) =>
-                  setColumnFilters((prev) => ({ ...prev, [id]: text }))
-                }
+                onColumnFilterChange={changeColumnFilter}
               />
             </div>
           )}

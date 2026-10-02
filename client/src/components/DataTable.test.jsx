@@ -39,4 +39,22 @@ describe('table keyboard controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'City descTEXT' }));
     expect(input.onSortChange).toHaveBeenCalledWith('City desc desc');
   });
+
+  test('editing header controls does not read unchanged rows, while replacement rows and schemas render', () => {
+    const readCell = vi.fn(() => 'Ottawa');
+    const record = { _id: 1, get 'City name'() { return readCell(); } };
+    const input = props({ records: [record] });
+    const view = render(<DataTable {...input} />);
+    expect(screen.getByRole('cell', { name: 'Ottawa' })).toBeInTheDocument();
+    const reads = readCell.mock.calls.length;
+    view.rerender(<DataTable {...input} columnFilters={{ 'City name': 'Toronto' }} sort="City name desc" />);
+    expect(screen.getByRole('textbox', { name: /City name/ })).toHaveValue('Toronto');
+    expect(screen.getByRole('columnheader', { name: /City name/ })).toHaveAttribute('aria-sort', 'descending');
+    expect(readCell).toHaveBeenCalledTimes(reads);
+    view.rerender(<DataTable {...input} records={[{ _id: 2, 'City name': 'Toronto' }]} />);
+    expect(screen.getByRole('cell', { name: 'Toronto' })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: 'Ottawa' })).toBeNull();
+    view.rerender(<DataTable {...input} fields={[{ id: '_id', type: 'INTEGER' }]} />);
+    expect(screen.getAllByRole('cell')).toHaveLength(1);
+  });
 });

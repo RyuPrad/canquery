@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run blog:check
+      - run: python3 -m unittest discover -s ../deploy/analytics -p 'test_*.py'
       - run: npm test # jest; the suite mocks the database, so no Postgres needed
 
   client:

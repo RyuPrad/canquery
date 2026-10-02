@@ -36,6 +36,14 @@ const topDownloads = async (lang = 'en') => {
 // The whole payload is cached, so per-dataset profile/aggregate runs rarely.
 
 const featuredCache = createCache({ name: 'insights-featured', ttlMs: 10 * 60 * 1000, negativeTtlMs: 60 * 1000 });
+// Tables are immutable between publications. Retain the language-independent
+// work across response-cache refreshes; a new table/version/schema gets a new
+// key. Final labels and candidate titles are still built for each language.
+const featuredSnapshotCache = createCache({
+    name: 'featured-snapshots', ttlMs: 24 * 60 * 60 * 1000, negativeTtlMs: 0,
+    maxEntries: 128,
+    cacheable: value => value != null && Buffer.byteLength(JSON.stringify(value)) <= 256 * 1024
+});
 
 const LABEL_LIMIT = 200;
 const DATE_TYPE_RE = /date|time/i;
@@ -165,18 +173,25 @@ async function computeFeatured(lang) {
                 const current = await getResourceById(c.resource_id);
                 if (!current || current.ingest_status !== 'ready') return;
                 const columns = Array.isArray(current.ingested_columns) ? current.ingested_columns : [];
-                const profile = await profileStoreTable({ tableName: current.table_name, columns });
-                const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns }, columns);
-                if (!spec) return;
-                const agg = await aggregateStoreTable({
-                    tableName: current.table_name,
-                    knownColumns: columns.map((x) => x.id),
-                    q: undefined, filters: [],
-                    groupBy: spec.groupBy, agg: spec.agg, aggColumn: spec.aggColumn || null, bucket: spec.bucket || null,
-                    sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" DESC NULLS LAST',
-                    limit: spec.limit, offset: 0
+                const preparedAt = snapshotAt(current.ingested_at);
+                if (!preparedAt) return;
+                const key = JSON.stringify([c.resource_id, current.table_name, preparedAt, columns]);
+                const { profile, spec, aggregate } = await featuredSnapshotCache.get(key, async () => {
+                    const profile = await profileStoreTable({ tableName: current.table_name, columns });
+                    const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns }, columns);
+                    if (!spec) return { profile, spec: null, aggregate: null };
+                    const aggregate = await aggregateStoreTable({
+                        tableName: current.table_name,
+                        knownColumns: columns.map((x) => x.id),
+                        q: undefined, filters: [],
+                        groupBy: spec.groupBy, agg: spec.agg, aggColumn: spec.aggColumn || null, bucket: spec.bucket || null,
+                        sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" DESC NULLS LAST',
+                        limit: spec.limit, offset: 0
+                    });
+                    return { profile, spec, aggregate };
                 });
-                const preview = buildFeaturedPreview({ candidate: c, current, profile, spec, aggregate: agg, lang });
+                if (!spec) return;
+                const preview = buildFeaturedPreview({ candidate: c, current, profile, spec, aggregate, lang });
                 if (preview) out.push(preview);
             });
         } catch {
