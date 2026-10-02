@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+LIVE_RELEASE = Path('/opt/canquery-analytics/current')
 
 
 def digest(value):
@@ -14,7 +15,7 @@ def digest(value):
 
 def apply(target, write=False):
     target = Path(target).resolve()
-    live = Path('/opt/canquery-analytics/current')
+    live = LIVE_RELEASE
     if live.exists() and target == live.resolve():
         raise ValueError('Use an isolated stage, never the live analytics release.')
     manifest = json.loads((ROOT / 'base-manifest.json').read_text())

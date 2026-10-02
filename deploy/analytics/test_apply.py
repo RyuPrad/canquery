@@ -32,6 +32,15 @@ class OverlayTests(unittest.TestCase):
         previous = overlay.ROOT
         overlay.ROOT = self.source
         self.addCleanup(setattr, overlay, 'ROOT', previous)
+        previous_live = overlay.LIVE_RELEASE
+        overlay.LIVE_RELEASE = self.root / 'current'
+        self.addCleanup(setattr, overlay, 'LIVE_RELEASE', previous_live)
+
+    def test_live_release_rejected_without_writing(self):
+        overlay.LIVE_RELEASE.symlink_to(self.target, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'isolated stage'):
+            overlay.apply(overlay.LIVE_RELEASE, True)
+        self.assertEqual((self.target / 'original').read_text(), 'original')
 
     def test_dry_run_and_idempotent_apply(self):
         self.assertEqual(overlay.apply(self.target), 2)
