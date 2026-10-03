@@ -37,7 +37,10 @@ describe('configured municipal catalogue sources', () => {
         for (const source of sources.filter(source => source.enabled)) {
             const catalog = new URL(source.catalogUrl);
             expect(catalog.protocol).toBe('https:');
-            expect(catalog.hostname).toBe(source.upstreamHost);
+            // Hamilton's official Hub site serves its feed on its ArcGIS domain.
+            const catalogHost = source.id === 'hamilton-hub'
+                ? 'data-spatialsolutions.opendata.arcgis.com' : source.upstreamHost;
+            expect(catalog.hostname).toBe(catalogHost);
             expect(source.syncIntervalHours).toBe(24);
             expect(source.maxDeleteFraction).toBeLessThanOrEqual(0.1);
         }
@@ -217,7 +220,8 @@ describe('configured municipal catalogue sources', () => {
         const hamilton = getSource('hamilton-hub');
         expect(hamilton).toEqual(expect.objectContaining({
             kind: 'arcgis-hub', upstreamHost: 'open.hamilton.ca',
-            catalogUrl: 'https://open.hamilton.ca/api/feed/dcat-us/1.1.json'
+            homepageUrl: 'https://open.hamilton.ca/',
+            catalogUrl: 'https://data-spatialsolutions.opendata.arcgis.com/api/feed/dcat-us/1.1.json'
         }));
         expect(hamilton.publisherAliases).toHaveLength(11);
         expect(hamilton.restrictedLicensePatterns).toEqual(expect.arrayContaining([

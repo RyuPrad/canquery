@@ -855,7 +855,7 @@ const sources = [{
     nameEn: 'City of Hamilton Open Data',
     nameFr: 'Données ouvertes de la Ville de Hamilton',
     homepageUrl: 'https://open.hamilton.ca/',
-    catalogUrl: 'https://open.hamilton.ca/api/feed/dcat-us/1.1.json',
+    catalogUrl: 'https://data-spatialsolutions.opendata.arcgis.com/api/feed/dcat-us/1.1.json',
     upstreamHost: 'open.hamilton.ca',
     enabled: true,
     syncIntervalHours: 24,
