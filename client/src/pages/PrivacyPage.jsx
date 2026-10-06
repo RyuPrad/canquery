@@ -27,6 +27,7 @@ export default function PrivacyPage() {
       <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight mt-4">{t('privacy.title')}</h1>
       <p className="text-xs text-base-content/40 mt-2">{t('privacy.updated')}</p>
       <p className="text-base-content/70 mt-6 leading-relaxed">{t('privacy.summary')}</p>
+      <section className="mt-9"><h2 className="text-xl font-semibold font-display">{t('account.privacy_title')}</h2><p className="text-sm text-base-content/80 mt-3 leading-relaxed">{t('account.privacy_body')}</p></section>
 
       <section className="mt-9">
         <h2 className="text-xl font-semibold font-display">{t('privacy.collect_title')}</h2>

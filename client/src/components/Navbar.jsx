@@ -105,6 +105,8 @@ export default function Navbar() {
             <NavLink to="/organizations" className={navClass} onClick={close}>{t('nav.organizations')}</NavLink>
             <NavLink to={lang === 'fr' ? '/fr/blog' : '/blog'} className={navClass} onClick={close}>{t('blog.title')}</NavLink>
             <NavLink to="/docs" className={navClass} onClick={close}>{t('nav.docs')}</NavLink>
+            <NavLink to="/pricing" className={navClass} onClick={close}>{t('account.pricing')}</NavLink>
+            <a href="/account" className="cq-nav-link" onClick={close}>{t('account.title')}</a>
             <a href="https://open.canada.ca/data/en/dataset" target="_blank" rel="noopener noreferrer" className="cq-nav-link" onClick={close}>
               open.canada.ca<ExternalIcon size={12} />
             </a>

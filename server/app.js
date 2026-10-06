@@ -21,6 +21,9 @@ const placesRouter = require('./routes/places');
 const sourcesRouter = require('./routes/sources');
 const seoRouter = require('./routes/seo');
 const spaController = require('./controllers/spaController');
+const { commercialApi, credentialLimiter } = require('./middleware/commercialApi');
+const { authHandler } = require('./services/authRuntime');
+const { receiveWebhook } = require('./services/billingService');
 
 const app = express();
 
@@ -43,6 +46,7 @@ const allowlist = new Set(
         .map(o => o.trim())
         .filter(o => o)
 );
+if (process.env.SITE_URL) allowlist.add(new URL(process.env.SITE_URL).origin);
 if (process.env.NODE_ENV !== 'production') {
     allowlist.add('http://localhost:5173');
     allowlist.add('http://127.0.0.1:5173');
@@ -63,7 +67,9 @@ app.use((req, res, next) => {
     if (allowlist.has(origin) || origin === selfOrigin) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
 
         if (req.method === 'OPTIONS') {
             return res.sendStatus(204);
@@ -74,22 +80,33 @@ app.use((req, res, next) => {
     return res.status(403).json({ error: 'Origin not allowed' });
 });
 
-app.use(express.json());
+// Signature verification and Better Auth both need the original request stream.
+app.post('/api/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), async(req,res)=>{
+    await receiveWebhook(req.body,req.headers['stripe-signature']);
+    res.set('Cache-Control','no-store').json({received:true});
+});
+app.all('/api/auth/*splat', authHandler);
+app.use(express.json({limit:'64kb'}));
+app.use('/api/account', require('./routes/account'));
 
 app.get('/healthz', catalogController.healthz);
 
-app.use('/api', generalLimiter);
-app.use('/api/v1/datasets', datasetsRouter);
-app.use('/api/v1/resources', resourcesRouter);
-app.use('/api/v1/organizations', organizationsRouter);
-app.use('/api/v1/stats', statsRouter);
-app.use('/api/v1/repo', repoRouter);
-app.use('/api/v1/jobs', jobsRouter);
-app.use('/api/v1/ops', opsRouter);
-app.use('/api/v1/insights', insightsRouter);
-app.use('/api/v1/places', placesRouter);
-app.use('/api/v1/sources', sourcesRouter);
-app.use('/api/v1/blog', require('./routes/blog'));
+app.use('/api/v1', credentialLimiter, commercialApi);
+app.use(['/api','/web-api'], generalLimiter);
+for (const base of ['/api/v1','/web-api/v1']) {
+    app.use(base+'/datasets', datasetsRouter);
+    app.use(base+'/resources', resourcesRouter);
+    app.use(base+'/organizations', organizationsRouter);
+    app.use(base+'/stats', statsRouter);
+    app.use(base+'/repo', repoRouter);
+    app.use(base+'/jobs', jobsRouter);
+    app.use(base+'/ops', opsRouter);
+    app.use(base+'/insights', insightsRouter);
+    app.use(base+'/places', placesRouter);
+    app.use(base+'/sources', sourcesRouter);
+    app.use(base+'/blog', require('./routes/blog'));
+}
+app.get('/api/v1/openapi.json',(_req,res)=>res.json(require('./services/openApi')));
 
 // Crawl-facing files (robots.txt + sitemaps) live at the site root and read
 // from Postgres; mounted before the SPA so they win over the static catch-all.
@@ -103,7 +120,7 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
     app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(clientDist, { index: false }));
     // Per-route SEO and initial content, with real 404s and retryable 503s.
-    app.get(/^\/(?!api\/|healthz).*/, spaController.serveSpa(clientDist));
+    app.get(/^\/(?!api\/|web-api\/|healthz).*/, spaController.serveSpa(clientDist));
 }
 
 app.use((req, res, next) => {

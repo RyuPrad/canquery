@@ -19,7 +19,11 @@ happy to credit you unless you'd prefer to stay anonymous.
 
 ## Scope notes
 
-- canquery exposes an anonymous read API and ingests **only** files already listed
+- CanQuery keeps public browser data access and adds verified developer accounts,
+  hashed API keys and bounded credit allowances. Account/billing routes require
+  owner sessions; Stripe webhooks require a signature. Reports about account
+  isolation, quota races, session handling or billing reconciliation are welcome.
+- CanQuery ingests **only** files already listed
   in the upstream catalogue (never arbitrary user-supplied URLs). Catalogue URLs
   are still treated as untrusted: downloads allow only public HTTP(S) targets,
   validate and DNS-pin each redirect hop, and can be backed by the shipped egress
@@ -34,6 +38,21 @@ The September 9, 2026 closeout updates compatible Browserslist, browser mapping,
 js-yaml, qs and Vitest dependencies. The remaining moderate upstream advisories
 require separate compatibility review; do not use `npm audit fix --force` to
 downgrade ExcelJS or change parser major versions during deployment.
+
+The commercial-account work on October 6, 2026 updates compatible `proxy-addr`
+to 2.0.8 and each `brace-expansion` dependency to its patched major-compatible
+release (1.1.21, 2.1.7 or 5.0.12). The production-dependency audit then reports
+four moderate findings and no high/critical findings; this is a dated result.
+The added auth, Stripe and mail dependencies have no reported findings in that
+audit. The [proxy advisory](https://github.com/jshttp/proxy-addr/security/advisories/GHSA-jqcg-44mw-7w3h)
+concerns subnet trust rules; CanQuery retains its existing one-hop proxy setting.
+Keep the API listener behind the configured reverse proxy.
+
+The current `stream-json` audit also reports
+[Assembler prototype handling](https://github.com/uhop/stream-json/security/advisories/GHSA-mjw6-4jj6-33hc)
+and [JSONC comment parsing](https://github.com/uhop/stream-json/security/advisories/GHSA-hqr4-qq8f-hg3x).
+Those paths need a separate compatibility and reachability review; the existing
+depth guard below is not a blanket mitigation for every parser advisory.
 
 | Dependency | Current handling |
 | --- | --- |

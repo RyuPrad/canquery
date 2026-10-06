@@ -7,7 +7,7 @@ bug reports, fixes, features, docs - are welcome.
 ## Getting set up
 
 See **[README.md](README.md) → Local setup** for the full walkthrough. The short
-version (Node 20+, PostgreSQL 16):
+version (Node 22, PostgreSQL 16):
 
 ```bash
 # server

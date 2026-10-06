@@ -272,7 +272,7 @@ function ResourceExplorer({ id, navigationKey }) {
   }, []);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
-  const exportHref = apiUrl('/api/v1/resources/' + id + '/query.csv', {
+  const exportHref = apiUrl('/web-api/v1/resources/' + id + '/query.csv', {
     q: debouncedQ || undefined,
     filters: Object.keys(exportFilters).length ? exportFilters : undefined,
     sort: sort || undefined,

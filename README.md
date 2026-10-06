@@ -82,7 +82,7 @@ canquery/
 
 ## Quickstart
 
-Requirements: Node 20+, PostgreSQL 16 with PostGIS 3.5.
+Requirements: Node 22, PostgreSQL 16 with PostGIS 3.5.
 
 ```bash
 # 1. Database
@@ -92,9 +92,9 @@ psql canquery -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
 
 # 2. Server
 cd server
-npm install
-cp .env.example .env              # set DATABASE_URL (and optional S3_* for PMTiles)
-npm run migrate                   # apply migrations (runs 001..031)
+npm ci
+cp .env.example .env              # set CANQUERY_DATABASE_URL for your local DB
+npm run migrate                   # apply all missing migrations, including 034
 npm run sync:places               # populate the 2021 SGC hierarchy
 
 # sync the federal catalogue (batched harvest, chunks of 50)

@@ -6,6 +6,7 @@ const WEBSITE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{
 
 export function startAnalytics(doc = globalThis.document, nav = globalThis.navigator, win = globalThis.window) {
   if (!doc || !win || analyticsOptedOut(nav, win)) return false;
+  if (/^\/(account|login|signup|forgot-password|reset-password)(?:\/|$)/.test(win.location?.pathname || '')) return false;
   const websiteId = doc.querySelector('meta[name="canquery-analytics-site"]')?.content;
   if (!WEBSITE_ID_RE.test(websiteId || '')) return false;
 

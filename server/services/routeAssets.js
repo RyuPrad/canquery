@@ -6,7 +6,9 @@ const ROUTE_MODULES = Object.freeze({
     datasets: 'DatasetsPage', dataset: 'DatasetPage', resource: 'ResourcePage',
     organizations: 'OrganizationsPage', organization: 'OrganizationPage',
     places: 'PlacesPage', place: 'PlacePage', insights: 'InsightsPage',
-    docs: 'DocsPage', privacy: 'PrivacyPage', blog: 'BlogPage'
+    docs: 'DocsPage', privacy: 'PrivacyPage', blog: 'BlogPage',
+    pricing:'PricingPage',account:'AccountPage',terms:'TermsPage',login:'AuthPage',signup:'AuthPage',
+    'forgot-password':'AuthPage','reset-password':'AuthPage'
 });
 let cachedDirectory;
 let cachedManifest;

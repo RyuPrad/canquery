@@ -28,11 +28,11 @@ describe('catalog API helpers', () => {
       pagination: { nextCursor: null },
       meta: { request: 2 }
     });
-    expect(getJSON).toHaveBeenNthCalledWith(1, '/api/v1/places', {
+    expect(getJSON).toHaveBeenNthCalledWith(1, '/web-api/v1/places', {
       q: undefined, kind: undefined, parent: undefined,
       featured: true, limit: 100, cursor: undefined
     });
-    expect(getJSON).toHaveBeenNthCalledWith(2, '/api/v1/places', {
+    expect(getJSON).toHaveBeenNthCalledWith(2, '/web-api/v1/places', {
       q: undefined, kind: undefined, parent: undefined,
       featured: true, limit: 100, cursor: '100'
     });

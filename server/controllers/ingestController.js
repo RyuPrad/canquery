@@ -3,14 +3,17 @@ const ingestService = require('../services/ingestService');
 const { prepareResource } = require('../services/preparationService');
 
 const prepare = catchAsync(async (req, res) => {
-    const job = await prepareResource(req.params.id, req.ip);
+    const job = req.commercial ? await prepareResource(req.params.id, req.ip, undefined, req.commercial)
+        : await prepareResource(req.params.id, req.ip);
+    if (req.commercial) res.set('X-CanQuery-Credits-Remaining',String(req.commercial.remaining));
     res.set('Cache-Control', 'no-store');
     res.status(job.already_loaded ? 200 : 202).json(envelope(job));
 });
 const { envelope } = require('../utils/envelope');
 
 async function enqueueIngest(req, res) {
-    const job = await ingestService.enqueueIngest(req.params.id);
+    const job = await ingestService.enqueueIngest(req.params.id, req.commercial);
+    if (req.commercial) res.set('X-CanQuery-Credits-Remaining',String(req.commercial.remaining));
     res.set('Cache-Control', 'no-store');
     res.status(job.already_loaded ? 200 : 202).json(envelope(job));
 }

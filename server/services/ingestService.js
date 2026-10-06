@@ -5,7 +5,7 @@ const AppError = require('../utils/AppError');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { failureReason } = require('./preparationFailure');
 
-async function enqueueIngest(resourceId) {
+async function enqueueIngest(resourceId, commercial = null) {
     const row = await getResourceById(resourceId);
     if (!row) {
         throw new AppError('Resource not found', 404);
@@ -38,7 +38,7 @@ async function enqueueIngest(resourceId) {
         err.download_url = toAbsoluteUrl(row.url);
         throw err;
     }
-    const job = await enqueueJob(resourceId);
+    const job = commercial ? await enqueueJob(resourceId, commercial) : await enqueueJob(resourceId);
     if (!job) {
         throw new AppError('Could not enqueue ingest job', 500);
     }

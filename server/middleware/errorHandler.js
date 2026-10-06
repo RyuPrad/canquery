@@ -33,7 +33,7 @@ function errorHandler(err, req, res, next) {
             level: 'error',
             request_id: requestId,
             method: req.method,
-            path: req.path,
+            path: req.path?.replace(/^(\/api\/auth\/reset-password)\/[^/]+/, '$1/[redacted]'),
             status: statusCode,
             message: err && err.message,
             ...(!operational && err && err.stack ? { stack: err.stack } : {})

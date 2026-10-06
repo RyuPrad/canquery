@@ -168,10 +168,20 @@ function classifyRoute(pathname) {
     if (/^\/organizations\/?$/.test(p)) return { type: 'organizations' };
     if (/^\/docs\/?$/.test(p)) return { type: 'docs' };
     if (/^\/privacy\/?$/.test(p)) return { type: 'privacy' };
+    for (const type of ['pricing','account','login','signup','forgot-password','reset-password','terms']) {
+        if (p === '/' + type || p === '/' + type + '/') return { type };
+    }
     return { type: 'other' };
 }
 
 const STATIC_META = {
+    pricing: {path:'/pricing',title:'Canadian open data API pricing - CanQuery',description:'Free and Business API access with clear credit allowances. Business is CA$49/month; contact CanQuery for Enterprise capacity.'},
+    account: {path:'/account',title:'Developer account - CanQuery',description:'Manage your API keys, usage and billing.',noindex:true},
+    login: {path:'/login',title:'Sign in - CanQuery',description:'Sign in to your developer account.',noindex:true},
+    signup: {path:'/signup',title:'Create an account - CanQuery',description:'Create a free developer account.',noindex:true},
+    'forgot-password': {path:'/forgot-password',title:'Reset your password - CanQuery',description:'Request a password reset.',noindex:true},
+    'reset-password': {path:'/reset-password',title:'Save a new password - CanQuery',description:'Reset your account password.',noindex:true},
+    terms: {path:'/terms',title:'API terms - CanQuery',description:'API service access, allowances, billing and publisher licences.'},
     datasets: { path: '/datasets', title: 'Browse all Canadian datasets - CanQuery',
         description: 'Browse the complete Canadian open data catalogue: downloadable files, live tables and maps from federal, provincial and municipal publishers.' },
     home: { title: DEFAULT_TITLE, description: DEFAULT_DESC, path: '/' },
@@ -195,7 +205,7 @@ const STATIC_META = {
     docs: {
         title: 'API documentation - CanQuery',
         description:
-            'Anonymous JSON API over Canadian federal and local open data: search by place, map spatial layers, load tables and query them live.',
+            'JSON API over Canadian federal and local open data: API keys, plans, place search, supported tables and maps, and bounded CSV exports.',
         path: '/docs',
     },
     privacy: {
@@ -383,6 +393,7 @@ function staticMeta(type, pathname) {
             description: entry.description,
             canonical: SITE_URL + entry.path,
             ogType: 'website',
+            ...(entry.noindex ? {noindex:true} : {}),
         };
     }
     // Unknown route -> the SPA renders a not-found page; keep it out of the index.

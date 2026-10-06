@@ -1,51 +1,53 @@
 import { getJSON, postJSON } from './client.js';
 
 export function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, cursor } = {}) {
-  return getJSON('/api/v1/datasets', { q, org, format, keyword, place, source, mappable, limit, cursor });
+  return getJSON('/web-api/v1/datasets', { q, org, format, keyword, place, source, mappable, limit, cursor });
 }
 
 export function fetchDataset(idOrName) {
-  return getJSON('/api/v1/datasets/' + encodeURIComponent(idOrName));
+  return getJSON('/web-api/v1/datasets/' + encodeURIComponent(idOrName));
 }
 
-export function fetchResource(id, options) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id), undefined, options);
+export async function fetchResource(id, options) {
+  const result = await getJSON('/web-api/v1/resources/' + encodeURIComponent(id), undefined, options);
+  if (result.data?.map?.tiles) result.data.map.tiles = result.data.map.tiles.replace('/api/v1/', '/web-api/v1/');
+  return result;
 }
 
 export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}, options) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket }, options);
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket }, options);
 }
 
 export function fetchResourceProfile(id, options) {
-  return getJSON('/api/v1/resources/' + encodeURIComponent(id) + '/profile', undefined, options);
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/profile', undefined, options);
 }
 
 export function prepareResource(id) {
-  return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/prepare');
+  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/prepare');
 }
 
 export function recordResourceActivity(id, options) {
-  return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/activity', options);
+  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/activity', options);
 }
 
 export function enqueueIngest(id) {
-  return postJSON('/api/v1/resources/' + encodeURIComponent(id) + '/ingest');
+  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/ingest');
 }
 
 export function fetchJob(id, options) {
-  return getJSON('/api/v1/jobs/' + encodeURIComponent(id), undefined, options);
+  return getJSON('/web-api/v1/jobs/' + encodeURIComponent(id), undefined, options);
 }
 
 export function fetchOrganizations({ q, place, source, limit, cursor } = {}) {
-  return getJSON('/api/v1/organizations', { q, place, source, limit, cursor });
+  return getJSON('/web-api/v1/organizations', { q, place, source, limit, cursor });
 }
 
 export function fetchOrganization(name) {
-  return getJSON('/api/v1/organizations/' + encodeURIComponent(name));
+  return getJSON('/web-api/v1/organizations/' + encodeURIComponent(name));
 }
 
 export function fetchPlaces({ q, kind, parent, featured, limit, cursor } = {}) {
-  return getJSON('/api/v1/places', { q, kind, parent, featured, limit, cursor });
+  return getJSON('/web-api/v1/places', { q, kind, parent, featured, limit, cursor });
 }
 
 export async function fetchFeaturedPlaces() {
@@ -70,16 +72,16 @@ export async function fetchFeaturedPlaces() {
 }
 
 export function fetchPlace(idOrSlug) {
-  return getJSON('/api/v1/places/' + encodeURIComponent(idOrSlug));
+  return getJSON('/web-api/v1/places/' + encodeURIComponent(idOrSlug));
 }
 
 export function fetchSources({ place } = {}) {
-  return getJSON('/api/v1/sources', { place });
+  return getJSON('/web-api/v1/sources', { place });
 }
 
 export function fetchResourceMap(id, { bbox, zoom, limit, signal } = {}) {
   return getJSON(
-    '/api/v1/resources/' + encodeURIComponent(id) + '/map',
+    '/web-api/v1/resources/' + encodeURIComponent(id) + '/map',
     { bbox, zoom, limit },
     { signal }
   );
@@ -87,7 +89,7 @@ export function fetchResourceMap(id, { bbox, zoom, limit, signal } = {}) {
 
 export async function fetchRecentlyUnlocked(limit, place) {
   try {
-    return await getJSON('/api/v1/resources/recently-unlocked', { limit, place });
+    return await getJSON('/web-api/v1/resources/recently-unlocked', { limit, place });
   } catch {
     return null;
   }
@@ -95,7 +97,7 @@ export async function fetchRecentlyUnlocked(limit, place) {
 
 export async function fetchTopDownloads(lang = 'en') {
   try {
-    return await getJSON('/api/v1/insights/top-downloads?lang=' + encodeURIComponent(lang));
+    return await getJSON('/web-api/v1/insights/top-downloads?lang=' + encodeURIComponent(lang));
   } catch {
     return null;
   }
@@ -103,7 +105,7 @@ export async function fetchTopDownloads(lang = 'en') {
 
 export async function fetchFeatured(lang = 'en', options) {
   try {
-    return await getJSON('/api/v1/insights/featured?lang=' + encodeURIComponent(lang), undefined, options);
+    return await getJSON('/web-api/v1/insights/featured?lang=' + encodeURIComponent(lang), undefined, options);
   } catch {
     return null;
   }
@@ -111,7 +113,7 @@ export async function fetchFeatured(lang = 'en', options) {
 
 export async function fetchPopular(place) {
   try {
-    return await getJSON('/api/v1/resources/popular', { place });
+    return await getJSON('/web-api/v1/resources/popular', { place });
   } catch {
     return null;
   }
@@ -119,16 +121,16 @@ export async function fetchPopular(place) {
 
 export async function fetchStats() {
   try {
-    return await getJSON('/api/v1/stats');
+    return await getJSON('/web-api/v1/stats');
   } catch {
     return null;
   }
 }
 
 export function fetchBlog({ lang = 'en', place, dataset } = {}) {
-  return getJSON('/api/v1/blog', { lang, place, dataset });
+  return getJSON('/web-api/v1/blog', { lang, place, dataset });
 }
 
 export function fetchBlogArticle(lang, slug) {
-  return getJSON('/api/v1/blog/' + encodeURIComponent(lang) + '/' + encodeURIComponent(slug));
+  return getJSON('/web-api/v1/blog/' + encodeURIComponent(lang) + '/' + encodeURIComponent(slug));
 }
