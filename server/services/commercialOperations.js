@@ -1,7 +1,9 @@
 const { CREDIT_COSTS } = require('./commercialConfig');
 
 function operationFor(req) {
-    const path = req.path;
+    // Express routes are case-insensitive and accept one trailing slash. Match
+    // those aliases for billing without changing publisher IDs or query fields.
+    const path = req.path.toLowerCase().replace(/\/$/, '');
     if (/^\/jobs\/[^/]+$/.test(path) || /\/activity$/.test(path)) return {name:'activity',cost:CREDIT_COSTS.activity};
     if (/\/(prepare|ingest)$/.test(path)) return {name:'preparation',cost:CREDIT_COSTS.activity,
         ...(/\/ingest$/.test(path) ? {bucket:'ingest',rate:5,seconds:3600} : {})};

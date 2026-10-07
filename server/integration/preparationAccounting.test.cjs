@@ -84,6 +84,34 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         assert.equal(await used(f),100);assert.equal((await charge(f)).outcome,'succeeded');
         assert.equal((await q.dashboard(f.account.id)).returned_credits,0);
     });
+    test('Express case and trailing-slash aliases retain prices, preparation admission and failed-request refunds',async()=>{
+        const express=require('express');const request=require('supertest');
+        const {commercialApi}=require('../middleware/commercialApi');
+        const f=await fixture({charged:false});const app=express();app.use(commercialApi);
+        app.get('/resources/:id/query',(req,res)=>res.json({resource_id:req.params.id,field:req.query.group_by}));
+        app.get('/resources/:id/profile',(_req,res)=>res.status(502).json({error:'fixture failure'}));
+        app.get('/resources/:id/query.csv',(_req,res)=>res.status(503).json({error:'fixture failure'}));
+        app.post('/resources/:id/prepare',async(req,res)=>res.status(202).json(await prepareResource(req.params.id,'fixture',db,req.commercial)));
+        const call=(method,path)=>request(app)[method](path).set('Authorization','Bearer '+f.key.secret);
+        const aggregate=await call('get',`/ReSoUrCeS/${f.resource}/QuErY/?group_by=PublisherField&agg=count`);
+        assert.equal(aggregate.status,200);assert.deepEqual(aggregate.body,{resource_id:f.resource,field:'PublisherField'});
+        assert.equal(await used(f),10);
+        assert.equal((await call('get',`/resources/${f.resource}/query`)).status,200);assert.equal(await used(f),11);
+        for(const [path,status] of [['PrOfIlE/',502],['QuErY.CsV/',503]]) {
+            assert.equal((await call('get',`/resources/${f.resource}/${path}`)).status,status);
+            assert.equal(await used(f),11);assert.equal((await q.dashboard(f.account.id)).reserved,0);
+        }
+        const failed=(await db.query("SELECT operation,credits,state FROM commercial.requests WHERE account_id=$1 AND state='refunded' ORDER BY credits",[f.account.id])).rows;
+        assert.deepEqual(failed.map(row=>({...row,credits:Number(row.credits)})),[
+            {operation:'profile',credits:10,state:'refunded'},{operation:'export',credits:25,state:'refunded'}
+        ]);
+        const path=`/ReSoUrCeS/${f.resource}/PrEpArE/`;
+        assert.equal((await call('post',path)).status,202);assert.equal(await used(f),11);assert.equal(await charge(f),undefined);
+        await db.query('DELETE FROM ingest_jobs WHERE id=$1',[f.job.id]);
+        const admitted=await call('post',path);assert.equal(admitted.status,202);f.job.id=String(admitted.body.id);
+        assert.equal(await used(f),111);assert.equal(Number((await charge(f)).credits),100);
+        assert.equal((await call('post',path)).status,202);assert.equal(await used(f),111);
+    });
     test('concurrent duplicate terminal failures reverse exactly the original debit once',async()=>{
         const f=await fixture();await running(f);
         const completed=await Promise.all(Array.from({length:6},()=>worker.finishJob(db,f.job.id,'fixture-worker',f.resource,'failed','upstream failure')));
