@@ -2,7 +2,7 @@ const Stripe = require('stripe');
 const { createHash } = require('crypto');
 const pool = require('../db/pool');
 const { transaction, failure, meterLock } = require('../db/commercialQueries');
-const { config, PLANS } = require('./commercialConfig');
+const { config, PLANS, BUSINESS_PRICE } = require('./commercialConfig');
 
 function stripeClient() {
     if (!process.env.STRIPE_SECRET_KEY) throw failure('Billing is not configured','BILLING_UNAVAILABLE',503);
@@ -18,8 +18,8 @@ async function verifyEnvironment(db = pool) {
     if (settings.checkout) {
         const stripe = stripeClient();
         const price = await stripe.prices.retrieve(process.env.STRIPE_BUSINESS_PRICE_ID);
-        if (price.livemode !== (settings.mode==='live') || !price.active || price.currency!=='cad' || price.unit_amount!==4900
-            || price.recurring?.interval!=='month' || price.recurring?.interval_count!==1) throw new Error('Business price does not match the reviewed plan');
+        if (price.livemode !== (settings.mode==='live') || !price.active || price.currency!==BUSINESS_PRICE.currency || price.unit_amount!==BUSINESS_PRICE.amount
+            || price.recurring?.interval!==BUSINESS_PRICE.interval || price.recurring?.interval_count!==1) throw new Error('Business price does not match the reviewed plan');
         if (process.env.STRIPE_TAX_ENABLED === 'true') {
             if (process.env.STRIPE_TAX_REGISTRATION_CONFIRMED !== 'true') throw new Error('Tax registration confirmation required');
             const [tax, registrations] = await Promise.all([stripe.tax.settings.retrieve(),stripe.tax.registrations.list({status:'active',limit:1})]);

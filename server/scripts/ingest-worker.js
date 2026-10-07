@@ -33,6 +33,7 @@ const {
     claimJob,
     heartbeatJob,
     finishJob,
+    finishPublishedJob,
     requeueJob
 } = require('../db/ingestWorkerQueries');
 
@@ -101,6 +102,15 @@ async function processJob(job, workerId) {
     heartbeatTimer.unref();
 
     try {
+        // Publication is the durable success boundary. Catalogue changes or
+        // eviction after publication cannot make a recovered job fail.
+        if (job.published_at) {
+            const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'done', null);
+            if (!finished) throw new Error('worker lease lost while reconciling published job');
+            ok = true;
+            console.log('[job ' + job.id + '] reconciled published table ' + job.published_table_name);
+            return;
+        }
         const resource = await getResourceById(job.resource_id);
         if (!resource) throw new Error('resource vanished from catalog');
         const version = resourceVersion(resource);
@@ -127,7 +137,7 @@ async function processJob(job, workerId) {
             throw error;
         }
         console.log('[job ' + job.id + '] ingesting ' + job.resource_id + ' (attempt ' + job.attempts + ')');
-        const result = await ingestResource(resource, caps);
+        const result = await ingestResource(resource, caps, { jobId: job.id, workerId });
         rowsLoaded = result.rowCount;
         bytesLoaded = result.byteSize;
         const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'done', null);
@@ -135,6 +145,13 @@ async function processJob(job, workerId) {
         ok = true;
         console.log('[job ' + job.id + '] done: ' + result.rowCount + ' rows, ' + result.byteSize + ' bytes in ' + result.tableName);
     } catch (err) {
+        // The table transaction may have committed even if its acknowledgement
+        // or queue bookkeeping failed. Check its receipt before retry/refund.
+        if (await finishPublishedJob(pool, job.id, workerId, job.resource_id)) {
+            ok = true;
+            console.log('[job ' + job.id + '] reconciled committed publication after bookkeeping failure');
+            return;
+        }
         error = err.message;
         console.error('[job ' + job.id + '] failed: ' + err.message);
         const failure = preparationFailure(err, job.attempts);

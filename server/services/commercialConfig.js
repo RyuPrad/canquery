@@ -2,6 +2,21 @@ const PLANS = Object.freeze({
     free: { credits: 1000, keys: 1, rate: 30, concurrency: 1 },
     business: { credits: 100000, keys: 5, rate: 300, concurrency: 2 }
 });
+// All metered API operations and public workflow examples derive from this table.
+const CREDIT_COSTS = Object.freeze({
+    metadata: 1, query: 1, tile: 1,
+    aggregate: 10, profile: 10, map: 10, featured: 10,
+    export: 25, preparation: 100, activity: 0
+});
+const WORKFLOW_COSTS = Object.freeze({
+    ready: CREDIT_COSTS.metadata + CREDIT_COSTS.query,
+    prepare: 2 * CREDIT_COSTS.metadata + CREDIT_COSTS.preparation + CREDIT_COSTS.query,
+    reuse: CREDIT_COSTS.metadata + CREDIT_COSTS.query,
+    direct_query: CREDIT_COSTS.query,
+    export: CREDIT_COSTS.export,
+    prepare_aggregate: 2 * CREDIT_COSTS.metadata + CREDIT_COSTS.preparation + CREDIT_COSTS.aggregate
+});
+const BUSINESS_PRICE = Object.freeze({ currency: 'cad', amount: 4900, interval: 'month' });
 function config() {
     const enabled = process.env.COMMERCIAL_API_ENABLED === 'true';
     const mode = process.env.STRIPE_MODE || 'sandbox';
@@ -28,4 +43,4 @@ function config() {
     }
     return { enabled, mode, origin, sunset, checkout };
 }
-module.exports = { PLANS, config };
+module.exports = { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE, config };

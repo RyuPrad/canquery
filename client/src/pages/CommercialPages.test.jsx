@@ -50,6 +50,20 @@ test('used credits, reservations and remaining balance stay distinct with an exp
   expect(screen.getByText(/Reserved credits cover requests still in progress/)).toBeInTheDocument();
 });
 
+test('preparation returns show gross and net usage and retain the original expired allowance period', async () => {
+  accountRequest.mockResolvedValue({ ...account, used: 2, gross_used: 2, returned_credits: 0, remaining: 998,
+    usage: [{ day: '2026-09-30', operation: 'preparation', requests: 1, credits: 100, returned_credits: 100, net_credits: 0 }],
+    preparation_refunds: [{ job_id: 42, credits: 100, charged_at: '2026-09-30T23:58:00Z', refunded_at: '2026-10-01T00:03:00Z', period_id: 'prior', period_starts_at: '2026-09-01T00:00:00Z', period_ends_at: '2026-10-01T00:00:00Z' }] });
+  render(<AccountPage />);
+  expect(await screen.findByText('Preparation job 42')).toBeVisible();
+  expect(screen.getByText('100 credits returned')).toBeVisible();
+  expect(screen.getByText(/Current allowance period: 2 credits charged, 0 preparation credits returned/)).toBeVisible();
+  const row = screen.getByRole('cell', { name: '2026-09-30' }).closest('tr');
+  expect([...row.querySelectorAll('td')].map(cell => cell.textContent)).toEqual(['2026-09-30', 'New preparation', '1', '100', '100', '0']);
+  expect(document.querySelector('time[datetime="2026-09-01T00:00:00Z"]')).toBeInTheDocument();
+  expect(screen.getByText(/Returns from an expired period do not increase this period/)).toBeVisible();
+});
+
 test('revocation names the key, waits for confirmation and restores focus on cancel', async () => {
   accountRequest.mockResolvedValue({ ...account, keys: [key] }); render(<AccountPage />);
   const trigger = await screen.findByRole('button', { name: 'Revoke Monthly report' }); trigger.focus(); fireEvent.click(trigger);

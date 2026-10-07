@@ -3,8 +3,11 @@ import { afterEach, beforeEach } from 'vitest';
 import { createRequire } from 'node:module';
 import DocsPage from './DocsPage.jsx';
 import { LangProvider } from '../i18n.jsx';
+import { accountRequest } from '../api/account.js';
+vi.mock('../api/account.js', () => ({ accountRequest: vi.fn() }));
 
 const { buildOpenApi } = createRequire(import.meta.url)('../../../server/services/openApi.js');
+const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
 
 const spec = {
   openapi: '3.1.0', servers: [{ url: '/api/v1' }], security: [{ bearerAuth: [] }],
@@ -39,7 +42,23 @@ const spec = {
 const response = value => Promise.resolve({ ok: true, json: async () => value });
 
 beforeEach(() => {
+  accountRequest.mockResolvedValue({ plans: PLANS, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS });
   vi.stubGlobal('fetch', vi.fn(() => response(spec)));
+});
+
+test('preparation demonstration preserves source context, bounded recipes and credit distinctions', async () => {
+  render(<DocsPage />);
+  const section = document.getElementById('preparation-example');
+  expect(within(section).getByRole('link', { name: /Original public CSV/ })).toHaveAttribute('href', 'https://cabin-rcba.ec.gc.ca/Cabin/opendata/cabin_benthic_data_mda09_1987-present.csv');
+  expect(within(section).getByText(/not exposed through the federal CKAN DataStore/)).toBeInTheDocument();
+  expect(within(section).getByText(/not a live production result/)).toBeInTheDocument();
+  expect(within(section).getByText(/A timeout does not cancel the shared job/)).toBeInTheDocument();
+  const languages = within(section).getByRole('group', { name: 'Complete bounded preparation recipe · Example language' });
+  expect(within(languages).queryByRole('button', { name: 'curl' })).toBeNull();
+  expect(within(languages).getByRole('button', { name: 'Python' })).toHaveAttribute('aria-pressed', 'true');
+  expect(await within(section).findByText('103')).toBeInTheDocument();
+  expect(within(section).getByText(/112 credits/)).toBeInTheDocument();
+  expect(fetch.mock.calls.every(([url, options]) => !url.endsWith('/query') && !url.endsWith('/prepare') && !options?.method)).toBe(true);
 });
 afterEach(() => {
   localStorage.clear();

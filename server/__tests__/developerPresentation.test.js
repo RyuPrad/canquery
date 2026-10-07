@@ -20,7 +20,10 @@ test('initial pricing offers Free while paid checkout is closed', () => {
     expect(html).toContain('href="/signup"');
     expect(html).toContain('Coming soon. Paid signup is not open yet.');
     expect(html).not.toContain('Choose Business');
-    expect(html).toContain('Custom &amp; Enterprise');
+    expect(html).not.toContain('<h3>Custom &amp; Enterprise');
+    expect(html).toContain('one existing supported resource');
+    expect(html).toContain('the original allowance period');
+    expect(html).toContain('103');
     expect(html).toContain('Test environment.');
 });
 

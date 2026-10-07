@@ -1,14 +1,17 @@
 jest.mock('../db/pool', () => ({ connect: jest.fn() }));
+jest.mock('../db/preparationAccounting', () => ({ settlePreparationOn: jest.fn() }));
 
 const pool = require('../db/pool');
 const { enqueueJob } = require('../db/ingestQueries');
+const { settlePreparationOn } = require('../db/preparationAccounting');
 
-function clientFor({ loaded = [], queued = [], resource = [{ id: 'public-resource' }] } = {}) {
+function clientFor({ loaded = [], queued = [], completed = [], resource = [{ id: 'public-resource' }] } = {}) {
     const client = {
         query: jest.fn(async (sql) => {
             if (sql.includes('FROM resources r JOIN datasets')) return { rows: resource };
             if (sql.includes('FROM ingested_resources')) return { rows: loaded };
             if (sql.startsWith('INSERT INTO ingest_jobs')) return { rows: queued };
+            if (sql.includes('UPDATE ingest_jobs')) return { rows: completed };
             return { rows: [], rowCount: 0 };
         }),
         release: jest.fn()
@@ -60,7 +63,16 @@ describe('enqueueJob', () => {
         const sql = client.query.mock.calls.map(call => call[0]);
         expect(sql.some(statement => statement.startsWith('INSERT INTO ingest_jobs'))).toBe(false);
         expect(sql.some(statement => statement.includes("status = 'pending'"))).toBe(true);
+        expect(sql.find(statement => statement.includes('UPDATE ingest_jobs'))).toContain('AND NOT preparation');
         expect(sql.at(-1)).toBe('COMMIT');
+    });
+
+    it('settles legitimate legacy completion while leaving preparation refresh jobs alone', async () => {
+        const client = clientFor({ loaded: [{ resource_id: 'resource-2', row_count: '50' }], completed: [{ id: 7 }] });
+        await enqueueJob('resource-2');
+        expect(settlePreparationOn).toHaveBeenCalledWith(client, 7);
+        expect(client.query.mock.calls.find(([sql]) => sql.includes('UPDATE ingest_jobs'))[0]).toContain('AND NOT preparation');
+        expect(client.query).toHaveBeenLastCalledWith('COMMIT');
     });
 
     it('rolls back and releases the client on enqueue failure', async () => {

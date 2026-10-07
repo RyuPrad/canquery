@@ -2,6 +2,7 @@ const pool = require('./pool');
 const { lockIngestResource } = require('./ingestResourceLock');
 const AppError = require('../utils/AppError');
 const { chargePreparation } = require('./commercialQueries');
+const { settlePreparationOn } = require('./preparationAccounting');
 
 async function enqueueJob(resourceId, commercial = null) {
     const client = await pool.connect();
@@ -29,14 +30,16 @@ async function enqueueJob(resourceId, commercial = null) {
         );
         if (loadedResult.rows.length > 0) {
             const loaded = loadedResult.rows[0];
-            // Clean up a redundant job left pending by an older API version or
-            // an enqueue that lost a completion race before these locks existed.
-            await client.query(
+            // Complete only redundant legacy work. A preparation refresh can
+            // legitimately remain pending while this older snapshot serves.
+            const completed = await client.query(
                 `UPDATE ingest_jobs
                  SET status = 'done', error = NULL, finished_at = coalesce(finished_at, now())
-                 WHERE resource_id = $1 AND status = 'pending'`,
+                 WHERE resource_id = $1 AND status = 'pending' AND NOT preparation
+                 RETURNING id`,
                 [resourceId]
             );
+            for (const job of completed.rows) await settlePreparationOn(client, job.id);
             await client.query('COMMIT');
             return {
                 id: null,

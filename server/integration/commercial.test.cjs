@@ -43,7 +43,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         await db.query("DELETE FROM commercial.stripe_events WHERE id LIKE 'evt_fixture_%'");
         await db.query('DELETE FROM commercial.mail_outbox');
         for (const id of ids) {
-            for (const table of ['requests','rate_windows','usage_daily','periods','api_keys']) await db.query(`DELETE FROM commercial.${table} WHERE account_id=$1`,[id]);
+            for (const table of ['preparation_charges','requests','rate_windows','usage_daily','periods','api_keys']) await db.query(`DELETE FROM commercial.${table} WHERE account_id=$1`,[id]);
             await db.query('DELETE FROM commercial.accounts WHERE id=$1',[id]);
         }
         await db.query('DELETE FROM canquery_auth."user" WHERE id=$1 OR email LIKE $2 OR id LIKE $3',[ownerId,'commercial-auth-%@example.test',ownerId+'-extra-%']);
@@ -108,10 +108,12 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         assert.equal((await q.dashboard(account.id)).reserved,0);
     });
     test('preparation charging commits with admission and rolls back with a failed transaction',async()=>{
+        const resource='commercial-resource-'+randomUUID();resources.push(resource);
+        const job=(await db.query('INSERT INTO ingest_jobs(resource_id) VALUES ($1) RETURNING id',[resource])).rows[0];
         const r=await q.reserve(identity,{name:'preparation',cost:0});
-        await assert.rejects(q.transaction(async c=>{await q.chargePreparation(c,r,123);throw Error('failed admission');}));
+        await assert.rejects(q.transaction(async c=>{await q.chargePreparation(c,r,job.id);throw Error('failed admission');}));
         assert.equal((await q.dashboard(account.id)).used,0);
-        await q.transaction(c=>q.chargePreparation(c,r,123));
+        await q.transaction(c=>q.chargePreparation(c,r,job.id));
         await q.abortRequest(r.id);
         assert.equal((await q.dashboard(account.id)).used,100);
     });

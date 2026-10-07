@@ -11,6 +11,7 @@ const { evictUntilUnderBudget, withStoreBudgetLock } = require('./evictService')
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { resourceVersion } = require('./resourceVersion');
 const { cleanRetiredTables } = require('./retiredIngestTables');
+const { lockIngestResource } = require('../db/ingestResourceLock');
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -91,7 +92,7 @@ async function validateStorageFilesystems(caps) {
     return storage;
 }
 
-async function ingestResourceLocked(resource, caps, tableName) {
+async function ingestResourceLocked(resource, caps, tableName, job) {
     await cleanRetiredTables(metadataPool);
     const storage = storageOptions(caps);
     if (process.env.NODE_ENV === 'production' && !storage.storeDataPath) {
@@ -215,6 +216,20 @@ async function ingestResourceLocked(resource, caps, tableName) {
                 );
             }
 
+            // Resource -> job is shared with admission, terminal settlement and
+            // accounting reconciliation. Hold these only for publication, not
+            // while downloading or converting the file.
+            await lockIngestResource(client, resource.id);
+            if (job) {
+                const owned = await client.query(`SELECT id FROM ingest_jobs
+                    WHERE id = $1 AND worker_id = $2 AND resource_id = $3
+                        AND status = 'running' AND published_at IS NULL
+                    FOR UPDATE`, [job.jobId, job.workerId, resource.id]);
+                if (!owned.rows.length) {
+                    throw budgetError('worker lease lost before table publication', 'INGEST_LEASE_LOST');
+                }
+            }
+
             // Lock the catalogue row only for publication. A sync can continue
             // throughout the download/COPY, but cannot race this final check.
             const current = await client.query('SELECT * FROM resources WHERE id = $1 FOR SHARE', [resource.id]);
@@ -241,6 +256,20 @@ async function ingestResourceLocked(resource, caps, tableName) {
                     status = 'ready'`,
                 [resource.id, tableName, rowCount, byteSize, JSON.stringify(columns), resourceVersion(resource)]
             );
+            if (job) {
+                // This receipt survives queue bookkeeping errors and later
+                // cache eviction. Never infer this job's success from an older
+                // serving copy after a failed refresh.
+                const receipt = await client.query(`UPDATE ingest_jobs
+                    SET published_table_name = $4, published_source_version = $5,
+                        published_at = now()
+                    WHERE id = $1 AND worker_id = $2 AND resource_id = $3
+                        AND status = 'running' AND published_at IS NULL
+                    RETURNING id`, [job.jobId, job.workerId, resource.id, tableName, resourceVersion(resource)]);
+                if (receipt.rowCount !== 1) {
+                    throw budgetError('worker lease lost while recording table publication', 'INGEST_LEASE_LOST');
+                }
+            }
             await client.query('COMMIT');
             committed = true;
 
@@ -280,13 +309,13 @@ async function ingestResourceLocked(resource, caps, tableName) {
     }
 }
 
-async function ingestResource(resource, caps) {
+async function ingestResource(resource, caps, job = null) {
     const tableName = tableNameFor(resource.id);
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new Error('cannot derive a safe table name');
     }
     return withStoreBudgetLock(metadataPool, () =>
-        ingestResourceLocked(resource, caps, tableName)
+        ingestResourceLocked(resource, caps, tableName, job)
     );
 }
 

@@ -1,3 +1,5 @@
+jest.mock('../db/preparationAccounting', () => ({ settlePreparationOn: jest.fn() }));
+const { settlePreparationOn } = require('../db/preparationAccounting');
 const {
     WORKER_LOCK_KEYS,
     acquireWorkerLock,
@@ -5,10 +7,12 @@ const {
     claimJob,
     heartbeatJob,
     finishJob,
+    finishPublishedJob,
     requeueJob
 } = require('../db/ingestWorkerQueries');
 
 describe('ingest worker leases', () => {
+    beforeEach(() => jest.clearAllMocks());
     test('uses one process-wide PostgreSQL advisory lock', async () => {
         const db = { query: jest.fn().mockResolvedValue({ rows: [{ acquired: true }] }) };
 
@@ -76,5 +80,46 @@ describe('ingest worker leases', () => {
         expect(client.query.mock.calls[2][1].slice(0, 2)).toEqual([7, 'stale-worker']);
         expect(transactionSql[3]).toBe('COMMIT');
         expect(client.release).toHaveBeenCalled();
+        expect(settlePreparationOn).not.toHaveBeenCalled();
+    });
+
+    test('settles a terminal transition in the same transaction after the guarded job update', async () => {
+        const calls = [];
+        const client = {
+            query: jest.fn(async (sql) => {
+                calls.push(sql);
+                return { rowCount: sql.includes('UPDATE ingest_jobs') ? 1 : 0, rows: [] };
+            }), release: jest.fn()
+        };
+        settlePreparationOn.mockImplementation(async (db, id) => {
+            expect(db).toBe(client);
+            expect(id).toBe(7);
+            expect(calls.at(-1)).toContain('UPDATE ingest_jobs');
+            calls.push('settled');
+        });
+        const db = { connect: jest.fn().mockResolvedValue(client) };
+        await expect(finishJob(db, 7, 'worker-a', 'resource-1', 'failed', 'bad file', { code: 'INVALID_FILE', seconds: 86400 }))
+            .resolves.toBe(true);
+        expect(calls.slice(-2)).toEqual(['settled', 'COMMIT']);
+        expect(calls[2]).toContain("CASE WHEN published_at IS NOT NULL THEN 'done'");
+        expect(client.query.mock.calls[2][1]).toEqual([7, 'worker-a', 'failed', 'bad file', 'INVALID_FILE', 86400, 'resource-1', false]);
+    });
+
+    test('accounting failure rolls back the terminal transition for later recovery', async () => {
+        const client = { query: jest.fn().mockResolvedValue({ rowCount: 1 }), release: jest.fn() };
+        const db = { connect: jest.fn().mockResolvedValue(client) };
+        settlePreparationOn.mockRejectedValueOnce(new Error('accounting unavailable'));
+        await expect(finishJob(db, 7, 'worker-a', 'resource-1', 'failed', 'bad file'))
+            .rejects.toThrow('accounting unavailable');
+        expect(client.query).toHaveBeenLastCalledWith('ROLLBACK');
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('ambiguous commit recovery only completes jobs with publication receipts', async () => {
+        const client = { query: jest.fn().mockResolvedValue({ rowCount: 0 }), release: jest.fn() };
+        await expect(finishPublishedJob({ connect: async () => client }, 7, 'worker-a', 'resource-1')).resolves.toBe(false);
+        expect(client.query.mock.calls[2][1].at(-1)).toBe(true);
+        expect(client.query.mock.calls[2][0]).toContain('OR published_at IS NOT NULL');
+        expect(settlePreparationOn).not.toHaveBeenCalled();
     });
 });

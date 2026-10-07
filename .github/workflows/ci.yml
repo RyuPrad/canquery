@@ -78,4 +78,4 @@ jobs:
       - run: npm ci
       - run: npm run migrate
       - run: npx jest __tests__/spatialIntegration.test.js __tests__/searchConsoleIntegration.test.js __tests__/localSearchIntegration.test.js __tests__/catalogDiscoveryIntegration.test.js __tests__/preparationIntegration.test.js --runInBand
-      - run: node --test integration/*.test.cjs
+      - run: node --test --test-concurrency=1 integration/*.test.cjs

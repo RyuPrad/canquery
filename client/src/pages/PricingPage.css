@@ -56,7 +56,7 @@
 .cq-pricing-footer > p { flex: 1 1 18rem; font-family: var(--font-display); font-weight: 600; }
 @media (min-width: 1024px) {
   .cq-pricing-hero { grid-template-columns: 1.35fr 1fr; gap: 4rem; }
-  .cq-pricing-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cq-pricing-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cq-pricing-audience { min-height: 2.8rem; }
   .cq-pricing-plan-action p { min-height: 2.5rem; }
   .cq-pricing-example { grid-template-columns: 1fr 1.3fr; gap: 2.5rem; padding: 2rem; }

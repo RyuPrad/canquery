@@ -8,7 +8,11 @@ async function inspect(accountId,db=pool) {
     const account=(await db.query('SELECT * FROM commercial.accounts WHERE id=$1',[accountId])).rows[0];
     if (!account) throw failure('Account not found','ACCOUNT_NOT_FOUND',404);
     const periods=(await db.query('SELECT * FROM commercial.periods WHERE account_id=$1 ORDER BY starts_at DESC LIMIT 24',[accountId])).rows;
-    return {account,periods};
+    const preparationCharges=(await db.query(`SELECT job_id,credits,charged_at,outcome,resolved_at,period_id,
+        reversal_reason FROM commercial.preparation_charges WHERE account_id=$1 ORDER BY charged_at DESC LIMIT 100`,[accountId])).rows;
+    const usage=(await db.query(`SELECT day,operation,requests,credits FROM commercial.usage_daily
+        WHERE account_id=$1 AND day >= (now() AT TIME ZONE 'UTC')::date-30 ORDER BY day,operation`,[accountId])).rows;
+    return {account,periods,preparation_charges:preparationCharges,usage};
 }
 async function setSuspended(accountId,suspended,db=pool) {
     const result=await db.query('UPDATE commercial.accounts SET suspended_at=CASE WHEN $2 THEN now() ELSE NULL END WHERE id=$1 AND owner_id IS NOT NULL RETURNING id',[accountId,suspended]);
@@ -76,6 +80,13 @@ async function deleteAccount(accountId,stripe,db=pool) {
 }
 async function status(db=pool) {
     return (await db.query(`SELECT
+        (SELECT count(*)::int FROM commercial.preparation_charges WHERE outcome='pending') AS unresolved_preparation_charges,
+        (SELECT count(*)::int FROM commercial.preparation_charges c JOIN ingest_jobs j ON j.id=c.job_id
+            WHERE c.outcome='pending' AND (j.status IN ('done','failed') OR j.published_at IS NOT NULL)) AS terminal_preparation_charges,
+        (SELECT count(*)::int FROM commercial.preparation_charges c LEFT JOIN ingest_jobs j ON j.id=c.job_id
+            WHERE c.outcome='pending' AND j.id IS NULL) AS missing_preparation_jobs,
+        (SELECT count(*)::int FROM commercial.preparation_charges WHERE outcome='refunded') AS preparation_reversals,
+        (SELECT coalesce(sum(credits),0) FROM commercial.preparation_charges WHERE outcome='refunded') AS returned_preparation_credits,
         (SELECT count(*)::int FROM commercial.requests WHERE state='reserved' AND expires_at<now()) AS expired_reservations,
         (SELECT count(*)::int FROM commercial.stripe_events WHERE processed_at IS NULL AND failure) AS billing_retries,
         (SELECT count(*)::int FROM commercial.stripe_events WHERE processed_at IS NULL AND received_at<now()-interval '15 minutes') AS delayed_billing_events,

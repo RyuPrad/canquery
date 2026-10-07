@@ -1,7 +1,7 @@
 const { randomUUID, randomBytes, createHash } = require('crypto');
 const pool = require('./pool');
 const AppError = require('../utils/AppError');
-const { PLANS } = require('../services/commercialConfig');
+const { PLANS, CREDIT_COSTS } = require('../services/commercialConfig');
 
 function failure(message, code, status = 429, seconds = 60) {
     const err = new AppError(message, status);
@@ -150,24 +150,42 @@ async function chargePreparation(client, context, jobId) {
     const period = await currentPeriod(client, context.accountId);
     const keys = await activeKeys(client, context.accountId);
     if (!keys.slice(0,period.key_limit).some(k=>k.id===context.keyId)) throw failure('API key is no longer active', 'KEY_DISABLED', 403);
-    if (limits(period).remaining < 100) throw failure('Preparation requires 100 API credits', 'QUOTA_EXCEEDED', 429, (new Date(period.ends_at)-Date.now())/1000);
+    const credits = CREDIT_COSTS.preparation;
+    if (limits(period).remaining < credits) throw failure(`Preparation requires ${credits} API credits`, 'QUOTA_EXCEEDED', 429, (new Date(period.ends_at)-Date.now())/1000);
     await rate(client,context.accountId,'new-preparation',20,3600);
-    await client.query('UPDATE commercial.periods SET reserved=reserved+100 WHERE id=$1', [period.id]);
+    await client.query('UPDATE commercial.periods SET reserved=reserved+$2 WHERE id=$1', [period.id,credits]);
     await client.query(`INSERT INTO commercial.requests(id,account_id,period_id,operation,credits,state,expires_at,job_id)
-        VALUES ($1,$2,$3,'preparation',100,'reserved',now(),$4)`,[context.id,context.accountId,period.id,jobId]);
+        VALUES ($1,$2,$3,'preparation',$5,'reserved',now(),$4)`,[context.id,context.accountId,period.id,jobId,credits]);
     await settleOn(client,context.id,true);
-    context.remaining=limits(period).remaining-100;
+    await client.query(`INSERT INTO commercial.preparation_charges(request_id,job_id,account_id,period_id,credits,charged_at)
+        SELECT id,job_id,account_id,period_id,credits,created_at FROM commercial.requests WHERE id=$1`, [context.id]);
+    context.remaining=limits(period).remaining-credits;
 }
 async function dashboard(accountId, db = pool) {
     return transaction(async client => {
         await meterLock(client);
         const period = await currentPeriod(client,accountId);
         const keys = await activeKeys(client,accountId);
-        const usage = await client.query(`SELECT day,operation,requests,credits FROM commercial.usage_daily
-            WHERE account_id=$1 AND day >= (now() AT TIME ZONE 'UTC')::date-30 ORDER BY day,operation`,[accountId]);
+        const usage = await client.query(`SELECT u.day,u.operation,u.requests,u.credits,
+            coalesce(r.credits,0) AS returned_credits,u.credits-coalesce(r.credits,0) AS net_credits
+            FROM commercial.usage_daily u LEFT JOIN (
+                SELECT (charged_at AT TIME ZONE 'UTC')::date AS day,sum(credits) AS credits
+                FROM commercial.preparation_charges WHERE account_id=$1 AND outcome='refunded'
+                GROUP BY (charged_at AT TIME ZONE 'UTC')::date
+            ) r ON u.day=r.day AND u.operation='preparation'
+            WHERE u.account_id=$1 AND u.day >= (now() AT TIME ZONE 'UTC')::date-30 ORDER BY u.day,u.operation`,[accountId]);
+        const returned = Number((await client.query(`SELECT coalesce(sum(credits),0) AS credits
+            FROM commercial.preparation_charges WHERE account_id=$1 AND period_id=$2 AND outcome='refunded'`,[accountId,period.id])).rows[0].credits);
+        const refunds = await client.query(`SELECT c.job_id,c.credits,c.charged_at,c.resolved_at AS refunded_at,
+            c.period_id,p.starts_at AS period_starts_at,p.ends_at AS period_ends_at
+            FROM commercial.preparation_charges c JOIN commercial.periods p ON p.id=c.period_id
+            WHERE c.account_id=$1 AND c.outcome='refunded' ORDER BY c.resolved_at DESC,c.job_id DESC LIMIT 50`,[accountId]);
         return { plan:period.plan, ...limits(period), used:Number(period.used), reserved:Number(period.reserved),
+            returned_credits:returned,gross_used:Number(period.used)+returned,
             key_limit:period.key_limit, rate_limit:period.rate_limit, concurrency:period.concurrency,
-            keys:keys.map((k,i)=>({...k,enabled:i<period.key_limit})), usage:usage.rows };
+            keys:keys.map((k,i)=>({...k,enabled:i<period.key_limit})),
+            usage:usage.rows.map(r=>({...r,credits:Number(r.credits),returned_credits:Number(r.returned_credits),net_credits:Number(r.net_credits)})),
+            preparation_refunds:refunds.rows.map(r=>({...r,credits:Number(r.credits)})) };
     },db);
 }
 async function maintenance(db = pool) {
@@ -176,6 +194,7 @@ async function maintenance(db = pool) {
         const stale = await client.query("SELECT id FROM commercial.requests WHERE state='reserved' AND expires_at < now() LIMIT 100");
         for (const row of stale.rows) await settleOn(client,row.id,false);
         await client.query("DELETE FROM commercial.requests WHERE state<>'reserved' AND created_at<now()-interval '7 days'");
+        await client.query("DELETE FROM commercial.preparation_charges WHERE outcome<>'pending' AND resolved_at<now()-interval '13 months'");
         await client.query("DELETE FROM commercial.rate_windows WHERE starts_at<now()-interval '2 days'");
         await client.query("DELETE FROM commercial.usage_daily WHERE day<(now() AT TIME ZONE 'UTC')::date-interval '13 months'");
         await client.query("DELETE FROM commercial.stripe_events WHERE processed_at<now()-interval '90 days'");

@@ -39,3 +39,6 @@
 .cq-account-steps a.link { min-height: 2.75rem; display: inline-flex; align-items: center; }
 @media (min-width: 768px) { .cq-auth-layout { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); grid-template-rows: auto 1fr; grid-template-areas: "intro form" "context form"; column-gap: 4rem; row-gap: 0; } .cq-auth-intro { padding-top: 1.5rem; } }
 @media (max-width: 400px) { .cq-account-metrics { gap: .6rem; } .cq-account-key-form .btn { width: 100%; } }
+.cq-account-refunds { display: grid; gap: 1rem; margin-top: 1rem; }
+.cq-account-refunds li { display: flex; flex-wrap: wrap; gap: 1rem 2rem; justify-content: space-between; border-top: 1px solid color-mix(in oklch, var(--color-base-content) 15%, transparent); padding-top: 1rem; font-size: .875rem; line-height: 1.75; }
+.cq-account-refunds li > div { min-width: 0; overflow-wrap: anywhere; }

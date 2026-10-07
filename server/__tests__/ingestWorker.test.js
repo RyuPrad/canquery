@@ -16,17 +16,46 @@ jest.mock('../db/ingestWorkerQueries', () => ({
     claimJob: jest.fn(),
     heartbeatJob: jest.fn().mockResolvedValue(true),
     finishJob: jest.fn().mockResolvedValue(true),
+    finishPublishedJob: jest.fn().mockResolvedValue(false),
     requeueJob: jest.fn()
 }));
 
 const pool = require('../db/pool');
 const { getResourceById } = require('../db/catalogReadQueries');
 const { ingestResource } = require('../services/ingestPipeline');
-const { finishJob, requeueJob } = require('../db/ingestWorkerQueries');
+const { finishJob, finishPublishedJob, requeueJob } = require('../db/ingestWorkerQueries');
 const { processJob } = require('../scripts/ingest-worker');
 
 describe('ingest worker reconciliation', () => {
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        finishPublishedJob.mockResolvedValue(false);
+    });
+
+    it('a durable publication survives catalogue removal or expiry before worker recovery', async () => {
+        getResourceById.mockResolvedValue(null);
+        await processJob({ id: 7, resource_id: 'resource-a', attempts: 2,
+            published_at: '2026-10-07T00:00:00Z', published_table_name: 'r_published' }, 'worker-a');
+        expect(getResourceById).not.toHaveBeenCalled();
+        expect(ingestResource).not.toHaveBeenCalled();
+        expect(finishJob).toHaveBeenCalledWith(pool, 7, 'worker-a', 'resource-a', 'done', null);
+        expect(requeueJob).not.toHaveBeenCalled();
+        expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO ingest_runs'),
+            expect.arrayContaining(['resource-a', true]));
+    });
+
+    it('checks a publication receipt before interpreting a commit error as a failed attempt', async () => {
+        getResourceById.mockResolvedValue({ id: 'resource-a', format: 'CSV', url: 'https://example.org/a.csv' });
+        ingestResource.mockRejectedValueOnce(Object.assign(new Error('commit acknowledgement lost'), { code: '08006' }));
+        finishPublishedJob.mockResolvedValueOnce(true);
+        await processJob({ id: 8, resource_id: 'resource-a', preparation: true, attempts: 3 }, 'worker-a');
+        expect(ingestResource).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), { jobId: 8, workerId: 'worker-a' });
+        expect(finishPublishedJob).toHaveBeenCalledWith(pool, 8, 'worker-a', 'resource-a');
+        expect(finishJob).not.toHaveBeenCalled();
+        expect(requeueJob).not.toHaveBeenCalled();
+        expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO ingest_runs'),
+            expect.arrayContaining(['resource-a', true]));
+    });
 
     it('repairs a crash-after-commit job without rebuilding the ready table', async () => {
         getResourceById.mockResolvedValue({

@@ -1,14 +1,15 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { requireOwner } = require('../services/authRuntime');
-const { config, PLANS } = require('../services/commercialConfig');
+const { config, PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = require('../services/commercialConfig');
 const queries = require('../db/commercialQueries');
 const billing = require('../services/billingService');
 const { envelope } = require('../utils/envelope');
 const router = express.Router();
 router.get('/plans',(_req,res)=>{
     const { enabled,mode,checkout,sunset } = config();
-    res.set('Cache-Control','no-store').json(envelope({enabled,mode,checkout,sunset,plans:PLANS}));
+    res.set('Cache-Control','no-store').json(envelope({enabled,mode,checkout,sunset,plans:PLANS,
+        credit_costs:CREDIT_COSTS,workflow_costs:WORKFLOW_COSTS,business_price:BUSINESS_PRICE}));
 });
 router.use(rateLimit({windowMs:60000,limit:30,standardHeaders:true,legacyHeaders:false}));
 router.use(requireOwner);

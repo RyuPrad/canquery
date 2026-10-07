@@ -4,11 +4,12 @@ import { useLang } from '../i18n.jsx';
 import { track } from '../utils/analytics.js';
 import CodeSample from '../components/docs/CodeSample.jsx';
 import EndpointReference from '../components/docs/EndpointReference.jsx';
+import CreditWorkflows from '../components/docs/CreditWorkflows.jsx';
 import { createDocsSnippets, PERMITS_RESOURCE } from '../utils/docs/snippets.js';
 import './DocsPage.css';
 
 const SECTIONS = [
-  ['quickstart', 'first'], ['workflow', 'workflow'], ['capabilities', 'capabilities'],
+  ['quickstart', 'first'], ['workflow', 'workflow'], ['preparation-example', 'preparation_example'], ['capabilities', 'capabilities'],
   ['reference', 'reference'], ['reliability', 'reliability'],
 ];
 
@@ -90,19 +91,32 @@ export default function DocsPage() {
           <div className="cq-doc-workflow-step"><h3><span aria-hidden="true">3.</span> {t('docs.workflow_export')}</h3><p>{t('docs.workflow_export_body')}</p><CodeSample label={t('docs.workflow_export_label')} code={snippets.export} endpoint="/resources/:id/query.csv" /></div>
         </section>
 
+        <section id="preparation-example" className="cq-doc-section">
+          <SectionHeading number="03" title={t('docs.cabin_title')} intro={t('docs.cabin_intro')} />
+          <div className="cq-doc-source-note"><a href="https://open.canada.ca/data/en/dataset/13564ca4-e330-40a5-9521-bfb1be767147" target="_blank" rel="noopener noreferrer">{t('docs.cabin_source')} ↗</a><p>{t('docs.cabin_source_context')}</p><a href="https://cabin-rcba.ec.gc.ca/Cabin/opendata/cabin_benthic_data_mda09_1987-present.csv">{t('docs.cabin_download')}</a> · <a href="https://www.canada.ca/en/environment-climate-change/services/canadian-aquatic-biomonitoring-network/database.html">{t('docs.cabin_publisher_tools')}</a></div>
+          <div className="cq-doc-workflow-step"><h3>{t('docs.cabin_inspect')}</h3><p>{t('docs.cabin_inspect_body')}</p><CodeSample label={t('docs.cabin_metadata_label')} snippets={snippets.cabinMetadata} endpoint="/resources/:id" /></div>
+          <div className="cq-doc-workflow-step"><h3>{t('docs.cabin_prepare')}</h3><p>{t('docs.cabin_prepare_body')}</p><details className="cq-doc-recipe"><summary>{t('docs.cabin_admission_label')}</summary><CodeSample label={t('docs.cabin_admission_label')} snippets={snippets.cabinPrepare} endpoint="/resources/:id/prepare" /></details><details className="cq-doc-recipe"><summary>{t('docs.cabin_workflow_label')}</summary><CodeSample label={t('docs.cabin_workflow_label')} snippets={snippets.cabinWorkflow} endpoint="/resources/:id/prepare" /></details><p className="cq-doc-footnote">{t('docs.cabin_poll_note')}</p></div>
+          <div className="cq-doc-workflow-step"><h3>{t('docs.cabin_query')}</h3><p>{t('docs.cabin_query_body')}</p><CodeSample label={t('docs.cabin_query_label')} snippets={snippets.cabinRows} endpoint="/resources/:id/query" />
+            <div className="cq-doc-notice"><p>{t('docs.cabin_result')}</p><p>{t('docs.cabin_result_limit')}</p></div>
+            <CodeSample label={t('docs.cabin_result_label')} code={JSON.stringify({ data: { total: 327, records: [{ _id: '7548', 'Year/Année': '2024', 'Family/Famille': 'Chironomidae' }, { _id: '7549', 'Year/Année': '2024', 'Family/Famille': 'Chironomidae' }] } }, null, 2)} />
+          </div>
+          <div className="cq-doc-workflow-step"><h3>{t('docs.cabin_reuse')}</h3><p>{t('docs.cabin_reuse_body')}</p><p className="cq-doc-footnote">{t('docs.cabin_dates')}</p></div>
+          <CreditWorkflows />
+        </section>
+
         <section id="capabilities" className="cq-doc-section">
-          <SectionHeading number="03" title={t('docs.capabilities_title')} intro={t('docs.capabilities_intro')} />
+          <SectionHeading number="04" title={t('docs.capabilities_title')} intro={t('docs.capabilities_intro')} />
           <div className="cq-doc-table-scroll" tabIndex={0} aria-label={t('docs.capabilities_title')}><table className="cq-doc-capabilities"><thead><tr><th>{t('docs.cap_mode')}</th><th>{t('docs.cap_available')}</th><th>{t('docs.cap_next')}</th></tr></thead><tbody>{[['ingested', 'ingested'], ['datastore', 'datastore'], ['ingestable', 'ingestable'], ['file-only', 'fileonly']].map(([mode, key]) => <tr key={mode}><td><code>{mode}</code></td><td>{t(`docs.cap_${key}`)}</td><td>{t(`docs.cap_${key}_next`)}</td></tr>)}</tbody></table></div>
           <div className="cq-doc-notice"><p>{t('docs.cap_maps')}</p></div>
         </section>
 
         <section id="reference" className="cq-doc-section">
-          <SectionHeading number="04" title={t('docs.reference_title')} intro={t('docs.reference_intro')} />
+          <SectionHeading number="05" title={t('docs.reference_title')} intro={t('docs.reference_intro')} />
           <EndpointReference base={base} />
         </section>
 
         <section id="reliability" className="cq-doc-section">
-          <SectionHeading number="05" title={t('docs.reliability_title')} intro={t('docs.reliability_intro')} />
+          <SectionHeading number="06" title={t('docs.reliability_title')} intro={t('docs.reliability_intro')} />
           <div className="cq-doc-reliability-section"><h3>{t('docs.pagination_title')}</h3><p>{t('docs.pagination_catalogue')}</p><p>{t('docs.pagination_rows')}</p></div>
           <div className="cq-doc-reliability-section"><h3>{t('docs.filters_title')}</h3><p>{t('docs.filters_body')}</p></div>
           <div id="preparation" className="cq-doc-reliability-section"><h3>{t('docs.prepare_title')}</h3><p>{t('docs.prepare_body')}</p><CodeSample label={t('docs.prepare_label')} code={snippets.prepare} endpoint="/resources/:id/prepare" /><p>{t('docs.prepare_steps')}</p><details className="cq-doc-recipe"><summary>{t('docs.job_label')}</summary><CodeSample label={t('docs.job_label')} code={snippets.job} endpoint="/jobs/:id" /></details><p className="cq-doc-footnote">{t('docs.prepare_limits')}</p></div>
