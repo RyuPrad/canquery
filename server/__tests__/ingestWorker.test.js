@@ -57,6 +57,20 @@ describe('ingest worker reconciliation', () => {
             expect.arrayContaining(['resource-a', true]));
     });
 
+    it('keeps the successful attempt when terminal commit succeeded but its acknowledgement was lost', async () => {
+        getResourceById.mockResolvedValue({ id: 'resource-a', format: 'CSV', url: 'https://example.org/a.csv' });
+        ingestResource.mockResolvedValueOnce({ tableName: 'r_published', rowCount: 0, byteSize: 8192 });
+        finishJob.mockRejectedValueOnce(Object.assign(new Error('terminal commit acknowledgement lost'), { code: '08006' }));
+        finishPublishedJob.mockResolvedValueOnce(true);
+        await processJob({ id: 8, resource_id: 'resource-a', preparation: true, attempts: 1 }, 'worker-a');
+        expect(finishJob).toHaveBeenCalledTimes(1);
+        expect(finishJob).toHaveBeenCalledWith(pool, 8, 'worker-a', 'resource-a', 'done', null);
+        expect(finishPublishedJob).toHaveBeenCalledWith(pool, 8, 'worker-a', 'resource-a');
+        expect(requeueJob).not.toHaveBeenCalled();
+        expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO ingest_runs'),
+            ['resource-a', expect.any(Date), expect.any(Date), true, 0, 8192, null]);
+    });
+
     it('repairs a crash-after-commit job without rebuilding the ready table', async () => {
         getResourceById.mockResolvedValue({
             id: 'resource-a',

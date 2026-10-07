@@ -10,7 +10,7 @@ const { withSnapshot } = require('../db/snapshotRead');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 const { withStoreBudgetLock, evictUntilUnderBudget } = require('../services/evictService');
 const { queryResource, queryResourceForExport, profileResource, recordResourceActivity } = require('../services/queryService');
-const { claimJob, recoverOrphanedJobs, finishJob } = require('../db/ingestWorkerQueries');
+const { claimJob, recoverOrphanedJobs, finishJob, finishPublishedJob } = require('../db/ingestWorkerQueries');
 const { enqueueJob } = require('../db/ingestQueries');
 const { lockIngestResource } = require('../db/ingestResourceLock');
 const { preparationFailure } = require('../services/preparationFailure');
@@ -368,6 +368,9 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         expect(await finishJob(pool, job.id, 'test-worker', id, 'failed', 'bookkeeping error', { code: 'TEMPORARY', seconds: 3600 })).toBe(true);
         expect((await pool.query('SELECT status,error,failure_code,retry_at,published_table_name FROM ingest_jobs WHERE id=$1', [job.id])).rows[0])
             .toEqual({ status: 'done', error: null, failure_code: null, retry_at: null, published_table_name: result.tableName });
+        // A caller that lost the terminal COMMIT acknowledgement can still
+        // verify the finished publication without marking the attempt failed.
+        expect(await finishPublishedJob(pool, job.id, 'test-worker', id)).toBe(true);
     });
 
     test('stale worker ownership cannot publish a replacement or a receipt', async () => {

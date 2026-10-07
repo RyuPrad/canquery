@@ -116,10 +116,25 @@ describe('ingest worker leases', () => {
     });
 
     test('ambiguous commit recovery only completes jobs with publication receipts', async () => {
-        const client = { query: jest.fn().mockResolvedValue({ rowCount: 0 }), release: jest.fn() };
+        const client = { query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }), release: jest.fn() };
         await expect(finishPublishedJob({ connect: async () => client }, 7, 'worker-a', 'resource-1')).resolves.toBe(false);
         expect(client.query.mock.calls[2][1].at(-1)).toBe(true);
         expect(client.query.mock.calls[2][0]).toContain('OR published_at IS NOT NULL');
         expect(settlePreparationOn).not.toHaveBeenCalled();
+    });
+
+    test('lost terminal commit acknowledgement rechecks the already-finished durable publication', async () => {
+        const client = {
+            query: jest.fn(async sql => ({ rowCount: 0, rows: sql.includes('SELECT id FROM ingest_jobs') ? [{ id: 7 }] : [] })),
+            release: jest.fn()
+        };
+        settlePreparationOn.mockResolvedValueOnce({ outcome: 'succeeded', changed: false });
+        await expect(finishPublishedJob({ connect: async () => client }, 7, 'worker-a', 'resource-1')).resolves.toBe(true);
+        const read = client.query.mock.calls.find(([sql]) => sql.includes('SELECT id FROM ingest_jobs'));
+        expect(read[0]).toContain("status = 'done'");
+        expect(read[0]).toContain('published_at IS NOT NULL FOR UPDATE');
+        expect(read[1]).toEqual([7, 'resource-1']);
+        expect(settlePreparationOn).toHaveBeenCalledWith(client, 7);
+        expect(client.query).toHaveBeenLastCalledWith('COMMIT');
     });
 });

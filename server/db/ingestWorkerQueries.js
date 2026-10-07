@@ -87,9 +87,19 @@ async function finishJob(db, id, workerId, resourceId, status, error, failure = 
                 AND (NOT $8::boolean OR published_at IS NOT NULL)
             RETURNING id
         `, [id, workerId, status, error, failure.code || null, failure.seconds || null, resourceId, publishedOnly]);
-        if (result.rowCount === 1) await settlePreparationOn(client, id);
+        let completed = result.rowCount === 1;
+        if (!completed && publishedOnly) {
+            // The terminal transaction itself can commit before its connection
+            // fails. Read the durable receipt on that already-finished job;
+            // zero updated rows alone does not mean publication failed.
+            const recorded = await client.query(`SELECT id FROM ingest_jobs
+                WHERE id = $1 AND resource_id = $2 AND status = 'done'
+                    AND published_at IS NOT NULL FOR UPDATE`, [id, resourceId]);
+            completed = recorded.rows.length === 1;
+        }
+        if (completed) await settlePreparationOn(client, id);
         await client.query('COMMIT');
-        return result.rowCount === 1;
+        return completed;
     } catch (err) {
         try { await client.query('ROLLBACK'); } catch {}
         throw err;
