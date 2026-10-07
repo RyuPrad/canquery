@@ -1,9 +1,17 @@
 const { CREDIT_COSTS } = require('./commercialConfig');
 
-function operationFor(req) {
+function operationPath(req) {
     // Express routes are case-insensitive and accept one trailing slash. Match
     // those aliases for billing without changing publisher IDs or query fields.
-    const path = req.path.toLowerCase().replace(/\/$/, '');
+    return req.path.toLowerCase().replace(/\/$/, '');
+}
+
+function isPublicOperation(req) {
+    return ['GET', 'HEAD'].includes(req.method) && ['/ops', '/openapi.json'].includes(operationPath(req));
+}
+
+function operationFor(req) {
+    const path = operationPath(req);
     if (/^\/jobs\/[^/]+$/.test(path) || /\/activity$/.test(path)) return {name:'activity',cost:CREDIT_COSTS.activity};
     if (/\/(prepare|ingest)$/.test(path)) return {name:'preparation',cost:CREDIT_COSTS.activity,
         ...(/\/ingest$/.test(path) ? {bucket:'ingest',rate:5,seconds:3600} : {})};
@@ -18,4 +26,4 @@ function operationFor(req) {
     const name = /\/query$/.test(path) ? 'query' : 'metadata';
     return {name,cost:CREDIT_COSTS[name]};
 }
-module.exports = { operationFor };
+module.exports = { operationFor, isPublicOperation };

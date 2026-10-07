@@ -1,5 +1,8 @@
-const { operationFor } = require('../services/commercialOperations');
+const { operationFor, isPublicOperation } = require('../services/commercialOperations');
 const { CREDIT_COSTS } = require('../services/commercialConfig');
+const express = require('express');
+const request = require('supertest');
+const { commercialApi } = require('../middleware/commercialApi');
 
 const operations = [
     ['/resources/MixedCaseId', {}, { name: 'metadata', cost: CREDIT_COSTS.metadata }],
@@ -28,4 +31,19 @@ test.each(operations)('Express aliases preserve the operation price and limits f
 test.each(['group_by', 'agg', 'agg_column', 'bucket'])('aggregate validation failures reserve the aggregate weight when %s is supplied', field => {
     expect(operationFor({ path: '/resources/id/QUERY/', query: { [field]: 'invalid' } }).cost).toBe(CREDIT_COSTS.aggregate);
     expect(operationFor({ path: '/resources/id/QUERY/', query: { [field]: '' } }).cost).toBe(CREDIT_COSTS.query);
+});
+
+test.each(['/ops', '/openapi.json'])('public GET and HEAD aliases bypass credentials and metering for %s', async path => {
+    const app = express();
+    app.use('/api/v1', commercialApi);
+    app.get('/api/v1' + path, (_req, res) => res.json({ public: true }));
+    for (const variant of [path, path + '/', path.toUpperCase(), path.toUpperCase() + '/']) {
+        for (const method of ['get', 'head']) {
+            const response = await request(app)[method]('/API/V1' + variant).set('Authorization', 'Bearer deliberately-invalid');
+            expect(response.status).toBe(200);
+            expect(response.headers['x-canquery-credits-limit']).toBeUndefined();
+            expect(response.headers['x-canquery-credits-remaining']).toBeUndefined();
+        }
+        expect(isPublicOperation({ path: variant, method: 'POST' })).toBe(false);
+    }
 });
