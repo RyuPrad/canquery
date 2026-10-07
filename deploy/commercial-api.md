@@ -153,6 +153,16 @@ ready. Live checkout additionally requires `STRIPE_LIVE_READY=true` and
 business registration facts and active Stripe Tax registrations; toggling
 automatic tax alone does not establish collection obligations or readiness.
 
+For a Free-account launch, set `COMMERCIAL_API_ENABLED=true`, `STRIPE_MODE=live`
+and the production HTTPS `SITE_URL`, with a new private auth secret and working
+authenticated SMTP. Keep `STRIPE_LIVE_READY=false`, `STRIPE_TAX_REVIEWED=false`
+and the tax collection/confirmation flags false. Leave the Stripe secret,
+Business price, portal configuration and webhook signing secret unset until the
+paid launch is reviewed. Free accounts do not require Stripe credentials;
+billing maintenance skips remote work without them. Pricing shows Business as
+coming soon, and checkout must return `BILLING_UNAVAILABLE` without creating
+Stripe objects. Preserve the live database mode when enabling billing later.
+
 Do not set `API_KEY_REQUIRED_AT` until an actual 30-day migration notice begins.
 Use its UTC end timestamp; old anonymous integrations receive Deprecation/Sunset
 headers during the window. The website continues using `/web-api/v1` afterwards.

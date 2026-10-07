@@ -12,7 +12,9 @@ export default function PricingPage() {
     <div className="grid md:grid-cols-3 gap-5">{['free', 'business', 'enterprise'].map(plan => <article key={plan} className={'cq-card p-6 flex flex-col gap-5' + (plan === 'business' ? ' border-primary' : '')}>
       <h2 className="text-xl font-semibold">{t('account.plan_' + plan)}</h2><p className="text-3xl font-display font-bold">{t('account.price_' + plan)}</p>
       <p className="grow whitespace-pre-line leading-8">{t('account.features_' + plan)}</p>
-      <a className={'btn ' + (plan === 'business' ? 'btn-primary' : 'btn-outline')} href={plan === 'enterprise' || !plans?.enabled ? 'mailto:support@canquery.com?subject=CanQuery%20API' : plan === 'free' ? '/signup' : '/account'}>{t(plan === 'enterprise' || !plans?.enabled ? 'account.contact' : plan === 'free' ? 'account.signup' : 'account.get_business')}</a>
+      {plan === 'business' && plans?.enabled && !plans.checkout
+        ? <button type="button" className="btn btn-primary" disabled>{t('account.coming_soon')}</button>
+        : <a className={'btn ' + (plan === 'business' ? 'btn-primary' : 'btn-outline')} href={plan === 'enterprise' || !plans?.enabled ? 'mailto:support@canquery.com?subject=CanQuery%20API' : plan === 'free' ? '/signup' : '/account'}>{t(plan === 'enterprise' || !plans?.enabled ? 'account.contact' : plan === 'free' ? 'account.signup' : 'account.get_business')}</a>}
     </article>)}</div>
     <p>{t('account.quota_note')} {t('account.availability_note')}</p>
     {plans?.enabled && !plans.checkout && <p>{t('account.checkout_soon')}</p>}

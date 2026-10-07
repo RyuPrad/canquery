@@ -87,3 +87,15 @@ test('French pricing exposes finite allowances, costs and Enterprise contact', a
   expect(screen.getByRole('link', { name: 'Nous joindre' })).toHaveAttribute('href', 'mailto:support@canquery.com?subject=CanQuery%20API');
   expect(screen.getByText('49 $ CA/mois')).toBeInTheDocument();
 });
+
+test.each([
+  ['en', 'Coming soon', 'Create an account', 'Choose Business'],
+  ['fr', 'Bientôt disponible', 'Créer un compte', 'Choisir Business'],
+])('a Free launch keeps signup open and paid checkout unavailable in %s', async (lang, soon, signup, business) => {
+  localStorage.setItem('cq-lang', lang);
+  accountRequest.mockResolvedValue({ enabled: true, mode: 'live', checkout: false });
+  render(<LangProvider><PricingPage /></LangProvider>);
+  expect(await screen.findByRole('button', { name: soon })).toBeDisabled();
+  expect(screen.getByRole('link', { name: signup })).toHaveAttribute('href', '/signup');
+  expect(screen.queryByRole('link', { name: business })).toBeNull();
+});
