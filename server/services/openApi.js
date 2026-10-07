@@ -1,5 +1,5 @@
 const { CREDIT_COSTS, WORKFLOW_COSTS } = require('./commercialConfig');
-const { operationFor } = require('./commercialOperations');
+const { operationFor, isPublicOperation } = require('./commercialOperations');
 // Documentation only. Keep these shapes aligned with the public controllers;
 // this module neither queries data nor exposes private runtime configuration.
 const ref = name => ({ $ref: '#/components/schemas/' + name });
@@ -212,7 +212,7 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     const responseComponents = {};
     const headerComponents = {};
     function add(path, method, id, tag, summary, frSummary, description, frDescription, params, schema, example, codes = []) {
-        const cost = path === '/ops' || path === '/healthz' ? CREDIT_COSTS.activity
+        const cost = path === '/healthz' || isPublicOperation({ path, method: method.toUpperCase() }) ? CREDIT_COSTS.activity
             : /\/(prepare|ingest)$/.test(path) ? `${CREDIT_COSTS.preparation} new job / ${CREDIT_COSTS.activity} existing`
                 : /\/query$/.test(path) ? `${CREDIT_COSTS.query} row query / ${CREDIT_COSTS.aggregate} aggregation`
                     : operationFor({ path, query: {} }).cost;

@@ -1,7 +1,7 @@
 const queries = require('../db/commercialQueries');
 const pool = require('../db/pool');
 const { config } = require('../services/commercialConfig');
-const { operationFor } = require('../services/commercialOperations');
+const { operationFor, isPublicOperation } = require('../services/commercialOperations');
 const rateLimit = require('express-rate-limit');
 
 // Failed credential attempts must be bounded before they can query PostgreSQL.
@@ -21,7 +21,7 @@ function privateResponse(res) {
 }
 async function commercialApi(req,res,next) {
     try {
-        if (['/ops','/openapi.json'].includes(req.path) && ['GET','HEAD'].includes(req.method)) return next();
+        if (isPublicOperation(req)) return next();
         const settings = config();
         const header = req.headers.authorization;
         if (!header) {
