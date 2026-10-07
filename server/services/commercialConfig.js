@@ -16,7 +16,8 @@ const WORKFLOW_COSTS = Object.freeze({
     export: CREDIT_COSTS.export,
     prepare_aggregate: 2 * CREDIT_COSTS.metadata + CREDIT_COSTS.preparation + CREDIT_COSTS.aggregate
 });
-const BUSINESS_PRICE = Object.freeze({ currency: 'cad', amount: 4900, interval: 'month' });
+const BUSINESS_PRICE = Object.freeze({ currency: 'cad', amount: 900, interval: 'month' });
+const TERMS_VERSION = '2026-10-07';
 function config() {
     const enabled = process.env.COMMERCIAL_API_ENABLED === 'true';
     const mode = process.env.STRIPE_MODE || 'sandbox';
@@ -43,4 +44,4 @@ function config() {
     }
     return { enabled, mode, origin, sunset, checkout };
 }
-module.exports = { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE, config };
+module.exports = { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE, TERMS_VERSION, config };

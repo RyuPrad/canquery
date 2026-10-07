@@ -1,5 +1,10 @@
 # Preparation value and failure-credit release
 
+This is the migration 035 release record and the current accounting reference.
+Its original CA$49 offer is historical. The current CA$9 offer and API-only paid
+launch are defined in [Business live launch](business-nine-live.md); do not replay
+this earlier worker/admission cutover for that price release.
+
 This release keeps Free at 1,000 credits per UTC calendar month and Business at
 CA$49/month plus applicable taxes, with 100,000 credits per paid billing cycle.
 Both use the same supported data capabilities. The stronger CABIN preparation
@@ -159,11 +164,11 @@ outside Git. Do not use a historical release helper against a new commit.
    captured admission configuration and remove only this release's temporary
    ingress guard. Record the exact source/deployed commits, UTC times and changes.
 
-Current live checkout is intentionally disabled. Preserve that state until its
-existing live Stripe credentials, recurring CAD 4900 monthly price, signed
-webhook, portal configuration and business/tax readiness are verified. Sandbox
-verification does not activate live billing. No new Stripe products, tiers or
-cash-refund behavior are required by this release.
+Live checkout remained disabled at this release. Its sandbox verification did
+not activate live billing. The subsequent CA$9 launch has its own reviewed Stripe
+price, signed webhook, portal, business/tax preflight and compatible rollback in
+[Business live launch](business-nine-live.md). No cash-refund behavior is added
+by the preparation-credit policy.
 
 ## Production acceptance and rollback
 
@@ -258,7 +263,7 @@ that a report was completed, a dashboard was shipped or time was saved.
 
 The founder still needs to find three to five people using comparable files,
 observe their current workflow, demonstrate the same task, measure work removed
-and remaining, offer the existing CA$49 plan where appropriate, and check whether
+and remaining, offer the current Business plan where appropriate, and check whether
 they use it again for real work. No outreach, interview, purchase or demand
 validation is implied by the implementation or its test traffic. Keep those
 outcomes explicitly uncompleted until real evidence exists.

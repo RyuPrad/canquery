@@ -15,6 +15,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     delete process.env.STRIPE_SECRET_KEY;
     const db = require('../db/pool');
     const q = require('../db/commercialQueries');
+    const { BUSINESS_PRICE, TERMS_VERSION } = require('../services/commercialConfig');
     const billing = require('../services/billingService');
     const admin = require('../services/commercialAdmin');
     const { decrypt, deliverMail, enqueueAccountMail } = require('../services/accountMail');
@@ -56,6 +57,16 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         await assert.rejects(q.revokeKey(randomUUID(),key.id),{statusCode:404});
         assert.equal((await q.authenticate(key.secret)).account_id,account.id);
         await assert.rejects(q.authenticate('cq_invalid'),{statusCode:401});
+    });
+    test('public plans advertise the current price and terms while existing acceptance remains historical',async()=>{
+        const response=await supertest(app).get('/api/account/plans');
+        assert.equal(response.status,200);
+        assert.deepEqual(response.body.data.business_price,{currency:'cad',amount:900,interval:'month'});
+        assert.equal(response.body.data.terms_version,TERMS_VERSION);
+        assert.equal(response.body.data.plans.business.credits,100000);
+        const historical=(await db.query('SELECT "termsVersion" FROM canquery_auth."user" WHERE id=$1',[ownerId])).rows[0];
+        assert.equal(historical.termsVersion,'2026-10-06');
+        assert.equal((await q.authenticate(key.secret)).account_id,account.id);
     });
     test('mail enqueue on another pool connection does not block an uncommitted auth signup',async()=>{
         const user={id:ownerId+'-extra-pending',email:'commercial-auth-'+randomUUID()+'@example.test'};
@@ -126,6 +137,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         const lines=[{quantity:1,period:{start,end:start+30*86400},pricing:{price_details:{price:'price_fixture_business'}}}];
         assert.equal(await q.transaction(c=>billing.applyPaidInvoice(c,account,invoice,lines)),false);
         invoice.status='paid';
+        assert.equal(await q.transaction(c=>billing.applyPaidInvoice(c,account,invoice,[{...lines[0],pricing:{price_details:{price:'price_former_49'}}}])),false);
+        assert.equal(await q.transaction(c=>billing.applyPaidInvoice(c,account,invoice,[{...lines[0],quantity:2}])),false);
+        assert.equal(await q.transaction(c=>billing.applyPaidInvoice(c,account,invoice,[{...lines[0],proration:true}])),false);
         assert.equal(await q.transaction(c=>billing.applyPaidInvoice(c,account,invoice,lines)),true);
         const r=await q.reserve(identity,{name:'metadata',cost:1}); await q.settle(r.id,true);
         await q.transaction(c=>billing.applyPaidInvoice(c,account,invoice,lines));
@@ -137,16 +151,33 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     test('checkout reuses open sessions, prevents duplicate subscriptions and preserves environment',async()=>{
         process.env.STRIPE_SECRET_KEY='sk_test_fixture';
         let creates=0;
-        const stripe={subscriptions:{list:async()=>({data:[]})},checkout:{sessions:{list:async()=>({data:[]}),create:async input=>{
+        const stripe={subscriptions:{list:async()=>({data:[]})},checkout:{sessions:{list:async()=>({data:[]}),
+            listLineItems:async()=>({data:[{quantity:1,price:{id:'price_fixture_business'}}]}),create:async(input,options)=>{
             creates++;assert.equal(input.mode,'subscription');assert.equal(input.managed_payments.enabled,false);
             assert.equal(input.subscription_data.billing_mode.type,'flexible');
             assert.equal(input.line_items[0].price,'price_fixture_business');
+            assert.match(options.idempotencyKey,/-price_fixture_business-/);
             assert.equal(input.customer,account.stripe_customer_id);
+            assert.equal(input.automatic_tax,undefined);
             return {url:'https://checkout.stripe.com/fixture'};
         }}}};
         assert.equal((await billing.checkout(account.id,{email:'fixture@example.test'},stripe)).url,'https://checkout.stripe.com/fixture');
-        stripe.checkout.sessions.list=async()=>({data:[{id:'cs_existing',status:'open',url:'https://checkout.stripe.com/existing',metadata:{canquery_account_id:account.id}}]});
+        const open={id:'cs_existing',status:'open',mode:'subscription',livemode:false,
+            automatic_tax:{enabled:false},url:'https://checkout.stripe.com/existing',metadata:{canquery_account_id:account.id}};
+        stripe.checkout.sessions.list=async()=>({data:[open]});
         assert.equal((await billing.checkout(account.id,{},stripe)).url,'https://checkout.stripe.com/existing');assert.equal(creates,1);
+        stripe.checkout.sessions.listLineItems=async()=>({data:[{quantity:1,price:{id:'price_former_49'}}]});
+        await assert.rejects(billing.checkout(account.id,{},stripe),{publicCode:'BILLING_REVIEW_REQUIRED'});assert.equal(creates,1);
+        stripe.checkout.sessions.listLineItems=async()=>({has_more:true,data:[{quantity:1,price:{id:'price_fixture_business'}}]});
+        await assert.rejects(billing.checkout(account.id,{},stripe),{publicCode:'BILLING_REVIEW_REQUIRED'});
+        stripe.checkout.sessions.listLineItems=async()=>({data:[{quantity:2,price:{id:'price_fixture_business'}}]});
+        await assert.rejects(billing.checkout(account.id,{},stripe),{publicCode:'BILLING_REVIEW_REQUIRED'});
+        stripe.checkout.sessions.listLineItems=async()=>({data:[{quantity:1,price:{id:'price_fixture_business'}}]});
+        stripe.checkout.sessions.list=async()=>({data:[{...open,automatic_tax:{enabled:true}}]});
+        await assert.rejects(billing.checkout(account.id,{},stripe),{publicCode:'BILLING_REVIEW_REQUIRED'});
+        stripe.checkout.sessions.list=async()=>({data:[open,{...open,id:'cs_duplicate'}]});
+        await assert.rejects(billing.checkout(account.id,{},stripe),{publicCode:'BILLING_REVIEW_REQUIRED'});
+        assert.equal(creates,1);
         stripe.subscriptions.list=async()=>({data:[{status:'past_due'}]});
         await assert.rejects(billing.checkout(account.id,{},stripe),{publicCode:'SUBSCRIPTION_EXISTS'});
         process.env.STRIPE_MODE='live';
@@ -185,7 +216,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         const email='commercial-auth-'+randomUUID()+'@example.test';
         const agent=supertest.agent(app);
         const headers={Origin:'http://localhost:3100','Accept-Language':'fr'};
-        const body={name:'Sandbox owner',email,password:'disposable-password-long-enough',termsVersion:'2026-10-06',callbackURL:'http://localhost:3100/account'};
+        const body={name:'Sandbox owner',email,password:'disposable-password-long-enough',termsVersion:TERMS_VERSION,callbackURL:'http://localhost:3100/account'};
         assert.equal((await agent.post('/api/auth/sign-up/email').set(headers).send(body)).status,200);
         assert.equal((await agent.post('/api/auth/sign-in/email').set(headers).send(body)).status,403);
         const mail=(await db.query('SELECT payload FROM commercial.mail_outbox ORDER BY created_at LIMIT 1')).rows[0];
@@ -196,13 +227,15 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         assert.equal((await agent.post('/api/auth/sign-in/email').set(headers).send(body)).status,200);
         const dashboard=await agent.get('/api/account');
         assert.equal(dashboard.status,200);
+        assert.deepEqual(dashboard.body.data.business_price,BUSINESS_PRICE);
+        assert.equal(dashboard.body.data.terms_version,TERMS_VERSION);
         const owner=(await db.query('SELECT id FROM canquery_auth."user" WHERE email=$1',[email])).rows[0];
         const created=await q.accountForUser(owner.id);ids.push(created.id);
         assert.equal((await agent.post('/api/account/keys').send({name:'CSRF'})).status,403);
         assert.equal((await agent.post('/api/account/keys').set(headers).send({name:'Owner key'})).status,201);
         assert.equal((await supertest(app).get('/api/account')).status,401);
         const accepted=(await db.query('SELECT "termsVersion","termsAcceptedAt" FROM canquery_auth."user" WHERE id=$1',[owner.id])).rows[0];
-        assert.equal(accepted.termsVersion,'2026-10-06');
+        assert.equal(accepted.termsVersion,TERMS_VERSION);
         assert.ok(accepted.termsAcceptedAt);
         assert.equal((await agent.post('/api/auth/request-password-reset').set(headers).send({email,redirectTo:'http://localhost:3100/reset-password'})).status,200);
         const resetMail=(await db.query('SELECT payload FROM commercial.mail_outbox WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1',[owner.id])).rows[0];
@@ -223,8 +256,11 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         const body={name:'Rejected owner',email:'commercial-auth-'+randomUUID()+'@example.test',password:'long-enough-password-123'};
         const missing=await supertest(app).post('/api/auth/sign-up/email').set('Origin','http://localhost:3100').send(body);
         assert.equal(missing.status,400);
+        const outdated=await supertest(app).post('/api/auth/sign-up/email').set('Origin','http://localhost:3100')
+            .send({...body,termsVersion:'2026-10-06',callbackURL:'http://localhost:3100/account'});
+        assert.equal(outdated.status,400);
         const foreign=await supertest(app).post('/api/auth/sign-up/email').set('Origin','http://localhost:3100')
-            .send({...body,termsVersion:'2026-10-06',callbackURL:'https://example.invalid/capture'});
+            .send({...body,termsVersion:TERMS_VERSION,callbackURL:'https://example.invalid/capture'});
         assert.equal(foreign.status,403);
         assert.equal((await db.query('SELECT count(*)::int AS n FROM canquery_auth."user" WHERE email=$1',[body.email])).rows[0].n,0);
     });

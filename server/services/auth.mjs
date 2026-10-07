@@ -30,7 +30,7 @@ export const auth = betterAuth({
     logger:{disabled:true},
     databaseHooks:{
         user:{create:{before:async user=>{
-            if (user.termsVersion !== '2026-10-06') throw new APIError('BAD_REQUEST',{message:'Accept the current CanQuery terms to create an account',code:'TERMS_REQUIRED'});
+            if (user.termsVersion !== configuration.TERMS_VERSION) throw new APIError('BAD_REQUEST',{message:'Accept the current CanQuery terms to create an account',code:'TERMS_REQUIRED'});
             return {data:{...user,termsAcceptedAt:new Date()}};
         }}},
         session:{create:{before:async session=>({data:{...session,ipAddress:null,userAgent:null}})}}

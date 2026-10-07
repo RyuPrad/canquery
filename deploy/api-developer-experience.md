@@ -1,5 +1,9 @@
 # API developer experience
 
+This is a historical release procedure. Its CA$49 launch copy was superseded by
+the [CA$9 Business live launch](business-nine-live.md); use that current price and
+billing-compatible containment procedure for the newer release.
+
 This release clarifies the Free, Business (CA$49/month) and Custom & Enterprise
 offers for recurring reports and dashboards. It improves pricing, account and
 authentication layouts and replaces the abbreviated API documentation with

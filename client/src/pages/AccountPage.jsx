@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLang } from '../i18n.jsx';
 import { accountRequest, authRequest } from '../api/account.js';
+import { businessPrice } from '../utils/businessPrice.js';
 import './AccountExperience.css';
 
 function RevokeConfirmation({ apiKey, pending, error, onClose, onConfirm }) {
@@ -64,6 +65,7 @@ export default function AccountPage() {
   });
   const label = (key, values) => t(key).replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
   const number = value => Number(value).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
+  const price = businessPrice(account?.business_price, lang);
   const date = value => new Intl.DateTimeFormat(lang === 'fr' ? 'fr-CA' : 'en-CA', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value));
   const closeRevoke = (revoked = false) => {
     setRevokeTarget(null); setError('');
@@ -105,10 +107,10 @@ export default function AccountPage() {
           <p className="text-sm text-base-content/75 mt-2">{number(account.rate_limit)} {t('account.requests_minute')} · {label('account.key_slots', { used: number(account.keys.length), total: number(account.key_limit) })}</p>
           <p className="text-sm text-base-content/75 mt-4">{t('account.quota_note')}</p>
           {(account.checkout_available || account.billing_customer) && <div className="cq-account-actions mt-5">
-            {account.plan === 'free' && account.checkout_available && <button className="btn btn-primary" disabled={pending} onClick={() => billing('/checkout')}>{t('account.upgrade')}</button>}
+            {account.plan === 'free' && account.checkout_available && <button className="btn btn-primary" disabled={pending || !price} onClick={() => billing('/checkout')}>{price ? label('account.upgrade', { price }) : t('pricing.unavailable')}</button>}
             {account.billing_customer && <button className="btn btn-outline" disabled={pending} onClick={() => billing('/portal')}>{t('account.manage_billing')}</button>}
           </div>}
-          {(account.checkout_available || account.billing_customer) && <p className="text-sm text-base-content/75 mt-3">{t('account.terms_billing')}</p>}
+          {(account.checkout_available || account.billing_customer) && <p className="text-sm text-base-content/75 mt-3">{price ? label('account.terms_billing', { price }) : t('account.billing_price_unavailable')}</p>}
         </section>
         <aside className="cq-card p-5 sm:p-7 min-w-0" aria-labelledby="account-next-heading">
           <p className="cq-account-eyebrow">{t('account.next_step')}</p><h2 id="account-next-heading" className="text-xl font-display font-bold mt-2">{t(account.keys.length ? 'account.try_workflow' : 'account.start_integration')}</h2>

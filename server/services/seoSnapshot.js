@@ -2,6 +2,7 @@ const seo = require('./seoMeta');
 const { listArticles } = require('./blogContent');
 const { classifyResource } = require('./resourceCapabilities');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
+const { BUSINESS_PRICE, TERMS_VERSION } = require('./commercialConfig');
 
 const { PAGE_SIZE, pagePath } = require('./catalogPagination');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
@@ -266,7 +267,7 @@ const STATIC_COPY = {
     signup: {title:'Create a developer account',summary:'Start with a free API allowance and no payment card. Enable JavaScript to create and verify your account.'},
     'forgot-password': {title:'Reset your password',summary:'Enable JavaScript to request a password reset.'},
     'reset-password': {title:'Save a new password',summary:'Enable JavaScript to use your password reset link.'},
-    terms: {title:'API terms',summary:'Subscriptions provide CanQuery service access within published allowances. Publisher licences and attribution remain applicable. Business renews monthly at CA$49 plus applicable taxes; cancel before renewal through the billing portal. Access continues through the paid period. No automatic overages or credit rollover. Contact support@canquery.com about billing, deletion or Enterprise agreements.',links:[{path:'/pricing',label:'Plans and credit costs'},{path:'/privacy',label:'Privacy'}]},
+    terms: {title:'API terms',summary:`Effective ${TERMS_VERSION}. Subscriptions provide CanQuery service access within published allowances. Publisher licences and attribution remain applicable. Business renews monthly at CA$${BUSINESS_PRICE.amount / 100} plus applicable taxes; cancel before renewal through the billing portal. Access continues through the paid period. No automatic overages or credit rollover. Contact support@canquery.com about billing, deletion or Enterprise agreements.`,links:[{path:'/pricing',label:'Plans and credit costs'},{path:'/privacy',label:'Privacy'}]},
     home: {
         title: 'Search Canadian open data',
         summary: seo.DEFAULT_DESC,

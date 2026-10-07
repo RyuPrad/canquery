@@ -6,6 +6,7 @@
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { classifyResource } = require('./resourceCapabilities');
 const { plainText, collapse, truncate, resourceLanguages } = require('./catalogText');
+const { BUSINESS_PRICE } = require('./commercialConfig');
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
 const SITE_NAME = 'CanQuery';
@@ -175,7 +176,7 @@ function classifyRoute(pathname) {
 }
 
 const STATIC_META = {
-    pricing: {path:'/pricing',title:'Canadian open data API pricing - CanQuery',description:'A hosted Canadian public-data API for recurring reports and dashboards. Start free; Business is CA$49/month, with custom requirements scoped separately.'},
+    pricing: {path:'/pricing',title:'Canadian open data API pricing - CanQuery',description:`A hosted Canadian public-data API for recurring reports and dashboards. Start free; Business is CA$${BUSINESS_PRICE.amount / 100}/month, with custom requirements scoped separately.`},
     account: {path:'/account',title:'Developer account - CanQuery',description:'Manage your API keys, usage and billing.',noindex:true},
     login: {path:'/login',title:'Sign in - CanQuery',description:'Sign in to your developer account.',noindex:true},
     signup: {path:'/signup',title:'Create an account - CanQuery',description:'Create a free developer account.',noindex:true},

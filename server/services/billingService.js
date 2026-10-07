@@ -63,8 +63,22 @@ async function checkout(accountId,user,stripe = stripeClient(),db = pool) {
             // before creating another subscription; never assume the first page is all history.
             throw failure('Contact support to review this billing customer','BILLING_REVIEW_REQUIRED',409);
         }
-        const open = sessions.data.find(s=>s.status==='open' && s.metadata?.canquery_account_id===accountId);
-        if (open) return {url:open.url};
+        const open = sessions.data.filter(s=>s.status==='open' && s.metadata?.canquery_account_id===accountId);
+        if (open.length) {
+            // An already-open hosted session keeps its original price. Never
+            // redirect a customer to an older offer after configuration changes,
+            // or create a competing session while that checkout can still pay.
+            if (open.length!==1) throw failure('Contact support to review existing checkout sessions','BILLING_REVIEW_REQUIRED',409);
+            const existing = open[0];
+            const lines = await stripe.checkout.sessions.listLineItems(existing.id,{limit:2});
+            if (existing.mode!=='subscription' || existing.livemode!==(settings.mode==='live')
+                || Boolean(existing.automatic_tax?.enabled)!==(process.env.STRIPE_TAX_ENABLED==='true')
+                || lines.has_more || lines.data.length!==1 || lines.data[0].quantity!==1
+                || lines.data[0].price?.id!==process.env.STRIPE_BUSINESS_PRICE_ID) {
+                throw failure('Existing checkout no longer matches the current plan; contact support','BILLING_REVIEW_REQUIRED',409);
+            }
+            return {url:existing.url};
+        }
         const suffix = createHash('sha256').update(accountId).digest('hex').slice(0,8).replace(/[0-9]/g,n=>String.fromCharCode(97+Number(n)));
         const session = await stripe.checkout.sessions.create({
             mode:'subscription',customer,client_reference_id:accountId,
@@ -75,7 +89,7 @@ async function checkout(accountId,user,stripe = stripeClient(),db = pool) {
             integration_identifier:'canquery_business_'+suffix,
             success_url:settings.origin+'/account?checkout=returned',cancel_url:settings.origin+'/pricing',
             ...(process.env.STRIPE_TAX_ENABLED==='true' ? {automatic_tax:{enabled:true},customer_update:{address:'auto'}} : {})
-        },{idempotencyKey:`canquery-checkout-${accountId}-${sessions.data[0]?.id || 'initial'}`});
+        },{idempotencyKey:`canquery-checkout-${accountId}-${process.env.STRIPE_BUSINESS_PRICE_ID}-${sessions.data[0]?.id || 'initial'}`});
         return {url:session.url};
     },db);
 }
