@@ -106,7 +106,9 @@ for (const base of ['/api/v1','/web-api/v1']) {
     app.use(base+'/sources', sourcesRouter);
     app.use(base+'/blog', require('./routes/blog'));
 }
-app.get('/api/v1/openapi.json',(_req,res)=>res.json(require('./services/openApi')));
+app.get('/api/v1/openapi.json', (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(require('./services/openApi').buildOpenApi());
+});
 
 // Crawl-facing files (robots.txt + sitemaps) live at the site root and read
 // from Postgres; mounted before the SPA so they win over the static catch-all.

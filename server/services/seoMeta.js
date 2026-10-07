@@ -175,7 +175,7 @@ function classifyRoute(pathname) {
 }
 
 const STATIC_META = {
-    pricing: {path:'/pricing',title:'Canadian open data API pricing - CanQuery',description:'Free and Business API access with clear credit allowances. Business is CA$49/month; contact CanQuery for Enterprise capacity.'},
+    pricing: {path:'/pricing',title:'Canadian open data API pricing - CanQuery',description:'A hosted Canadian public-data API for recurring reports and dashboards. Start free; Business is CA$49/month, with custom requirements scoped separately.'},
     account: {path:'/account',title:'Developer account - CanQuery',description:'Manage your API keys, usage and billing.',noindex:true},
     login: {path:'/login',title:'Sign in - CanQuery',description:'Sign in to your developer account.',noindex:true},
     signup: {path:'/signup',title:'Create an account - CanQuery',description:'Create a free developer account.',noindex:true},
@@ -205,7 +205,7 @@ const STATIC_META = {
     docs: {
         title: 'API documentation - CanQuery',
         description:
-            'JSON API over Canadian federal and local open data: API keys, plans, place search, supported tables and maps, and bounded CSV exports.',
+            'Build with Canadian public data: working curl, Python and JavaScript examples, endpoint reference, API keys, pagination, preparation and error handling.',
         path: '/docs',
     },
     privacy: {

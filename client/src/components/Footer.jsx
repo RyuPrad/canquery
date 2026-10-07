@@ -166,7 +166,7 @@ export default function Footer() {
                 {t('footer.privacy')}
               </Link>
             </li>
-            <li><Link to="/pricing" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.pricing_title')}</Link></li>
+            <li><Link to="/pricing" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.pricing')}</Link></li>
             <li><Link to="/terms" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.terms')}</Link></li>
             <li>
               <a

@@ -10,7 +10,16 @@ export, and map ceilings still apply to every plan.
 | --- | --- | --- | --- | --- |
 | Free | 1,000 per UTC calendar month | 30 | 1 | 1 |
 | Business | 100,000 per paid billing cycle; CA$49/month plus applicable taxes | 300 | 5 | 2 |
-| Enterprise | Finite negotiated paid service period | Reviewed, initially at most 300 | At most 100 | Initially at most 2 |
+| Custom & Enterprise | Finite negotiated paid service period | Reviewed, initially at most 300 | At most 100 | Initially at most 2 |
+
+The hosted offer serves recurring Canadian-data reporting and dashboard work.
+Business includes email guidance; custom integrations and contractual commitments
+require a separate scope. Public `/docs` provides curl, Python and server-side
+JavaScript quickstarts, a worked reporting example and a searchable OpenAPI
+reference. `/api/v1/openapi.json` reflects the installed anonymous-access policy.
+Examples execute only when explicitly requested; developer keys belong on the
+customer's server. See [the API experience release](api-developer-experience.md)
+for its verification and deployment boundary.
 
 The global commercial expensive-request ceiling is four. This is an admission
 bound, not a throughput or availability guarantee. Existing lower endpoint

@@ -1,0 +1,64 @@
+.cq-pricing { --pricing-muted: color-mix(in oklch, var(--color-base-content) 72%, transparent); }
+.cq-pricing h1, .cq-pricing h2, .cq-pricing h3 { font-family: var(--font-display); }
+.cq-pricing-hero { display: grid; gap: 2.5rem; align-items: center; }
+.cq-pricing-eyebrow { color: var(--cq-accent-red); font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.cq-pricing h1 { font-size: clamp(2.25rem, 4.1vw, 3.5rem); font-weight: 700; line-height: 1.12; letter-spacing: -.035em; margin-top: 1rem; max-width: 19ch; }
+.cq-pricing-lead { color: var(--pricing-muted); font-size: 1.0625rem; line-height: 1.75; margin-top: 1.5rem; max-width: 55ch; }
+.cq-pricing-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.75rem; }
+.cq-pricing .btn { min-height: 44px; height: auto; padding-top: .65rem; padding-bottom: .65rem; white-space: normal; text-align: center; }
+.cq-pricing-reassurance { color: var(--pricing-muted); margin-top: 1rem; font-size: .8125rem; }
+.cq-pricing-workflow { border: 1px solid color-mix(in oklch, var(--color-base-content) 13%, transparent); background: var(--color-base-200); border-radius: 1.25rem; padding: 1.75rem; }
+.cq-pricing-workflow ol { display: grid; gap: 1.5rem; margin: 1.5rem 0 .75rem; }
+.cq-pricing-workflow li { display: flex; gap: 1rem; }
+.cq-pricing-step { font-family: var(--font-mono); color: var(--pricing-muted); padding-top: .2rem; font-size: .8125rem; }
+.cq-pricing-workflow h2 { font-weight: 600; font-size: 1rem; }
+.cq-pricing-workflow li p { font-size: .875rem; line-height: 1.6; color: var(--pricing-muted); margin-top: .3rem; }
+.cq-pricing-text-link { display: inline-flex; gap: .5rem; align-items: center; min-height: 44px; font-size: .875rem; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
+.cq-pricing-section { margin-top: 4rem; scroll-margin-top: 6rem; }
+.cq-pricing-section-heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+.cq-pricing h2 { font-size: 1.5rem; font-weight: 600; line-height: 1.3; }
+.cq-pricing-section-heading h2 { margin-top: .5rem; }
+.cq-pricing-section-heading > p { color: var(--pricing-muted); max-width: 40ch; font-size: .9375rem; line-height: 1.6; }
+.cq-pricing-plans { display: grid; gap: 1.25rem; }
+.cq-pricing-plan { padding: 1.5rem; display: flex; flex-direction: column; }
+.cq-pricing-plan-business { border-color: color-mix(in oklch, var(--color-primary) 50%, var(--color-base-300)); }
+.cq-pricing-plan-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; }
+.cq-pricing-plan h3 { font-size: 1.1875rem; font-weight: 600; }
+.cq-pricing-status { padding: .25rem .5rem; border-radius: .375rem; background: var(--color-base-200); font-size: .6875rem; font-weight: 600; }
+.cq-pricing-audience { color: var(--pricing-muted); font-size: .875rem; line-height: 1.6; margin-top: .65rem; }
+.cq-pricing-price { font-family: var(--font-display); font-size: clamp(1.65rem, 2.3vw, 2rem); line-height: 1.3; font-weight: 700; letter-spacing: -.03em; margin: 1.4rem 0; }
+.cq-pricing-plan ul { display: grid; gap: .9rem; font-size: .875rem; line-height: 1.5; margin-bottom: 1.5rem; }
+.cq-pricing-plan li { display: flex; align-items: start; gap: .6rem; }
+.cq-pricing-plan li svg { color: var(--pricing-muted); margin-top: .15rem; }
+.cq-pricing-plan-action { margin-top: auto; }
+.cq-pricing-plan-action .btn { width: 100%; }
+.cq-pricing-plan-action p { font-size: .75rem; line-height: 1.6; margin-top: .75rem; color: var(--pricing-muted); }
+.cq-pricing-fine-print { font-size: .8125rem; line-height: 1.7; color: var(--pricing-muted); margin-top: 1rem; }
+.cq-pricing-notice { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; padding: 1rem; margin-bottom: 1rem; border: 1px solid color-mix(in oklch, var(--color-base-content) 13%, transparent); border-radius: .75rem; }
+.cq-pricing-example { display: grid; gap: 1.5rem; margin-top: 3rem; padding: 1.5rem; }
+.cq-pricing-example h2 { margin-top: .6rem; }
+.cq-pricing-example h2 + p { color: var(--pricing-muted); font-size: .9375rem; line-height: 1.7; margin: 1rem 0 .5rem; }
+.cq-pricing-example-source { font-size: .75rem; color: var(--pricing-muted); margin-top: .6rem; }
+.cq-pricing-request { min-width: 0; }
+.cq-pricing-request > div { display: flex; gap: .6rem; align-items: center; font-size: .8125rem; font-weight: 600; margin-bottom: .75rem; }
+.cq-pricing-request pre { font-size: .8125rem; line-height: 1.9; padding: 1rem; }
+.cq-pricing-request > p { font-size: .75rem; line-height: 1.6; color: var(--pricing-muted); margin-top: .75rem; }
+.cq-pricing-details { display: grid; gap: 2.5rem; }
+.cq-pricing-credits { padding: 1.5rem; }
+.cq-pricing-credits h2 + p { color: var(--pricing-muted); font-size: .875rem; line-height: 1.6; margin-top: .6rem; }
+.cq-pricing-credits dl { margin-top: 1rem; }
+.cq-pricing-credits dl > div { display: grid; grid-template-columns: minmax(0, 1fr) 3ch; gap: 1.25rem; padding: .85rem 0; border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 13%, transparent); font-size: .875rem; line-height: 1.6; }
+.cq-pricing-credits dd { text-align: right; font-family: var(--font-mono); font-weight: 600; }
+.cq-pricing-boundaries > div { margin-top: 1.5rem; }
+.cq-pricing-boundaries h3 { font-weight: 600; font-size: .9375rem; }
+.cq-pricing-boundaries p { color: var(--pricing-muted); font-size: .875rem; line-height: 1.75; margin-top: .5rem; }
+.cq-pricing-footer { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; border-top: 1px solid color-mix(in oklch, var(--color-base-content) 13%, transparent); padding-top: 2rem; margin-top: 3rem; }
+.cq-pricing-footer > p { flex: 1 1 18rem; font-family: var(--font-display); font-weight: 600; }
+@media (min-width: 1024px) {
+  .cq-pricing-hero { grid-template-columns: 1.35fr 1fr; gap: 4rem; }
+  .cq-pricing-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cq-pricing-audience { min-height: 2.8rem; }
+  .cq-pricing-plan-action p { min-height: 2.5rem; }
+  .cq-pricing-example { grid-template-columns: 1fr 1.3fr; gap: 2.5rem; padding: 2rem; }
+  .cq-pricing-details { grid-template-columns: 1.15fr 1fr; gap: 3rem; }
+}
