@@ -368,7 +368,7 @@ function buildDatasetJsonLd(dataset, resources) {
     }
     const org = pick(dataset.org_title_en, dataset.org_title_fr);
     if (org) {
-        ld.creator = { '@type': 'GovernmentOrganization', name: org };
+        ld.creator = { '@type': 'Organization', name: org };
     }
     const publisher = source ? pick(source.name_en, source.name_fr) : 'Government of Canada';
     if (publisher) ld.publisher = { '@type': 'Organization', name: publisher };
@@ -483,7 +483,6 @@ function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = 
 
 function buildResourceJsonLd(resource, description) {
     const name = resourceTitleBase(resource);
-    const datasetName = pick(resource.dataset_title_en, resource.dataset_title_fr) || 'Dataset';
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const download = {
         '@type': 'DataDownload',
@@ -491,11 +490,9 @@ function buildResourceJsonLd(resource, description) {
         encodingFormat: plainText(resource.format) || undefined,
         contentSize: humanFileSize(resource.size_bytes) || undefined,
         contentUrl: absoluteHttpUrl(resource.url) || undefined,
-        isPartOf: datasetSlug ? {
-            '@type': 'Dataset',
-            name: datasetName,
-            url: SITE_URL + '/datasets/' + encodeURIComponent(datasetSlug)
-        } : undefined
+        // A nested Dataset must satisfy the full Dataset schema too. Reference
+        // its canonical landing page, which owns the complete dataset metadata.
+        isPartOf: datasetSlug ? SITE_URL + '/datasets/' + encodeURIComponent(datasetSlug) : undefined
     };
     for (const key of Object.keys(download)) {
         if (download[key] === undefined) delete download[key];
