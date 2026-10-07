@@ -10,7 +10,7 @@ CanQuery lets you search this official table in your browser. You can start with
 4. Read the permit type, status, and work description together. Use the table’s horizontal scroll to see columns that do not fit on a smaller screen.
 5. Copy the page URL to return to the same search. You can also use the CSV export to work with the results in a spreadsheet; the export is limited to 10,000 rows.
 
-For a specific street, apply an equality column filter to **STREET_NAME** with the value **KING**, using the spelling recorded by the publisher. Equality filters work with both the live DataStore and a prepared copy. This selects the street field rather than matching the word “King” in a work description; check building numbers and street direction separately. Reading the live table in the browser does not require an account or a manual download.
+For a specific street, enter `=KING` in the **STREET_NAME** column filter for an exact match, using the spelling recorded by the publisher. The leading `=` selects equality; plain `KING` requests a contains filter and may require preparation. Equality filters work with both the live DataStore and a prepared copy. This selects the street field rather than matching the word “King” in a work description; check building numbers and street direction separately. Reading the live table in the browser does not require an account or a manual download.
 
 For a repeatable extract, the [API reporting workflow](/docs#workflow) shows metadata inspection, `filters={"STREET_NAME":"KING"}`, a bounded row query and CSV export. It uses the same active-permits resource. Keep the query, source and retrieval date with your output.
 
