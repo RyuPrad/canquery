@@ -3,9 +3,11 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LangProvider } from '../i18n.jsx';
 import PricingPage from './PricingPage.jsx';
 import { accountRequest } from '../api/account.js';
+import { createRequire } from 'node:module';
+const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn() }));
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
-const plans = { enabled: true, mode: 'live', checkout: false };
+const plans = { enabled: true, mode: 'live', checkout: false, plans: PLANS, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS };
 const mount = () => render(<LangProvider><PricingPage /></LangProvider>);
 
 test.each([
@@ -54,7 +56,20 @@ test('costs stay grouped with labels and the example is inert', async () => {
   for (const [label, cost] of [['Metadata, a row query or one vector tile', '1'], ['A CSV export, up to 10,000 rows', '25'], ['Admission of a new preparation job', '100']]) {
     expect(screen.getByText(label).parentElement.querySelector('dd')).toHaveTextContent(cost);
   }
-  expect(document.querySelector('pre code').textContent).toContain('filters={"STREET_NAME":"KING"}');
-  expect(screen.getByRole('link', { name: /Get the request, response and export steps/ })).toHaveAttribute('href', '/docs#workflow');
+  expect(document.querySelector('pre code').textContent).toContain('filters={"Year/Année":2024,"Family/Famille":"Chironomidae"}');
+  expect(screen.getByRole('link', { name: /Follow preparation, querying and reuse/ })).toHaveAttribute('href', '/docs#preparation-example');
   expect(accountRequest).toHaveBeenCalledTimes(1);
+});
+
+test('offer and workflow totals use the returned configuration without inventing enterprise guarantees', async () => {
+  accountRequest.mockResolvedValue({ ...plans, plans: { ...PLANS, free: { ...PLANS.free, credits: 1234 } }, credit_costs: { ...CREDIT_COSTS, preparation: 101 }, workflow_costs: { ...WORKFLOW_COSTS, prepare: 104 } });
+  mount();
+  expect(await screen.findByText('1,234 credits per UTC calendar month')).toBeVisible();
+  expect(screen.getByText('104')).toBeVisible();
+  expect(screen.getByText('Admission of a new preparation job').parentElement.querySelector('dd')).toHaveTextContent('101');
+  expect(screen.getByText(/Business primarily adds a larger allowance/)).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Custom & Enterprise' })).toBeNull();
+  expect(document.querySelectorAll('.cq-pricing-plan')).toHaveLength(2);
+  expect(screen.getByText(/one existing supported resource and one working query/)).toBeVisible();
+  expect(screen.getByText(/returned once to the original payer/)).toBeVisible();
 });

@@ -10,7 +10,7 @@ const { withSnapshot } = require('../db/snapshotRead');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 const { withStoreBudgetLock, evictUntilUnderBudget } = require('../services/evictService');
 const { queryResource, queryResourceForExport, profileResource, recordResourceActivity } = require('../services/queryService');
-const { claimJob, recoverOrphanedJobs, finishJob } = require('../db/ingestWorkerQueries');
+const { claimJob, recoverOrphanedJobs, finishJob, finishPublishedJob } = require('../db/ingestWorkerQueries');
 const { enqueueJob } = require('../db/ingestQueries');
 const { lockIngestResource } = require('../db/ingestResourceLock');
 const { preparationFailure } = require('../services/preparationFailure');
@@ -327,13 +327,95 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         const id = await seed();
         const job = await prepareResource(id, id);
         await claimJob(pool, 'test-worker');
-        await ingestResource(await getResourceById(id), caps(csv()));
+        await ingestResource(await getResourceById(id), caps(csv()), { jobId: job.id, workerId: 'test-worker' });
         await recoverOrphanedJobs(pool);
         const recovered = await claimJob(pool, 'recovered-worker');
+        expect(recovered.published_at).toBeInstanceOf(Date);
         await processJob(recovered, 'recovered-worker');
         const done = (await pool.query('SELECT status FROM ingest_jobs WHERE id=$1', [job.id])).rows[0];
         expect(done.status).toBe('done');
         expect((await getResourceById(id)).ingested_source_version).toBe(resourceVersion(await getResourceById(id)));
+    });
+
+    test.each(['source changed', 'serving copy removed', 'catalogue resource removed'])(
+        'publication receipt wins after crash when %s', async scenario => {
+            const id = await seed();
+            const job = await prepareResource(id, id);
+            await claimJob(pool, 'test-worker');
+            const result = await ingestResource(await getResourceById(id), caps(csv()), { jobId: job.id, workerId: 'test-worker' });
+            if (scenario === 'source changed') await modify(id);
+            if (scenario === 'serving copy removed') {
+                await pool.query('DROP TABLE store."' + result.tableName + '"');
+                await pool.query('DELETE FROM ingested_resources WHERE resource_id=$1', [id]);
+            }
+            if (scenario === 'catalogue resource removed') await pool.query('DELETE FROM resources WHERE id=$1', [id]);
+            await recoverOrphanedJobs(pool);
+            const recovered = await claimJob(pool, 'recovered-worker');
+            await processJob(recovered, 'recovered-worker');
+            const done = (await pool.query('SELECT status,published_table_name,published_at,error,failure_code,retry_at FROM ingest_jobs WHERE id=$1', [job.id])).rows[0];
+            expect(done).toMatchObject({ status: 'done', published_table_name: result.tableName,
+                error: null, failure_code: null, retry_at: null });
+            expect(done.published_at).toBeInstanceOf(Date);
+        });
+
+    test('a published empty table remains successful even if terminal bookkeeping requests failure', async () => {
+        const id = await seed();
+        const job = await prepareResource(id, id);
+        await claimJob(pool, 'test-worker');
+        const result = await ingestResource(await getResourceById(id), caps('province,amount\n'), { jobId: job.id, workerId: 'test-worker' });
+        expect(result.rowCount).toBe(0);
+        expect(await queryResource(id, { limit: 1 })).toMatchObject({ records: [], total: 0 });
+        expect(await finishJob(pool, job.id, 'test-worker', id, 'failed', 'bookkeeping error', { code: 'TEMPORARY', seconds: 3600 })).toBe(true);
+        expect((await pool.query('SELECT status,error,failure_code,retry_at,published_table_name FROM ingest_jobs WHERE id=$1', [job.id])).rows[0])
+            .toEqual({ status: 'done', error: null, failure_code: null, retry_at: null, published_table_name: result.tableName });
+        // A caller that lost the terminal COMMIT acknowledgement can still
+        // verify the finished publication without marking the attempt failed.
+        expect(await finishPublishedJob(pool, job.id, 'test-worker', id)).toBe(true);
+    });
+
+    test('stale worker ownership cannot publish a replacement or a receipt', async () => {
+        const id = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv()));
+        const updated = await modify(id);
+        const job = await prepareResource(id, id);
+        await claimJob(pool, 'current-worker');
+        await expect(ingestResource(updated, caps(csv(2)), { jobId: job.id, workerId: 'stale-worker' }))
+            .rejects.toMatchObject({ code: 'INGEST_LEASE_LOST' });
+        expect((await getResourceById(id)).table_name).toBe(first.tableName);
+        expect((await pool.query('SELECT published_at FROM ingest_jobs WHERE id=$1', [job.id])).rows[0].published_at).toBeNull();
+    });
+
+    test('receipt write failure rolls back the prepared-table pointer and replacement together', async () => {
+        const id = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv()));
+        const updated = await modify(id);
+        const job = await prepareResource(id, id);
+        await claimJob(pool, 'test-worker');
+        try {
+            await pool.query(`CREATE FUNCTION public.prepare_test_fail_receipt() RETURNS trigger
+                LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'simulated receipt failure'; END $$`);
+            await pool.query(`CREATE TRIGGER prepare_test_receipt BEFORE UPDATE ON ingest_jobs
+                FOR EACH ROW WHEN (NEW.published_at IS NOT NULL AND OLD.published_at IS NULL)
+                EXECUTE FUNCTION public.prepare_test_fail_receipt()`);
+            await expect(ingestResource(updated, caps(csv(2)), { jobId: job.id, workerId: 'test-worker' }))
+                .rejects.toThrow('simulated receipt failure');
+            expect((await getResourceById(id)).table_name).toBe(first.tableName);
+            expect((await queryResource(id, { limit: 1 })).records[0].amount).toBe('1');
+            expect((await pool.query('SELECT published_at FROM ingest_jobs WHERE id=$1', [job.id])).rows[0].published_at).toBeNull();
+            expect((await pool.query('SELECT count(*)::int AS n FROM retired_ingest_tables WHERE resource_id=$1', [id])).rows[0].n).toBe(0);
+        } finally {
+            await pool.query('DROP TRIGGER IF EXISTS prepare_test_receipt ON ingest_jobs');
+            await pool.query('DROP FUNCTION IF EXISTS public.prepare_test_fail_receipt()');
+        }
+    });
+
+    test('legacy admission cannot complete a pending refresh against an older ready table', async () => {
+        const id = await seed();
+        await ingestResource(await getResourceById(id), caps(csv()));
+        await modify(id);
+        const refresh = await prepareResource(id, id);
+        expect(await enqueueJob(id)).toMatchObject({ already_loaded: true });
+        expect((await pool.query('SELECT status FROM ingest_jobs WHERE id=$1', [refresh.id])).rows[0].status).toBe('pending');
     });
 
     const age = id => pool.query("UPDATE ingested_resources SET last_accessed_at=clock_timestamp()-interval '25 hours' WHERE resource_id=$1", [id]);

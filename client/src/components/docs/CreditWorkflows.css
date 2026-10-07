@@ -1,0 +1,11 @@
+.cq-credit-workflows { margin-top: 2rem; border-top: 1px solid color-mix(in oklch, var(--color-base-content) 15%, transparent); padding-top: 1.5rem; }
+.cq-credit-workflows h3 { font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; }
+.cq-credit-workflows > p { font-size: .875rem; line-height: 1.7; margin-top: .75rem; color: color-mix(in oklch, var(--color-base-content) 75%, transparent); }
+.cq-credit-workflow-grid { display: grid; gap: 1rem; margin-top: 1.25rem; }
+.cq-credit-workflow-grid article { border: 1px solid color-mix(in oklch, var(--color-base-content) 15%, transparent); border-radius: .8rem; padding: 1.25rem; min-width: 0; }
+.cq-credit-workflow-grid h4 { font-weight: 600; margin-top: .75rem; font-size: .9rem; }
+.cq-credit-workflow-grid article > p:last-child { font-size: .8125rem; line-height: 1.7; margin-top: .6rem; color: color-mix(in oklch, var(--color-base-content) 75%, transparent); }
+.cq-credit-total { font-size: .75rem; }
+.cq-credit-total strong { font-family: var(--font-mono); font-size: 1.8rem; font-weight: 600; }
+.cq-credit-workflows .cq-credit-allowances { color: var(--color-base-content); font-weight: 600; }
+@media (min-width: 760px) { .cq-credit-workflow-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

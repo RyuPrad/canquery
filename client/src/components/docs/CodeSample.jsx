@@ -7,7 +7,9 @@ export default function CodeSample({ label, code, snippets, endpoint = 'quicksta
   const { t } = useLang();
   const [language, setLanguage] = useState('curl');
   const [copyState, setCopyState] = useState('idle');
-  const text = snippets ? snippets[language] : code;
+  const languages = snippets ? Object.keys(snippets).filter(value => typeof snippets[value] === 'string') : [];
+  const selectedLanguage = languages.includes(language) ? language : languages[0];
+  const text = snippets ? snippets[selectedLanguage] : code;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
@@ -27,8 +29,8 @@ export default function CodeSample({ label, code, snippets, endpoint = 'quicksta
       </button>
     </div>
     {snippets && <div className="cq-doc-languages" role="group" aria-label={`${label} · ${t('docs.language')}`}>
-      {['curl', 'python', 'javascript'].map(value => <button
-        type="button" key={value} aria-pressed={language === value}
+      {languages.map(value => <button
+        type="button" key={value} aria-pressed={selectedLanguage === value}
         onClick={() => { setLanguage(value); setCopyState('idle'); }}
       >{value === 'javascript' ? t('docs.code_javascript') : value === 'python' ? 'Python' : 'curl'}</button>)}
     </div>}

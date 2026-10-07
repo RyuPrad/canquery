@@ -13,8 +13,11 @@ export, and map ceilings still apply to every plan.
 | Custom & Enterprise | Finite negotiated paid service period | Reviewed, initially at most 300 | At most 100 | Initially at most 2 |
 
 The hosted offer serves recurring Canadian-data reporting and dashboard work.
-Business includes email guidance; custom integrations and contractual commitments
-require a separate scope. Public `/docs` provides curl, Python and server-side
+Business primarily increases allowance and capacity. For the first few customers,
+the founder offers email help to inspect one existing supported resource and get
+one query working. Custom integrations and contractual commitments are not
+included. The public comparison focuses on Free and Business; existing internal
+Enterprise entitlements remain compatible. Public `/docs` provides curl, Python and server-side
 JavaScript quickstarts, a worked reporting example and a searchable OpenAPI
 reference. `/api/v1/openapi.json` reflects the installed anonymous-access policy.
 Examples execute only when explicitly requested; developer keys belong on the
@@ -31,12 +34,26 @@ ceiling. Failed credential attempts also have a process-local IP abuse limit.
 Metadata, rows and tiles cost one credit; aggregation, profiles, map viewports
 and featured previews cost ten; CSV exports cost 25. A newly admitted
 preparation costs 100, committed atomically with its job. Joining an existing
-job, a current copy, job polling and activity cost zero. A successfully admitted
-job keeps its charge even if later publisher preparation fails. HTTP failures
-and interrupted non-preparation responses refund reservations. There is no
+job, a current copy, job polling and activity cost zero. Migration 035 records the
+original debit in a durable preparation ledger. A terminal failure without a
+result published by that job reverses the actual debit once against its original
+allowance period. Internal retries retain the charge. A polling timeout does not
+fail or cancel shared work; a failed refresh returns its own debit even when an
+older copy remains usable. Valid empty tables count as successful publication.
+Later expiry or eviction cannot undo that success. These are account-credit
+returns, not subscription payment or invoice refunds. HTTP failures and
+interrupted non-preparation responses continue to refund reservations. There is no
 automatic overage charge or rollover. Responses expose allowance, remaining
 and reset headers; remaining is the admission-time balance including held
-reservations. The account page shows current usage.
+reservations. The account page shows current net usage, gross debits and returned
+preparation credits, with original-period reversal details.
+
+`commercialConfig.js` owns plan allowances, operation weights and derived workflow
+costs; `/api/account/plans` publishes these values. A ready metadata-plus-row query
+costs 2 credits. The CABIN cold sequence costs 103 (metadata 1, new admission 100,
+polls 0, prepared metadata 1, row query 1); joining existing work costs 3 for that
+same sequence. Ready reuse with metadata costs 2, or a direct query costs 1. An
+optional export adds 25. These totals do not include extra discovery/profile calls.
 
 ## Components and lifecycle
 
@@ -60,10 +77,16 @@ lock. Expensive reservations also enforce account/global concurrency. The lock
 is released before upstream requests or response streaming. Five-minute leases
 and a four-minute response deadline bound crashed requests; normal completions
 settle once. Maintenance runs serially every five seconds, recovers expired
-leases, sends queued mail and reconciles billing. Detailed request records last
+leases, reconciles at most 100 eligible preparation charges without reversing
+active retries, sends queued mail and reconciles billing. Detailed request records last
 seven days, daily aggregates thirteen months, rate buckets at most two days and
 processed webhook identities ninety days. Billing period/Stripe references
-remain for account reconciliation. No query contents are recorded by this meter.
+remain for account reconciliation. Unresolved preparation debit records are
+retained until resolved; terminal preparation records remain for thirteen months
+after resolution. Original debit fields and resolved outcomes are immutable.
+Job publication receipts commit with the serving table, so recovery can prove
+success independently of later catalogue/cache changes. No query contents are
+recorded by this meter.
 
 Mail links are AES-256-GCM encrypted with a key derived from the auth secret.
 Messages are deleted on SMTP acceptance, expire after one day and stop after
@@ -113,13 +136,15 @@ and Issuing are not needed for this online API subscription.
 Run `npm --prefix server run verify`. Separately migrate a disposable PostgreSQL
 16/PostGIS 3.5 database, set `CANQUERY_DATABASE_URL`,
 `SPATIAL_TEST_DATABASE_URL` and `COMMERCIAL_TEST_DATABASE_URL` to that same
-database, and run `node --test integration/*.test.cjs` from `server`, plus the
+database, and run `node --test --test-concurrency=1 integration/*.test.cjs` from `server`, plus the
 five database suites in CI. Never combine fixture cleanup with a sandbox
 preview that is actively exercising real Stripe objects.
 
 `node scripts/commercial-admin.js status` reports delayed mail, billing retries
-and expired request leases without customer details. `inspect ACCOUNT_UUID`
-shows private account/period state. Monitor this along with API logs and SMTP
+and expired request leases, unresolved preparation settlements, missing-job
+exceptions and preparation reversals without customer details. `inspect ACCOUNT_UUID`
+shows private account/period state, recent daily usage and preparation outcomes. The release runbook provides
+a read-only query for recent successful request timestamps. These inspection commands perform reads only. Monitor this along with API logs and SMTP
 queue/service status. A healthy catalogue endpoint alone does not establish
 email or billing health.
 
@@ -185,3 +210,9 @@ webhook processing or a reviewed reconciliation path and paid access. A code
 backout cannot undo paid subscriptions; cancel those only through a separately
 authorized customer/billing action. Existing data-storage safeguards, source
 jobs, maps and unrelated services retain their established boundaries.
+
+The preparation-credit policy has an explicit rollout boundary. See
+[Preparation value and credit outcomes](preparation-value.md) for admission
+freezing, old-worker draining, reviewed queued-job adoption, verification,
+founder reporting and compatible rollback. Keep migration 035 and the outcome
+processor after any later code backout.

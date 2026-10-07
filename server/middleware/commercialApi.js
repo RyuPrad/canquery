@@ -1,6 +1,7 @@
 const queries = require('../db/commercialQueries');
 const pool = require('../db/pool');
 const { config } = require('../services/commercialConfig');
+const { operationFor } = require('../services/commercialOperations');
 const rateLimit = require('express-rate-limit');
 
 // Failed credential attempts must be bounded before they can query PostgreSQL.
@@ -8,21 +9,6 @@ const rateLimit = require('express-rate-limit');
 const credentialLimiter = rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false,
     skip:req=>!req.headers.authorization,skipSuccessfulRequests:true});
 
-function operationFor(req) {
-    const path = req.path;
-    if (/^\/jobs\/[^/]+$/.test(path) || /\/activity$/.test(path)) return {name:'activity',cost:0};
-    if (/\/(prepare|ingest)$/.test(path)) return {name:'preparation',cost:0,
-        ...(/\/ingest$/.test(path) ? {bucket:'ingest',rate:5,seconds:3600} : {})};
-    if (/\/query\.csv$/.test(path)) return {name:'export',cost:25,expensive:true,bucket:'export',rate:10};
-    if (/\/profile$/.test(path)) return {name:'profile',cost:10,expensive:true,bucket:'profile',rate:20};
-    if (/\/map$/.test(path)) return {name:'map',cost:10,expensive:true,bucket:'map',rate:60};
-    if (/\/map\/tiles\//.test(path)) return {name:'tile',cost:1,bucket:'tile',rate:240};
-    if (path === '/insights/featured') return {name:'featured',cost:10,expensive:true};
-    if (/\/query$/.test(path) && ['group_by','agg','agg_column','bucket'].some(k=>req.query[k] !== undefined && req.query[k] !== '')) {
-        return {name:'aggregate',cost:10,expensive:true,bucket:'aggregate',rate:30};
-    }
-    return {name:/\/query$/.test(path) ? 'query' : 'metadata',cost:1};
-}
 function privateResponse(res) {
     // Controllers may set a public cache policy; authenticated responses must
     // stay private even for tiles, errors and conditional requests.
