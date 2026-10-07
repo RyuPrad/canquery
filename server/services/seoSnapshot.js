@@ -260,7 +260,7 @@ function organizationSnapshot(organization, datasets, pagination) {
 }
 
 const STATIC_COPY = {
-    pricing: {title:'API pricing',summary:'Free: 1,000 credits per UTC calendar month, 30 requests/minute, one API key. Business: CA$49/month plus applicable taxes, 100,000 credits per paid cycle, 300 requests/minute, five keys. Enterprise: contact support@canquery.com for a finite, capacity-tested allowance. Hard stops, no automatic overages, no rollover. Publisher availability and endpoint limits apply.',links:[{path:'/signup',label:'Create a developer account'},{path:'/docs',label:'API documentation'}]},
+    pricing: {title:'Canadian data for your next client report.',summary:'A hosted API for analytics and research teams. Find supported public datasets, query the records you need, and reuse the integration in your reports and dashboards.',links:[{path:'/docs#quickstart',label:'Try the example free'},{path:'/terms',label:'API terms'}]},
     account: {title:'Developer account',summary:'Sign in to manage API keys, usage and billing. JavaScript is required for account actions.',links:[{path:'/login',label:'Sign in'}]},
     login: {title:'Sign in',summary:'Enable JavaScript to sign in securely. For help, contact support@canquery.com.'},
     signup: {title:'Create a developer account',summary:'Start with a free API allowance and no payment card. Enable JavaScript to create and verify your account.'},
@@ -298,7 +298,7 @@ const STATIC_COPY = {
     },
     docs: {
         title: 'CanQuery API documentation',
-        summary: 'Use your API key to search datasets, query tables, export filtered data and request map features. Free and Business plans have published credit allowances. The website remains accessible without an account.',
+        summary: 'Build your first Canadian public-data integration with working examples, resource capabilities, typed endpoint reference and practical guidance for limits, pagination and retries.',
         links: [{ path: '/', label: 'Search the catalogue' }]
     },
     privacy: {
@@ -357,7 +357,9 @@ function staticSnapshot(type, items = [], pagination) {
         breadcrumbs: type === 'home' ? [] : [{ label: 'CanQuery', path: '/' }, { label: copy.title }],
         title: copy.title,
         summary: copy.summary,
-        overviewHtml: type === 'home' ? homeExplanation() : '',
+        overviewHtml: type === 'home' ? homeExplanation()
+            : type === 'pricing' ? require('./developerPresentation').pricingOverview()
+                : type === 'docs' ? require('./developerPresentation').docsOverview() : '',
         guides: type === 'home' ? listArticles({ lang: 'en' }).slice(0, 3).map(article => ({
             path: article.path, label: article.title, detail: article.description
         })) : [],

@@ -1,0 +1,41 @@
+.cq-account-page .btn,
+.cq-auth-page .btn,
+.cq-account-dialog .btn { min-height: 2.75rem; height: auto; padding-block: .65rem; white-space: normal; }
+.cq-account-page .input,
+.cq-auth-page .input { min-height: 3rem; }
+.cq-account-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--color-primary); }
+.cq-account-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.cq-account-notice { border: 1px solid color-mix(in oklch, var(--color-base-content) 18%, transparent); border-radius: .9rem; background: var(--color-base-200); padding: 1rem 1.25rem; }
+.cq-account-pill { padding: .3rem .75rem; border-radius: 999px; font-size: .8rem; font-weight: 650; background: color-mix(in oklch, var(--color-primary) 10%, var(--color-base-100)); color: var(--color-base-content); border: 1px solid color-mix(in oklch, var(--color-primary) 25%, transparent); }
+.cq-account-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.cq-account-metrics dt { font-size: .8rem; color: color-mix(in oklch, var(--color-base-content) 75%, transparent); }
+.cq-account-metrics dd { margin-top: .35rem; font-family: var(--font-display); font-size: clamp(1.35rem, 3vw, 2.25rem); font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cq-account-steps { display: grid; gap: 1.25rem; }
+.cq-account-steps li { display: flex; gap: .8rem; align-items: flex-start; }
+.cq-account-steps li > span { display: grid; place-items: center; flex: 0 0 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--color-base-200); font-size: .75rem; font-weight: 650; }
+.cq-account-steps li p { font-size: .85rem; margin-top: .3rem; color: color-mix(in oklch, var(--color-base-content) 75%, transparent); }
+.cq-account-empty { padding: 1.25rem; border-radius: .75rem; background: var(--color-base-200); }
+.cq-account-secret { padding: 1.25rem; border-radius: .75rem; border: 1px solid var(--color-primary); background: color-mix(in oklch, var(--color-primary) 4%, var(--color-base-100)); }
+.cq-account-key-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: 1.1rem 0; border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent); }
+.cq-account-key-status { font-size: .7rem; line-height: 1.5; padding: .2rem .5rem; border-radius: .3rem; background: var(--color-base-200); }
+.cq-account-key-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem; padding-top: .25rem; }
+.cq-account-key-form label { min-width: min(100%, 16rem); }
+.cq-account-dialog { width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; margin: auto; padding: 1.5rem; border-radius: 1rem; background: var(--color-base-100); color: var(--color-base-content); border: 1px solid color-mix(in oklch, var(--color-base-content) 18%, transparent); box-shadow: 0 20px 80px #0004; }
+.cq-account-dialog::backdrop { background: #0008; backdrop-filter: blur(2px); }
+.cq-auth-layout { display: grid; grid-template-areas: "intro" "form" "context"; gap: 1.5rem; align-items: start; }
+.cq-auth-intro { grid-area: intro; max-width: 28rem; }
+.cq-auth-form-panel { grid-area: form; }
+.cq-auth-context { grid-area: context; }
+.cq-auth-note { font-size: .85rem; line-height: 1.6; margin-top: 1.5rem; padding-top: 1.25rem; margin-bottom: .8rem; border-top: 1px solid color-mix(in oklch, var(--color-base-content) 15%, transparent); color: color-mix(in oklch, var(--color-base-content) 75%, transparent); }
+.cq-auth-password { display: flex; gap: .4rem; align-items: stretch; }
+.cq-auth-password input { min-width: 0; }
+.cq-auth-password .btn { flex-shrink: 0; max-width: 7rem; font-size: .8rem; }
+.cq-auth-agreement { display: flex; align-items: flex-start; gap: .75rem; padding-block: .35rem; font-size: .85rem; line-height: 1.6; }
+.cq-auth-agreement .checkbox { margin-top: .15rem; }
+.cq-auth-error { border-left: 3px solid var(--color-error); padding: .7rem .9rem; background: color-mix(in oklch, var(--color-error) 7%, var(--color-base-100)); border-radius: .25rem; }
+.cq-auth-success-mark { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--color-base-200); font-size: 1.2rem; }
+.cq-auth-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; column-gap: .5rem; font-size: .9rem; }
+.cq-auth-page a.link,
+.cq-account-steps a.link { min-height: 2.75rem; display: inline-flex; align-items: center; }
+@media (min-width: 768px) { .cq-auth-layout { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); grid-template-rows: auto 1fr; grid-template-areas: "intro form" "context form"; column-gap: 4rem; row-gap: 0; } .cq-auth-intro { padding-top: 1.5rem; } }
+@media (max-width: 400px) { .cq-account-metrics { gap: .6rem; } .cq-account-key-form .btn { width: 100%; } }
