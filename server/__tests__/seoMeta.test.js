@@ -92,7 +92,7 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         expect(ld.sameAs).toBe('https://open.canada.ca/data/en/dataset/d1');
         expect(ld.keywords).toEqual(['water', 'lakes', 'eau']); // deduped, both langs
         expect(ld.dateModified).toBe('2026-01-02T10:00:00.000Z');
-        expect(ld.creator).toEqual({ '@type': 'GovernmentOrganization', name: 'Environment Canada' });
+        expect(ld.creator).toEqual({ '@type': 'Organization', name: 'Environment Canada' });
         // relative URL resolved to absolute against the upstream origin
         expect(ld.distribution[0].contentUrl).toBe('https://open.canada.ca/data/x/download/a.csv');
         expect(ld.distribution[1].contentUrl).toBe('https://example.com/b.xlsx');
@@ -153,6 +153,31 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         name_en: 'Measurements', dataset_title_en: 'Water Quality',
         format: 'CSV', size_bytes: 1024
     };
+
+    test.each([
+        [base, 'https://canquery.com/datasets/water-quality'],
+        [{ ...base, dataset_name: 'eau/qualité' }, 'https://canquery.com/datasets/eau%2Fqualit%C3%A9'],
+        [{ ...base, dataset_name: null }, 'https://canquery.com/datasets/d1']
+    ])('references the complete parent dataset without declaring an incomplete Dataset: %#', (resource, parentUrl) => {
+        const meta = seo.resourceMeta({
+            ...resource, url: 'https://example.test/data.csv',
+            provenance_sources: [{ authoritative: true, license_url: 'https://example.test/license' }]
+        });
+        const page = meta.jsonLd.find(item => item['@type'] === 'WebPage');
+        expect(page.mainEntity).toEqual({
+            '@type': 'DataDownload', name: 'Measurements (CSV)', encodingFormat: 'CSV',
+            contentSize: '1 KB', contentUrl: 'https://example.test/data.csv',
+            license: 'https://example.test/license', isPartOf: parentUrl
+        });
+        expect(JSON.stringify(meta.jsonLd)).not.toContain('"@type":"Dataset"');
+        expect(meta.canonical).toBe('https://canquery.com/resources/r1');
+        expect(meta.noindex).not.toBe(true);
+    });
+
+    it('omits the parent reference when no dataset identity is available', () => {
+        const meta = seo.resourceMeta({ ...base, dataset_id: null, dataset_name: null });
+        expect(meta.jsonLd[0].mainEntity).not.toHaveProperty('isPartOf');
+    });
 
     test.each([null, undefined, ''])('omits unknown size %s instead of inventing zero bytes', size => {
         const meta = seo.resourceMeta({ ...base, size_bytes: size });

@@ -369,7 +369,9 @@ describe('production SPA response semantics', () => {
 
     it('serves semantic initial HTML with the canonical 200 response', async () => {
         catalogRead.getDatasetByIdOrName.mockResolvedValue({
-            id: 'd1', name: 'roads', title_en: 'Roads', notes_en: 'Road data for public use.'
+            id: 'd1', name: 'roads', title_en: 'Roads', notes_en: 'Road data for public use.',
+            org_title_en: 'City Works',
+            provenance_sources: [{ authoritative: true, license_url: 'https://example.test/roads-license' }]
         });
         catalogRead.listResourcesForDataset.mockResolvedValue([]);
         const res = await request(spa).get('/datasets/roads');
@@ -377,6 +379,35 @@ describe('production SPA response semantics', () => {
         expect(res.text).toContain('<h1>Roads</h1>');
         expect(res.text).toContain('data-cq-seo-snapshot="true"');
         expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/datasets/roads"');
+        const schema = [...res.text.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)]
+            .map(match => JSON.parse(match[1]));
+        const dataset = schema.find(item => item['@type'] === 'Dataset');
+        expect(dataset.description.length).toBeGreaterThanOrEqual(50);
+        expect(dataset.description.length).toBeLessThanOrEqual(5000);
+        expect(dataset.creator).toEqual({ '@type': 'Organization', name: 'City Works' });
+        expect(dataset.license).toBe('https://example.test/roads-license');
+    });
+
+    test.each(['/resources/r1', '/resources/r1?view=map'])('keeps %s indexable with a parent URL instead of an incomplete Dataset', async route => {
+        catalogRead.getResourceById.mockResolvedValue({
+            id: 'r1', name_fr: 'Limites', format: 'GEOJSON', url: 'https://example.test/limits.geojson',
+            dataset_id: 'd1', dataset_name: 'limits', dataset_title_fr: 'Limites municipales',
+            map_provider: 'canquery', places: []
+        });
+        const res = await request(spa).get(route);
+        expect(res.status).toBe(200);
+        expect(res.text).not.toContain('name="robots" content="noindex');
+        expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/resources/r1"');
+        const schema = [...res.text.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)]
+            .map(match => JSON.parse(match[1]));
+        const page = schema.find(item => item['@type'] === 'WebPage');
+        expect(page.mainEntity['@type']).toBe('DataDownload');
+        expect(page.mainEntity.isPartOf).toBe('https://canquery.com/datasets/limits');
+        expect(page.mainEntity.contentUrl).toBe('https://example.test/limits.geojson');
+        expect(JSON.stringify(schema)).not.toContain('"@type":"Dataset"');
+        expect(schema.some(item => item['@type'] === 'BreadcrumbList')).toBe(true);
+        expect(catalogRead.getDatasetByIdOrName).not.toHaveBeenCalled();
+        expect(catalogRead.listResourcesForDataset).not.toHaveBeenCalled();
     });
 
     it('returns noindex 404s and retryable 503s instead of soft 200 pages', async () => {
