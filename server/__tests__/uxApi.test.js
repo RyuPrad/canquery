@@ -29,11 +29,12 @@ describe('UX batch endpoints', () => {
         expect(queries.getResourceById).not.toHaveBeenCalled();
     });
 
-    it('query.csv exports an ingested resource as a CSV attachment', async () => {
+    it.each(['/api/v1', '/web-api/v1'])('%s query.csv exports an ingested resource as a nonindexable CSV attachment', async base => {
         queries.getResourceById.mockResolvedValue({ id: 'ing-9', dataset_id: 'd1', url: 'u', format: 'CSV', size_bytes: null, datastore_active: false, ingest_status: 'ready', table_name: 'r_abc9', ingested_columns: [{ id: 'name', type: 'TEXT' }, { id: 'n', type: 'INTEGER' }] });
         store.queryStoreTable.mockResolvedValue({ records: [{ _id: 1, name: 'plain', n: 5 }, { _id: 2, name: 'has,comma "q"', n: null }], total: 2 });
-        const res = await request(app).get('/api/v1/resources/ing-9/query.csv');
+        const res = await request(app).get(base + '/resources/ing-9/query.csv');
         expect(res.status).toBe(200);
+        expect(res.headers['x-robots-tag']).toBe('noindex');
         expect(res.headers['content-type']).toMatch(/text\/csv/);
         expect(res.headers['content-disposition']).toMatch(/attachment/);
         const lines = res.text.trim().split('\n');
@@ -118,10 +119,12 @@ describe('UX batch endpoints', () => {
         }));
     });
 
-    it('query.csv on an unlockable resource is still a 409', async () => {
+    it.each(['/api/v1', '/web-api/v1'])('%s query.csv on an unprepared resource is still a 409', async base => {
         queries.getResourceById.mockResolvedValue({ id: 'csv-9', dataset_id: 'd1', url: 'u', format: 'CSV', size_bytes: null, datastore_active: false, ingest_status: null, table_name: null, ingested_columns: null });
-        const res = await request(app).get('/api/v1/resources/csv-9/query.csv');
+        const res = await request(app).get(base + '/resources/csv-9/query.csv');
         expect(res.status).toBe(409);
+        expect(res.headers['x-robots-tag']).toBe('noindex');
+        expect(store.queryStoreTable).not.toHaveBeenCalled();
         expect(res.body.hint).toMatch(/ingest/);
     });
 

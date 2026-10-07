@@ -1037,6 +1037,10 @@ a.cq-card:hover,
 .cq-seo-snapshot article {
   max-width: 52rem;
   margin-top: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.cq-seo-snapshot pre {
+  overflow-x: auto;
 }
 .cq-seo-snapshot nav ol {
   display: flex;

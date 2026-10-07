@@ -79,6 +79,10 @@ test('documentation availability reflects disabled, compatible and required-key 
 
 test('initial reference shares permanent operation anchors and typed parameters with the interactive reference', () => {
     const html = docsOverview();
+    expect(seo.staticMeta('docs').title).toBe('Canadian open data API documentation - CanQuery');
+    expect(html).toContain('href="/pricing">Plans &amp; credits</a>');
+    expect(html).toContain('href="/blog/toronto-building-permits"');
+    expect(html).toContain('href="/blog/uxbridge-ward-boundaries-map"');
     for (const item of Object.values(openApi.createOpenApi().paths)) {
         for (const operation of Object.values(item)) expect(html).toContain('id="' + operation.operationId + '"');
     }

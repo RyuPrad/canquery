@@ -15,9 +15,15 @@ Le schéma enregistré comprend également **OBJECTID**, **Shape_Length** et **S
 
 ## Choisir un téléchargement adapté
 
+- **Voir les zones des quartiers :** utilisez la [carte interactive](/resources/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32-data?view=map), puis consultez **WARD**, **LABEL** et **MUNICIPALITY** pour un polygone sélectionné.
+- **Lire les attributs dans un tableur :** utilisez le lien CSV original et vérifiez les colonnes incluses dans cet export.
+- **Travailler avec les limites dans un SIG :** examinez les formats géographiques proposés par le producteur et confirmez que le fichier conserve les polygones et son système de coordonnées.
+
 Le lien de téléchargement original demande un CSV au service ArcGIS du producteur. Ce format permet d’examiner des colonnes, mais il ne faut pas présumer qu’il conserve les polygones nécessaires à un travail dans un SIG. Pour obtenir les limites dans un fichier géographique, consultez la [page officielle de la région de Durham](https://opendata.durham.ca/datasets/DurhamRegion::uxbridge-ward-boundaries) et vérifiez les formats qui y sont proposés.
 
 La [couche ArcGIS publiée](https://maps.durham.ca/arcgis/rest/services/Open_Data/Durham_OpenData/MapServer/32) décrit les champs et la géométrie du service. Gardez le titre du jeu de données, l’adresse source et la date de téléchargement avec chaque fichier extrait. Vous pourrez ainsi distinguer votre copie d’une mise à jour ultérieure ou d’un jeu au nom semblable.
+
+Pour intégrer une carte à une application, consultez la [référence des points de terminaison de l’API](/docs#reference) : elle décrit l’emprise obligatoire et les limites de la réponse cartographique. Une vue limitée à une emprise ne constitue pas un téléchargement SIG complet; utilisez l’export du producteur pour cet usage.
 
 ## Vérifier les dates et l’usage prévu
 

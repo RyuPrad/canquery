@@ -64,6 +64,19 @@ beforeEach(() => {
 });
 
 describe('ResourcePage navigation', () => {
+  test('uses the contextual publisher download title for the heading and breadcrumb', async () => {
+    const resource = resourceEnvelope('a');
+    resource.data.name.en = 'Download EDI through HTTP';
+    resource.data.presentation = { title: { en: 'Southern Cordillera site ten911 (EDI)' } };
+    fetchResource.mockResolvedValue(resource);
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    const label = resource.data.presentation.title.en;
+    expect(await screen.findByRole('heading', { name: label, level: 1 })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByText(label))
+      .toHaveAttribute('aria-current', 'page');
+  });
   test('initial metadata loading reserves the explorer without showing controls or starting work', async () => {
     let resolveMetadata;
     fetchResource.mockImplementation(() => new Promise(resolve => { resolveMetadata = resolve; }));
@@ -201,6 +214,8 @@ describe('ResourcePage navigation', () => {
     await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ q: 'Ottawa', offset: 0 }), expect.any(Object)));
     expect(input).toHaveFocus();
     expect(screen.getByRole('link', { name: 'Download CSV (filtered)' }).getAttribute('href')).toContain('q=Ottawa');
+    expect(screen.getByRole('link', { name: 'Download CSV (filtered)' })).toHaveAttribute('rel', 'nofollow');
+    expect(screen.getByRole('link', { name: 'Download CSV (filtered)' })).toHaveAttribute('download');
   });
   test.each([
     ['en', 'Breadcrumb', 'Datasets', 'Dataset a', 'Resource a'],

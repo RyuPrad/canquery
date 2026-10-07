@@ -39,6 +39,13 @@ app.use(helmet({
 }));
 app.use(requestId);
 
+// API responses remain crawlable for rendering, but are not search landing pages.
+// Mount before CORS, authentication and rate limiting so failures carry it too.
+app.use(['/api/v1', '/web-api/v1'], (_req, res, next) => {
+    res.set('X-Robots-Tag', 'noindex');
+    next();
+});
+
 // Build CORS allowlist
 const allowlist = new Set(
     (process.env.CORS_ALLOWED_ORIGINS || '')

@@ -61,7 +61,23 @@ function isGenericResourceName(value, format) {
     const normalized = collapse(value).toLowerCase().replace(/[._-]+/g, ' ');
     const normalizedFormat = collapse(format).toLowerCase();
     return !normalized || GENERIC_RESOURCE_NAMES.has(normalized) ||
-        (normalizedFormat && normalized === normalizedFormat);
+        (normalizedFormat && normalized === normalizedFormat) || Boolean(downloadName(value, format));
+}
+
+// Match only publisher download boilerplate. Extra subject words must not be
+// discarded. JP2's expanded label appears in bilingual federal metadata.
+function downloadName(value, format) {
+    const normalized = collapse(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const normalizedFormat = collapse(format).toLowerCase();
+    if (!normalizedFormat) return null;
+    const escaped = normalizedFormat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const formatPattern = ['jp2', 'jpeg2000'].includes(normalizedFormat) ? '(?:jp2|jpeg2000)' : escaped;
+    const en = new RegExp('^download(?: the)?(?: (english|french))? ' + formatPattern +
+        '(?: file)?(?: (?:through|via) (?:https?|ftp))?$', 'i').exec(normalized);
+    if (en) return { qualifier: en[1] === 'english' ? 'English' : en[1] === 'french' ? 'French' : '' };
+    const fr = new RegExp('^telecharg(?:er|ez)(?: le)? fichier(?: en format)? ' + formatPattern +
+        '(?: (anglais|francais))?(?: via (?:https?|ftp))?$', 'i').exec(normalized);
+    return fr ? { qualifier: fr[1] === 'francais' ? 'français' : fr[1] || '' } : null;
 }
 
 function isPeriodName(name) {
@@ -73,7 +89,9 @@ function resourceSubject(resource) {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     if (datasetTitle && isPeriodName(name)) return datasetTitle + ' — ' + name;
-    return (isGenericResourceName(name, resource.format) ? datasetTitle : name) || datasetTitle;
+    const download = downloadName(name, resource.format);
+    if (datasetTitle && download) return datasetTitle + (download.qualifier ? ' — ' + download.qualifier : '');
+    return (isGenericResourceName(name, resource.format) ? datasetTitle : name) || name || datasetTitle;
 }
 
 function titleContainsFormat(value, format) {
@@ -86,14 +104,15 @@ function titleContainsFormat(value, format) {
 function resourceTitleBase(resource, max = null, lang = 'en') {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
+    const qualifier = downloadName(name, resource.format)?.qualifier;
     const format = collapse(resource.format).toUpperCase();
     let base = resourceSubject(resource) || 'Resource';
     const languages = resourceLanguages(resource).map(code => lang === 'fr'
         ? (code === 'fr' ? 'français' : 'anglais') : (code === 'fr' ? 'French' : 'English'));
     const suffixParts = [...languages, format && !titleContainsFormat(base, format) ? format : ''].filter(Boolean);
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
-    if (max && datasetTitle && isPeriodName(name)) {
-        const period = ' — ' + name;
+    if (max && datasetTitle && (isPeriodName(name) || qualifier)) {
+        const period = ' — ' + (qualifier || name);
         base = truncate(datasetTitle, Math.max(12, max - suffix.length - period.length)) + period;
     }
     return (max ? truncate(base, Math.max(12, max - suffix.length)) : base) + suffix;
@@ -204,7 +223,7 @@ const STATIC_META = {
         path: '/places',
     },
     docs: {
-        title: 'API documentation - CanQuery',
+        title: 'Canadian open data API documentation - CanQuery',
         description:
             'Build with Canadian public data: working curl, Python and JavaScript examples, endpoint reference, API keys, pagination, preparation and error handling.',
         path: '/docs',
@@ -463,7 +482,7 @@ function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = 
 }
 
 function buildResourceJsonLd(resource, description) {
-    const name = pick(resource.name_en, resource.name_fr) || resourceTitleBase(resource);
+    const name = resourceTitleBase(resource);
     const datasetName = pick(resource.dataset_title_en, resource.dataset_title_fr) || 'Dataset';
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const download = {
@@ -494,7 +513,7 @@ function buildResourceJsonLd(resource, description) {
 }
 
 function resourceMeta(resource) {
-    const name = pick(resource.name_en, resource.name_fr) || 'Resource';
+    const name = resourceTitleBase(resource);
     const ds = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const description = resourceDescription(resource);

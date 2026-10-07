@@ -47,6 +47,8 @@ describe('robots.txt', () => {
         expect(res.headers['content-type']).toMatch(/text\/plain/);
         expect(res.text).toContain('User-agent: *');
         expect(res.text).toContain('Sitemap: https://canquery.com/sitemap.xml');
+        expect(res.text).not.toContain('Disallow:');
+        expect(res.headers['x-robots-tag']).toBeUndefined();
     });
 });
 
@@ -84,6 +86,9 @@ describe('pages sitemap', () => {
         expect(res.text).toContain('<loc>https://canquery.com/</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/insights</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/privacy</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/pricing</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/terms</loc>');
+        expect(res.text).not.toMatch(/\/account|\/signup|\/api\/v1/);
     });
 });
 

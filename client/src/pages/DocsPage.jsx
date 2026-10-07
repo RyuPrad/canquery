@@ -89,6 +89,7 @@ export default function DocsPage() {
           <div className="cq-doc-workflow-step"><h3><span aria-hidden="true">1.</span> {t('docs.workflow_find')}</h3><p>{t('docs.workflow_find_body')}</p><details className="cq-doc-recipe"><summary>{t('docs.workflow_discovery')}</summary><CodeSample label={t('docs.workflow_discovery')} snippets={snippets.discover} endpoint="/datasets" /></details><CodeSample label={t('docs.workflow_metadata')} snippets={snippets.metadata} endpoint="/resources/:id" /><MetadataPreview /></div>
           <div className="cq-doc-workflow-step"><h3><span aria-hidden="true">2.</span> {t('docs.workflow_query')}</h3><p>{t('docs.workflow_query_body')}</p><CodeSample label={t('docs.workflow_query_label')} snippets={snippets.rows} endpoint="/resources/:id/query" /><p className="cq-doc-footnote">{t('docs.workflow_fallback')} <a href="#preparation">{t('docs.prepare_title')} →</a></p></div>
           <div className="cq-doc-workflow-step"><h3><span aria-hidden="true">3.</span> {t('docs.workflow_export')}</h3><p>{t('docs.workflow_export_body')}</p><CodeSample label={t('docs.workflow_export_label')} code={snippets.export} endpoint="/resources/:id/query.csv" /></div>
+          <p><a href={t('docs.permits_guide_path')}>{t('docs.permits_guide')}</a></p>
         </section>
 
         <section id="preparation-example" className="cq-doc-section">
@@ -112,6 +113,7 @@ export default function DocsPage() {
 
         <section id="reference" className="cq-doc-section">
           <SectionHeading number="05" title={t('docs.reference_title')} intro={t('docs.reference_intro')} />
+          <p><a href={t('docs.map_guide_path')}>{t('docs.map_guide')}</a></p>
           <EndpointReference base={base} />
         </section>
 
