@@ -4,10 +4,10 @@ import { LangProvider } from '../i18n.jsx';
 import PricingPage from './PricingPage.jsx';
 import { accountRequest } from '../api/account.js';
 import { createRequire } from 'node:module';
-const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
+const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn() }));
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
-const plans = { enabled: true, mode: 'live', checkout: false, plans: PLANS, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS };
+const plans = { enabled: true, mode: 'live', checkout: false, plans: PLANS, business_price: BUSINESS_PRICE, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS };
 const mount = () => render(<LangProvider><PricingPage /></LangProvider>);
 
 test.each([
@@ -46,7 +46,25 @@ test('enabled checkout links to account with clear monthly renewal and no checko
   mount();
   expect(await screen.findByRole('link', { name: 'Choose Business' })).toHaveAttribute('href', '/account');
   expect(screen.getByText(/Renews monthly\. Cancel before renewal/)).toBeVisible();
+  expect(screen.getByText('CA$9/month')).toBeVisible();
+  expect(screen.getByText('100,000 credits per paid billing cycle')).toBeVisible();
   expect(accountRequest.mock.calls.every(([path, options]) => path === '/plans' && !options.method)).toBe(true);
+});
+
+test.each([['en', 'CA$12.50/month'], ['fr', '12,50 $ CA/mois']])('uses the returned monthly CAD price in %s', async (lang, price) => {
+  localStorage.setItem('cq-lang', lang);
+  accountRequest.mockResolvedValue({ ...plans, checkout: true, business_price: { currency: 'cad', amount: 1250, interval: 'month' } });
+  mount();
+  expect(await screen.findByText(price)).toBeVisible();
+  expect(document.body).not.toHaveTextContent('49');
+});
+
+test('missing or unexpected price metadata cannot advertise a purchase amount or enable checkout', async () => {
+  accountRequest.mockResolvedValue({ ...plans, checkout: true, business_price: { currency: 'usd', amount: 900, interval: 'month' } });
+  mount();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Plan availability could not be loaded');
+  expect(screen.queryByRole('link', { name: 'Choose Business' })).toBeNull();
+  expect(screen.queryByText('CA$9/month')).toBeNull();
 });
 
 test('costs stay grouped with labels and the example is inert', async () => {

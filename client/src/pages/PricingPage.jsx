@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import { useLang } from '../i18n.jsx';
-import { accountRequest } from '../api/account.js';
+import useCommercialPlans from '../hooks/useCommercialPlans.js';
+import { businessPrice } from '../utils/businessPrice.js';
 import { CheckIcon } from '../components/Icons.jsx';
 import CreditWorkflows from '../components/docs/CreditWorkflows.jsx';
 import './PricingPage.css';
@@ -10,19 +10,11 @@ export default function PricingPage() {
   const { t, lang } = useLang();
   const label = (key, values) => t(key).replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
   const number = value => value == null ? '—' : Number(value).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
-  const [plans, setPlans] = useState(null);
-  const [error, setError] = useState(false);
-  const [reload, setReload] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    accountRequest('/plans', { signal: controller.signal }).then(value => {
-      if (!controller.signal.aborted) { setPlans(value); setError(false); }
-    }).catch(() => { if (!controller.signal.aborted) setError(true); });
-    return () => controller.abort();
-  }, [reload]);
+  const { plans, error, retry } = useCommercialPlans();
+  const price = businessPrice(plans?.business_price, lang);
   const inquiry = 'mailto:support@canquery.com?subject=' + encodeURIComponent(t('pricing.email_subject')) + '&body=' + encodeURIComponent(t('pricing.email_body'));
   const loaded = Boolean(plans);
-  const checkout = Boolean(plans?.enabled && plans.checkout);
+  const checkout = Boolean(plans?.enabled && plans.checkout && price);
   const command = 'curl --get \\\n  "https://canquery.com/api/v1/resources/' + RESOURCE + '/query" \\\n  -H "Authorization: Bearer $CANQUERY_API_KEY" \\\n  --data-urlencode \'filters={"Year/Année":2024,"Family/Famille":"Chironomidae"}\' \\\n  --data-urlencode \'limit=5\'';
   return <div className="cq-pricing max-w-6xl mx-auto px-4 py-10 sm:py-14">
     <header className="cq-pricing-hero">
@@ -35,10 +27,10 @@ export default function PricingPage() {
     <section id="plans" className="cq-pricing-section" aria-labelledby="plans-title">
       <div className="cq-pricing-section-heading"><div><p className="cq-pricing-eyebrow">{t('pricing.plans_eyebrow')}</p><h2 id="plans-title">{t('pricing.plans_title')}</h2></div><p>{t('pricing.plans_intro')}</p></div>
       {plans?.mode === 'sandbox' && plans.enabled && <p className="cq-pricing-notice" role="status">{t('account.sandbox')}</p>}
-      {error && <div className="cq-pricing-notice" role="alert"><p>{t('pricing.load_error')}</p><button className="btn btn-sm btn-outline" onClick={() => { setError(false); setReload(value => value + 1); }}>{t('account.retry')}</button></div>}
+      {(error || (loaded && !price)) && <div className="cq-pricing-notice" role="alert"><p>{t('pricing.load_error')}</p><button className="btn btn-sm btn-outline" onClick={retry}>{t('account.retry')}</button></div>}
       <div className="cq-pricing-plans">{['free', 'business'].map(plan => <article key={plan} className={'cq-card cq-pricing-plan' + (plan === 'business' ? ' cq-pricing-plan-business' : '')}>
-        <div className="cq-pricing-plan-heading"><h3>{t('account.plan_' + plan)}</h3>{plan === 'business' && loaded && !checkout && <span className="cq-pricing-status">{t('account.coming_soon')}</span>}</div>
-        <p className="cq-pricing-audience">{t('pricing.for_' + plan)}</p><p className="cq-pricing-price">{t('account.price_' + plan)}</p>
+        <div className="cq-pricing-plan-heading"><h3>{t('account.plan_' + plan)}</h3>{plan === 'business' && loaded && price && !checkout && <span className="cq-pricing-status">{t('account.coming_soon')}</span>}</div>
+        <p className="cq-pricing-audience">{t('pricing.for_' + plan)}</p><p className="cq-pricing-price">{plan === 'free' ? t('account.price_free') : price ? label('account.price_business', { price }) : '—'}</p>
         <ul>{[label('pricing.plan_credits_' + plan, { credits: number(plans?.plans?.[plan]?.credits) }), label('pricing.plan_rate', { rate: number(plans?.plans?.[plan]?.rate) }), label('pricing.plan_keys', { keys: number(plans?.plans?.[plan]?.keys) }), label('pricing.plan_concurrency', { concurrency: number(plans?.plans?.[plan]?.concurrency) }), t('pricing.plan_access')].map(feature => <li key={feature}><CheckIcon size={17} className="shrink-0" /><span>{feature}</span></li>)}</ul>
         <div className="cq-pricing-plan-action">{!loaded ? <button className="btn btn-outline" disabled>{t(error ? 'pricing.unavailable' : 'pricing.checking')}</button>
             : plan === 'free' && plans.enabled ? <a className="btn btn-primary" href="/signup">{t('account.signup')}</a>

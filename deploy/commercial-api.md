@@ -9,7 +9,7 @@ export, and map ceilings still apply to every plan.
 | Plan | Credits | General requests/min | Keys | Concurrent expensive requests |
 | --- | --- | --- | --- | --- |
 | Free | 1,000 per UTC calendar month | 30 | 1 | 1 |
-| Business | 100,000 per paid billing cycle; CA$49/month plus applicable taxes | 300 | 5 | 2 |
+| Business | 100,000 per paid billing cycle; CA$9/month plus applicable taxes | 300 | 5 | 2 |
 | Custom & Enterprise | Finite negotiated paid service period | Reviewed, initially at most 300 | At most 100 | Initially at most 2 |
 
 The hosted offer serves recurring Canadian-data reporting and dashboard work.
@@ -100,7 +100,7 @@ unsent mail explicitly. [Mail operations](mail/README.md) covers the sender.
 Use a separate database for each mode. Startup pins the database to `sandbox`
 or `live` and refuses a mode mismatch. Pin the Stripe SDK and API version in
 `billingService.js`; test API behavior against the installed version before an
-upgrade. A Business price must be active CAD 4,900 cents, recurring monthly.
+upgrade. A Business price must be active CAD 900 cents, recurring monthly.
 
 Use hosted subscription Checkout with flexible billing and dynamic payment
 methods. The integration explicitly selects standard Stripe Billing with
@@ -172,6 +172,14 @@ year). Raising the initial capacity envelope requires a reviewed code change
 and representative load verification.
 
 ## Release and rollback boundary
+
+The CA$9 paid launch uses [the Business live-launch runbook](business-nine-live.md).
+It changes only the Business price and related presentation/Checkout compatibility;
+100,000 credits and all operation weights remain unchanged. Production promotion
+restarts only the API. It preserves migration 035, preparation workers and
+source schedules. After live Checkout opens, retain the CA$9 price identity and
+compatible invoice processor even if new Checkout must be closed.
+
 
 Confirm production's commit/configuration and preserve existing work. Follow
 the project's release process: fresh locked application/analytics backups,

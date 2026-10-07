@@ -4,14 +4,18 @@ import { MemoryRouter } from 'react-router-dom';
 import { LangProvider } from '../i18n.jsx';
 import AccountPage from './AccountPage.jsx';
 import AuthPage from './AuthPage.jsx';
+import TermsPage from './TermsPage.jsx';
 import { accountRequest, authRequest } from '../api/account.js';
+import { createRequire } from 'node:module';
+const { BUSINESS_PRICE, TERMS_VERSION } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
 
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), authRequest: vi.fn() }));
 const account = { plan: 'free', mode: 'live', user: { email: 'fixture@example.test' }, remaining: 1000, limit: 1000, used: 0, reserved: 0,
-  resets_at: '2026-11-01T00:00:00Z', key_limit: 1, rate_limit: 30, concurrency: 1, keys: [], usage: [] };
+  resets_at: '2026-11-01T00:00:00Z', key_limit: 1, rate_limit: 30, concurrency: 1, keys: [], usage: [], business_price: BUSINESS_PRICE, terms_version: TERMS_VERSION };
 const key = { id: 'owned-key', name: 'Monthly report', prefix: 'cq_prefix', enabled: true, created_at: '2026-10-06T23:00:00Z' };
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); window.history.replaceState(null, '', '/');
+  accountRequest.mockResolvedValue(account);
   // jsdom has no dialog top layer; browser checks cover native modality.
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 });
@@ -104,7 +108,7 @@ test('empty accounts offer quickstart and usage links without an unavailable pai
   expect(await screen.findByText('No API keys yet')).toBeInTheDocument();
   expect(screen.getAllByRole('link', { name: 'Run the quickstart' })[0]).toHaveAttribute('href', '/docs#quickstart');
   expect(screen.getByRole('link', { name: 'Check your usage' })).toHaveAttribute('href', '#usage');
-  expect(screen.queryByRole('button', { name: 'Business · CA$49/month' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Business · CA$9/month' })).toBeNull();
 });
 
 test('account loading failure can be retried', async () => {
@@ -120,11 +124,49 @@ test('expired sessions show a full-document sign-in link and omit account data',
 
 test('signup sends accepted terms and replaces the successful form with next steps', async () => {
   authRequest.mockResolvedValue({}); renderAuth('/signup');
+  await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled());
   fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Fixture owner' } });
   fillCredentials(); fireEvent.click(screen.getByRole('checkbox')); fireEvent.submit(document.querySelector('form'));
-  await waitFor(() => expect(authRequest).toHaveBeenCalledWith('sign-up/email', expect.objectContaining({ termsVersion: '2026-10-06', callbackURL: window.location.origin + '/account' }), 'en'));
+  await waitFor(() => expect(authRequest).toHaveBeenCalledWith('sign-up/email', expect.objectContaining({ termsVersion: '2026-10-07', callbackURL: window.location.origin + '/account' }), 'en'));
   expect(await screen.findByRole('status')).toHaveTextContent('Check your email'); expect(document.querySelector('form')).toBeNull();
   expect(screen.getByRole('heading', { name: 'Check your inbox' })).toHaveFocus();
+});
+
+test('signup waits for the current server terms version and recovers from unavailable terms', async () => {
+  accountRequest.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ...account, enabled: true, checkout: true, terms_version: '2026-11-02' });
+  authRequest.mockResolvedValue({}); renderAuth('/signup');
+  expect(screen.getByRole('button', { name: 'Create an account' })).toBeDisabled();
+  fireEvent.submit(document.querySelector('form')); expect(authRequest).not.toHaveBeenCalled();
+  expect(await screen.findByRole('alert')).toHaveTextContent('The current terms could not be loaded');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled());
+  expect(screen.getByRole('checkbox')).toHaveAttribute('value', '2026-11-02');
+  expect(screen.getByText(/Business is optional at CA\$9\/month/)).toBeVisible();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Fixture owner' } });
+  fillCredentials(); fireEvent.click(screen.getByRole('checkbox')); fireEvent.submit(document.querySelector('form'));
+  await waitFor(() => expect(authRequest).toHaveBeenCalledWith('sign-up/email', expect.objectContaining({ termsVersion: '2026-11-02' }), 'en'));
+});
+
+test.each([['en', 'Business · CA$9/month', /Business costs CA\$9 per monthly paid service period/], ['fr', 'Business · 9 $ CA/mois', /Business coûte 9 \$ CA par période mensuelle payée/]])('account purchase disclosures use the server price in %s', async (lang, button, disclosure) => {
+  localStorage.setItem('cq-lang', lang);
+  accountRequest.mockResolvedValue({ ...account, checkout_available: true });
+  render(<LangProvider><AccountPage /></LangProvider>);
+  expect(await screen.findByRole('button', { name: button })).toBeEnabled();
+  expect(screen.getByText(disclosure)).toBeVisible();
+});
+
+test('an unavailable account price disables the checkout button while preserving billing management', async () => {
+  accountRequest.mockResolvedValue({ ...account, checkout_available: true, billing_customer: true, business_price: null }); render(<AccountPage />);
+  expect(await screen.findByRole('button', { name: 'Availability unavailable' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Manage billing and invoices' })).toBeEnabled();
+  expect(screen.getByText(/Existing subscriptions renew monthly until cancelled/)).toBeVisible();
+});
+
+test.each([['en', /Business costs CA\$9/, 'Terms effective:'], ['fr', /Business coûte 9 \$ CA/, 'Conditions en vigueur le :']])('terms expose the server price and effective version in %s', async (lang, billing, label) => {
+  localStorage.setItem('cq-lang', lang); render(<LangProvider><TermsPage /></LangProvider>);
+  expect(await screen.findByText(billing)).toBeVisible();
+  expect(screen.getByText(label, { exact: false }).querySelector('time')).toHaveAttribute('datetime', '2026-10-07');
+  expect(accountRequest.mock.calls.every(([path]) => path === '/plans')).toBe(true);
 });
 
 test('password visibility is accessible and preserves the entered password', () => {

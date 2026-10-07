@@ -1,6 +1,8 @@
 const { pricingOverview, docsOverview } = require('../services/developerPresentation');
 const { resolvePage } = require('../controllers/spaController');
 const openApi = require('../services/openApi');
+const seo = require('../services/seoMeta');
+const { BUSINESS_PRICE, TERMS_VERSION } = require('../services/commercialConfig');
 const savedEnv = { ...process.env };
 
 beforeEach(() => {
@@ -14,6 +16,17 @@ beforeEach(() => {
     delete process.env.STRIPE_BUSINESS_PRICE_ID;
 });
 afterAll(() => { jest.restoreAllMocks(); process.env = savedEnv; });
+
+test('initial pricing, Terms and discovery metadata use the same reviewed price', async () => {
+    const price = 'CA$' + BUSINESS_PRICE.amount / 100;
+    expect(price).toBe('CA$9');
+    expect(pricingOverview()).toContain(price + '/month');
+    expect(seo.staticMeta('pricing', '/pricing').description).toContain(price + '/month');
+    const terms = await resolvePage('/terms');
+    expect(terms.body).toContain('monthly at ' + price);
+    expect(terms.body).toContain('Effective ' + TERMS_VERSION);
+    expect(terms.body).not.toContain('CA$49');
+});
 
 test('initial pricing offers Free while paid checkout is closed', () => {
     const html = pricingOverview();
