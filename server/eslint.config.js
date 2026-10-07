@@ -17,6 +17,10 @@ module.exports = [
         }
     },
     {
+        files: ['**/*.mjs', 'integration/**/*.cjs'],
+        languageOptions: { globals: { ...globals.node } }
+    },
+    {
         files: ['__tests__/**'],
         languageOptions: {
             globals: { ...globals.node, ...globals.jest }

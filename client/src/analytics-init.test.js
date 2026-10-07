@@ -14,6 +14,11 @@ afterEach(() => {
 });
 
 describe('analytics bootstrap privacy signals', () => {
+  test.each(['/account', '/login', '/signup', '/forgot-password', '/reset-password'])('does not initialize tracking on %s', pathname => {
+    const doc = configuredDocument();
+    expect(startAnalytics(doc, {}, { location: { pathname } })).toBe(false);
+    expect(doc.querySelector('script[src="/metrics.js"]')).toBeNull();
+  });
   test.each([
     [{ doNotTrack: '1' }, {}],
     [{ globalPrivacyControl: true }, {}],

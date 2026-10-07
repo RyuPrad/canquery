@@ -20,6 +20,10 @@ const DocsPage = lazy(() => import('./pages/DocsPage.jsx'));
 const PlacesPage = lazy(() => import('./pages/PlacesPage.jsx'));
 const PlacePage = lazy(() => import('./pages/PlacePage.jsx'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage.jsx'));
+const PricingPage = lazy(() => import('./pages/PricingPage.jsx'));
+const AccountPage = lazy(() => import('./pages/AccountPage.jsx'));
+const AuthPage = lazy(() => import('./pages/AuthPage.jsx'));
+const TermsPage = lazy(() => import('./pages/TermsPage.jsx'));
 const BlogPage = lazy(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazy(() => import('./pages/InsightsPage'))
 
@@ -70,6 +74,10 @@ export default function App() {
             <Route path="/fr/blog" element={<BlogPage language="fr" />} />
             <Route path="/fr/blog/:slug" element={<BlogPage language="fr" />} />
             <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/account" element={<AccountPage />} />
+            {['login', 'signup', 'forgot-password', 'reset-password'].map(path => <Route key={path} path={'/' + path} element={<AuthPage key={path} />} />)}
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

@@ -31,7 +31,8 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
 
 const STATIC_PATHS = Object.freeze({
     home: '/', datasets: '/datasets', insights: '/insights', organizations: '/organizations',
-    places: '/places', docs: '/docs', privacy: '/privacy'
+    places: '/places', docs: '/docs', privacy: '/privacy', pricing:'/pricing', terms:'/terms',
+    account:'/account',login:'/login',signup:'/signup','forgot-password':'/forgot-password','reset-password':'/reset-password'
 });
 
 function searchArgs(overrides) {
@@ -200,12 +201,13 @@ function serveSpa(distDir) {
             return res.redirect(301, page.canonicalPath + suffix);
         }
         let html = seoMeta.renderHtml(template, page.meta, page.body);
-        html = injectAnalytics(html);
+        const privatePage = /^\/(account|login|signup|forgot-password|reset-password)(?:\/|$)/.test(req.path);
+        html = injectAnalytics(html,privatePage ? '' : process.env.ANALYTICS_WEBSITE_ID);
         html = injectRouteAssets(html, req.originalUrl, distDir);
         res.set('Content-Type', 'text/html; charset=utf-8');
         // HTML is revalidated each load so a new deploy (and its hashed asset
         // refs) propagates immediately; the hashed assets themselves cache for a year.
-        res.set('Cache-Control', page.status >= 500
+        res.set('Cache-Control', privatePage || page.status >= 500
             ? 'no-store'
             : 'public, max-age=0, must-revalidate');
         if (page.status === 503) res.set('Retry-After', '60');

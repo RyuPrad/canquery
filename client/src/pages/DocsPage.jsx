@@ -33,11 +33,12 @@ function Endpoint({ method, path, desc, example, runPath }) {
   const { t } = useLang();
   const [result, setResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const authenticatedExample = path.endsWith('/ops') ? example : example.replace(/^curl /gm, 'curl -H "Authorization: Bearer $CANQUERY_API_KEY" ');
   const run = async () => {
     track('docs_action', { action: 'run', endpoint: path, status: 'requested' });
     setRunning(true);
     try {
-      const res = await fetch(runPath);
+      const res = await fetch(runPath.replace('/api/v1/', '/web-api/v1/'));
       const body = await res.json();
       setResult(JSON.stringify(body, null, 2));
       track('docs_action', { action: 'run', endpoint: path, status: res.ok ? 'success' : 'http_error' });
@@ -56,7 +57,7 @@ function Endpoint({ method, path, desc, example, runPath }) {
         </span>
         <code className="font-mono text-sm text-base-content/90">{path}</code>
         <div className="ml-auto flex items-center gap-1">
-          <CopyButton text={example} endpoint={path} />
+          <CopyButton text={authenticatedExample} endpoint={path} />
           {runPath && (
             <button
               className="btn btn-xs btn-primary rounded-md gap-1"
@@ -71,7 +72,7 @@ function Endpoint({ method, path, desc, example, runPath }) {
       </div>
       <p className="text-sm text-base-content/60 leading-relaxed">{desc}</p>
       <pre className="cq-code" tabIndex={0} aria-label={path + ' · ' + t('docs.example')}>
-        <code>{example}</code>
+        <code>{authenticatedExample}</code>
       </pre>
       {result && (
         <pre className="cq-code max-h-64 overflow-y-auto" tabIndex={0} aria-label={path + ' · ' + t('docs.response')}>
@@ -90,6 +91,7 @@ export default function DocsPage() {
     <div className="max-w-4xl mx-auto px-4 py-8 cq-fade">
       <h1 className="text-3xl font-bold font-display tracking-tight pb-4">{t('docs.title')}</h1>
       <p className="text-base-content/60 max-w-2xl leading-relaxed">{t('docs.intro')}</p>
+      <div className="cq-card p-5 mt-5 space-y-3"><p>{t('account.api_help')}</p><p>{t('account.credit_policy')}</p><div className="flex flex-wrap gap-4"><a className="link" href="/account">{t('account.api_keys')}</a><a className="link" href="/pricing">{t('account.pricing')}</a><a className="link" href="/api/v1/openapi.json">OpenAPI</a></div></div>
       <div className="space-y-4 mt-8">
         <Endpoint
           method="GET"

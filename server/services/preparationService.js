@@ -4,6 +4,7 @@ const { resourceVersion, preparationEnabled } = require('./resourceVersion');
 const { isIngestableFile } = require('./resourceCapabilities');
 const AppError = require('../utils/AppError');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
+const { chargePreparation } = require('../db/commercialQueries');
 
 const buckets = new Map();
 const HOUR = 3600000;
@@ -32,7 +33,7 @@ function reserveToken(key, now = Date.now()) {
     return () => { bucket.count = Math.max(0, bucket.count - 1); };
 }
 
-async function prepareResource(resourceId, ip, db = pool) {
+async function prepareResource(resourceId, ip, db = pool, commercial = null) {
     if (!preparationEnabled()) throw unavailable('Automatic preparation is temporarily paused', 60);
     const client = await db.connect();
     let refund;
@@ -75,9 +76,10 @@ async function prepareResource(resourceId, ip, db = pool) {
         if (count.rows[0].active >= positiveEnv('AUTO_PREPARE_MAX_ACTIVE', 10)) {
             throw unavailable('Preparation queue is busy; try again shortly', 30);
         }
-        refund = reserveToken(ip);
+        if (!commercial) refund = reserveToken(ip);
         const queued = await client.query(`INSERT INTO ingest_jobs (resource_id, preparation, source_version)
             VALUES ($1, true, $2) RETURNING *`, [resourceId, version]);
+        await chargePreparation(client, commercial, queued.rows[0].id);
         await client.query('COMMIT');
         refund = null;
         return publicJob(queued.rows[0], row);

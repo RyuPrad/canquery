@@ -1,8 +1,9 @@
 const pool = require('./pool');
 const { lockIngestResource } = require('./ingestResourceLock');
 const AppError = require('../utils/AppError');
+const { chargePreparation } = require('./commercialQueries');
 
-async function enqueueJob(resourceId) {
+async function enqueueJob(resourceId, commercial = null) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -51,6 +52,17 @@ async function enqueueJob(resourceId) {
             };
         }
 
+        if (commercial) {
+            const existing = await client.query("SELECT * FROM ingest_jobs WHERE resource_id=$1 AND status IN ('pending','running')",[resourceId]);
+            if (existing.rows[0]) {
+                await client.query('COMMIT');
+                return existing.rows[0];
+            }
+            await client.query("SELECT pg_advisory_xact_lock(hashtext('canquery-prepare-admission'))");
+            const active = await client.query("SELECT count(*)::int AS active FROM ingest_jobs WHERE status IN ('pending','running')");
+            const ceiling = Number(process.env.AUTO_PREPARE_MAX_ACTIVE) || 10;
+            if (active.rows[0].active >= ceiling) throw new AppError('Preparation queue is busy',429);
+        }
         const queuedResult = await client.query(
             `INSERT INTO ingest_jobs (resource_id)
              VALUES ($1)
@@ -60,6 +72,7 @@ async function enqueueJob(resourceId) {
                        claimed_at, finished_at, created_at`,
             [resourceId]
         );
+        await chargePreparation(client, commercial, queuedResult.rows[0].id);
         await client.query('COMMIT');
         return queuedResult.rows[0] || null;
     } catch (err) {

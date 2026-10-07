@@ -12,7 +12,7 @@ const X_URL = 'https://x.com/Daffmor';
 const BLUESKY_URL = 'https://bsky.app/profile/bsky.best';
 
 // Live GitHub star count, fetched once on mount from our own cached proxy
-// (/api/v1/repo). null while loading or if the upstream was unavailable, in
+// (/web-api/v1/repo). null while loading or if the upstream was unavailable, in
 // which case the badge falls back to a plain "Star on GitHub" link.
 function StarCount() {
   const { t } = useLang();
@@ -22,7 +22,7 @@ function StarCount() {
 
   useEffect(() => {
     let cancelled = false;
-    getJSON('/api/v1/repo')
+    getJSON('/web-api/v1/repo')
       .then((body) => {
         if (cancelled) return;
         setStars(body && body.data ? body.data.stars : null);
@@ -166,6 +166,8 @@ export default function Footer() {
                 {t('footer.privacy')}
               </Link>
             </li>
+            <li><Link to="/pricing" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.pricing_title')}</Link></li>
+            <li><Link to="/terms" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.terms')}</Link></li>
             <li>
               <a
                 href="https://open.canada.ca/data/en/dataset"

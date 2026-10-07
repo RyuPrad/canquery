@@ -37,6 +37,7 @@
         "@aws-sdk/client-s3": "3.1118.0",
         "@aws-sdk/lib-storage": "3.1118.0",
         "@mapbox/vector-tile": "3.0.0",
+        "better-auth": "1.7.7",
         "csv-parse": "^6.2.1",
         "dotenv": "^16.4.0",
         "exceljs": "^4.4.0",
@@ -45,11 +46,13 @@
         "google-auth-library": "^10.9.1",
         "helmet": "^8.0.0",
         "markdown-it": "14.3.1",
+        "nodemailer": "10.0.15",
         "pbf": "5.1.2",
         "pg": "^8.13.0",
         "pg-copy-streams": "^7.0.0",
         "pmtiles": "4.5.0",
         "stream-json": "2.1.0",
+        "stripe": "23.0.0",
         "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
     },
     "devDependencies": {

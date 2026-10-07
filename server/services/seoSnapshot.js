@@ -260,6 +260,13 @@ function organizationSnapshot(organization, datasets, pagination) {
 }
 
 const STATIC_COPY = {
+    pricing: {title:'API pricing',summary:'Free: 1,000 credits per UTC calendar month, 30 requests/minute, one API key. Business: CA$49/month plus applicable taxes, 100,000 credits per paid cycle, 300 requests/minute, five keys. Enterprise: contact support@canquery.com for a finite, capacity-tested allowance. Hard stops, no automatic overages, no rollover. Publisher availability and endpoint limits apply.',links:[{path:'/signup',label:'Create a developer account'},{path:'/docs',label:'API documentation'}]},
+    account: {title:'Developer account',summary:'Sign in to manage API keys, usage and billing. JavaScript is required for account actions.',links:[{path:'/login',label:'Sign in'}]},
+    login: {title:'Sign in',summary:'Enable JavaScript to sign in securely. For help, contact support@canquery.com.'},
+    signup: {title:'Create a developer account',summary:'Start with a free API allowance and no payment card. Enable JavaScript to create and verify your account.'},
+    'forgot-password': {title:'Reset your password',summary:'Enable JavaScript to request a password reset.'},
+    'reset-password': {title:'Save a new password',summary:'Enable JavaScript to use your password reset link.'},
+    terms: {title:'API terms',summary:'Subscriptions provide CanQuery service access within published allowances. Publisher licences and attribution remain applicable. Business renews monthly at CA$49 plus applicable taxes; cancel before renewal through the billing portal. Access continues through the paid period. No automatic overages or credit rollover. Contact support@canquery.com about billing, deletion or Enterprise agreements.',links:[{path:'/pricing',label:'Plans and credit costs'},{path:'/privacy',label:'Privacy'}]},
     home: {
         title: 'Search Canadian open data',
         summary: seo.DEFAULT_DESC,
@@ -291,7 +298,7 @@ const STATIC_COPY = {
     },
     docs: {
         title: 'CanQuery API documentation',
-        summary: 'Use the anonymous JSON API to search datasets, query tables, export filtered data and request map features.',
+        summary: 'Use your API key to search datasets, query tables, export filtered data and request map features. Free and Business plans have published credit allowances. The website remains accessible without an account.',
         links: [{ path: '/', label: 'Search the catalogue' }]
     },
     privacy: {
