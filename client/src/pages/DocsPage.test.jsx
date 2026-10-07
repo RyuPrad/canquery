@@ -66,6 +66,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test.each([
+  ['en', '/blog/toronto-building-permits', '/blog/uxbridge-ward-boundaries-map'],
+  ['fr', '/fr/blog/permis-construction-toronto', '/fr/blog/carte-limites-quartiers-uxbridge'],
+])('links to the matching %s guide editions without querying resources', async (lang, permits, map) => {
+  localStorage.setItem('cq-lang', lang);
+  render(<LangProvider><DocsPage /></LangProvider>);
+  expect(document.querySelector('#workflow a[href="' + permits + '"]')).toBeInTheDocument();
+  expect(document.querySelector('#reference a[href="' + map + '"]')).toBeInTheDocument();
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  expect(fetch.mock.calls[0][0]).toBe('/api/v1/openapi.json');
+});
+
 test('loads only OpenAPI until an explicitly requested anonymous metadata preview', async () => {
   render(<DocsPage />);
   expect(await screen.findByText('Search the catalogue', { selector: '.cq-doc-operation-name span' })).toBeInTheDocument();

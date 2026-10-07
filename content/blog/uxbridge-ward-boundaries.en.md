@@ -15,9 +15,15 @@ The recorded schema also includes **OBJECTID**, **Shape_Length** and **Shape_Are
 
 ## Choose a download that matches your task
 
+- **See the ward areas:** use the [interactive map](/resources/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32-data?view=map), then inspect **WARD**, **LABEL** and **MUNICIPALITY** on a selected polygon.
+- **Read the attributes in a spreadsheet:** use the original CSV link, checking the columns included in that export.
+- **Work with boundary geometry in GIS:** inspect the geographic formats on the publisher's dataset page and confirm that the downloaded file retains polygons and its coordinate system.
+
 The resource’s original download link requests a CSV from the publisher’s ArcGIS service. A CSV is useful for inspecting columns, but it should not be assumed to preserve the polygon geometry needed for GIS work. If you need the boundaries themselves in a GIS file, visit the [official Durham Region dataset page](https://opendata.durham.ca/datasets/DurhamRegion::uxbridge-ward-boundaries) and inspect the formats it currently offers.
 
 For service details, the [published ArcGIS layer](https://maps.durham.ca/arcgis/rest/services/Open_Data/Durham_OpenData/MapServer/32) describes the fields and geometry. Keep the dataset title, source URL and download date with any extracted file. This makes it easier to distinguish a local copy from a later publisher update or from a similarly named dataset elsewhere.
+
+Building a map into an application? The [API endpoint reference](/docs#reference) describes the required bounding box and the limits of the map viewport response. A bounded viewport is not a complete GIS download; use the publisher's export for that task.
 
 ## Check dates and intended use
 

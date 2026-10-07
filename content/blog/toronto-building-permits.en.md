@@ -10,7 +10,16 @@ CanQuery lets you search this official table in your browser. You can start with
 4. Read the permit type, status, and work description together. Use the table’s horizontal scroll to see columns that do not fit on a smaller screen.
 5. Copy the page URL to return to the same search. You can also use the CSV export to work with the results in a spreadsheet; the export is limited to 10,000 rows.
 
-Start with the general table search. The availability of more detailed column filters depends on whether the resource is loaded into CanQuery. Reading the live table does not require an account or a manual download.
+For a specific street, apply an equality column filter to **STREET_NAME** with the value **KING**, using the spelling recorded by the publisher. Equality filters work with both the live DataStore and a prepared copy. This selects the street field rather than matching the word “King” in a work description; check building numbers and street direction separately. Reading the live table in the browser does not require an account or a manual download.
+
+For a repeatable extract, the [API reporting workflow](/docs#workflow) shows metadata inspection, `filters={"STREET_NAME":"KING"}`, a bounded row query and CSV export. It uses the same active-permits resource. Keep the query, source and retrieval date with your output.
+
+## Choose active or cleared permits
+
+- **Active applications and permits:** use the [active-permits dataset](/datasets/toronto-open-data-building-permits-active-permits) to explore work still recorded in the City's active process. Read each status; an application is not necessarily an issued permit.
+- **Completed or closed records:** use the separate [cleared-permits dataset](/datasets/toronto-open-data-building-permits-cleared-permits). The [City's cleared-permits documentation](https://open.toronto.ca/dataset/building-permits-cleared-permits/) describes these as completed or closed records and warns that records with **APPLICATION_DATE** before October 1, 1999 may be incomplete because they came from legacy systems.
+
+These are different record populations. Neither an empty active search nor the presence of a cleared record establishes a property's complete permit history. Inspect the fields and dates in the selected dataset before comparing results.
 
 ## What an active record means
 

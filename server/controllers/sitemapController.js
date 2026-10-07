@@ -43,7 +43,7 @@ function chunkNumber(value) {
 
 // GET /robots.txt - allow everything, point at the sitemap index. We do NOT
 // block /api: Googlebot fetches it while rendering the SPA, and the per-page
-// <head> injection plus canonicals keep the index clean.
+// <head> injection and API X-Robots-Tag headers distinguish search landing pages.
 const robots = (req, res) => {
     res.type('text/plain');
     res.set('Cache-Control', 'public, max-age=86400');
@@ -89,6 +89,8 @@ const sitemapPages = (req, res) => {
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7' },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8' },
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
+            { loc: SITE_URL + '/pricing', changefreq: 'monthly', priority: '0.5' },
+            { loc: SITE_URL + '/terms', changefreq: 'yearly', priority: '0.3' },
             { loc: SITE_URL + '/privacy', changefreq: 'yearly', priority: '0.3' },
         ])
     );

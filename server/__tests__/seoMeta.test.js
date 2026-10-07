@@ -204,10 +204,54 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
                 item: 'https://canquery.com/datasets/water-quality'
             }),
             expect.objectContaining({
-                position: 3, name: 'Measurements',
+                position: 3, name: 'Measurements (CSV)',
                 item: 'https://canquery.com/resources/r1'
             })
         ]);
+    });
+});
+
+describe('publisher download names', () => {
+    test.each([
+        ['Download EDI through HTTP', 'EDI', ''],
+        ['Télécharger le fichier en format EDI via HTTP', 'EDI', ''],
+        ['Download the English JP2 File through HTTP', 'JP2', ' — English'],
+        ['Télécharger le fichier en format JPEG2000 Anglais via HTTP', 'JP2', ' — anglais'],
+        ['Download SHP file through FTP', 'SHP', ''],
+        ['Téléchargez le fichier SHP via FTP', 'SHP', ''],
+    ])('replaces boilerplate %s with parent context throughout the page', (name, format, qualifier) => {
+        const resource = Object.freeze({ id: 'r', name_en: name, dataset_id: 'd',
+            dataset_title_en: 'Site ten911', format, language: ['en', 'fr'], url: 'https://example.test/file' });
+        const meta = seo.resourceMeta(resource);
+        const label = 'Site ten911' + qualifier + ' (English, French, ' + format + ')';
+        expect(meta.title).toBe(label + ' - CanQuery');
+        expect(meta.description).toContain('Site ten911' + qualifier);
+        expect(meta.jsonLd[0].name).toBe(label);
+        expect(meta.jsonLd[0].mainEntity.name).toBe(label);
+        expect(meta.jsonLd[0].mainEntity.contentUrl).toBe(resource.url);
+        expect(meta.jsonLd[1].itemListElement.at(-1).name).toBe(label);
+        expect(meta.canonical).toBe('https://canquery.com/resources/r');
+        expect(meta.noindex).toBeUndefined();
+        expect(seo.resourceMeta({ ...resource, dataset_title_en: 'Site abt179' }).title).not.toBe(meta.title);
+        expect(resource.name_en).toBe(name);
+    });
+
+    test.each(['Download traffic collision records CSV through HTTP', 'Download SHP file through FTP — 2024',
+        'Water quality observations', 'English monitoring stations'])('preserves meaningful names: %s', name => {
+        expect(seo.isGenericResourceName(name, 'SHP')).toBeFalsy();
+        expect(seo.resourceTitleBase({ name_en: name, dataset_title_en: 'Parent', format: 'SHP' })).toContain(name);
+    });
+
+    test('retains a file qualifier or period within bounded titles and keeps a missing-parent fallback', () => {
+        const resource = { id: 'r', name_en: 'Download the English JP2 File through HTTP',
+            dataset_title_en: 'Long subject with more words '.repeat(10), format: 'JP2', language: 'en,fr' };
+        const meta = seo.resourceMeta(resource);
+        expect(meta.title.length).toBeLessThanOrEqual(80);
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+        expect(meta.title).toContain(' — English (English, French, JP2)');
+        expect(seo.resourceMeta({ ...resource, name_en: 'Q4 2025' }).title).toContain(' — Q4 2025');
+        expect(seo.resourceTitleBase({ name_en: 'Download EDI through HTTP', format: 'EDI' })).toBe('Download EDI through HTTP');
+        expect(seo.resourceTitleBase({})).toBe('Resource');
     });
 });
 

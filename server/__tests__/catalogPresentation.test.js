@@ -1,6 +1,21 @@
 const { resourcePresentation, datasetPresentation } = require('../services/catalogPresentation');
 const snapshot = require('../services/seoSnapshot');
 
+test('uses the same contextual download name in bilingual presentation and initial HTML', () => {
+    const row = { id: 'r', dataset_id: 'd', name_en: 'Download SHP file through FTP',
+        name_fr: 'Téléchargez le fichier SHP via FTP', dataset_title_en: 'Wabigoon cadastral information',
+        dataset_title_fr: 'Information cadastrale de Wabigoon', format: 'SHP', language: ['en', 'fr'],
+        url: 'ftp://example.test/file.shp' };
+    const presentation = resourcePresentation(row);
+    expect(presentation.title.en).toBe('Wabigoon cadastral information (English, French, SHP)');
+    expect(presentation.title.fr).toBe('Information cadastrale de Wabigoon (anglais, français, SHP)');
+    expect(presentation.languages).toEqual(['en', 'fr']);
+    expect(presentation.summary.fr).toContain('Information cadastrale de Wabigoon');
+    const html = snapshot.resourceSnapshot(row);
+    expect(html).toContain('<h1>' + presentation.title.en + '</h1>');
+    expect(html).not.toContain('href="ftp:');
+});
+
 test('describes file language independently of interface language and supports maps with tables', () => {
     const row = { id: 'r', name_en: 'Dataset', name_fr: 'Ensembles de données',
         dataset_title_en: 'Ward boundaries', dataset_title_fr: 'Limites des quartiers',

@@ -332,7 +332,7 @@ function ResourceExplorer({ id, navigationKey }) {
                 label: resource.dataset.title?.[lang] || resource.dataset.title?.en || resource.dataset.name,
                 to: `/datasets/${resource.dataset.name || resource.dataset.id}`
               },
-              { label: resource.name?.[lang] || resource.name?.en || resource.name?.fr || resource.id }
+              { label: resource.presentation?.title?.[lang] || resource.name?.[lang] || resource.name?.en || resource.name?.fr || resource.id }
             ]}
           />
           <div className="flex flex-wrap items-center gap-3">
@@ -414,6 +414,7 @@ function ResourceExplorer({ id, navigationKey }) {
           <a
             className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
             href={exportHref}
+            rel="nofollow"
             download
             title={t('resource.export_tip')}
             data-analytics-event="resource_export"
