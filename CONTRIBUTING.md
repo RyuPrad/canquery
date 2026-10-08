@@ -12,27 +12,38 @@ version (Node 22, PostgreSQL 16):
 ```bash
 # server
 cd server && cp .env.example .env   # fill in CANQUERY_DATABASE_URL
-npm install && npm run migrate
+npm ci && npm run migrate
 node scripts/catalog-sync.js --limit 200   # small, polite real harvest
 npm run dev                                 # API on :3100
 
 # client (separate terminal)
-cd client && npm install && npm run dev     # Vite on :5173, proxies /api → :3100
+cd client && npm ci && npm run dev     # Vite on :5173, proxies /api → :3100
 ```
 
 ## Before you open a PR
 
-Both halves must be green (this is exactly what CI runs):
+Run the source checks from the repository root:
 
 ```bash
-# server
-cd server && npm run lint && npm test
-
-# client
-cd client && npm run lint && npm test && npm run build
+npm --prefix server run verify
 ```
 
 - The server test suite **mocks the database**, so it runs without Postgres.
+- `verify` identifies its source-only scope: guide/operational guards, lint,
+  scoped client types/formatting, unit/component tests and the frontend build.
+  It does not claim database, native analytics, browser or production acceptance.
+- Use PostgreSQL 16/PostGIS 3.5 and set `CANQUERY_DATABASE_URL`,
+  `SPATIAL_TEST_DATABASE_URL` and `COMMERCIAL_TEST_DATABASE_URL` to the same
+  **disposable** database. Then `npm --prefix server run verify:integration`
+  applies migrations and runs every CI database suite. Missing/mismatched gates
+  fail instead of silently skipping. Fixtures must never target production or
+  a persistent Stripe sandbox. `verify:release` combines source and database
+  checks; task-specific browser and native analytics acceptance remain separate.
+- Boundary modules use JSDoc with `client/tsconfig.boundaries.json`; run
+  `npm --prefix client run typecheck`. Extend this explicit scope as contracts
+  stabilize. `format:check` and `format:boundaries` apply only to the listed
+  resource/client boundary files. Keep mechanical formatting separate from
+  behavior changes, and preserve the existing style elsewhere.
 - Add or update tests for any behavior you change. Conventions to follow:
   - Server: `catchAsync` + `AppError`; thin controllers, logic in services, SQL in
     `db/*Queries.js`; **parameterized SQL only** (values as `$N`, identifiers
@@ -45,6 +56,18 @@ cd client && npm run lint && npm test && npm run build
 - Make sure lint, tests, and the client build pass locally.
 - By contributing you agree your contributions are licensed under the project's
   [MIT License](LICENSE).
+
+CI pins Node 22.22.1 and official action commits. Once the server, client and
+database jobs pass, the release job packages the exact checked commit and the
+frontend already built by the client job as `canquery-<commit>`. Its tarball and
+checksum contain a `release-manifest.json` with source identity, runtime,
+migrations and per-file SHA-256 hashes. Only tracked source and `client/dist`
+are included; ignored configuration and dependencies stay outside the archive.
+Install locked production server dependencies in isolated release staging.
+Promote the tested frontend without rebuilding it, and verify the manifest
+before promotion. CI artifacts have 30-day transport retention; operational
+release and backup retention are separate. A passing artifact does not authorize
+deployment or establish compatibility with a newer database/configuration.
 
 ## SEO research reviews
 

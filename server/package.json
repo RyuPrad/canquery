@@ -31,7 +31,9 @@
         "gsc:report": "node scripts/build-search-growth-report.js",
         "lint": "eslint .",
         "verify": "bash ../scripts/verify-release.sh",
-        "blog:check": "node scripts/check-blog.js"
+        "blog:check": "node scripts/check-blog.js",
+        "verify:integration": "bash ../scripts/verify-release.sh --integration",
+        "verify:release": "bash ../scripts/verify-release.sh --full"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "3.1118.0",
