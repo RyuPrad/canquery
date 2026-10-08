@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PlayIcon } from '../components/Icons.jsx';
 import { useLang } from '../i18n.jsx';
+import useAccountSession from '../hooks/useAccountSession.js';
 import { track } from '../utils/analytics.js';
 import CodeSample from '../components/docs/CodeSample.jsx';
 import EndpointReference from '../components/docs/EndpointReference.jsx';
@@ -56,6 +57,8 @@ function MetadataPreview() {
 
 export default function DocsPage() {
   const { t } = useLang();
+  const session = useAccountSession();
+  const sessionStatus = session.checking ? 'loading' : session.status;
   const base = window.location.origin;
   const snippets = createDocsSnippets(base);
   const [mobileContents, setMobileContents] = useState(false);
@@ -66,7 +69,7 @@ export default function DocsPage() {
       <div className="cq-doc-eyebrow"><span aria-hidden="true" />{t('docs.eyebrow')}</div>
       <h1>{t('docs.title')}</h1>
       <p>{t('docs.intro')}</p>
-      <div className="cq-doc-hero-actions"><a className="btn btn-primary min-h-12" href="/signup">{t('docs.key_cta')} <span aria-hidden="true">→</span></a><a className="cq-doc-secondary-link" href="/pricing">{t('docs.pricing_cta')} <span aria-hidden="true">↗</span></a></div>
+      <div className="cq-doc-hero-actions"><a className="btn btn-primary min-h-12" href={sessionStatus === 'anonymous' ? '/signup' : '/account'}>{t(sessionStatus === 'anonymous' ? 'docs.key_cta' : sessionStatus === 'authenticated' ? 'account.manage_keys' : 'account.title')} <span aria-hidden="true">→</span></a><a className="cq-doc-secondary-link" href="/pricing">{t('docs.pricing_cta')} <span aria-hidden="true">↗</span></a></div>
     </header>
     <div className="cq-doc-mobile-nav"><button type="button" aria-expanded={mobileContents} aria-controls="docs-mobile-contents" onClick={() => setMobileContents(value => !value)}>{t('docs.contents')}<span aria-hidden="true">{mobileContents ? '−' : '+'}</span></button><nav id="docs-mobile-contents" aria-label={t('docs.contents')} hidden={!mobileContents}>{navigation}</nav></div>
     <div className="cq-doc-layout">

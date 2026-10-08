@@ -225,6 +225,16 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         const link=new URL(message.text.split('\n').find(s=>s.startsWith('http')));
         assert.equal((await agent.get(link.pathname+link.search)).status,302);
         assert.equal((await agent.post('/api/auth/sign-in/email').set(headers).send(body)).status,200);
+        const sessionHeaders={'X-Forwarded-For':'198.51.100.78'};
+        const session=await agent.get('/api/auth/get-session').set(sessionHeaders);
+        assert.equal(session.status,200);
+        assert.match(session.headers['cache-control'],/no-store/);
+        assert.ok(session.body.session.id);
+        assert.ok(session.body.user.id);
+        assert.equal((await db.query('SELECT count(*)::int AS n FROM commercial.accounts WHERE owner_id=$1',[session.body.user.id])).rows[0].n,0);
+        const anonymousSession=await supertest(app).get('/api/auth/get-session').set(sessionHeaders);
+        assert.equal(anonymousSession.status,200);
+        assert.equal(anonymousSession.body,null);
         const dashboard=await agent.get('/api/account');
         assert.equal(dashboard.status,200);
         assert.deepEqual(dashboard.body.data.business_price,BUSINESS_PRICE);
@@ -247,6 +257,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         const password='new-disposable-password-long-enough';
         assert.equal((await agent.post('/api/auth/reset-password').set(headers).send({token,newPassword:password})).status,200);
         assert.equal((await agent.get('/api/account')).status,401);
+        const revokedSession=await agent.get('/api/auth/get-session').set(sessionHeaders);
+        assert.equal(revokedSession.status,200);
+        assert.equal(revokedSession.body,null);
         assert.equal((await agent.post('/api/auth/reset-password').set(headers).send({token,newPassword:password})).status,400);
         assert.equal((await agent.post('/api/auth/sign-in/email').set(headers).send({...body,password})).status,200);
         assert.equal((await agent.post('/api/auth/sign-out').set(headers).send({})).status,200);
