@@ -14,12 +14,12 @@ export async function fetchResource(id, options) {
   return result;
 }
 
-export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}, options) {
-  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket }, options);
+export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot } = {}, options) {
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot }, options);
 }
 
-export function fetchResourceProfile(id, options) {
-  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/profile', undefined, options);
+export function fetchResourceProfile(id, options = {}) {
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/profile', { snapshot: options.snapshot }, options);
 }
 
 export function prepareResource(id) {

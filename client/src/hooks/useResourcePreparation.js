@@ -1,18 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useReducer } from 'react';
 import { prepareResource } from '../api/catalog.js';
 import useJobPolling from './useJobPolling.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
 import { track } from '../utils/analytics.js';
+import { initialPreparationState, preparationReducer, publicReason, retryTime } from './preparationState.js';
 
 // Share the POST across overlapping mounts; the server also deduplicates across
 // tabs and visitors. A departing component never cancels somebody else's job.
 const requests = new Map();
-const FAILURE_REASONS = new Set(['invalid_file', 'upstream_unavailable', 'capacity', 'temporary']);
-const publicReason = value => FAILURE_REASONS.has(value) ? value : null;
-const retryTime = value => {
-  const time = value ? new Date(value).getTime() : null;
-  return Number.isFinite(time) ? time : null;
-};
 function requestPreparation(id) {
   if (!requests.has(id)) {
     const promise = prepareResource(id).then(env => {
@@ -29,11 +24,8 @@ function requestPreparation(id) {
 
 export default function useResourcePreparation({ id, resource, active, needsLocal, onReady }) {
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
-  const [jobId, setJobId] = useState(() => readUnlockJob(id));
-  const [phase, setPhase] = useState(() => readUnlockJob(id) ? 'pending' : 'idle');
-  const [retryAt, setRetryAt] = useState(null);
-  const [failureReason, setFailureReason] = useState(null);
-  const [attempt, setAttempt] = useState(0);
+  const [{ jobId, phase, retryAt, failureReason, attempt }, dispatch] = useReducer(
+    preparationReducer, id, resourceId => initialPreparationState(readUnlockJob(resourceId)));
   const onReadyRef = useRef(onReady);
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   const requested = useRef(null);
@@ -58,9 +50,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
   useEffect(() => {
     if (observedSource.current !== sourceKey && phase === 'failed' && !metadataRetryAt) {
       requested.current = null;
-      setPhase('idle');
-      setRetryAt(null);
-      setFailureReason(null);
+      dispatch({ type: 'SOURCE_CHANGED' });
     }
     observedSource.current = sourceKey;
   }, [sourceKey, phase, metadataRetryAt]);
@@ -71,15 +61,11 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     // update clears that failure on the server and can be prepared immediately.
     if (failureKey && metadataRetryAt > Date.now()) {
       metadataFailure.current = failureKey;
-      setPhase('failed');
-      setRetryAt(metadataRetryAt);
-      setFailureReason(metadataReason);
+      dispatch({ type: 'METADATA_FAILED', retryAt: metadataRetryAt, reason: metadataReason });
     } else if (!failureKey && metadataFailure.current) {
       metadataFailure.current = null;
       requested.current = null;
-      setPhase('idle');
-      setRetryAt(null);
-      setFailureReason(null);
+      dispatch({ type: 'SOURCE_CHANGED' });
     }
   }, [failureKey, metadataRetryAt, metadataReason]);
 
@@ -88,9 +74,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     // lifecycle even if its unprepared metadata matches the original visit.
     if (resource?.query_mode === 'ingested' && info?.freshness === 'current' && !jobId) {
       requested.current = null;
-      setPhase('idle');
-      setRetryAt(null);
-      setFailureReason(null);
+      dispatch({ type: 'READY_COPY' });
     }
   }, [resource?.query_mode, info?.freshness, jobId]);
 
@@ -106,26 +90,18 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     requested.current = key;
     if (job.id != null) settled.current.add(String(job.id));
     clearUnlockJob(id);
-    setJobId(null);
     if (job.status === 'done') {
-      setPhase('idle');
-      setRetryAt(null);
-      setFailureReason(null);
+      dispatch({ type: 'JOB_COMPLETED' });
       onReadyRef.current();
     } else {
-      setPhase('failed');
-      setRetryAt(retryTime(job.retry_at) ?? Date.now() + 3600000);
-      setFailureReason(publicReason(job.failure_reason));
+      dispatch({ type: 'JOB_FAILED', retryAt: retryTime(job.retry_at) ?? Date.now() + 3600000, reason: job.failure_reason });
     }
     track('resource_load', { resource_id: id, status: job.status, source: 'automatic' });
   }, [id, key]);
   const gone = useCallback(missingId => {
     settled.current.add(String(missingId));
     clearUnlockJob(id);
-    setJobId(null);
-    setPhase('idle');
-    setFailureReason(null);
-    setAttempt(n => n + 1);
+    dispatch({ type: 'JOB_GONE' });
     onReadyRef.current();
   }, [id]);
   const { job } = useJobPolling(jobId, { enabled: active && visible, onDone: completed, onGone: gone });
@@ -134,8 +110,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
   useEffect(() => {
     if (!active || !visible || !discoveredJob || jobId || phase === 'failed' || settled.current.has(String(discoveredJob))) return;
     requested.current = key;
-    setJobId(discoveredJob);
-    setPhase('pending');
+    dispatch({ type: 'JOB_ADOPTED', jobId: discoveredJob });
     writeUnlockJob(id, discoveredJob);
   }, [active, visible, discoveredJob, jobId, phase, id, key]);
 
@@ -148,8 +123,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     // page before it admits work. Once admitted, server ownership takes over.
     const timer = setTimeout(() => {
       requested.current = key;
-      setPhase('requesting');
-      setFailureReason(null);
+      dispatch({ type: 'ADMISSION_STARTED' });
       track('resource_load', { resource_id: id, status: 'requested', source: 'automatic' });
       requestPreparation(id).then(env => {
         if (cancelled) return;
@@ -157,16 +131,14 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
         if (env.data?.already_loaded) { completed({ status: 'done' }); return; }
         if (env.data?.id == null) throw new Error('Preparation did not return a job');
         writeUnlockJob(id, env.data.id);
-        setJobId(env.data.id);
-        setPhase('pending');
-        setRetryAt(null);
-        setFailureReason(null);
+        dispatch({ type: 'JOB_ADOPTED', jobId: env.data.id });
       }).catch(error => {
         if (cancelled) return;
         answered = true;
-        setPhase(error.status === 422 ? 'unavailable' : error.status === 429 && error.body?.code !== 'PREPARATION_COOLDOWN' ? 'waiting' : 'failed');
-        setRetryAt(error.status === 422 ? null : Date.now() + (error.retryAfter || 60) * 1000);
-        setFailureReason(publicReason(error.body?.failure_reason));
+        dispatch({ type: 'ADMISSION_REJECTED',
+          phase: error.status === 422 ? 'unavailable' : error.status === 429 && error.body?.code !== 'PREPARATION_COOLDOWN' ? 'waiting' : 'failed',
+          retryAt: error.status === 422 ? null : Date.now() + (error.retryAfter || 60) * 1000,
+          reason: error.body?.failure_reason });
       });
     }, 0);
     return () => {
@@ -178,10 +150,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
 
   const retry = useCallback(() => {
     if (retryAt && retryAt > Date.now()) return;
-    setPhase('idle');
-    setRetryAt(null);
-    setFailureReason(null);
-    setAttempt(n => n + 1);
+    dispatch({ type: 'RETRY_DUE' });
   }, [retryAt]);
   useEffect(() => {
     if (!wanted || !visible || !retryAt) return;

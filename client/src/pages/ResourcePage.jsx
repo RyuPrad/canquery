@@ -1,17 +1,14 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import { useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import {
-  fetchResource,
-  queryResource,
-} from '../api/catalog.js';
-import {
-  NotFoundError,
   NotIngestedError,
   FileOnlyError,
-  DatastoreFilterError,
   apiUrl,
 } from '../api/client.js';
-import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import useResourceUrl from '../hooks/useResourceUrl.js';
+import useResourceMetadata from '../hooks/useResourceMetadata.js';
+import useResourceRows from '../hooks/useResourceRows.js';
+import { PAGE_SIZE, MAX_PAGE_INDEX, resourceViewState } from '../utils/resourceExplorerState.js';
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
 import useResourceActivity from '../hooks/useResourceActivity.js';
 import PreparationStatus from '../components/PreparationStatus.jsx';
@@ -44,66 +41,14 @@ import {
   BuildingIcon,
 } from '../components/Icons.jsx';
 
-const PAGE_SIZE = 50;
-const MAX_QUERY_OFFSET = 10000;
-const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
 function ResourceExplorer({ id, navigationKey }) {
   const { lang, t } = useLang();
-  const location = useLocation();
-
-  const [resource, setResource] = useState(null);
-  const [resourceError, setResourceError] = useState(null);
-  const [notFound, setNotFound] = useState(false);
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const parseCf = (raw) => {
-    if (!raw) return {};
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-  const [q, setQ] = useState(searchParams.get('q') || '');
-  const [columnFilters, setColumnFilters] = useState(() => parseCf(searchParams.get('cf')));
-  const [sort, setSort] = useState(searchParams.get('sort') || null);
-  const [page, setPage] = useState(() => {
-    const n = Number(searchParams.get('page'));
-    return Number.isInteger(n) && n > 0 ? Math.min(n, MAX_PAGE_INDEX) : 0;
-  });
-
-  const [data, setData] = useState(null);
-  const [dataError, setDataError] = useState(null);
-  const [dataLoading, setDataLoading] = useState(true);
-
-  const [view, setView] = useState(() => {
-    const requested = searchParams.get('view');
-    return requested === 'chart' || requested === 'map' ? requested : 'table';
-  });
-  const [reloadKey, setReloadKey] = useState(0);
+  const { resource, error: resourceError, notFound, reload: onPrepared, revision: reloadKey } = useResourceMetadata(id);
+  const { q, setQ, columnFilters, setColumnFilters, sort, setSort, page, setPage,
+    view, setView, debouncedQ, debouncedFilters } = useResourceUrl(navigationKey);
   const [filterUpgrade, setFilterUpgrade] = useState(false);
   const [schemaChanged, setSchemaChanged] = useState(false);
-  const onPrepared = useCallback(() => setReloadKey(k => k + 1), []);
-  const expiredResource = useRef(null);
-  const onUnavailable = useCallback(() => {
-    if (!resource || expiredResource.current === resource) return;
-    expiredResource.current = resource;
-    setData(null);
-    setDataError(new NotIngestedError('Resource has no prepared copy', 409));
-    onPrepared();
-  }, [resource, onPrepared]);
-  useResourceActivity({ id, resource, active: view !== 'map', onUnavailable });
-  useEffect(() => {
-    if (resource && view === 'map' && !resource.map) setView('table');
-  }, [resource, view]);
-
-  const debouncedQ = useDebouncedValue(q, 250);
-  const debouncedFilters = useDebouncedValue(columnFilters, 250);
-  const hasNonEq = Object.values(buildColumnFilters(debouncedFilters)).some(f => f.op !== 'eq');
-  const preparation = useResourcePreparation({ id, resource, active: view !== 'map',
-    needsLocal: view === 'chart' || hasNonEq || filterUpgrade, onReady: onPrepared });
-  const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
+  const hasNonEq = Object.values(buildColumnFilters(debouncedFilters)).some(filter => filter.op !== 'eq');
   const fileOnly = resource?.query_mode === 'file-only';
   const preparationRequired = resource && !fileOnly && (resource.query_mode === 'ingestable' ||
     (view === 'chart' && resource.query_mode !== 'ingested'));
@@ -125,154 +70,42 @@ function ResourceExplorer({ id, navigationKey }) {
       setPage(0);
     }
     setObservedSchema(fingerprint);
-  }, [fingerprint, observedSchema, reconciled.changed, reconciled.filters, reconciled.sort]);
+  }, [fingerprint, observedSchema, reconciled.changed, reconciled.filters, reconciled.sort, setColumnFilters, setSort, setPage]);
 
-
+  const expiredResource = useRef(null);
+  const reloadAfterExpiry = useCallback(() => {
+    if (!resource || expiredResource.current === resource) return false;
+    expiredResource.current = resource;
+    onPrepared();
+    return true;
+  }, [resource, onPrepared]);
+  const { data, error: dataError, loading: dataLoading, invalidate } = useResourceRows({
+    id, resource, view, debouncedQ, debouncedFilters, sort, page, reloadKey,
+    preparationRequired, fileOnly, hasNonEq, schemaReady, setFilterUpgrade,
+    onUnavailable: reloadAfterExpiry,
+  });
+  const onUnavailable = useCallback(() => {
+    if (reloadAfterExpiry()) invalidate();
+  }, [reloadAfterExpiry, invalidate]);
+  useResourceActivity({ id, resource, active: view !== 'map', onUnavailable });
+  const preparation = useResourcePreparation({ id, resource, active: view !== 'map',
+    needsLocal: view === 'chart' || hasNonEq || filterUpgrade, onReady: onPrepared });
+  const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
   useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    fetchResource(id, { signal: controller.signal })
-      .then((env) => {
-        if (!cancelled) {
-          setResource(env.data);
-          setResourceError(null);
-          track('resource_open', {
-            resource_id: env.data.id,
-            dataset_id: env.data.dataset?.id || '',
-            format: env.data.format || '',
-            query_mode: env.data.query_mode || '',
-            source: 'page',
-          });
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          if (err instanceof NotFoundError) setNotFound(true);
-          else setResourceError(err);
-        }
-      });
-    return () => { cancelled = true; controller.abort(); };
-  }, [id, reloadKey]);
-
+    if (resource && view === 'map' && !resource.map) setView('table');
+  }, [resource, view, setView]);
   useEffect(() => {
     const active = Object.fromEntries(Object.entries(debouncedFilters).filter(([, value]) => value));
-    if (Object.keys(active).length) {
-      track('resource_filter', { resource_id: id, filters: JSON.stringify(active) });
-    }
+    if (Object.keys(active).length) track('resource_filter', { resource_id: id, filters: JSON.stringify(active) });
   }, [id, debouncedFilters]);
-
-  // Snap back to the first page when the query changes - but not on the mount
-  // run (every effect runs once on mount), which would wipe a ?page= deep-link
-  // right after the state initializer restored it.
-  const pageResetArmedRef = useRef(false);
-  useEffect(() => {
-    if (!pageResetArmedRef.current) {
-      pageResetArmedRef.current = true;
-      return;
-    }
-    setPage(0);
-  }, [debouncedQ, debouncedFilters, sort]);
-
-  // Keep the explorer state shareable via the URL.
-  useEffect(() => {
-    const next = {};
-    if (debouncedQ) next.q = debouncedQ;
-    const activeCf = {};
-    for (const [col, text] of Object.entries(debouncedFilters)) {
-      if (text) activeCf[col] = text;
-    }
-    if (Object.keys(activeCf).length) next.cf = JSON.stringify(activeCf);
-    if (sort) next.sort = sort;
-    if (page > 0) next.page = String(page);
-    if (view !== 'table') next.view = view;
-    if (new URLSearchParams(next).toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true, state: { ...location.state, resourceExplorerKey: navigationKey } });
-    }
-  }, [debouncedQ, debouncedFilters, sort, page, view, setSearchParams, searchParams, location.state, navigationKey]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (view !== 'table') {
-      setDataLoading(false);
-      return () => { cancelled = true; };
-    }
-    setDataLoading(true);
-
-    if (fileOnly) {
-      setData(null);
-      setDataError(null);
-      setDataLoading(false);
-      return () => { cancelled = true; };
-    }
-    if (!resource || !schemaReady || preparationRequired || (resource.query_mode === 'datastore' && hasNonEq)) {
-      setDataLoading(false);
-      return () => { cancelled = true; };
-    }
-    const filters = buildColumnFilters(debouncedFilters);
-    const controller = new AbortController();
-    queryResource(id, {
-      q: debouncedQ || undefined,
-      filters: Object.keys(filters).length ? filters : undefined,
-      sort: sort || undefined,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
-    }, { signal: controller.signal })
-      .then((env) => {
-        if (!cancelled) {
-          setData({
-            fields: env.data.fields,
-            records: env.data.records,
-            total: env.data.total,
-            mode: env.meta.query_mode,
-          });
-          setDataError(null);
-          track('resource_query', {
-            resource_id: id,
-            query: debouncedQ || '',
-            filters: JSON.stringify(debouncedFilters),
-            sort: sort || '',
-            page: page + 1,
-            query_mode: env.meta.query_mode || '',
-            total: Number(env.data.total) || 0,
-            status: 'success',
-          });
-        }
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err instanceof DatastoreFilterError) {
-          // Fallback for the first load before the mode is known: the proxy
-          // rejected a non-equality filter, so upgrade to local storage. The
-          // rows already on screen stay visible while the ingest runs.
-          setFilterUpgrade(true);
-          return;
-        }
-        track('resource_query', {
-          resource_id: id,
-          query: debouncedQ || '',
-          filters: JSON.stringify(debouncedFilters),
-          sort: sort || '',
-          page: page + 1,
-          status: err instanceof NotIngestedError ? 'not_loaded' : err instanceof FileOnlyError ? 'file_only' : 'failed',
-        });
-        if (err instanceof NotIngestedError && resource.query_mode !== 'ingestable') onUnavailable();
-        setData(null);
-        setDataError(err);
-      })
-      .finally(() => {
-        if (!cancelled) setDataLoading(false);
-      });
-
-    return () => { cancelled = true; controller.abort(); };
-  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, fileOnly, hasNonEq, onUnavailable, schemaReady]);
 
   const changeSort = useCallback(next => {
     track('resource_sort', { resource_id: id, sort: next || '' });
     setSort(next);
-  }, [id]);
+  }, [id, setSort]);
   const changeColumnFilter = useCallback((field, text) => {
     setColumnFilters(previous => ({ ...previous, [field]: text }));
-  }, []);
+  }, [setColumnFilters]);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/web-api/v1/resources/' + id + '/query.csv', {
@@ -311,6 +144,9 @@ function ResourceExplorer({ id, navigationKey }) {
 
   const downloadOnly = fileOnly || (view === 'table' && dataError instanceof FileOnlyError);
   const downloadOnlyUrl = fileOnly ? resource.url : dataError?.download_url;
+  const display = resourceViewState({ view, hasMap: Boolean(resource.map), filtersNeedPreparation,
+    hasData: Boolean(data), dataLoading, preparationRequired, downloadOnly,
+    rowUnavailable: dataError instanceof NotIngestedError, rowError: Boolean(dataError) });
 
   const totalPages = data
     ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(data.total / PAGE_SIZE)))
@@ -463,18 +299,18 @@ function ResourceExplorer({ id, navigationKey }) {
         </div>
       )}
 
-      {view === 'map' ? (
-        resource?.map ? (
+      {display === 'map' || display === 'map-loading' ? (
+        display === 'map' ? (
           <Suspense fallback={<div className="cq-skel h-[560px] rounded-xl" />}>
             <MapPanel resourceId={id} map={resource.map} />
           </Suspense>
         ) : <LoadingSpinner label={t('map.loading')} />
-      ) : filtersNeedPreparation && view === 'table' && !data ? null : view === 'table' && dataLoading && !data && !preparationRequired ? (
+      ) : display === 'filter-preparation' ? null : display === 'loading' ? (
         <div className="space-y-3">
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
         </div>
-      ) : downloadOnly ? (
+      ) : display === 'download' ? (
         <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
           <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
             <FileIcon size={24} />
@@ -491,15 +327,15 @@ function ResourceExplorer({ id, navigationKey }) {
             {t('resource.download_here')}
           </a>}
         </div>
-      ) : preparationRequired || (view === 'table' && dataError instanceof NotIngestedError) ? (
+      ) : display === 'preparation' ? (
         <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
-      ) : view === 'chart' ? (
+      ) : display === 'chart' ? (
         <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
           {schemaReady && <ChartPanel key={JSON.stringify([resource?.ingestion?.snapshot_id || resource?.ingestion?.ingested_at || id, fingerprint])} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={fields || []} queryMode={resource.query_mode} onUnavailable={onUnavailable} />}
         </Suspense>
-      ) : dataError ? (
+      ) : display === 'error' ? (
         <div className="alert alert-error">{dataError.message}</div>
-      ) : data ? (
+      ) : display === 'table' ? (
         <>
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
               <DataTable
