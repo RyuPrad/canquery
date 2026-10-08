@@ -4,9 +4,10 @@ const { quoteIdent } = require('../utils/filterGrammar');
 
 // Caller owns the store-budget lock. Try-locks keep cleanup from waiting on
 // visitors or long exports. Rows and bytes stay accounted until DROP commits.
-async function cleanRetiredTables(db) {
+async function cleanRetiredTables(db, { signal } = {}) {
     const { rows } = await db.query('SELECT * FROM retired_ingest_tables ORDER BY retired_at LIMIT 50');
     for (const row of rows) {
+        signal?.throwIfAborted();
         if (!TABLE_NAME_RE.test(row.table_name)) continue;
         const client = await db.connect();
         try {

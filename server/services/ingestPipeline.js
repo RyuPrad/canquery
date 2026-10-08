@@ -14,6 +14,7 @@ const { cleanRetiredTables } = require('./retiredIngestTables');
 const { lockIngestResource } = require('../db/ingestResourceLock');
 const { storageOptions } = require('../config/ingest');
 const { numberSetting } = require('../config/numbers');
+const { createIngestDeadline, cancellableIngestClient } = require('./ingestDeadline');
 
 function tableNameFor(resourceId) {
     return 'r_' + createHash('sha256').update(String(resourceId)).digest('hex').slice(0, 32) + '_' + randomBytes(8).toString('hex');
@@ -63,8 +64,10 @@ async function validateStorageFilesystems(caps) {
     return storage;
 }
 
-async function ingestResourceLocked(resource, caps, tableName, job) {
-    await cleanRetiredTables(metadataPool);
+async function ingestResourceLocked(resource, caps, tableName, job, deadline) {
+    const { signal } = deadline;
+    deadline.remainingMs();
+    await cleanRetiredTables(metadataPool, { signal });
     const storage = storageOptions(caps);
     if (process.env.NODE_ENV === 'production' && !storage.storeDataPath) {
         throw budgetError('STORE_DATA_PATH is required in production', 'DISK_CHECK');
@@ -90,7 +93,8 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
         userAgent: caps.userAgent,
         stallTimeoutMs: caps.stallTimeoutMs,
         lookupImpl: caps.lookupImpl,
-        requestImpl: caps.requestImpl
+        requestImpl: caps.requestImpl,
+        signal
     });
 
     const tempPaths = [filePath];
@@ -112,7 +116,8 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
                 maxRows: caps.maxRows,
                 maxCols: caps.maxCols,
                 maxCsvBytes: caps.maxFileBytes,
-                archiveCaps: caps.xlsxArchiveCaps
+                archiveCaps: caps.xlsxArchiveCaps,
+                signal
             });
             tempPaths.push(csvPath);
             dataPath = csvPath;
@@ -145,21 +150,26 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
         const reserved = await evictUntilUnderBudget(metadataPool, {
             budgetBytes: Math.max(0, storage.budgetBytes - reserveBytes),
             excludeResourceIds: [resource.id],
-            lockHeld: true
+            lockHeld: true,
+            signal
         });
         if (!reserved.budgetSatisfied) throw budgetError('store budget cannot reserve space for this preparation');
 
-        const client = await ingestPool.connect();
+        const rawClient = await ingestPool.connect();
+        const client = cancellableIngestClient(rawClient, metadataPool, deadline);
         let committed = false;
+        let broken = false;
         try {
             await client.query('BEGIN');
+            await client.query("SELECT set_config('statement_timeout',$1,true)", [String(deadline.remainingMs())]);
             const { rowCount, columns } = await loadCsvIntoStore(client, {
                 filePath: dataPath,
                 tableName,
                 delimiter,
                 encoding,
                 maxRows: caps.maxRows,
-                maxCols: caps.maxCols
+                maxCols: caps.maxCols,
+                signal
             });
             const sizeResult = await client.query(
                 'SELECT pg_total_relation_size($1) AS size',
@@ -178,7 +188,8 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
             const exact = await evictUntilUnderBudget(metadataPool, {
                 budgetBytes: storage.budgetBytes - byteSize,
                 excludeResourceIds: [resource.id],
-                lockHeld: true
+                lockHeld: true,
+                signal
             });
             if (!exact.budgetSatisfied || exact.totalBytesAfter + byteSize > storage.budgetBytes) {
                 throw budgetError(
@@ -243,6 +254,7 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
             }
             await client.query('COMMIT');
             committed = true;
+            try { await client.stop(); } catch { broken = true; }
 
             // Exact pre-commit accounting already proved the committed state is
             // within budget. Re-run after commit to catch non-cooperating
@@ -250,10 +262,11 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
             // make the worker retry and rebuild it). The nightly enforcer will
             // also retry any transient post-commit database failure.
             try {
-                await cleanRetiredTables(metadataPool);
+                await cleanRetiredTables(metadataPool, { signal });
                 const postCommit = await evictUntilUnderBudget(metadataPool, {
                     budgetBytes: storage.budgetBytes,
-                    lockHeld: true
+                    lockHeld: true,
+                    signal
                 });
                 if (!postCommit.budgetSatisfied) {
                     console.error(
@@ -266,12 +279,14 @@ async function ingestResourceLocked(resource, caps, tableName, job) {
             }
             return { tableName, rowCount, byteSize, downloadedBytes: bytes, columns };
         } catch (err) {
+            try { await client.stop(); } catch { broken = true; }
             if (!committed) {
-                try { await client.query('ROLLBACK'); } catch {}
+                try { await rawClient.query('ROLLBACK'); } catch { broken = true; }
             }
             throw err;
         } finally {
-            client.release();
+            try { await client.stop(); } catch { broken = true; }
+            rawClient.release(broken);
         }
     } finally {
         for (const tempPath of tempPaths) {
@@ -285,9 +300,17 @@ async function ingestResource(resource, caps, job = null) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new Error('cannot derive a safe table name');
     }
-    return withStoreBudgetLock(metadataPool, () =>
-        ingestResourceLocked(resource, caps, tableName, job)
-    );
+    const deadline = caps.deadline || createIngestDeadline(caps.deadlineMs);
+    try {
+        return await withStoreBudgetLock(metadataPool, () =>
+            ingestResourceLocked(resource, caps, tableName, job, deadline), { signal: deadline.signal }
+        );
+    } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
+    } finally {
+        if (!caps.deadline) deadline.dispose();
+    }
 }
 
 module.exports = {

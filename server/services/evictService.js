@@ -2,16 +2,25 @@ const { TABLE_NAME_RE } = require('../db/storeQueries');
 const { quoteIdent } = require('../utils/filterGrammar');
 const { snapshotKey } = require('../db/snapshotRead');
 const { INGEST_RESOURCE_LOCK_NAMESPACE } = require('../db/ingestResourceLock');
+const { setTimeout: delay } = require('node:timers/promises');
 
 const STORE_BUDGET_LOCK = 'canquery-store-budget-v1';
 
-async function withStoreBudgetLock(db, callback, { tryLock = false } = {}) {
+async function withStoreBudgetLock(db, callback, { tryLock = false, signal } = {}) {
     const client = await db.connect();
     let locked = false;
     let broken = false;
     try {
         try {
-            if (tryLock) {
+            signal?.throwIfAborted();
+            if (signal && !tryLock) {
+                while (!locked) {
+                    signal.throwIfAborted();
+                    const result = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [STORE_BUDGET_LOCK]);
+                    locked = result.rows[0]?.locked;
+                    if (!locked) await delay(100, undefined, { signal });
+                }
+            } else if (tryLock) {
                 const result = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [STORE_BUDGET_LOCK]);
                 if (!result.rows[0]?.locked) return null;
             } else {
@@ -43,7 +52,8 @@ async function evictLocked(db, {
     budgetBytes,
     dryRun,
     excludeResourceIds,
-    idleHours
+    idleHours,
+    signal
 }) {
     // Use one database-clock cutoff for the entire run. Ingestion callers omit
     // idleHours and continue enforcing only their explicit storage budget.
@@ -92,6 +102,7 @@ async function evictLocked(db, {
     }
 
     for (const candidate of rows) {
+        signal?.throwIfAborted();
         const idle = expired(candidate);
         if (totalBytes <= budgetBytes && !idle) continue;
         if (candidate.excluded || excluded.includes(candidate.resource_id)) continue;
@@ -209,7 +220,8 @@ async function evictUntilUnderBudget(db, {
     dryRun = false,
     excludeResourceIds = [],
     lockHeld = false,
-    idleHours = 0
+    idleHours = 0,
+    signal
 } = {}) {
     const budget = Number(budgetBytes);
     if (!Number.isFinite(budget) || budget < 0) {
@@ -222,10 +234,11 @@ async function evictUntilUnderBudget(db, {
         budgetBytes: budget,
         dryRun,
         excludeResourceIds,
-        idleHours
+        idleHours,
+        signal
     };
     if (lockHeld) return evictLocked(db, options);
-    return withStoreBudgetLock(db, () => evictLocked(db, options));
+    return withStoreBudgetLock(db, () => evictLocked(db, options), { signal });
 }
 
 module.exports = { evictUntilUnderBudget, withStoreBudgetLock, STORE_BUDGET_LOCK };

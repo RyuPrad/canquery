@@ -13,6 +13,24 @@ unique PostgreSQL identifiers bounded by UTF-8 bytes. New snapshots build a
 unique `_id` index before the final relation-size admission check. This release
 does not rebuild existing snapshots or recover historically lost zeroes.
 
+`INGEST_DEADLINE_MS` defaults to 1,800,000 milliseconds (30 minutes) for a
+processing attempt, independent of queue wait or continuous download progress.
+It aborts the request/body and COPY streams, kills and reaps the converter,
+cancels active PostgreSQL work, then waits for rollback and temporary-file
+cleanup before releasing locks/clients. Metadata maintenance uses its existing
+short database timeouts and checks cancellation between resources. Cancellation
+does not interrupt publication reconciliation or invent a failure after a
+committed publication receipt. A deadline failure follows the existing bounded
+temporary retry policy. An OS/service shutdown still drains the single worker;
+set its grace period to cover processing plus cleanup rather than spawning a
+second worker.
+
+With database runtime roles installed, set `CANQUERY_STORE_OWNER_ROLE` to the
+dedicated NOLOGIN store owner for ingestion and administrative preparation.
+The creating role needs membership and the owner needs CREATE on `store`.
+Ownership transfers inside the construction transaction, including the table's
+owned serial sequence; default read privileges must cover each actual creator.
+
 ## Existing identifier reconciliation
 
 Before deploying strict local identifier validation, audit existing prepared

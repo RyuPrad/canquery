@@ -241,6 +241,39 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         expect((await queryResource(id, { limit: 1 })).records).toHaveLength(1);
     });
 
+    test('processing deadline cancels active PostgreSQL DDL, rolls back and preserves the serving copy', async () => {
+        const id = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv()));
+        await pool.query(`CREATE FUNCTION public.prepare_test_slow_ddl() RETURNS event_trigger LANGUAGE plpgsql
+            AS $$ BEGIN PERFORM pg_sleep(5); END $$`);
+        await pool.query(`CREATE EVENT TRIGGER prepare_test_slow ON ddl_command_start WHEN TAG IN ('CREATE TABLE')
+            EXECUTE FUNCTION public.prepare_test_slow_ddl()`);
+        const started = Date.now();
+        try {
+            await expect(ingestResource(await modify(id), { ...caps(csv(2)), deadlineMs: 200 }))
+                .rejects.toMatchObject({ code: 'INGEST_DEADLINE' });
+            expect(Date.now() - started).toBeLessThan(3000);
+            expect((await getResourceById(id)).table_name).toBe(first.tableName);
+            expect((await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND query LIKE '%CREATE TABLE store.%' AND state='active'")).rows[0].n).toBe(0);
+            expect((await queryResource(id, { limit: 1 })).records[0].amount).toBe('1');
+        } finally {
+            await pool.query('DROP EVENT TRIGGER IF EXISTS prepare_test_slow');
+            await pool.query('DROP FUNCTION public.prepare_test_slow_ddl()');
+        }
+    });
+
+    test('deadline during store-budget contention releases its waiting client without starting work', async () => {
+        const id = await seed();
+        const resource = await getResourceById(id);
+        const fetchImpl = jest.fn();
+        await withStoreBudgetLock(pool, async () => {
+            await expect(ingestResource(resource, { ...caps(csv()), fetchImpl, deadlineMs: 50 }))
+                .rejects.toMatchObject({ code: 'INGEST_DEADLINE' });
+        });
+        expect(fetchImpl).not.toHaveBeenCalled();
+        expect((await getResourceById(id)).table_name).toBeNull();
+    });
+
     test('Unicode IDs match PostgreSQL and late leading-zero codes survive materialization and CSV export', async () => {
         const id = await seed();
         const header = 'é'.repeat(40);

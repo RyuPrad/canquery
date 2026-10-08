@@ -466,6 +466,8 @@ async function convertXlsInProcess(xlsPath, { maxRows, maxCols, maxCsvBytes, out
 }
 
 function runIsolatedConversion(kind, inputPath, options) {
+    const { signal, ...childOptions } = options;
+    signal?.throwIfAborted();
     const memoryMb = positiveInt(process.env.EXCEL_CONVERT_MEMORY_MB, DEFAULT_MEMORY_MB, {
         min: 64,
         max: 1024
@@ -484,6 +486,7 @@ function runIsolatedConversion(kind, inputPath, options) {
             stdio: ['ignore', 'ignore', 'pipe', 'ipc']
         });
         let settled = false;
+        let outcome = null;
         let stderr = '';
         child.stderr.on('data', (chunk) => {
             if (stderr.length < 4096) stderr += chunk.toString();
@@ -493,40 +496,53 @@ function runIsolatedConversion(kind, inputPath, options) {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
+            signal?.removeEventListener('abort', abort);
             if (child.connected) child.disconnect();
             if (err) {
                 fs.promises.unlink(outputPath).catch(() => {}).finally(() => reject(err));
             } else resolve(result);
         };
-        const timer = setTimeout(() => {
-            child.kill('SIGKILL');
-            finish(capError('Excel conversion timed out', 'EXCEL_TIMEOUT'));
-        }, timeoutMs);
-
-        child.once('error', (err) => finish(err));
-        child.once('exit', (code, signal) => {
+        const terminate = error => {
             if (settled) return;
+            outcome = { error };
+            child.kill('SIGKILL');
+        };
+        const abort = () => terminate(signal.reason);
+        const timer = setTimeout(() => terminate(capError('Excel conversion timed out', 'EXCEL_TIMEOUT')), timeoutMs);
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
+
+        child.once('error', (err) => { outcome = { error: err }; if (!child.pid) finish(err); });
+        child.once('exit', (code, exitSignal) => {
+            if (settled) return;
+            // Wait until the child has exited before unlinking
+            // a partial output; it must not recreate the file after cleanup.
+            if (outcome?.error) return finish(outcome.error);
+            if (outcome?.result && code === 0) return finish(null, outcome.result);
             const detail = stderr.trim() ? ': ' + stderr.trim().slice(0, 500) : '';
             finish(capError(
-                'Excel conversion process failed (' + (signal || code) + ')' + detail,
+                'Excel conversion process failed (' + (exitSignal || code) + ')' + detail,
                 'EXCEL_CONVERSION'
             ));
         });
         child.once('message', (message) => {
+            if (outcome?.error) return;
             if (message && message.ok) {
-                finish(null, message.result);
+                outcome = { result: message.result };
+                if (child.connected) child.disconnect();
                 return;
             }
-            finish(capError(
+            outcome = { error: capError(
                 message && message.error && message.error.message
                     ? message.error.message
                     : 'Excel conversion failed',
                 message && message.error && message.error.code
                     ? message.error.code
                     : 'EXCEL_CONVERSION'
-            ));
+            ) };
+            if (child.connected) child.disconnect();
         });
-        child.send({ kind, inputPath, options: { ...options, outputPath } });
+        child.send({ kind, inputPath, options: { ...childOptions, outputPath } });
     });
 }
 

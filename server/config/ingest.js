@@ -9,7 +9,8 @@ function ingestLimits(env = process.env) {
         maxXlsxBytes: envNumber('MAX_XLSX_MB', 20, { min: 1 / MIB, max: Number.MAX_SAFE_INTEGER / MIB }, env) * MIB,
         maxRows: envNumber('MAX_ROWS', 1_000_000, { min: 1, integer: true }, env),
         maxCols: envNumber('MAX_COLS', 120, { min: 1, integer: true }, env),
-        stallTimeoutMs: envNumber('INGEST_STALL_TIMEOUT_MS', 60_000, { min: 1, max: 2 ** 31 - 1, integer: true }, env)
+        stallTimeoutMs: envNumber('INGEST_STALL_TIMEOUT_MS', 60_000, { min: 1, max: 2 ** 31 - 1, integer: true }, env),
+        deadlineMs: envNumber('INGEST_DEADLINE_MS', 30 * 60_000, { min: 1, max: 2 ** 31 - 1, integer: true }, env)
     };
 }
 
