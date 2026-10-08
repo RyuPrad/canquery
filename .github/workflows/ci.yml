@@ -28,6 +28,7 @@ jobs:
       - run: npm run blog:check
       - run: python3 -m unittest discover -s ../deploy/analytics -p 'test_*.py'
       - run: python3 -m unittest discover -s ../deploy/mail -p 'test_*.py'
+      - run: python3 -m unittest discover -s ../deploy/cloudflare -p 'test_*.py'
       - run: python3 -m unittest discover -s ../deploy -p 'test_*.py'
       - run: python3 -m unittest discover -s ../scripts -p 'test_*.py'
       - run: node --test ../deploy/backup-upload.test.cjs

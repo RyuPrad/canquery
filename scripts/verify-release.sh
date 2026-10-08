@@ -26,6 +26,7 @@ echo ""
 node "${ROOT_DIR}/server/scripts/check-blog.js"
 python3 -m unittest discover -s "${ROOT_DIR}/deploy/analytics" -p 'test_*.py'
 python3 -m unittest discover -s "${ROOT_DIR}/deploy/mail" -p 'test_*.py'
+python3 -m unittest discover -s "${ROOT_DIR}/deploy/cloudflare" -p 'test_*.py'
 python3 -m unittest discover -s "${ROOT_DIR}/deploy" -p 'test_*.py'
 python3 -m unittest discover -s "${ROOT_DIR}/scripts" -p 'test_*.py'
 node --test "${ROOT_DIR}/deploy/backup-upload.test.cjs"
