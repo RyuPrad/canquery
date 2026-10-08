@@ -22,7 +22,9 @@ KillSignal=SIGTERM
 # The worker handles SIGTERM by finishing its active ingest and then releasing
 # its database queue lock. A hard timeout is still finite; the replacement
 # worker immediately requeues a job if this process must be killed.
-TimeoutStopSec=10min
+# Cover the default 30-minute preparation deadline plus cancellation/cleanup.
+# Review this grace whenever INGEST_DEADLINE_MS changes.
+TimeoutStopSec=32min
 
 # Excel conversion can inflate compressed workbook data substantially. These
 # defaults protect a shared host; operators can tune them with a systemd drop-in.
