@@ -200,8 +200,7 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         const updated = await modify(id);
         const job = await prepareResource(id, id);
         expect(job.serving_cached).toBe(true);
-        await withSnapshot(id, async () => {
-            const result = await queryResourceForExport(id);
+        await queryResourceForExport(id, {}, async result => {
             let n = 0;
             for await (const record of result.records) {
                 expect(Number(record.amount)).toBe(1);
@@ -438,10 +437,9 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         await ingestResource(await getResourceById(id), caps(csv()));
         const aggregate = () => queryResource(id, { group_by: 'province', agg: 'count' });
         const reads = [() => queryResource(id), aggregate, aggregate, () => profileResource(id), () => profileResource(id),
-            () => recordResourceActivity(id), async () => {
-                const { records } = await queryResourceForExport(id);
+            () => recordResourceActivity(id), () => queryResourceForExport(id, {}, async ({ records }) => {
                 for await (const record of records) { expect(record).toBeTruthy(); break; }
-            }];
+            })];
         for (const read of reads) {
             await age(id);
             await withSnapshot(id, read);

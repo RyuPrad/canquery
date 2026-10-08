@@ -1,3 +1,4 @@
+const { snapshotInfo } = require('./snapshotIdentity');
 const { plainText, truncate } = require('./seoMeta');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { spellingSuggestions } = require('./localSearch');
@@ -119,7 +120,7 @@ const shapeResource = (row) => ({
         } : {})
     } : null,
     ingestion: row.ingest_status
-        ? { status: row.ingest_status, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at, fields: Array.isArray(row.ingested_columns) ? row.ingested_columns : undefined }
+        ? { status: row.ingest_status, snapshot_id: snapshotInfo(row)?.id || null, row_count: toNumberOrNull(row.ingested_row_count), ingested_at: row.ingested_at, fields: Array.isArray(row.ingested_columns) ? row.ingested_columns : undefined }
         : null
 });
 

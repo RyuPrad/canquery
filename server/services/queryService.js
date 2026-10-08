@@ -8,6 +8,8 @@ const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { getSource } = require('../config/catalogSources');
+const { withSnapshot } = require('../db/snapshotRead');
+const { validateSnapshot, requireSnapshot } = require('./snapshotIdentity');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000, maxEntries: 1000 });
 // Ingested data is immutable until a re-ingest replaces it, so a profile can be
@@ -61,219 +63,165 @@ function validateQueryText(q) {
     return q;
 }
 
-async function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = {}) {
-    const lim = clampLimit(limit);
-    const off = clampOffset(offset);
-    const queryText = validateQueryText(q);
-
-    const row = await getResourceById(id);
-    if (!row) throw new AppError('Resource not found', 404);
-    const provenance = shapeProvenance(row.provenance_sources);
-
-    const mode = computeQueryMode(row);
-    const parsedFilters = parseFilters(filters);
-
-    if (mode === 'datastore') {
-        if (hasAggParams(group_by, agg, agg_column, bucket)) {
-            throw new AppError('Aggregation is only supported for unlocked (ingested) resources', 400);
-        }
-        if (parsedFilters.some(f => f.op !== 'eq')) {
-            // Signal the client that this resource can be upgraded into local
-            // storage (ingested), where the full filter grammar works.
-            const err = new AppError('Only equality filters are supported for datastore resources', 400);
-            err.hint = 'ingest_for_filters';
-            throw err;
-        }
-        if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
-        const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
-        const target = datastoreTarget(row);
-        const cacheKey = JSON.stringify([target.sourceId, target.resourceId, queryText || null, ckanFilters || null, sort || null, lim, off]);
-        const result = await proxyCache.get(cacheKey, () => datastoreSearch({
-            resourceId: target.resourceId, baseUrl: target.baseUrl,
-            q: queryText, filters: ckanFilters, sort, limit: lim, offset: off
-        }));
-        if (!result) throw new AppError('Upstream datastore unavailable', 502);
-        logQueryHit(id, 'datastore').catch(() => {});
-        return { query_mode: 'datastore', fields: result.fields, records: result.records, total: result.total, provenance };
+// Metadata lookup uses a short pool query. Only a local execution owns a
+// snapshot lease; remote CKAN I/O never retains a PostgreSQL client.
+async function withResource(id, expected, consume) {
+    validateSnapshot(expected);
+    const initial = await getResourceById(id);
+    if (!initial) throw new AppError('Resource not found', 404);
+    if (computeQueryMode(initial) !== 'ingested') {
+        requireSnapshot(initial, expected);
+        return consume(initial);
     }
-
-    if (mode === 'ingested') {
-        const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
-        const knownColumns = columns.map(c => c.id);
-        const knownSet = new Set(knownColumns);
-        for (const f of parsedFilters) {
-            if (!knownSet.has(f.column)) throw new AppError('unknown column: ' + f.column, 400);
-        }
-        const aggSpec = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
-        if (aggSpec) {
-            const sortInfo = validateSort(sort, ['key', 'value']);
-            const options = { tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, groupBy: aggSpec.groupBy, agg: aggSpec.agg, aggColumn: aggSpec.aggColumn, bucket: aggSpec.bucket, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off };
-            const key = JSON.stringify([row.table_name, row.ingested_at, options]);
-            const { records, total } = row.ingested_at
-                ? await aggregateCache.get(key, () => aggregateStoreTable(options))
-                : await aggregateStoreTable(options);
-            await touchLastAccessed(id, row.table_name);
-            logQueryHit(id, 'ingested').catch(() => {});
-            return { query_mode: 'ingested', fields: aggSpec.fields, records, total, aggregation: { group_by: aggSpec.groupBy, agg: aggSpec.agg, agg_column: aggSpec.aggColumn, bucket: aggSpec.bucket }, provenance };
-        }
-        const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
-        const { records, total } = await queryStoreTable({ tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters, sortSql: sortInfo ? sortInfo.sql : null, limit: lim, offset: off });
-        await touchLastAccessed(id, row.table_name);
-        logQueryHit(id, 'ingested').catch(() => {});
-        const fields = [{ id: '_id', type: 'int' }].concat(columns);
-        return { query_mode: 'ingested', fields, records, total, provenance };
-    }
-
-    if (mode === 'ingestable') {
-        const err = new AppError('Resource is not ingested yet', 409);
-        err.hint = 'POST /api/v1/resources/' + id + '/ingest';
-        throw err;
-    }
-
-    const err = new AppError('Resource is a file download only and cannot be queried', 422);
-    err.download_url = toAbsoluteUrl(row.url);
-    throw err;
+    const result = await withSnapshot(id, async () => {
+        const current = await getResourceById(id);
+        if (!current) throw new AppError('Resource not found', 404);
+        requireSnapshot(current, expected);
+        if (computeQueryMode(current) !== 'ingested') return { fallback: current };
+        return { value: await consume(current) };
+    });
+    // A refresh/eviction may have changed the backend before lock acquisition.
+    return result.fallback ? consume(result.fallback) : result.value;
 }
 
-async function queryResourceForExport(id, { q, filters, sort, group_by, agg, agg_column, bucket } = {}) {
-    const configuredCap = Number(process.env.EXPORT_MAX_ROWS);
-    const cap = Number.isInteger(configuredCap) && configuredCap > 0
-        ? Math.min(configuredCap, 10000)
-        : 10000;
-    const batchSize = Math.min(500, cap);
+function queryLimits() {
+    const configured = Number(process.env.EXPORT_MAX_ROWS);
+    return { max_page_rows: 100, max_offset: MAX_QUERY_OFFSET,
+        export_max_rows: Number.isInteger(configured) && configured > 0 ? Math.min(configured, 10000) : 10000 };
+}
+
+function resultContext(row) {
+    return { provenance: shapeProvenance(row.provenance_sources), snapshot: requireSnapshot(row),
+        retrieved_at: new Date().toISOString(), publisher_modified_at: row.last_modified || null,
+        limits: queryLimits() };
+}
+
+// Pure validation is shared by JSON and CSV execution. Transport, caches and
+// the lifetime of local readers remain outside this plan.
+function planQuery(row, options = {}, exporting = false) {
+    const { q, filters, sort, group_by, agg, agg_column, bucket } = options;
     const queryText = validateQueryText(q);
-    const row = await getResourceById(id);
-    if (!row) throw new AppError('Resource not found', 404);
-    const provenance = shapeProvenance(row.provenance_sources);
-
-    const mode = computeQueryMode(row);
     const parsedFilters = parseFilters(filters);
-
+    const mode = computeQueryMode(row);
+    const limit = exporting ? queryLimits().export_max_rows : clampLimit(options.limit);
+    const offset = exporting ? 0 : clampOffset(options.offset);
     if (mode === 'datastore') {
         if (hasAggParams(group_by, agg, agg_column, bucket)) {
             throw new AppError('Aggregation is only supported for unlocked (ingested) resources', 400);
         }
         if (parsedFilters.some(f => f.op !== 'eq')) {
-            // Signal the client that this resource can be upgraded into local
-            // storage (ingested), where the full filter grammar works.
-            const err = new AppError('Only equality filters are supported for datastore resources', 400);
-            err.hint = 'ingest_for_filters';
-            throw err;
+            const error = new AppError('Only equality filters are supported for datastore resources', 400);
+            error.hint = 'ingest_for_filters';
+            throw error;
         }
-        if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) throw new AppError('invalid sort', 400);
-        const ckanFilters = parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined;
-        const target = datastoreTarget(row);
-        const result = await datastoreSearch({
-            resourceId: target.resourceId, baseUrl: target.baseUrl,
-            q: queryText, filters: ckanFilters, sort, limit: cap, offset: 0
-        });
-        if (!result) throw new AppError('Upstream datastore unavailable', 502);
-        logQueryHit(id, 'datastore').catch(() => {});
-        return { fields: result.fields, records: result.records, provenance };
+        if (sort !== undefined && sort !== null && (typeof sort !== 'string' || sort.length > 100)) {
+            throw new AppError('invalid sort', 400);
+        }
+        return { mode, queryText, limit, offset, sort, target: datastoreTarget(row),
+            filters: parsedFilters.length ? Object.fromEntries(parsedFilters.map(f => [f.column, f.value])) : undefined };
     }
-
     if (mode === 'ingested') {
         const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
-        const knownColumns = columns.map(c => c.id);
+        const knownColumns = columns.map(column => column.id);
         const knownSet = new Set(knownColumns);
-        for (const f of parsedFilters) {
-            if (!knownSet.has(f.column)) throw new AppError('unknown column: ' + f.column, 400);
+        for (const filter of parsedFilters) {
+            if (!knownSet.has(filter.column)) throw new AppError('unknown column: ' + filter.column, 400);
         }
-        const aggSpec = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
-        if (aggSpec) {
-            const sortInfo = validateSort(sort, ['key', 'value']);
-            logQueryHit(id, 'ingested').catch(() => {});
-            const records = (async function *streamAggregates() {
-                let offset = 0;
-                while (offset < cap) {
-                    const limit = Math.min(batchSize, cap - offset);
-                    const page = await aggregateStoreTable({
-                        tableName: row.table_name,
-                        knownColumns,
-                        q: queryText,
-                        filters: parsedFilters,
-                        groupBy: aggSpec.groupBy,
-                        agg: aggSpec.agg,
-                        aggColumn: aggSpec.aggColumn,
-                        bucket: aggSpec.bucket,
-                        sortSql: sortInfo ? sortInfo.sql : null,
-                        limit,
-                        offset,
-                        includeTotal: false
-                    });
-                    for (const record of page.records) yield record;
-                    if (page.records.length < limit) return;
-                    offset += page.records.length;
-                }
-            })();
-            return { fields: aggSpec.fields, records: trackExportActivity(records, id, row.table_name), provenance };
+        const aggregation = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
+        const order = validateSort(sort, aggregation ? ['key', 'value'] : ['_id', ...knownColumns]);
+        return { mode, aggregation, fields: aggregation ? aggregation.fields : [{ id: '_id', type: 'int' }, ...columns],
+            options: { tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters,
+                sortSql: order ? order.sql : null, limit, offset, snapshotRowCount: row.ingested_row_count,
+                ...(aggregation ? { groupBy: aggregation.groupBy, agg: aggregation.agg,
+                    aggColumn: aggregation.aggColumn, bucket: aggregation.bucket } : {}) } };
+    }
+    if (mode === 'ingestable') {
+        const error = new AppError('Resource is not ingested yet', 409);
+        error.hint = 'POST /api/v1/resources/' + row.id + '/ingest';
+        throw error;
+    }
+    const error = new AppError('Resource is a file download only and cannot be queried', 422);
+    error.download_url = toAbsoluteUrl(row.url);
+    throw error;
+}
+
+async function executeDatastore(plan, cached) {
+    const { target, queryText, filters, sort, limit, offset } = plan;
+    const read = () => datastoreSearch({ resourceId: target.resourceId, baseUrl: target.baseUrl,
+        q: queryText, filters, sort, limit, offset });
+    const key = JSON.stringify([target.sourceId, target.resourceId, queryText || null, filters || null, sort || null, limit, offset]);
+    const result = cached ? await proxyCache.get(key, read) : await read();
+    if (!result) throw new AppError('Upstream datastore unavailable', 502);
+    return result;
+}
+
+async function queryResource(id, options = {}) {
+    // Preserve validation before database access for invalid paging/search.
+    clampLimit(options.limit);
+    clampOffset(options.offset);
+    validateQueryText(options.q);
+    return withResource(id, options.snapshot, async row => {
+        const plan = planQuery(row, options);
+        const context = resultContext(row);
+        let result;
+        if (plan.mode === 'datastore') result = await executeDatastore(plan, true);
+        else {
+            const read = () => plan.aggregation ? aggregateStoreTable(plan.options) : queryStoreTable(plan.options);
+            result = plan.aggregation && row.ingested_at
+                ? await aggregateCache.get(JSON.stringify([row.table_name, row.ingested_at, plan.options]), read)
+                : await read();
+            await touchLastAccessed(id, row.table_name);
         }
-        const sortInfo = validateSort(sort, ["_id"].concat(knownColumns));
-        logQueryHit(id, 'ingested').catch(() => {});
-        const fields = [{ id: '_id', type: 'int' }].concat(columns);
-        const records = (async function *streamRows() {
-            let offset = 0;
-            while (offset < cap) {
-                const limit = Math.min(batchSize, cap - offset);
-                const page = await queryStoreTable({
-                    tableName: row.table_name,
-                    knownColumns,
-                    q: queryText,
-                    filters: parsedFilters,
-                    sortSql: sortInfo ? sortInfo.sql : null,
-                    limit,
-                    offset,
-                    includeTotal: false
-                });
+        logQueryHit(id, plan.mode).catch(() => {});
+        return { ...context, query_mode: plan.mode, fields: plan.fields || result.fields, ...result,
+            ...(plan.aggregation ? { aggregation: { group_by: plan.aggregation.groupBy, agg: plan.aggregation.agg,
+                agg_column: plan.aggregation.aggColumn, bucket: plan.aggregation.bucket } } : {}) };
+    });
+}
+
+// The consumer MUST finish consuming (or close) records before returning. The
+// callback, including socket backpressure, runs inside the local reader lease.
+async function queryResourceForExport(id, options = {}, consume) {
+    if (typeof consume !== 'function') throw new TypeError('Export requires a consumer callback');
+    validateQueryText(options.q);
+    return withResource(id, options.snapshot, async row => {
+        const plan = planQuery(row, options, true);
+        const context = resultContext(row);
+        if (plan.mode === 'datastore') {
+            const result = await executeDatastore(plan, false);
+            logQueryHit(id, 'datastore').catch(() => {});
+            return consume({ ...context, fields: result.fields, records: result.records });
+        }
+        const cap = plan.options.limit;
+        const records = trackExportActivity((async function *pages() {
+            for (let offset = 0; offset < cap;) {
+                const limit = Math.min(500, cap - offset);
+                const read = plan.aggregation ? aggregateStoreTable : queryStoreTable;
+                const page = await read({ ...plan.options, offset, limit, includeTotal: false });
                 for (const record of page.records) yield record;
                 if (page.records.length < limit) return;
                 offset += page.records.length;
             }
-        })();
-        return { fields, records: trackExportActivity(records, id, row.table_name), provenance };
-    }
-
-    if (mode === 'ingestable') {
-        const err = new AppError('Resource is not ingested yet', 409);
-        err.hint = 'POST /api/v1/resources/' + id + '/ingest';
-        throw err;
-    }
-
-    const err = new AppError('Resource is a file download only and cannot be queried', 422);
-    err.download_url = toAbsoluteUrl(row.url);
-    throw err;
+        })(), id, row.table_name);
+        logQueryHit(id, 'ingested').catch(() => {});
+        try { return await consume({ ...context, fields: plan.fields, records }); }
+        finally { await records.return(); }
+    });
 }
 
-async function profileResource(id) {
-    const row = await getResourceById(id);
-    if (!row) throw new AppError('Resource not found', 404);
-    const provenance = shapeProvenance(row.provenance_sources);
-
-    const mode = computeQueryMode(row);
-
-    if (mode === 'ingested') {
-        const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
-        const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
-        const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }));
-        await touchLastAccessed(id, row.table_name);
-        return { query_mode: 'ingested', row_count: profile.rowCount, columns: profile.columns, provenance };
-    }
-
-    if (mode === 'datastore') {
-        // CKAN's datastore_search has no cheap per-column distinct/range probe,
-        // so the auto-dashboard is an unlocked-table feature only.
-        throw new AppError('Profiling is only supported for unlocked (ingested) resources', 400);
-    }
-
-    if (mode === 'ingestable') {
-        const err = new AppError('Resource is not ingested yet', 409);
-        err.hint = 'POST /api/v1/resources/' + id + '/ingest';
-        throw err;
-    }
-
-    const err = new AppError('Resource is a file download only and cannot be profiled', 422);
-    err.download_url = toAbsoluteUrl(row.url);
-    throw err;
+async function profileResource(id, options = {}) {
+    return withResource(id, options.snapshot, async row => {
+        const mode = computeQueryMode(row);
+        if (mode === 'ingested') {
+            const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
+            const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
+            const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }));
+            await touchLastAccessed(id, row.table_name);
+            return { ...resultContext(row), query_mode: mode, row_count: profile.rowCount, columns: profile.columns };
+        }
+        if (mode === 'datastore') throw new AppError('Profiling is only supported for unlocked (ingested) resources', 400);
+        planQuery(row); // Shared missing-copy/download-only errors.
+    });
 }
 
 async function *trackExportActivity(records, id, tableName) {
@@ -283,20 +231,21 @@ async function *trackExportActivity(records, id, tableName) {
             read = true;
             yield record;
         }
-        read = true; // A successful empty export counts too.
+        read = true;
     } finally {
-        // Also renew a partially consumed successful stream before releasing
-        // its snapshot lock. A failure before the first row doesn't count.
         if (read) await touchLastAccessed(id, tableName);
     }
 }
 
 async function recordResourceActivity(id) {
-    const row = await getResourceById(id);
-    if (!row) throw new AppError('Resource not found', 404);
-    if (row.ingest_status !== 'ready' || !row.table_name || !await touchLastAccessed(id, row.table_name)) {
-        throw new AppError('Resource has no prepared copy', 409);
-    }
+    return withSnapshot(id, async () => {
+        const row = await getResourceById(id);
+        if (!row) throw new AppError('Resource not found', 404);
+        if (row.ingest_status !== 'ready' || !row.table_name || !await touchLastAccessed(id, row.table_name)) {
+            throw new AppError('Resource has no prepared copy', 409);
+        }
+    });
 }
 
-module.exports = { queryResource, queryResourceForExport, profileResource, datastoreTarget, recordResourceActivity };
+module.exports = { queryResource, queryResourceForExport, profileResource, datastoreTarget,
+    recordResourceActivity, planQuery, queryLimits };

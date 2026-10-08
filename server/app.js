@@ -38,6 +38,10 @@ app.use(helmet({
     }
 }));
 app.use(requestId);
+app.use((_req, res, next) => {
+    res.set('Access-Control-Expose-Headers', 'X-Request-Id, X-CanQuery-Snapshot, X-CanQuery-Prepared-At, X-CanQuery-Retrieved-At');
+    next();
+});
 
 // API responses remain crawlable for rendering, but are not search landing pages.
 // Mount before CORS, authentication and rate limiting so failures carry it too.
