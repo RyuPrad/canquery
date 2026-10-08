@@ -91,6 +91,19 @@ describe('ResourcePage navigation', () => {
     expect(screen.queryByText('Row query unavailable')).toBeNull();
   });
 
+  test('Chart does not display a prior Table total or its row export', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    expect(screen.getByRole('link', { name: 'Download CSV (filtered)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Chart' }));
+    await screen.findByTestId('chart');
+    expect(screen.queryByRole('link', { name: 'Download CSV (filtered)' })).toBeNull();
+    expect(screen.queryByText('200 rows')).toBeNull();
+    expect(queryResource).toHaveBeenCalledTimes(1);
+  });
+
   test('a legacy field link is reconciled before its first query', async () => {
     fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
       ingestion: { fields: [{ id: 'code', type: 'TEXT', legacy_ids: ['old_code'] }] } } });

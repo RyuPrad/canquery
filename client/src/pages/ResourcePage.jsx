@@ -390,12 +390,12 @@ function ResourceExplorer({ id, navigationKey }) {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          {data && (
+          {view === 'table' && data && (
             <span className="cq-chip cq-chip-mono ml-auto">
               {data.total.toLocaleString()} {t('resource.rows')}
             </span>
           )}
-          {data && !filtersNeedPreparation && (
+          {view === 'table' && data && !filtersNeedPreparation && (
             <a
               className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
               href={exportHref}
@@ -491,7 +491,7 @@ function ResourceExplorer({ id, navigationKey }) {
         <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
       ) : display === 'chart' ? (
         <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-          {schemaReady && (
+          {schemaReady ? (
             <ChartPanel
               key={JSON.stringify([
                 resource?.ingestion?.snapshot_id || resource?.ingestion?.ingested_at || id,
@@ -504,6 +504,8 @@ function ResourceExplorer({ id, navigationKey }) {
               queryMode={resource.query_mode}
               onUnavailable={onUnavailable}
             />
+          ) : (
+            <div className="cq-skel h-[420px] rounded-xl" />
           )}
         </Suspense>
       ) : display === 'error' ? (
