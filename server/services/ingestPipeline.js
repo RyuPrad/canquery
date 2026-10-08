@@ -12,17 +12,11 @@ const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { resourceVersion } = require('./resourceVersion');
 const { cleanRetiredTables } = require('./retiredIngestTables');
 const { lockIngestResource } = require('../db/ingestResourceLock');
-
-const MB = 1024 * 1024;
-const GB = 1024 * MB;
+const { storageOptions } = require('../config/ingest');
+const { numberSetting } = require('../config/numbers');
 
 function tableNameFor(resourceId) {
     return 'r_' + createHash('sha256').update(String(resourceId)).digest('hex').slice(0, 32) + '_' + randomBytes(8).toString('hex');
-}
-
-function finiteNonNegative(value, fallback) {
-    const number = Number(value);
-    return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
 function budgetError(message, code = 'BUDGET') {
@@ -37,7 +31,7 @@ async function availableDiskBytes(directory) {
 }
 
 async function assertDiskHeadroom(directory, requiredBytes, label) {
-    const required = BigInt(Math.ceil(finiteNonNegative(requiredBytes, 0)));
+    const required = BigInt(Math.ceil(numberSetting('required disk bytes', requiredBytes, 0)));
     let available;
     try {
         available = await availableDiskBytes(directory);
@@ -51,29 +45,6 @@ async function assertDiskHeadroom(directory, requiredBytes, label) {
         );
     }
     return available;
-}
-
-function storageOptions(caps) {
-    return {
-        budgetBytes: finiteNonNegative(caps.storeBudgetBytes, 15 * GB),
-        reserveFloorBytes: finiteNonNegative(
-            caps.storeReserveBytes,
-            finiteNonNegative(process.env.STORE_INGEST_HEADROOM_MB, 256) * MB
-        ),
-        reserveMultiplier: finiteNonNegative(
-            caps.storeSizeMultiplier,
-            finiteNonNegative(process.env.STORE_SIZE_RESERVE_MULTIPLIER, 2)
-        ),
-        minTmpFreeBytes: finiteNonNegative(
-            caps.minTmpFreeBytes,
-            finiteNonNegative(process.env.TMP_MIN_FREE_MB, 512) * MB
-        ),
-        storeDataPath: caps.storeDataPath || process.env.STORE_DATA_PATH || null,
-        minStoreFreeBytes: finiteNonNegative(
-            caps.minStoreFreeBytes,
-            finiteNonNegative(process.env.STORE_MIN_FREE_GB, 2) * GB
-        )
-    };
 }
 
 async function validateStorageFilesystems(caps) {

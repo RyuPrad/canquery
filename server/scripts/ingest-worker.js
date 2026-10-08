@@ -1,21 +1,18 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const crypto = require('crypto');
+const { ingestLimits, storageOptions } = require('../config/ingest');
+const { envNumber } = require('../config/numbers');
 
 const onceMode = process.argv.includes('--once');
 
 const caps = {
-    maxFileBytes: (Number(process.env.MAX_FILE_MB) || 50) * 1024 * 1024,
-    maxXlsxBytes: (Number(process.env.MAX_XLSX_MB) || 20) * 1024 * 1024,
-    maxRows: Number(process.env.MAX_ROWS) || 1000000,
-    maxCols: Number(process.env.MAX_COLS) || 120,
-    storeBudgetBytes: (Number(process.env.STORE_BUDGET_GB) || 15) * 1024 * 1024 * 1024,
-    userAgent: process.env.CKAN_USER_AGENT || 'canquery/1.0',
-    stallTimeoutMs: Number(process.env.INGEST_STALL_TIMEOUT_MS) || 60000
+    ...ingestLimits(),
+    userAgent: process.env.CKAN_USER_AGENT || 'canquery/1.0'
 };
 
-const POLL_MS = Number(process.env.INGEST_POLL_MS) || 3000;
-const HEARTBEAT_MS = Math.max(1000, Number(process.env.INGEST_HEARTBEAT_MS) || 15000);
+const POLL_MS = envNumber('INGEST_POLL_MS', 3000, { min: 1, max: 2 ** 31 - 1, integer: true });
+const HEARTBEAT_MS = envNumber('INGEST_HEARTBEAT_MS', 15000, { min: 1000, max: 2 ** 31 - 1, integer: true });
 
 const pool = require('../db/pool');
 const longRunningPool = require('../db/longRunningPool');
@@ -175,6 +172,10 @@ async function main() {
     let lockHeld = false;
     try {
         await validateStorageFilesystems(caps);
+        const storage = storageOptions(caps);
+        delete storage.storeDataPath;
+        console.log(JSON.stringify({ event: 'ingest_limits', units: { sizes: 'bytes', timeouts: 'milliseconds' },
+            ...ingestLimits(), ...storage, pollMs: POLL_MS, heartbeatMs: HEARTBEAT_MS }));
         lockClient = await pool.connect();
         lockClient.on('error', (err) => {
             console.error('ingest-worker lock connection failed:', err.message);
