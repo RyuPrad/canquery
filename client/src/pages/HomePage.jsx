@@ -1,10 +1,11 @@
 import LocalGuides from '../components/LocalGuides.jsx';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { searchDatasets, fetchOrganizations, fetchStats, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
+import useScopedOptions from '../hooks/useScopedOptions.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import MochiPromotion from '../components/MochiPromotion.jsx';
@@ -76,9 +77,7 @@ export default function HomePage() {
   const mappable = ['true', '1'].includes(searchParams.get('mappable'));
   const keyword = searchParams.get('keyword') || '';
   const [stats, setStats] = useState(null);
-  const [orgs, setOrgs] = useState([]);
   const [places, setPlaces] = useState([]);
-  const [sources, setSources] = useState([]);
 
   const debouncedDraft = useDebouncedValue(query, 250);
 
@@ -145,25 +144,22 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadOrganizations = async () => {
+  const loadOrganizations = useCallback(async signal => {
       const rows = [];
       const seenCursors = new Set();
       let cursor;
       do {
-        const env = await fetchOrganizations({ place: place || undefined, source: source || undefined, limit: 100, cursor });
-        if (cancelled) return;
+        const env = await fetchOrganizations({ place: place || undefined, source: source || undefined, limit: 100, cursor }, { signal });
+        if (signal.aborted) return [];
         rows.push(...(env.data || []));
         cursor = env.pagination?.nextCursor || null;
         if (cursor && seenCursors.has(cursor)) throw new Error('Organization pagination returned a repeated cursor');
         if (cursor) seenCursors.add(cursor);
       } while (cursor);
-      setOrgs(rows);
-    };
-    loadOrganizations().catch(() => {});
-    return () => { cancelled = true; };
+      return rows;
   }, [place, source]);
+  const organizationOptions = useScopedOptions(JSON.stringify([place, source]), loadOrganizations);
+  const orgs = organizationOptions.data;
 
   useEffect(() => {
     let cancelled = false;
@@ -173,13 +169,12 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchSources({ place: place || undefined })
-      .then(env => { if (!cancelled) setSources(env.data || []); })
-      .catch(() => {});
-    return () => { cancelled = true; };
+  const loadSources = useCallback(async signal => {
+    const env = await fetchSources({ place: place || undefined }, { signal });
+    return env.data || [];
   }, [place]);
+  const sourceOptions = useScopedOptions(place, loadSources);
+  const sources = sourceOptions.data;
 
   const filtering = Boolean(searchQuery || org || format || keyword || place || source || mappable);
 
@@ -310,12 +305,18 @@ export default function HomePage() {
                 updateSearch({ source: event.target.value, org: '' });
               }}
               aria-label={t('source.choose')}
+              aria-busy={sourceOptions.status === 'loading'}
+              aria-describedby={sourceOptions.status === 'error' ? 'source-options-error' : undefined}
             >
               <option value="">{t('source.all')}</option>
+              {source && !sources.some(item => item.id === source) && <option value={source} disabled>{source}</option>}
               {sources.map(item => (
                 <option key={item.id} value={item.id}>{item.name?.[lang] || item.name?.en || item.id}</option>
               ))}
             </select>
+            {sourceOptions.status === 'error' && <span id="source-options-error" role="status" className="text-sm">
+              {t('source.load_error')} <button className="link" type="button" onClick={sourceOptions.retry}>{t('common.retry')}</button>
+            </span>}
             <select
               className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
               value={org}
@@ -324,14 +325,20 @@ export default function HomePage() {
                 updateSearch({ org: e.target.value });
               }}
               aria-label={t('home.all_organizations')}
+              aria-busy={organizationOptions.status === 'loading'}
+              aria-describedby={organizationOptions.status === 'error' ? 'organization-options-error' : undefined}
             >
               <option value="">{t('home.all_organizations')}</option>
+              {org && !orgs.some(item => item.name === org) && <option value={org} disabled>{org}</option>}
               {orgs.map((o) => (
                 <option key={o.name} value={o.name}>
                   {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
                 </option>
               ))}
             </select>
+            {organizationOptions.status === 'error' && <span id="organization-options-error" role="status" className="text-sm">
+              {t('home.organizations_error')} <button className="link" type="button" onClick={organizationOptions.retry}>{t('common.retry')}</button>
+            </span>}
           </div>
 
           <div className="cq-home-datasets mt-5" aria-busy={loading}>

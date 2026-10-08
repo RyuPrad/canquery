@@ -18,6 +18,7 @@ import PreparationStatus from '../components/PreparationStatus.jsx';
 import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
+import { schemaFingerprint, reconcileResourceFields } from '../utils/resourceSchema.js';
 import { track } from '../utils/analytics.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
@@ -107,22 +108,24 @@ function ResourceExplorer({ id, navigationKey }) {
   const preparationRequired = resource && !fileOnly && (resource.query_mode === 'ingestable' ||
     (view === 'chart' && resource.query_mode !== 'ingested'));
   const filtersNeedPreparation = resource?.query_mode === 'datastore' && hasNonEq;
-  const previousSnapshot = useRef(null);
+  const fields = resource?.ingestion?.fields;
+  const fingerprint = schemaFingerprint(fields);
+  const [observedSchema, setObservedSchema] = useState(null);
+  const reconciled = reconcileResourceFields(columnFilters, sort, fields);
+  const appliedFields = reconcileResourceFields(debouncedFilters, sort, fields);
+  const schemaReady = fingerprint === null || (observedSchema === fingerprint && !reconciled.changed && !appliedFields.changed);
   useEffect(() => {
-    const stamp = resource?.ingestion?.ingested_at;
-    const fields = resource?.ingestion?.fields;
-    if (stamp && previousSnapshot.current && previousSnapshot.current !== stamp && fields) {
-      const names = new Set(['_id', ...fields.map(f => f.id)]);
-      const valid = Object.fromEntries(Object.entries(columnFilters).filter(([name]) => names.has(name)));
-      const removedFilter = Object.keys(valid).length !== Object.keys(columnFilters).length;
-      const removedSort = sort && !names.has(sort) && !names.has(sort.replace(/\s+(asc|desc)$/i, ''));
-      if (removedFilter) setColumnFilters(valid);
-      if (removedSort) setSort(null);
-      if (removedFilter || removedSort) setSchemaChanged(true);
+    if (fingerprint === null) return;
+    if (reconciled.changed) {
+      setColumnFilters(reconciled.filters);
+      setSort(reconciled.sort);
+    }
+    if ((observedSchema !== null && observedSchema !== fingerprint) || reconciled.changed) {
+      setSchemaChanged(true);
       setPage(0);
     }
-    if (stamp) previousSnapshot.current = stamp;
-  }, [resource, columnFilters, sort]);
+    setObservedSchema(fingerprint);
+  }, [fingerprint, observedSchema, reconciled.changed, reconciled.filters, reconciled.sort]);
 
 
   useEffect(() => {
@@ -189,7 +192,7 @@ function ResourceExplorer({ id, navigationKey }) {
 
   useEffect(() => {
     let cancelled = false;
-    if (view === 'map') {
+    if (view !== 'table') {
       setDataLoading(false);
       return () => { cancelled = true; };
     }
@@ -201,7 +204,7 @@ function ResourceExplorer({ id, navigationKey }) {
       setDataLoading(false);
       return () => { cancelled = true; };
     }
-    if (!resource || preparationRequired || (resource.query_mode === 'datastore' && hasNonEq)) {
+    if (!resource || !schemaReady || preparationRequired || (resource.query_mode === 'datastore' && hasNonEq)) {
       setDataLoading(false);
       return () => { cancelled = true; };
     }
@@ -261,7 +264,7 @@ function ResourceExplorer({ id, navigationKey }) {
       });
 
     return () => { cancelled = true; controller.abort(); };
-  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, fileOnly, hasNonEq, onUnavailable]);
+  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, fileOnly, hasNonEq, onUnavailable, schemaReady]);
 
   const changeSort = useCallback(next => {
     track('resource_sort', { resource_id: id, sort: next || '' });
@@ -306,7 +309,7 @@ function ResourceExplorer({ id, navigationKey }) {
     </div>;
   }
 
-  const downloadOnly = fileOnly || dataError instanceof FileOnlyError;
+  const downloadOnly = fileOnly || (view === 'table' && dataError instanceof FileOnlyError);
   const downloadOnlyUrl = fileOnly ? resource.url : dataError?.download_url;
 
   const totalPages = data
@@ -466,7 +469,7 @@ function ResourceExplorer({ id, navigationKey }) {
             <MapPanel resourceId={id} map={resource.map} />
           </Suspense>
         ) : <LoadingSpinner label={t('map.loading')} />
-      ) : filtersNeedPreparation && view === 'table' && !data ? null : dataLoading && !data && !preparationRequired ? (
+      ) : filtersNeedPreparation && view === 'table' && !data ? null : view === 'table' && dataLoading && !data && !preparationRequired ? (
         <div className="space-y-3">
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
@@ -488,17 +491,16 @@ function ResourceExplorer({ id, navigationKey }) {
             {t('resource.download_here')}
           </a>}
         </div>
-      ) : preparationRequired || dataError instanceof NotIngestedError ? (
+      ) : preparationRequired || (view === 'table' && dataError instanceof NotIngestedError) ? (
         <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
+      ) : view === 'chart' ? (
+        <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
+          {schemaReady && <ChartPanel key={JSON.stringify([resource?.ingestion?.snapshot_id || resource?.ingestion?.ingested_at || id, fingerprint])} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={fields || []} queryMode={resource.query_mode} onUnavailable={onUnavailable} />}
+        </Suspense>
       ) : dataError ? (
         <div className="alert alert-error">{dataError.message}</div>
       ) : data ? (
         <>
-          {view === 'chart' ? (
-            <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-              <ChartPanel key={resource?.ingestion?.ingested_at || id} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={resource?.ingestion?.fields || data.fields} queryMode={data.mode} onUnavailable={onUnavailable} />
-            </Suspense>
-          ) : (
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
               <DataTable
                 fields={data.fields}
@@ -509,8 +511,7 @@ function ResourceExplorer({ id, navigationKey }) {
                 onColumnFilterChange={changeColumnFilter}
               />
             </div>
-          )}
-          {view !== 'chart' && data.total > PAGE_SIZE && (
+          {data.total > PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button
                 className="btn btn-sm btn-outline border-base-content/20 rounded-lg"

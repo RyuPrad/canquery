@@ -27,7 +27,7 @@ export function prepareResource(id) {
 }
 
 export function recordResourceActivity(id, options) {
-  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/activity', options);
+  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/activity', { ...options, allowNoContent: true });
 }
 
 export function enqueueIngest(id) {
@@ -38,8 +38,8 @@ export function fetchJob(id, options) {
   return getJSON('/web-api/v1/jobs/' + encodeURIComponent(id), undefined, options);
 }
 
-export function fetchOrganizations({ q, place, source, limit, cursor } = {}) {
-  return getJSON('/web-api/v1/organizations', { q, place, source, limit, cursor });
+export function fetchOrganizations({ q, place, source, limit, cursor } = {}, options) {
+  return getJSON('/web-api/v1/organizations', { q, place, source, limit, cursor }, options);
 }
 
 export function fetchOrganization(name) {
@@ -75,8 +75,8 @@ export function fetchPlace(idOrSlug) {
   return getJSON('/web-api/v1/places/' + encodeURIComponent(idOrSlug));
 }
 
-export function fetchSources({ place } = {}) {
-  return getJSON('/web-api/v1/sources', { place });
+export function fetchSources({ place } = {}, options) {
+  return getJSON('/web-api/v1/sources', { place }, options);
 }
 
 export function fetchResourceMap(id, { bbox, zoom, limit, signal } = {}) {
