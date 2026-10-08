@@ -1,14 +1,12 @@
-const Stripe = require('stripe');
 const { createHash } = require('crypto');
 const pool = require('../db/pool');
-const { transaction, failure, meterLock } = require('../db/commercialQueries');
+const { transaction, failure } = require('../db/commercialQueries');
 const { config, PLANS, BUSINESS_PRICE } = require('./commercialConfig');
 
-function stripeClient() {
-    if (!process.env.STRIPE_SECRET_KEY) throw failure('Billing is not configured','BILLING_UNAVAILABLE',503);
-    config(); // Refuse a key from another environment before making requests.
-    return new Stripe(process.env.STRIPE_SECRET_KEY,{apiVersion:'2026-09-30.endive',timeout:10000,maxNetworkRetries:1});
-}
+const { stripeClient, capturePaidInvoices } = require('./billingProvider');
+const { interpretPaidInvoice, matchesBusinessPrice, matchesCheckoutSession } = require('./billingPolicy');
+const billingDb = require('../db/billingQueries');
+
 async function verifyEnvironment(db = pool) {
     const settings = config();
     if (!settings.enabled) return;
@@ -18,8 +16,7 @@ async function verifyEnvironment(db = pool) {
     if (settings.checkout) {
         const stripe = stripeClient();
         const price = await stripe.prices.retrieve(process.env.STRIPE_BUSINESS_PRICE_ID);
-        if (price.livemode !== (settings.mode==='live') || !price.active || price.currency!==BUSINESS_PRICE.currency || price.unit_amount!==BUSINESS_PRICE.amount
-            || price.recurring?.interval!==BUSINESS_PRICE.interval || price.recurring?.interval_count!==1) throw new Error('Business price does not match the reviewed plan');
+        if (!matchesBusinessPrice(price, BUSINESS_PRICE, settings.mode)) throw new Error('Business price does not match the reviewed plan');
         if (process.env.STRIPE_TAX_ENABLED === 'true') {
             if (process.env.STRIPE_TAX_REGISTRATION_CONFIRMED !== 'true') throw new Error('Tax registration confirmation required');
             const [tax, registrations] = await Promise.all([stripe.tax.settings.retrieve(),stripe.tax.registrations.list({status:'active',limit:1})]);
@@ -30,15 +27,14 @@ async function verifyEnvironment(db = pool) {
 }
 async function ensureCustomer(accountId,user,stripe = stripeClient(),db = pool) {
     return transaction(async client => {
-        const { rows } = await client.query('SELECT * FROM commercial.accounts WHERE id=$1 FOR NO KEY UPDATE',[accountId]);
-        const account = rows[0];
+        const account = await billingDb.lockAccount(client, accountId);
         if (!account?.owner_id || account.suspended_at) throw failure('Account unavailable','ACCOUNT_SUSPENDED',403);
         let customer = account.stripe_customer_id;
         if (!customer) {
             const created = await stripe.customers.create({email:user.email,name:user.name,metadata:{canquery_account_id:accountId}},
                 {idempotencyKey:'canquery-customer-'+accountId});
             customer = created.id;
-            await client.query('UPDATE commercial.accounts SET stripe_customer_id=$2 WHERE id=$1',[accountId,customer]);
+            await billingDb.storeCustomer(client, accountId, customer);
         }
         return customer;
     },db);
@@ -49,7 +45,7 @@ async function checkout(accountId,user,stripe = stripeClient(),db = pool) {
     // Commit the customer reference even if a later Checkout request fails.
     await ensureCustomer(accountId,user,stripe,db);
     return transaction(async client => {
-        const account=(await client.query('SELECT * FROM commercial.accounts WHERE id=$1 FOR NO KEY UPDATE',[accountId])).rows[0];
+        const account = await billingDb.lockAccount(client, accountId);
         if (!account?.owner_id || account.suspended_at) throw failure('Account unavailable','ACCOUNT_SUSPENDED',403);
         const customer=account.stripe_customer_id;
         const subscriptions = await stripe.subscriptions.list({customer,status:'all',limit:100});
@@ -71,10 +67,8 @@ async function checkout(accountId,user,stripe = stripeClient(),db = pool) {
             if (open.length!==1) throw failure('Contact support to review existing checkout sessions','BILLING_REVIEW_REQUIRED',409);
             const existing = open[0];
             const lines = await stripe.checkout.sessions.listLineItems(existing.id,{limit:2});
-            if (existing.mode!=='subscription' || existing.livemode!==(settings.mode==='live')
-                || Boolean(existing.automatic_tax?.enabled)!==(process.env.STRIPE_TAX_ENABLED==='true')
-                || lines.has_more || lines.data.length!==1 || lines.data[0].quantity!==1
-                || lines.data[0].price?.id!==process.env.STRIPE_BUSINESS_PRICE_ID) {
+            if (!matchesCheckoutSession(existing, lines, { mode: settings.mode,
+                priceId: process.env.STRIPE_BUSINESS_PRICE_ID, taxEnabled: process.env.STRIPE_TAX_ENABLED === 'true' })) {
                 throw failure('Existing checkout no longer matches the current plan; contact support','BILLING_REVIEW_REQUIRED',409);
             }
             return {url:existing.url};
@@ -94,9 +88,9 @@ async function checkout(accountId,user,stripe = stripeClient(),db = pool) {
     },db);
 }
 async function portal(accountId,stripe = stripeClient(),db = pool) {
-    const { rows } = await db.query('SELECT stripe_customer_id FROM commercial.accounts WHERE id=$1 AND suspended_at IS NULL',[accountId]);
-    if (!rows[0]?.stripe_customer_id) throw failure('No billing customer exists yet','NO_BILLING_CUSTOMER',409);
-    const session = await stripe.billingPortal.sessions.create({customer:rows[0].stripe_customer_id,
+    const customer = await billingDb.portalCustomer(db, accountId);
+    if (!customer) throw failure('No billing customer exists yet','NO_BILLING_CUSTOMER',409);
+    const session = await stripe.billingPortal.sessions.create({customer,
         ...(process.env.STRIPE_PORTAL_CONFIGURATION_ID ? {configuration:process.env.STRIPE_PORTAL_CONFIGURATION_ID} : {}),
         return_url:config().origin+'/account'});
     return {url:session.url};
@@ -113,77 +107,46 @@ async function receiveWebhook(body,signature,stripe = stripeClient(),db = pool) 
     const object = event.data.object;
     const customer = typeof object.customer==='string' ? object.customer : object.customer?.id;
     if (!customer || typeof object.id !== 'string') throw failure('Invalid billing event','INVALID_WEBHOOK',400);
-    await db.query(`INSERT INTO commercial.stripe_events(id,type,object_id,customer_id) VALUES ($1,$2,$3,$4)
-        ON CONFLICT(id) DO NOTHING`,[event.id,event.type,object.id,customer]);
+    await billingDb.recordEvent(db, event, customer);
 }
-async function applyPaidInvoice(client,account,invoice,lines) {
-    if (invoice.status!=='paid' || invoice.customer!==account.stripe_customer_id || invoice.currency!=='cad'
-        || invoice.livemode!==(config().mode==='live') || !['subscription_create','subscription_cycle'].includes(invoice.billing_reason)) return false;
-    const matching = lines.filter(l=>(l.pricing?.price_details?.price || l.price?.id)===process.env.STRIPE_BUSINESS_PRICE_ID
-        && l.quantity===1 && !l.parent?.subscription_item_details?.proration && !l.proration);
-    if (matching.length!==1) return false;
-    const line = matching[0];
-    const start = line.period?.start;
-    const end = line.period?.end;
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end<=start || end-start>32*86400) throw new Error('Invalid billing period');
-    const subscription = invoice.parent?.subscription_details?.subscription || invoice.subscription;
-    if (typeof subscription!=='string') throw new Error('Invoice subscription is missing');
-    await meterLock(client);
-    // A recurring service period is unique even if Stripe produces more than
-    // one invoice for it. Never reset already consumed credits on a replay.
-    const id = `business:${account.id}:${subscription}:${start}:${end}`;
-    await client.query(`INSERT INTO commercial.periods(id,account_id,plan,starts_at,ends_at,allowance,key_limit,rate_limit,concurrency,invoice_id)
-        VALUES ($1,$2,'business',to_timestamp($3),to_timestamp($4),$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`,
-    [id,account.id,start,end,PLANS.business.credits,PLANS.business.keys,PLANS.business.rate,PLANS.business.concurrency,invoice.id]);
-    await client.query('UPDATE commercial.accounts SET stripe_subscription_id=$2 WHERE id=$1',[account.id,subscription]);
+async function applyPaidInvoice(client, account, invoice, lines) {
+    const period = interpretPaidInvoice(account, invoice, lines, {
+        mode: config().mode, priceId: process.env.STRIPE_BUSINESS_PRICE_ID
+    });
+    if (!period) return false;
+    await billingDb.persistPaidPeriod(client, period, PLANS.business);
     return true;
 }
-async function reconcileCustomer(client,account,stripe,event) {
+
+async function reconcileCustomer(client, account, stripe, event) {
     if (!account.stripe_customer_id) return;
-    const invoices = await stripe.invoices.list({customer:account.stripe_customer_id,status:'paid',limit:100});
-    // Retrieve the event's invoice directly as well: intervening invoices must
-    // not hide an earned period beyond the first reconciliation page.
-    if (event?.type.startsWith('invoice.') && !invoices.data.some(i=>i.id===event.object_id)) {
-        invoices.data.push(await stripe.invoices.retrieve(event.object_id));
-    }
-    const captured=[];
-    for (const invoice of invoices.data) {
-        let lines = invoice.lines?.data || [];
-        if (invoice.lines?.has_more) {
-            lines = await stripe.invoices.listLineItems(invoice.id,{limit:100}).autoPagingToArray({limit:1000});
-        }
-        captured.push({invoice,lines});
-    }
-    // Fetch all remote pages before acquiring the short global meter lock.
-    for (const {invoice,lines} of captured) await applyPaidInvoice(client,account,invoice,lines);
-    await client.query('UPDATE commercial.accounts SET billing_checked_at=now() WHERE id=$1',[account.id]);
+    const captured = await capturePaidInvoices(stripe, account.stripe_customer_id, event);
+    for (const { invoice, lines } of captured) await applyPaidInvoice(client, account, invoice, lines);
+    await billingDb.markCustomerChecked(client, account.id);
 }
-async function processBilling(db = pool,stripe) {
+
+async function processBilling(db = pool, stripe) {
     if (!stripe && !process.env.STRIPE_SECRET_KEY) return;
     stripe ||= stripeClient();
+    // Preserve event/customer transaction ownership across provider calls.
+    // Moving network I/O outside this transaction needs a separate durable
+    // claim/idempotency design. Only the global meter lock remains short-lived.
     await transaction(async client => {
-        const pending = await client.query(`SELECT * FROM commercial.stripe_events
-            WHERE processed_at IS NULL AND available_at<=now() ORDER BY received_at FOR UPDATE SKIP LOCKED LIMIT 1`);
-        const event = pending.rows[0];
+        const event = await billingDb.claimEvent(client);
         if (event) {
             await client.query('SAVEPOINT billing_event');
             try {
-                // NO KEY UPDATE serializes customer operations while allowing
-                // a meter transaction to insert a period's account FK. A full
-                // row lock would invert that transaction's meter/row order.
-                const account = (await client.query('SELECT * FROM commercial.accounts WHERE stripe_customer_id=$1 FOR NO KEY UPDATE',[event.customer_id])).rows[0];
-                if (account) await reconcileCustomer(client,account,stripe,event);
-                await client.query('UPDATE commercial.stripe_events SET processed_at=now(),failure=false WHERE id=$1',[event.id]);
+                const account = await billingDb.lockCustomerAccount(client, event.customer_id);
+                if (account) await reconcileCustomer(client, account, stripe, event);
+                await billingDb.completeEvent(client, event.id);
             } catch {
                 await client.query('ROLLBACK TO SAVEPOINT billing_event');
-                await client.query(`UPDATE commercial.stripe_events SET attempts=attempts+1,failure=true,
-                    available_at=now()+make_interval(secs=>least(3600,30*power(2,least(attempts,7)))::int) WHERE id=$1`,[event.id]);
+                await billingDb.deferEvent(client, event.id);
             }
         } else {
-            const account = (await client.query(`SELECT * FROM commercial.accounts WHERE stripe_customer_id IS NOT NULL
-                AND billing_checked_at<now()-interval '10 minutes' ORDER BY billing_checked_at FOR NO KEY UPDATE SKIP LOCKED LIMIT 1`)).rows[0];
-            if (account) await reconcileCustomer(client,account,stripe);
+            const account = await billingDb.claimDueAccount(client);
+            if (account) await reconcileCustomer(client, account, stripe);
         }
-    },db);
+    }, db);
 }
 module.exports = { stripeClient, verifyEnvironment, ensureCustomer, checkout, portal, receiveWebhook, applyPaidInvoice, processBilling };
