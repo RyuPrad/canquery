@@ -147,7 +147,7 @@ async function evictLocked(db, {
             // SHARE blocks concurrent INSERT/DELETE pin changes for the short
             // recheck/drop transaction, including the otherwise-unlockable
             // "no pin row exists" case.
-            await client.query('LOCK TABLE pinned_resources IN SHARE MODE');
+            await client.query('SELECT public.canquery_lock_pins()');
             const currentResult = await client.query(
                 `SELECT ir.resource_id, ir.table_name,
                         coalesce(ir.byte_size, 0)::bigint AS byte_size,

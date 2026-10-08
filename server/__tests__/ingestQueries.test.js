@@ -8,7 +8,7 @@ const { settlePreparationOn } = require('../db/preparationAccounting');
 function clientFor({ loaded = [], queued = [], completed = [], resource = [{ id: 'public-resource' }] } = {}) {
     const client = {
         query: jest.fn(async (sql) => {
-            if (sql.includes('FROM resources r JOIN datasets')) return { rows: resource };
+            if (sql.includes('canquery_lock_public_resource')) return { rows: [{ present: resource.length > 0 }] };
             if (sql.includes('FROM ingested_resources')) return { rows: loaded };
             if (sql.startsWith('INSERT INTO ingest_jobs')) return { rows: queued };
             if (sql.includes('UPDATE ingest_jobs')) return { rows: completed };
@@ -38,8 +38,7 @@ describe('enqueueJob', () => {
         const sql = client.query.mock.calls.map(call => call[0]);
         expect(sql[0]).toBe('BEGIN');
         expect(sql[1]).toContain('pg_advisory_xact_lock');
-        expect(sql[2]).toContain('FROM resources r JOIN datasets');
-        expect(sql[2]).toContain('FOR KEY SHARE OF r, d');
+        expect(sql[2]).toContain('canquery_lock_public_resource');
         expect(sql[3]).toContain('FROM ingested_resources');
         expect(sql[4]).toMatch(/ON CONFLICT \(resource_id\).*DO UPDATE/s);
         expect(sql[5]).toBe('COMMIT');
@@ -79,7 +78,7 @@ describe('enqueueJob', () => {
         const client = clientFor();
         client.query.mockImplementation(async (sql) => {
             if (sql.startsWith('INSERT INTO ingest_jobs')) throw new Error('database failed');
-            if (sql.includes('FROM resources r JOIN datasets')) return { rows: [{ id: 'resource-3' }] };
+            if (sql.includes('canquery_lock_public_resource')) return { rows: [{ present: true }] };
             if (sql.includes('FROM ingested_resources')) return { rows: [] };
             return { rows: [] };
         });
@@ -94,7 +93,7 @@ describe('enqueueJob', () => {
         await expect(enqueueJob('retired')).rejects.toMatchObject({ statusCode: 404 });
         const sql = client.query.mock.calls.map(call => call[0]);
         expect(sql[1]).toContain('pg_advisory_xact_lock');
-        expect(sql[2]).toContain('FROM resources r JOIN datasets');
+        expect(sql[2]).toContain('canquery_lock_public_resource');
         expect(sql).not.toEqual(expect.arrayContaining([expect.stringContaining('FROM ingested_resources')]));
         expect(sql.some(statement => statement.startsWith('INSERT INTO ingest_jobs'))).toBe(false);
         expect(sql.at(-1)).toBe('ROLLBACK');

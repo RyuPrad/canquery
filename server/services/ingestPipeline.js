@@ -214,7 +214,8 @@ async function ingestResourceLocked(resource, caps, tableName, job, deadline) {
 
             // Lock the catalogue row only for publication. A sync can continue
             // throughout the download/COPY, but cannot race this final check.
-            const current = await client.query('SELECT * FROM resources WHERE id = $1 FOR SHARE', [resource.id]);
+            await client.query('SELECT public.canquery_lock_resource_publication($1)', [resource.id]);
+            const current = await client.query('SELECT * FROM resources WHERE id = $1', [resource.id]);
             if (!current.rows[0] || resourceVersion(current.rows[0]) !== resourceVersion(resource)) {
                 throw budgetError('source changed during preparation', 'SOURCE_CHANGED');
             }

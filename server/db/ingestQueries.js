@@ -13,10 +13,8 @@ async function enqueueJob(resourceId, commercial = null) {
         // Retirement can finish while admission waits for its resource lock.
         // Recheck both public identities after that wait and retain row locks
         // until admission commits so a concurrent removal cannot orphan a job.
-        const resource = await client.query(`SELECT r.id
-            FROM resources r JOIN datasets d ON d.id = r.dataset_id
-            WHERE r.id = $1 FOR KEY SHARE OF r, d`, [resourceId]);
-        if (!resource.rows.length) throw new AppError('Resource not found', 404);
+        const resource = await client.query('SELECT public.canquery_lock_public_resource($1) AS present', [resourceId]);
+        if (!resource.rows[0]?.present) throw new AppError('Resource not found', 404);
 
         // This is a separate READ COMMITTED statement after the advisory lock,
         // so it observes a worker commit that happened while this request was
