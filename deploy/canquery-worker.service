@@ -9,11 +9,13 @@ After=canquery-egress-firewall.service
 
 [Service]
 Type=simple
-User=canquery
-Group=canquery
-WorkingDirectory=/home/canquery/canquery/server
+User=canquery-ingest
+Group=canquery-ingest
+WorkingDirectory=/opt/canquery/current/server
 ExecStart=/usr/bin/node scripts/ingest-worker.js
+Environment=TMPDIR=/tmp
 Environment=NODE_ENV=production
+EnvironmentFile=/etc/canquery/runtime/canquery-ingest.env
 Restart=on-failure
 RestartSec=10
 KillSignal=SIGTERM
@@ -28,8 +30,14 @@ MemoryHigh=768M
 MemoryMax=1G
 
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/canquery/canquery/server /tmp
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
 PrivateTmp=true
 NoNewPrivileges=true
 

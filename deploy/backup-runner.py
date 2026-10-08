@@ -89,13 +89,15 @@ def retain_two(directory, databases, verified_files):
     return removed
 
 
-def configuration_archive(paths, destination):
+def configuration_archive(paths, destination, recovery_roles=None):
     with tarfile.open(destination, 'w:gz', dereference=False) as archive:
         for value in paths:
             path = pathlib.Path(value)
             if not path.is_absolute() or not path.exists() or path.is_symlink():
                 raise ValueError('Missing or unsafe required recovery configuration')
             archive.add(path, arcname=str(path).lstrip('/'), recursive=True)
+        if recovery_roles is not None:
+            archive.add(recovery_roles, arcname='recovery/postgres-globals.sql')
     os.chmod(destination, 0o600)
 
 
@@ -130,7 +132,15 @@ def run(config):
     with tempfile.TemporaryDirectory(prefix='recovery-', dir=status_path.parent) as temporary:
         temporary = pathlib.Path(temporary)
         configuration = temporary / 'configuration.tar.gz'
-        configuration_archive(config['recovery_paths'], configuration)
+        roles = temporary / 'postgres-globals.sql'
+        with roles.open('wb') as output:
+            subprocess.run(['runuser', '-u', 'postgres', '--', 'pg_dumpall', '--globals-only'],
+                           stdout=output, stderr=subprocess.DEVNULL, check=True, timeout=120)
+        roles.chmod(0o600)
+        # Keep the global roles/memberships separately identified inside the
+        # encrypted configuration bundle. They include private password hashes;
+        # a restore must reconcile shared-host roles before applying this file.
+        configuration_archive(config['recovery_paths'], configuration, recovery_roles=roles)
         files.append({'name': 'configuration.tar.gz', 'path': str(configuration), 'kind': 'configuration'})
         release = pathlib.Path(config['release_manifest'])
         if release.exists():
