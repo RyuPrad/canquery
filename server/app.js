@@ -25,6 +25,7 @@ const { commercialApi, credentialLimiter } = require('./middleware/commercialApi
 const { authHandler } = require('./services/authRuntime');
 const { receiveWebhook } = require('./services/billingService');
 
+const catchAsync = require('./utils/catchAsync');
 const app = express();
 
 app.set('trust proxy', 1);
@@ -92,10 +93,10 @@ app.use((req, res, next) => {
 });
 
 // Signature verification and Better Auth both need the original request stream.
-app.post('/api/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), async(req,res)=>{
+app.post('/api/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), catchAsync(async(req,res)=>{
     await receiveWebhook(req.body,req.headers['stripe-signature']);
     res.set('Cache-Control','no-store').json({received:true});
-});
+}));
 app.all('/api/auth/*splat', authHandler);
 app.use(express.json({limit:'64kb'}));
 app.use('/api/account', require('./routes/account'));

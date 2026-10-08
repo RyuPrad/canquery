@@ -3,6 +3,8 @@ const pool = require('../db/pool');
 const { config } = require('../services/commercialConfig');
 const { operationFor, isPublicOperation } = require('../services/commercialOperations');
 const rateLimit = require('express-rate-limit');
+const { attachMeteredResponse } = require('./meteredResponse');
+const { track } = require('../utils/runtimeWork');
 
 // Failed credential attempts must be bounded before they can query PostgreSQL.
 // Successful keyed traffic uses its durable per-account limits instead.
@@ -19,7 +21,7 @@ function privateResponse(res) {
     res.setHeader('Cache-Control','private, no-store');
     res.vary('Authorization');
 }
-async function commercialApi(req,res,next) {
+async function admitRequest(req,res,next) {
     try {
         if (isPublicOperation(req)) return next();
         const settings = config();
@@ -45,38 +47,11 @@ async function commercialApi(req,res,next) {
         res.setHeader('X-CanQuery-Credits-Remaining',String(context.remaining));
         res.setHeader('X-CanQuery-Credits-Reset',new Date(context.resets_at).toISOString());
         if (!operation.cost) return next();
-        let finishing;
-        const finish = charge => {
-            finishing = (finishing || Promise.resolve()).then(()=>queries.settle(context.id,charge));
-            return finishing;
-        };
-        const heartbeat = setInterval(()=>{
-            pool.query("UPDATE commercial.requests SET expires_at=now()+interval '5 minutes' WHERE id=$1 AND state='reserved'",[context.id])
-                .catch(()=>res.destroy());
-        },30000);
-        heartbeat.unref();
-        const deadline = setTimeout(()=>res.destroy(),4*60000);
-        deadline.unref();
-        const end = res.end;
-        let ending = false;
-        res.end = function(...args) {
-            if (ending) return this;
-            ending = true;
-            finish(res.statusCode >= 200 && res.statusCode < 400).then(()=>{
-                if (!res.destroyed) end.apply(res,args);
-            }).catch(()=>res.destroy());
-            return this;
-        };
-        res.on('close',()=>{
-            clearInterval(heartbeat);
-            clearTimeout(deadline);
-            if (!res.writableFinished) {
-                (finishing || Promise.resolve()).catch(()=>{}).then(()=>queries.abortRequest(context.id)).catch(()=>{});
-            }
-        });
+        attachMeteredResponse(res, context, { queries, pool });
         next();
     } catch (err) {
         next(err.isOperational ? err : queries.failure('API accounting is temporarily unavailable','ACCOUNTING_UNAVAILABLE',503));
     }
 }
+const commercialApi = (req, res, next) => track(admitRequest(req, res, next));
 module.exports = { commercialApi, credentialLimiter, operationFor };

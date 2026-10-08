@@ -20,6 +20,8 @@ Environment=NODE_ENV=production
 EnvironmentFile=-/etc/canquery-map-read.env
 Restart=on-failure
 RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=300
 
 # Hardening
 ProtectSystem=strict
