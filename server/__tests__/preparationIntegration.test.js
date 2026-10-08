@@ -288,13 +288,13 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         const result = await withSnapshot(id, () => queryResource(id, { filters: JSON.stringify({ code: '00123' }) }));
         expect(Object.keys(result.records[0])).toEqual(['_id', ...row.ingested_columns.map(column => column.id)]);
         expect(result.records[0].code).toBe('00123');
-        await withSnapshot(id, async () => {
-            const exported = await queryResourceForExport(id, { filters: JSON.stringify({ code: '00123' }) });
-            const records = [];
-            for await (const record of exported.records) records.push(record);
-            expect(records).toHaveLength(1);
-            expect(records[0].code).toBe('00123');
+        const records = await queryResourceForExport(id, { filters: JSON.stringify({ code: '00123' }) }, async exported => {
+            const consumed = [];
+            for await (const record of exported.records) consumed.push(record);
+            return consumed;
         });
+        expect(records).toHaveLength(1);
+        expect(records[0].code).toBe('00123');
         const indexes = await pool.query('SELECT indisunique FROM pg_index WHERE indrelid=$1::regclass', ['store.' + prepared.tableName]);
         expect(indexes.rows).toEqual([{ indisunique: true }]);
         const size = await pool.query('SELECT pg_total_relation_size($1)::text AS bytes', ['store.' + prepared.tableName]);
