@@ -64,6 +64,21 @@ class ReleaseArtifactTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'symlink'):
             release.package(self.root, Path(self.temp.name) / 'out', self.commit)
 
+    def test_backup_source_requires_a_bundled_standalone_operations_artifact(self):
+        (self.root / 'deploy').mkdir()
+        (self.root / 'deploy/backup-upload.cjs').write_text('module.exports = {};\n')
+        self.git('add', 'deploy/backup-upload.cjs')
+        self.git('commit', '-qm', 'Backup fixture')
+        commit = self.git('rev-parse', 'HEAD')
+        with self.assertRaisesRegex(ValueError, 'standalone backup uploader'):
+            release.package(self.root, Path(self.temp.name) / 'out', commit)
+        (self.root / 'operations').mkdir()
+        (self.root / 'operations/backup-upload.cjs').write_text('module.exports = {};\n')
+        artifact = release.package(self.root, Path(self.temp.name) / 'out', commit)
+        with tarfile.open(artifact) as archive:
+            manifest = json.load(archive.extractfile('release-manifest.json'))
+            self.assertIn('operations/backup-upload.cjs', manifest['files'])
+
 
 if __name__ == '__main__':
     unittest.main()

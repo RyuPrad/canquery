@@ -9,44 +9,27 @@ Placeholders to substitute: `<your-domain>` (the public hostname), `<password>`
 (a generated DB password), `<contact-email>` (a polite contact for the upstream
 User-Agent).
 
-Prerequisites: Node 20+, PostgreSQL 16 with PostGIS 3, and nftables on the target host.
+Prerequisites: Node 22 (CI pins 22.22.1), PostgreSQL 16 with PostGIS 3.5, and
+nftables on the target host.
 
-## 1. App user + code
+## 1. Deployment ownership and verified releases
 
-```bash
-adduser --disabled-password --gecos 'canquery app' canquery
-sudo -u canquery git clone <repo-url> /home/canquery/canquery
-cd /home/canquery/canquery/server && sudo -u canquery npm install --omit=dev
-mkdir -p /home/canquery/logs && chown canquery:canquery /home/canquery/logs
-```
+Use the [immutable release procedure](immutable-releases.md) for new production
+installations and routine upgrades. CI publishes the exact reviewed source and
+tested frontend with a full hash manifest. Stage dependencies as a deployment
+user, then seal and promote root-owned releases. API, ingest and map runtime
+identities must be separate from deployment ownership and each other.
 
-### Existing-host upgrades
+Keep the existing checkout, ignored configuration, old assets and backup evidence
+when converting an established host. Do not merge into or compile inside the
+active runtime directory. The release helper previews by default, refuses source
+or predecessor drift, and does not apply migrations or restart services. Use the
+selected release's runbook for those coordinated operations. Historical
+`opencanada` names may remain where installed; they are not fresh-install paths.
 
-Run repository and dependency operations as the application user. Do not fetch,
-merge, install dependencies, or build the client as `root`; root-owned Git
-objects or generated files can prevent the systemd user from completing a later
-deployment.
-
-Before an upgrade, confirm the checkout is clean and that its Git metadata is
-owned by the application account. If a prior administrative deployment left
-only the `.git` metadata with the wrong owner, repair that exact directory (not
-the host, home directory, or application data) before continuing:
-
-```bash
-APP_ROOT=/home/canquery/canquery
-sudo -u canquery git -C "$APP_ROOT" status --short --branch
-sudo find "$APP_ROOT/.git" -xdev ! -user canquery -print -quit
-sudo chown -R canquery:canquery "$APP_ROOT/.git"
-sudo -u canquery git -C "$APP_ROOT" fetch --prune origin
-sudo -u canquery git -C "$APP_ROOT" merge --ff-only origin/main
-sudo -u canquery npm ci --prefix "$APP_ROOT/server" --omit=dev
-sudo -u canquery npm ci --prefix "$APP_ROOT/client"
-sudo -u canquery npm run build --prefix "$APP_ROOT/client"
-```
-
-Re-run the ownership check after the upgrade and verify the checkout remains
-clean before restarting services. Substitute the real application user and
-path for deployments that retain the historical `opencanada` names.
+The remaining infrastructure examples describe the individual subsystems. Adapt
+their paths to the sealed `/opt/canquery/current` release and external private
+configuration; never replay fresh database/user setup against an existing host.
 
 ## 2. Database
 
@@ -57,7 +40,9 @@ psql -c "CREATE DATABASE canquery OWNER canquery"
 psql -d canquery -c "CREATE EXTENSION postgis"
 ```
 
-Create `/home/canquery/canquery/server/.env` from `.env.example`:
+Create each service's private environment from `server/.env.example` outside
+the release. Root-controlled systemd `EnvironmentFile` directives load it;
+never copy a whole historical environment over a running service's settings:
 
 ```
 NODE_ENV=production
@@ -82,15 +67,18 @@ MAP_R2_BUDGET_GB=100
 
 PMTiles uses two bucket-scoped S3 credentials. Copy the provided example files
 to `/etc/canquery-map-read.env` and `/etc/canquery-map-write.env`, fill them
-without shell history, set `root:<app-group>` ownership and mode `0640`, and
-grant the API credential Object Read only. Grant the worker credential Object
-Read & Write only. Keep the R2 bucket private: no public development URL,
+without shell history. Keep them root-owned mode `0600` for systemd to load;
+the API and map worker must use separate Unix identities and cannot read each
+other's credential files. Grant the API credential Object Read only and the
+worker credential Object Read & Write only. Keep the R2 bucket private: no public development URL,
 custom domain, or browser CORS policy is required.
 
-Never commit `.env` (it is gitignored). Apply migrations:
+Never commit private environment files. Apply required forward migrations only
+at the release's reviewed database boundary, with its explicit private database
+configuration and the deployment account:
 
 ```bash
-sudo -u canquery npm run migrate --prefix /home/canquery/canquery/server
+sudo -u canquery-deploy npm run migrate --prefix /opt/canquery/staging/<commit>/server
 ```
 
 ## 3. Firewalls
@@ -349,13 +337,12 @@ catalogue and user-loaded tables.
 
 ## 8. Frontend build + reverse proxy
 
-The API serves `client/dist` in production, so just build it next to the server:
-
-```bash
-cd /home/canquery/canquery/client && npm install && npm run build
-# the API serves ../client/dist automatically; restart it after a client rebuild:
-systemctl restart canquery-api
-```
+The API serves the CI-verified `client/dist` included in its sealed release.
+Promote that artifact using [immutable releases](immutable-releases.md); routine
+production deployment does not compile the frontend or run the full suite on
+the shared host. Retain previous hashed assets and publish the new index last
+before the atomic release switch. Restart only the services affected by the
+reviewed change after their compatibility and migration gates pass.
 
 Then point your reverse proxy at the API. A Caddy example is in
 `deploy/caddy-snippet.txt`; the equivalent in nginx is a simple `proxy_pass` to

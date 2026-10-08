@@ -33,7 +33,7 @@ def package(root, output, expected_commit):
                 continue
             if not entry.isfile() or Path(entry.name).name == '.env':
                 raise ValueError('Release source contains an unsupported file: ' + entry.name)
-            files[entry.name] = (archive.extractfile(entry).read(), entry.mode)
+            files[entry.name] = (archive.extractfile(entry).read(), 0o755 if entry.mode & 0o111 else 0o644)
     frontend = root / 'client' / 'dist'
     if not (frontend / 'index.html').is_file() or not (frontend / 'asset-manifest.json').is_file():
         raise ValueError('The verified frontend index and asset manifest are required')
@@ -43,6 +43,11 @@ def package(root, output, expected_commit):
             raise ValueError('Frontend contains a symlink: ' + str(path))
         if path.is_file():
             files[path.relative_to(root).as_posix()] = (path.read_bytes(), 0o644)
+    if 'deploy/backup-upload.cjs' in files:
+        uploader = root / 'operations/backup-upload.cjs'
+        if uploader.is_symlink() or not uploader.is_file() or uploader.stat().st_size == 0:
+            raise ValueError('The bundled standalone backup uploader is required')
+        files['operations/backup-upload.cjs'] = (uploader.read_bytes(), 0o644)
     timestamp = int(command(root, 'git', 'show', '-s', '--format=%ct', commit))
     node = command(root, 'node', '--version')
     if not node.startswith('v22.'):
@@ -81,9 +86,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--output-dir', required=True)
+    parser.add_argument('--source-root', default=str(Path(__file__).resolve().parent.parent))
     args = parser.parse_args()
     try:
-        print(package(Path(__file__).resolve().parent.parent, args.output_dir, args.commit))
+        print(package(args.source_root, args.output_dir, args.commit))
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, str(error) + '\n')
 
