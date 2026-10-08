@@ -39,8 +39,10 @@ async function admitRequest(req,res,next) {
         if (!settings.enabled) throw queries.failure('API accounts are not available yet','ACCOUNTS_UNAVAILABLE',503);
         if (!/^Bearer [^ ]+$/.test(header)) throw queries.failure('Use Authorization: Bearer YOUR_API_KEY','INVALID_API_KEY',401);
         const identity = await queries.authenticate(header.slice(7));
+        req.signal?.throwIfAborted();
         const operation = operationFor(req);
         const context = await queries.reserve(identity,operation);
+        if (req.signal?.aborted) { await queries.abortRequest(context.id); return; }
         req.commercial = context;
         for (const name of ['if-none-match','if-modified-since']) delete req.headers[name];
         res.setHeader('X-CanQuery-Credits-Limit',String(context.limit));
@@ -50,6 +52,7 @@ async function admitRequest(req,res,next) {
         attachMeteredResponse(res, context, { queries, pool });
         next();
     } catch (err) {
+        if (req.signal?.aborted) return;
         next(err.isOperational ? err : queries.failure('API accounting is temporarily unavailable','ACCOUNTING_UNAVAILABLE',503));
     }
 }

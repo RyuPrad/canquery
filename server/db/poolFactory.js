@@ -17,7 +17,10 @@ function createPool({ longRunning = false } = {}) {
         connectionString: process.env.CANQUERY_DATABASE_URL || process.env.OPENCANADA_DATABASE_URL,
         connectionTimeoutMillis: envInteger('DB_CONNECTION_TIMEOUT_MS', 5000, 1),
         idleTimeoutMillis: envInteger('DB_IDLE_TIMEOUT_MS', 30000, 1),
-        application_name: longRunning ? 'canquery-long-running' : 'canquery-api'
+        application_name: longRunning ? 'canquery-long-running' : 'canquery-api',
+        // Interrupt abandoned statements promptly after a request destroys its
+        // leased connection; otherwise CPU-heavy SQL can outlive the socket.
+        options: '-c client_connection_check_interval=1000'
     };
 
     const options = longRunning

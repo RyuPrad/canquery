@@ -10,6 +10,7 @@ const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { getSource } = require('../config/catalogSources');
 const { withSnapshot } = require('../db/snapshotRead');
 const { validateSnapshot, requireSnapshot } = require('./snapshotIdentity');
+const { requestSignal } = require('../utils/requestContext');
 const { resolveLocalQueryColumns } = require('../utils/columnIdentifiers');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000, maxEntries: 1000 });
@@ -67,8 +68,11 @@ function validateQueryText(q) {
 // Metadata lookup uses a short pool query. Only a local execution owns a
 // snapshot lease; remote CKAN I/O never retains a PostgreSQL client.
 async function withResource(id, expected, consume) {
+    const signal = requestSignal();
+    signal?.throwIfAborted();
     validateSnapshot(expected);
     const initial = await getResourceById(id);
+    signal?.throwIfAborted();
     if (!initial) throw new AppError('Resource not found', 404);
     if (computeQueryMode(initial) !== 'ingested') {
         requireSnapshot(initial, expected);
@@ -80,7 +84,7 @@ async function withResource(id, expected, consume) {
         requireSnapshot(current, expected);
         if (computeQueryMode(current) !== 'ingested') return { fallback: current };
         return { value: await consume(current) };
-    });
+    }, undefined, { signal });
     // A refresh/eviction may have changed the backend before lock acquisition.
     return result.fallback ? consume(result.fallback) : result.value;
 }
@@ -154,9 +158,9 @@ function planQuery(row, options = {}, exporting = false) {
 async function executeDatastore(plan, cached) {
     const { target, queryText, filters, sort, limit, offset } = plan;
     const read = () => datastoreSearch({ resourceId: target.resourceId, baseUrl: target.baseUrl,
-        q: queryText, filters, sort, limit, offset });
+        q: queryText, filters, sort, limit, offset, signal: requestSignal() });
     const key = JSON.stringify([target.sourceId, target.resourceId, queryText || null, filters || null, sort || null, limit, offset]);
-    const result = cached ? await proxyCache.get(key, read) : await read();
+    const result = cached ? await proxyCache.get(key, read, { deduplicate: !requestSignal() }) : await read();
     if (!result) throw new AppError('Upstream datastore unavailable', 502);
     return result;
 }
@@ -174,7 +178,7 @@ async function queryResource(id, options = {}) {
         else {
             const read = () => plan.aggregation ? aggregateStoreTable(plan.options) : queryStoreTable(plan.options);
             result = plan.aggregation && row.ingested_at
-                ? await aggregateCache.get(JSON.stringify([row.table_name, row.ingested_at, plan.options]), read)
+                ? await aggregateCache.get(JSON.stringify([row.table_name, row.ingested_at, plan.options]), read, { deduplicate: !requestSignal() })
                 : await read();
             await touchLastAccessed(id, row.table_name);
         }
@@ -221,7 +225,7 @@ async function profileResource(id, options = {}) {
         if (mode === 'ingested') {
             const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
             const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
-            const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }));
+            const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }), { deduplicate: !requestSignal() });
             await touchLastAccessed(id, row.table_name);
             return { ...resultContext(row), query_mode: mode, row_count: profile.rowCount, columns: profile.columns };
         }

@@ -1,6 +1,7 @@
 const app = require('./app');
 const { createShutdown } = require('./services/apiLifecycle');
 const port = process.env.PORT || 3100;
+const host = process.env.HOST?.trim() || '127.0.0.1';
 
 async function closeResources() {
     await require('./services/authRuntime').closeAuth();
@@ -15,7 +16,7 @@ async function start() {
         await require('./services/authRuntime').getAuth();
         stopMaintenance = require('./services/commercialMaintenance').startMaintenance();
     }
-    const server = app.listen(port, () => console.log('canquery-api listening on :' + port));
+    const server = app.listen(port, host, () => console.log('canquery-api listening on ' + host + ':' + port));
     const shutdown = createShutdown(server, { stopMaintenance, closeResources });
     process.on('SIGTERM', () => void shutdown('SIGTERM'));
     process.on('SIGINT', () => void shutdown('SIGINT'));

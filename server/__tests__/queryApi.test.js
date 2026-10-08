@@ -29,7 +29,7 @@ describe('query API datastore path', () => {
         expect(res.body.meta.source).toBe('canquery');
         expect(res.body.meta.sources).toEqual(['oshawa-hub']);
         expect(res.body.meta.provenance.primary_license.url).toBe('https://example.test/licence');
-        expect(ckan.datastoreSearch).toHaveBeenCalledWith({ resourceId: 'ds-1', q: undefined, filters: undefined, sort: undefined, limit: 2, offset: 0 });
+        expect(ckan.datastoreSearch).toHaveBeenCalledWith({ resourceId: 'ds-1', baseUrl: undefined, q: undefined, filters: undefined, sort: undefined, limit: 2, offset: 0, signal: expect.any(AbortSignal) });
     });
 
     test('datastore queries are logged as hits', async () => {

@@ -70,3 +70,17 @@ npm --prefix server test -- --runTestsByPath __tests__/queryRuntime.test.js
 
 Run the disposable PostgreSQL preparation integration suite for reader/refresh
 races. Production rollout does not need a migration for snapshot tokens.
+
+HTTP query work has a 110-second no-response-progress deadline, below the
+Cloudflare proxy read timeout. JSON receives `504 REQUEST_TIMEOUT` before headers;
+an already-started CSV closes and must be discarded. Streaming writes reset this
+progress clock; keyed requests retain their separate four-minute maximum.
+Disconnect/timeout cancels CKAN requests and retry waits and destroys a local
+reader's connection. PostgreSQL checks disconnected clients every second and
+retirement regains the snapshot lock. A shared preparation job remains independent
+of its HTTP polling/admission connection.
+
+Completed cached values remain reusable. Request-owned upstream/local computations
+are not shared in flight, so cancelling one visitor cannot abort another visitor's
+work. The API binds `127.0.0.1` by default (`HOST` overrides for an explicitly reviewed
+network setup); Caddy supplies the one trusted proxy hop.

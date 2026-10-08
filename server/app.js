@@ -39,6 +39,7 @@ app.use(helmet({
     }
 }));
 app.use(requestId);
+app.use(require('./middleware/requestLifetime').requestLifetime());
 app.use((_req, res, next) => {
     res.set('Access-Control-Expose-Headers', 'X-Request-Id, X-CanQuery-Snapshot, X-CanQuery-Prepared-At, X-CanQuery-Retrieved-At');
     next();

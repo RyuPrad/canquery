@@ -49,7 +49,7 @@ describe('versioned map-index queue', () => {
         expect(db.query.mock.calls[0][0]).toContain("attempts >= $1 THEN 'failed'");
         expect(db.query.mock.calls[0][0]).toContain('RETURNING resource_id, status');
         expect(db.query.mock.calls[0][1]).toEqual([3]);
-        expect(db.query.mock.calls[1][0]).toContain('FOR UPDATE SKIP LOCKED');
+        expect(db.query.mock.calls[1][0]).toContain('FOR UPDATE OF j SKIP LOCKED');
         expect(db.query.mock.calls[1][0]).toContain("candidate->>'expectedBytes'");
         expect(db.query.mock.calls[1][0]).toContain("candidate->>'expectedRows'");
         expect(db.query.mock.calls[1][0]).toContain('NULLS LAST');

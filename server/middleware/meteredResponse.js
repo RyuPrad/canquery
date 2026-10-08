@@ -33,6 +33,7 @@ function attachMeteredResponse(res, context, { queries, pool, deadlineMs = 24000
     res.end = function(...args) {
         if (ending) return this;
         ending = true;
+        (res.locals ||= {}).meteredResponseEnding = true;
         finalize(res.statusCode >= 200 && res.statusCode < 400).then(() => {
             if (!res.destroyed) end.apply(res, args);
         }).catch(() => res.destroy());
