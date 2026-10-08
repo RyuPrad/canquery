@@ -3,6 +3,17 @@ const { listArticles } = require('../services/blogContent');
 const { escapeHtml } = require('../services/seoMeta');
 
 describe('server-rendered crawl snapshots', () => {
+    it('scopes analytics privacy promises and discloses delivery and backups without JavaScript', () => {
+        const html = snapshot.staticSnapshot('privacy');
+        expect(html).toContain('Product analytics do not store raw network addresses.');
+        expect(html).toContain('Account and password pages do not load analytics.');
+        expect(html).toContain('Cloudflare process request information');
+        expect(html).toContain('Browser analytics opt-outs do not prevent this necessary request processing.');
+        expect(html).toContain('private Cloudflare R2 storage');
+        expect(html).toContain('Data removed from the live service may remain in a retained backup');
+        expect(html).not.toContain('No stored raw network addresses.');
+    });
+
     it('renders the homepage explanation and first three published guides in catalogue order', () => {
         const html = snapshot.staticSnapshot('home');
         const guides = listArticles({ lang: 'en' });
