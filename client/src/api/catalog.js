@@ -1,4 +1,5 @@
 import { getJSON, postJSON } from './client.js';
+import { resourceResponse, queryResponse, listResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
 
 export function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, cursor } = {}) {
   return getJSON('/web-api/v1/datasets', { q, org, format, keyword, place, source, mappable, limit, cursor });
@@ -9,21 +10,21 @@ export function fetchDataset(idOrName) {
 }
 
 export async function fetchResource(id, options) {
-  const result = await getJSON('/web-api/v1/resources/' + encodeURIComponent(id), undefined, options);
+  const result = await getJSON('/web-api/v1/resources/' + encodeURIComponent(id), undefined, { ...options, validate: resourceResponse });
   if (result.data?.map?.tiles) result.data.map.tiles = result.data.map.tiles.replace('/api/v1/', '/web-api/v1/');
   return result;
 }
 
 export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot } = {}, options) {
-  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot }, options);
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot }, { ...options, validate: queryResponse });
 }
 
 export function fetchResourceProfile(id, options = {}) {
-  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/profile', { snapshot: options.snapshot }, options);
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/profile', { snapshot: options.snapshot }, { ...options, validate: profileResponse });
 }
 
 export function prepareResource(id) {
-  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/prepare');
+  return postJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/prepare', { validate: preparationResponse });
 }
 
 export function recordResourceActivity(id, options) {
@@ -35,11 +36,11 @@ export function enqueueIngest(id) {
 }
 
 export function fetchJob(id, options) {
-  return getJSON('/web-api/v1/jobs/' + encodeURIComponent(id), undefined, options);
+  return getJSON('/web-api/v1/jobs/' + encodeURIComponent(id), undefined, { ...options, validate: jobResponse });
 }
 
 export function fetchOrganizations({ q, place, source, limit, cursor } = {}, options) {
-  return getJSON('/web-api/v1/organizations', { q, place, source, limit, cursor }, options);
+  return getJSON('/web-api/v1/organizations', { q, place, source, limit, cursor }, { ...options, validate: listResponse });
 }
 
 export function fetchOrganization(name) {
@@ -76,7 +77,7 @@ export function fetchPlace(idOrSlug) {
 }
 
 export function fetchSources({ place } = {}, options) {
-  return getJSON('/web-api/v1/sources', { place }, options);
+  return getJSON('/web-api/v1/sources', { place }, { ...options, validate: listResponse });
 }
 
 export function fetchResourceMap(id, { bbox, zoom, limit, signal } = {}) {
