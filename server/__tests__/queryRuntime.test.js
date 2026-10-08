@@ -142,3 +142,14 @@ test('HTTP query, profile and CSV share the same public snapshot contract', asyn
     expect(unavailable.body.code).toBe('SNAPSHOT_UNAVAILABLE');
     expect(unavailable.headers['content-disposition']).toBeUndefined();
 });
+
+
+test('profile cache follows corrected schema even when serving table and preparation time are unchanged', async () => {
+    const row = { ...local, id: 'profile-schema-repair', table_name: 'r_schema_repair', ingested_columns: [{ id: 'old', type: 'TEXT' }] };
+    catalog.getResourceById.mockResolvedValue(row);
+    store.profileStoreTable.mockImplementation(async ({ columns }) => ({ rowCount: 1, columns }));
+    expect((await service.profileResource(row.id)).columns[0].id).toBe('old');
+    catalog.getResourceById.mockResolvedValue({ ...row, ingested_columns: [{ id: 'canonical', type: 'TEXT', legacy_ids: ['old'] }] });
+    expect((await service.profileResource(row.id)).columns[0].id).toBe('canonical');
+    expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
+});

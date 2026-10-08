@@ -224,7 +224,7 @@ async function profileResource(id, options = {}) {
         const mode = computeQueryMode(row);
         if (mode === 'ingested') {
             const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
-            const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null]);
+            const cacheKey = JSON.stringify([row.table_name, row.ingested_at || null, columns]);
             const profile = await profileCache.get(cacheKey, () => profileStoreTable({ tableName: row.table_name, columns }), { deduplicate: !requestSignal() });
             await touchLastAccessed(id, row.table_name);
             return { ...resultContext(row), query_mode: mode, row_count: profile.rowCount, columns: profile.columns };
