@@ -304,7 +304,7 @@ const STATIC_COPY = {
     },
     privacy: {
         title: 'Privacy and analytics',
-        summary: 'Learn how CanQuery uses cookie-free, self-hosted analytics and honors browser privacy signals.',
+        summary: 'Learn about CanQuery product analytics, browser opt-outs, account data, hosting and security processing, and encrypted recovery backups.',
         links: [{ path: '/', label: 'Return to CanQuery' }]
     }
 };
@@ -321,6 +321,18 @@ function homeExplanation() {
     return '<section><h2>How CanQuery works</h2><ol>' + steps.map(step =>
         '<li><h3>' + text(step.title) + '</h3><p>' + text(step.summary) + '</p></li>'
     ).join('') + '</ol></section>';
+}
+
+function privacyExplanation() {
+    const sections = [
+        { title: 'Product analytics and browser controls',
+            summary: 'CanQuery uses cookie-free, self-hosted product analytics. Product analytics do not store raw network addresses. Do Not Track and Global Privacy Control prevent the analytics tracker and heatmap recorder from loading. Account and password pages do not load analytics.' },
+        { title: 'Hosting, delivery and security',
+            summary: 'CanQuery’s hosting provider and Cloudflare process request information, including network addresses, requested URLs and query parameters, and HTTP headers, to deliver and protect the service. Cloudflare provides the content delivery network and request protection. Browser analytics opt-outs do not prevent this necessary request processing. The product analytics limits above do not describe provider security logs or their retention.' },
+        { title: 'Recovery backups',
+            summary: 'Encrypted recovery copies of the application and analytics databases and required configuration are stored in private Cloudflare R2 storage. These copies include account and usage records retained by CanQuery. Backup access is restricted, and decryption keys are kept separately from the uploaded copies. Data removed from the live service may remain in a retained backup until that copy expires; backup retention is managed separately from live-service retention.' }
+    ];
+    return sections.map(section => '<section><h2>' + text(section.title) + '</h2><p>' + text(section.summary) + '</p></section>').join('');
 }
 
 function staticSnapshot(type, items = [], pagination) {
@@ -360,7 +372,8 @@ function staticSnapshot(type, items = [], pagination) {
         summary: copy.summary,
         overviewHtml: type === 'home' ? homeExplanation()
             : type === 'pricing' ? require('./developerPresentation').pricingOverview()
-                : type === 'docs' ? require('./developerPresentation').docsOverview() : '',
+                : type === 'docs' ? require('./developerPresentation').docsOverview()
+                    : type === 'privacy' ? privacyExplanation() : '',
         guides: type === 'home' ? listArticles({ lang: 'en' }).slice(0, 3).map(article => ({
             path: article.path, label: article.title, detail: article.description
         })) : [],

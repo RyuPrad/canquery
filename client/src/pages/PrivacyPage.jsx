@@ -54,6 +54,16 @@ export default function PrivacyPage() {
       </section>
 
       <section className="mt-9">
+        <h2 className="text-xl font-semibold font-display">{t('privacy.delivery_title')}</h2>
+        <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.delivery_body')}</p>
+      </section>
+
+      <section className="mt-9">
+        <h2 className="text-xl font-semibold font-display">{t('privacy.backup_title')}</h2>
+        <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.backup_body')}</p>
+      </section>
+
+      <section className="mt-9">
         <h2 className="text-xl font-semibold font-display">{t('privacy.search_console_title')}</h2>
         <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.search_console_body')}</p>
       </section>
