@@ -2,7 +2,7 @@ const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader } = require('../utils/csvTypes');
+const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader, hasLeadingZeroInteger } = require('../utils/csvTypes');
 const { quoteIdent } = require('../utils/filterGrammar');
 const { createCsvReadStream } = require('./csvRead');
 
@@ -109,8 +109,22 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
                 err.code = 'CAP_ROWS';
                 return cb(err);
             }
+            if (record.length > columns.length) {
+                const err = new Error('CSV data record ' + rowCount + ' has ' + record.length +
+                    ' columns; expected at most ' + columns.length);
+                err.code = 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH';
+                err.record = rowCount;
+                err.expectedColumns = columns.length;
+                err.actualColumns = record.length;
+                return cb(err);
+            }
             const padded = [];
             for (let i = 0; i < columns.length; i += 1) {
+                // Sample inference cannot prove lexical fidelity. Check every
+                // value before the full-file cast pass, including late codes.
+                if (['INTEGER', 'NUMERIC'].includes(columns[i].type) && hasLeadingZeroInteger(record[i])) {
+                    columns[i].type = 'TEXT';
+                }
                 padded.push(escapeCsvValue(record[i] === undefined ? null : record[i]));
             }
             cb(null, padded.join(',') + '\n');
@@ -156,6 +170,9 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
         }
     }
 
+    // Build after COPY and the single type rewrite; final publication measures
+    // pg_total_relation_size, including this index, before budget admission.
+    await client.query('CREATE UNIQUE INDEX ON ' + table + ' ("_id")');
     return { rowCount, columns };
 }
 

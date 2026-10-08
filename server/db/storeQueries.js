@@ -26,7 +26,7 @@ function buildWhereAndParams({ knownColumns, q, filters }) {
     return { whereSql, params };
 }
 
-async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, limit, offset, includeTotal = true }) {
+async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, limit, offset, includeTotal = true, snapshotRowCount }) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new AppError('invalid store table name', 500);
     }
@@ -39,8 +39,13 @@ async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, l
 
     let total = null;
     if (includeTotal) {
-        const countResult = await snapshotDb().query('SELECT count(*)::bigint AS total FROM ' + table + whereSql, params);
-        total = Number(countResult.rows[0].total);
+        const knownTotal = snapshotRowCount === null || snapshotRowCount === undefined || snapshotRowCount === ''
+            ? NaN : Number(snapshotRowCount);
+        if (!whereSql && Number.isSafeInteger(knownTotal) && knownTotal >= 0) total = knownTotal;
+        else {
+            const countResult = await snapshotDb().query('SELECT count(*)::bigint AS total FROM ' + table + whereSql, params);
+            total = Number(countResult.rows[0].total);
+        }
     }
 
     const limitIdx = params.length + 1;

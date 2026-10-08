@@ -50,7 +50,7 @@ describe('CSV column conversion', () => {
             validity: { cast_0: false, cast_1: true }
         });
         expect((await result).columns).toEqual([
-            { id: 'amount', type: 'TEXT', cast_failed: true }, { id: 'date', type: 'DATE' }
+            { id: 'amount', type: 'TEXT', original_label: 'amount', cast_failed: true }, { id: 'date', type: 'DATE', original_label: 'date' }
         ]);
         const alteration = client.query.mock.calls.find(([sql]) => typeof sql === 'string' && sql.startsWith('ALTER TABLE '))[0];
         expect(alteration).not.toContain('ALTER COLUMN "amount"');
@@ -76,7 +76,7 @@ describe('CSV column conversion', () => {
         const bytes = Buffer.from('\uFEFF' + text, 'utf16le');
         const { result, copied } = await load(encoding === 'utf16be' ? bytes.swap16() : bytes, { sniff: true });
         expect(await result).toEqual({
-            rowCount: 2, columns: [{ id: 'Place', type: 'TEXT' }, { id: 'Note', type: 'TEXT' }]
+            rowCount: 2, columns: [{ id: 'Place', type: 'TEXT', original_label: 'Place' }, { id: 'Note', type: 'TEXT', original_label: 'Note' }]
         });
         expect(copied.join('')).toBe('"Montréal","été 🐟"\n"Québec","deux lignes\nensemble"\n');
     });
@@ -84,7 +84,7 @@ describe('CSV column conversion', () => {
     test('loads quoted pipe headers and CR-only records without relaxing quote validation', async () => {
         const { result, copied } = await load('"Place | region"|Note\rMontréal|"été | automne"\r', { sniff: true });
         expect(await result).toEqual({
-            rowCount: 1, columns: [{ id: 'Place | region', type: 'TEXT' }, { id: 'Note', type: 'TEXT' }]
+            rowCount: 1, columns: [{ id: 'Place | region', type: 'TEXT', original_label: 'Place | region' }, { id: 'Note', type: 'TEXT', original_label: 'Note' }]
         });
         expect(copied.join('')).toBe('"Montréal","été | automne"\n');
     });
@@ -114,5 +114,31 @@ describe('CSV column conversion', () => {
         });
         await expect(result).rejects.toBe(error);
         expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('ROLLBACK TO SAVEPOINT'))).toBe(false);
+    });
+
+    test.each([0, 1200])('rejects overflowing rows after %i valid rows without publishing discarded cells', async preceding => {
+        const { result, client } = await load('name,value\n' + 'a,b\n'.repeat(preceding) + 'Ottawa,20,EXTRA\n');
+        await expect(result).rejects.toMatchObject({ code: 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH',
+            record: preceding + 1, expectedColumns: 2, actualColumns: 3 });
+        expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.startsWith('CREATE UNIQUE INDEX'))).toBe(false);
+    });
+
+    test('rejects even empty surplus cells and pads short rows with NULL', async () => {
+        const overflow = await load('name,value\nOttawa,20,\n');
+        await expect(overflow.result).rejects.toMatchObject({ code: 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH' });
+        const short = await load('name,value\nOttawa\n');
+        await short.result;
+        expect(short.copied.join('')).toBe('"Ottawa",\n');
+    });
+
+    test.each(['00123', '-00123', '+00123'])('preserves a leading-zero integer %s beyond the sample', async value => {
+        const { result, client, copied } = await load('code,amount\n' + '123,1.25\n'.repeat(1200) + value + ',2.5\n', {
+            validity: { cast_0: true }
+        });
+        expect((await result).columns.map(column => column.type)).toEqual(['TEXT', 'NUMERIC']);
+        expect(copied.join('')).toContain('"' + value + '","2.5"');
+        const alteration = client.query.mock.calls.find(([sql]) => typeof sql === 'string' && sql.startsWith('ALTER TABLE'))[0];
+        expect(alteration).not.toContain('ALTER COLUMN "code"');
+        expect(client.query.mock.calls.at(-1)[0]).toBe('CREATE UNIQUE INDEX ON store."r_abc" ("_id")');
     });
 });

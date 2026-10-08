@@ -15,6 +15,7 @@ const { enqueueJob } = require('../db/ingestQueries');
 const { lockIngestResource } = require('../db/ingestResourceLock');
 const { preparationFailure } = require('../services/preparationFailure');
 const { processJob } = require('../scripts/ingest-worker');
+const { previewRepair, applyRepair } = require('../scripts/repair-column-identifiers');
 
 let serial = 0;
 let verifiedDisposable = false;
@@ -230,6 +231,68 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         expect((await queryResource(id, { limit: 1 })).records).toHaveLength(1);
     });
 
+    test('late CSV overflow rejects the replacement and retains its serving snapshot', async () => {
+        const id = await seed();
+        const first = await ingestResource(await getResourceById(id), caps(csv()));
+        const invalid = 'province,amount\n' + 'ON,1\n'.repeat(1200) + 'QC,2,discarded-before-fix\n';
+        await expect(ingestResource(await modify(id), { ...caps(invalid), maxRows: 2000 }))
+            .rejects.toMatchObject({ code: 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH', record: 1201 });
+        expect((await getResourceById(id)).table_name).toBe(first.tableName);
+        expect((await queryResource(id, { limit: 1 })).records).toHaveLength(1);
+    });
+
+    test('Unicode IDs match PostgreSQL and late leading-zero codes survive materialization and CSV export', async () => {
+        const id = await seed();
+        const header = 'é'.repeat(40);
+        const text = header + ',code,amount\n' + 'x,123,1.25\n'.repeat(1200) + 'y,00123,2.5\n';
+        const prepared = await ingestResource(await getResourceById(id), { ...caps(text), maxRows: 2000 });
+        const row = await getResourceById(id);
+        const attributes = await pool.query(`SELECT attname FROM pg_attribute WHERE attrelid=$1::regclass
+            AND attnum>1 AND NOT attisdropped ORDER BY attnum`, ['store.' + prepared.tableName]);
+        expect(row.ingested_columns.map(column => column.id)).toEqual(attributes.rows.map(column => column.attname));
+        expect(row.ingested_columns[0]).toMatchObject({ original_label: header, legacy_ids: [header] });
+        expect(row.ingested_columns[1].type).toBe('TEXT');
+        const result = await withSnapshot(id, () => queryResource(id, { filters: JSON.stringify({ code: '00123' }) }));
+        expect(Object.keys(result.records[0])).toEqual(['_id', ...row.ingested_columns.map(column => column.id)]);
+        expect(result.records[0].code).toBe('00123');
+        await withSnapshot(id, async () => {
+            const exported = await queryResourceForExport(id, { filters: JSON.stringify({ code: '00123' }) });
+            const records = [];
+            for await (const record of exported.records) records.push(record);
+            expect(records).toHaveLength(1);
+            expect(records[0].code).toBe('00123');
+        });
+        const indexes = await pool.query('SELECT indisunique FROM pg_index WHERE indrelid=$1::regclass', ['store.' + prepared.tableName]);
+        expect(indexes.rows).toEqual([{ indisunique: true }]);
+        const size = await pool.query('SELECT pg_total_relation_size($1)::text AS bytes', ['store.' + prepared.tableName]);
+        expect(row.ingested_byte_size).toBe(size.rows[0].bytes);
+    });
+
+    test('scoped repair is read-only by default, skips readers and refuses manifest drift', async () => {
+        const id = await seed();
+        const header = 'é'.repeat(40);
+        await ingestResource(await getResourceById(id), caps(header + ',value\nx,y\n'));
+        const ready = await getResourceById(id);
+        const oldColumns = ready.ingested_columns.map((column, index) => index === 0 ? { id: header, type: column.type } : column);
+        await pool.query('UPDATE ingested_resources SET columns=$2::jsonb WHERE resource_id=$1', [id, JSON.stringify(oldColumns)]);
+        const manifest = await previewRepair(pool, [id]);
+        expect((await getResourceById(id)).ingested_columns).toEqual(oldColumns);
+        await withSnapshot(id, async () => {
+            expect(await applyRepair(pool, manifest)).toEqual([{ resource_id: id, status: 'busy' }]);
+        });
+        const tampered = JSON.parse(JSON.stringify(manifest));
+        tampered.resources[0].after[0].id = 'wrong';
+        await expect(applyRepair(pool, tampered)).rejects.toThrow('proposed change');
+        const receipt = await applyRepair(pool, manifest);
+        expect(receipt[0].status).toBe('repaired');
+        const fixed = await getResourceById(id);
+        expect(fixed.ingested_at).toEqual(ready.ingested_at);
+        expect(fixed.table_name).toBe(ready.table_name);
+        expect(fixed.ingested_columns[0]).toEqual({ id: 'é'.repeat(31), type: 'TEXT', legacy_ids: [header] });
+        await expect(applyRepair(pool, manifest)).rejects.toThrow('drift');
+        expect((await applyRepair(pool, await previewRepair(pool, [id])))[0].status).toBe('unchanged');
+    });
+
     test('an HTML download is rejected before reservation eviction or store DDL and preserves serving copies', async () => {
         const id = await seed();
         const peerId = await seed();
@@ -276,7 +339,7 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
             await expect(ingestResource(updated, caps(csv(2)))).rejects.toMatchObject({ code: '53100' });
             const resource = await getResourceById(id);
             expect(resource.table_name).toBe(first.tableName);
-            expect(resource.ingested_columns.find(col => col.id === 'amount')).toEqual({ id: 'amount', type: 'INTEGER' });
+            expect(resource.ingested_columns.find(col => col.id === 'amount')).toMatchObject({ id: 'amount', type: 'INTEGER' });
             expect((await queryResource(id, { limit: 1 })).records[0].amount).toBe('1');
         } finally {
             await pool.query('DROP EVENT TRIGGER IF EXISTS prepare_test_fail_rewrite');
