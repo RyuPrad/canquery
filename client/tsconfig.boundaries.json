@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["vite/client"],
+    "skipLibCheck": true
+  },
+  "files": [
+    "src/api/client.js",
+    "src/utils/resourceSchema.js",
+    "src/utils/resourceExplorerState.js",
+    "src/hooks/preparationState.js"
+  ]
+}

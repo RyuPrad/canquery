@@ -12,6 +12,11 @@ test.each(['[]', 'null', 'bad json'])('malformed filter link %s remains recovera
     .toMatchObject({ columnFilters: {}, page: 200, view: 'table' });
 });
 
+test('non-string filter values cannot escape a malformed URL into text controls', () => {
+  expect(readResourceUrl(new URLSearchParams({ cf: JSON.stringify({ code: '=0012', invalid: { nested: true }, zero: 0 }) })).columnFilters)
+    .toEqual({ code: '=0012' });
+});
+
 test('ready charts and maps do not inherit unrelated table failure state', () => {
   const state = { hasMap: true, filtersNeedPreparation: false, hasData: false, dataLoading: false,
     preparationRequired: false, downloadOnly: false, rowUnavailable: true, rowError: true };

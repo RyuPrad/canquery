@@ -2,11 +2,15 @@ export const PAGE_SIZE = 50;
 export const MAX_QUERY_OFFSET = 10000;
 export const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
 
+/** @param {URLSearchParams} params @returns {import('../api/contracts').ResourceUrlState} */
 export function readResourceUrl(params) {
+  /** @type {Record<string, string>} */
   let columnFilters = {};
   try {
     const value = JSON.parse(params.get('cf') || '{}');
-    if (value && typeof value === 'object' && !Array.isArray(value)) columnFilters = value;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      columnFilters = Object.fromEntries(Object.entries(value).filter(([, text]) => typeof text === 'string'));
+    }
   } catch { /* A malformed link starts with no column filters. */ }
   const requested = params.get('view');
   const page = Number(params.get('page'));
@@ -17,6 +21,7 @@ export function readResourceUrl(params) {
   };
 }
 
+/** @param {URLSearchParams} params @param {import('../api/contracts').ResourceUrlState} state */
 export function writeResourceUrl(params, { q, columnFilters, sort, page, view }) {
   const next = new URLSearchParams(params);
   for (const key of ['q', 'cf', 'sort', 'page', 'view']) next.delete(key);
@@ -31,6 +36,7 @@ export function writeResourceUrl(params, { q, columnFilters, sort, page, view })
 
 // This is a presentation projection, not the preparation state machine. A
 // stale serving snapshot and a running refresh can coexist independently.
+/** @param {{view: import('../api/contracts').ResourceView, hasMap: boolean, filtersNeedPreparation: boolean, hasData: boolean, dataLoading: boolean, preparationRequired: boolean, downloadOnly: boolean, rowUnavailable: boolean, rowError: boolean}} state */
 export function resourceViewState({ view, hasMap, filtersNeedPreparation, hasData,
   dataLoading, preparationRequired, downloadOnly, rowUnavailable, rowError }) {
   if (view === 'map') return hasMap ? 'map' : 'map-loading';

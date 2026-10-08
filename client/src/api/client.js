@@ -1,5 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
+/** @param {string} path @param {Record<string, unknown>} [params] */
 export function apiUrl(path, params) {
   let url = API_BASE + path;
   if (params && typeof params === 'object') {
@@ -18,6 +19,7 @@ export function apiUrl(path, params) {
 }
 
 export class ApiError extends Error {
+  /** @param {string} message @param {number} status @param {import('./contracts').ApiErrorBody | null} [body] */
   constructor(message, status, body) {
     super(message);
     this.status = status;
@@ -29,12 +31,14 @@ export class ApiError extends Error {
 export class NotFoundError extends ApiError {}
 
 export class NotIngestedError extends ApiError {
+  /** @param {string} message @param {number} status @param {import('./contracts').ApiErrorBody | null} [body] */
   constructor(message, status, body) {
     super(body?.hint || message, status, body);
   }
 }
 
 export class FileOnlyError extends ApiError {
+  /** @param {string} message @param {number} status @param {import('./contracts').ApiErrorBody | null} [body] */
   constructor(message, status, body) {
     super(message, status, body);
     this.download_url = body?.download_url;
@@ -47,6 +51,7 @@ export class FileOnlyError extends ApiError {
 export class DatastoreFilterError extends ApiError {}
 
 export class ApiProtocolError extends ApiError {
+  /** @param {number} status */
   constructor(status) {
     super('The server returned an invalid response. Please try again.', status, null);
     this.name = 'ApiProtocolError';
@@ -54,25 +59,27 @@ export class ApiProtocolError extends ApiError {
   }
 }
 
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 // Transport errors retain their HTTP meaning even when a proxy sends HTML.
 // Successful catalogue responses must satisfy the envelope contract instead
 // of turning a decoding error into null and failing later in a component.
+/** @param {Response} res @param {import('./contracts').ApiRequestOptions} [options] */
 async function decodeResponse(res, { allowNoContent = false, validate } = {}) {
   if (res.ok && res.status === 204 && allowNoContent) return null;
   let body = null;
   try {
     body = await res.json();
   } catch (error) {
-    if (error.name === 'AbortError') throw error;
+    if (isObject(error) && error.name === 'AbortError') throw error;
     if (res.ok) throw new ApiProtocolError(res.status);
   }
   if (res.ok) {
     if (!isObject(body) || !Object.hasOwn(body, 'data') ||
       (body.meta !== undefined && !isObject(body.meta)) ||
       (body.pagination !== undefined && !isObject(body.pagination)) ||
-      (validate && !validate(body))) throw new ApiProtocolError(res.status);
+      (validate && !validate({ ...body, data: body.data }))) throw new ApiProtocolError(res.status);
     return body;
   }
   if (!isObject(body)) body = null;
@@ -97,11 +104,13 @@ async function decodeResponse(res, { allowNoContent = false, validate } = {}) {
   throw new ApiError(message, res.status, body);
 }
 
+/** @param {string} path @param {Record<string, unknown>} [params] @param {import('./contracts').ApiRequestOptions} [options] */
 export async function getJSON(path, params, options = {}) {
   const res = await fetch(apiUrl(path, params), { signal: options.signal });
   return decodeResponse(res, options);
 }
 
+/** @param {string} path @param {import('./contracts').ApiRequestOptions} [options] */
 export async function postJSON(path, options = {}) {
   const res = await fetch(apiUrl(path), { method: 'POST', signal: options.signal });
   return decodeResponse(res, options);
