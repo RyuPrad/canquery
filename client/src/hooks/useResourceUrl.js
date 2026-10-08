@@ -17,15 +17,49 @@ export default function useResourceUrl(navigationKey) {
   const resetArmed = useRef(false);
   useEffect(() => {
     // Preserve the page in a newly opened link. Subsequent edits start at zero.
-    if (!resetArmed.current) { resetArmed.current = true; return; }
+    if (!resetArmed.current) {
+      resetArmed.current = true;
+      return;
+    }
     setPage(0);
   }, [debouncedQ, debouncedFilters, sort]);
   useEffect(() => {
-    const next = writeResourceUrl(searchParams, { q: debouncedQ, columnFilters: debouncedFilters, sort, page, view });
+    const next = writeResourceUrl(searchParams, {
+      q: debouncedQ,
+      columnFilters: debouncedFilters,
+      sort,
+      page,
+      view
+    });
     if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true, state: { ...location.state, resourceExplorerKey: navigationKey } });
+      setSearchParams(next, {
+        replace: true,
+        state: { ...location.state, resourceExplorerKey: navigationKey }
+      });
     }
-  }, [debouncedQ, debouncedFilters, sort, page, view, searchParams, setSearchParams, location.state, navigationKey]);
-  return { q, setQ, columnFilters, setColumnFilters, sort, setSort, page, setPage,
-    view, setView, debouncedQ, debouncedFilters };
+  }, [
+    debouncedQ,
+    debouncedFilters,
+    sort,
+    page,
+    view,
+    searchParams,
+    setSearchParams,
+    location.state,
+    navigationKey
+  ]);
+  return {
+    q,
+    setQ,
+    columnFilters,
+    setColumnFilters,
+    sort,
+    setSort,
+    page,
+    setPage,
+    view,
+    setView,
+    debouncedQ,
+    debouncedFilters
+  };
 }

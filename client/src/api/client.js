@@ -60,7 +60,7 @@ export class ApiProtocolError extends ApiError {
 }
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
-const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 // Transport errors retain their HTTP meaning even when a proxy sends HTML.
 // Successful catalogue responses must satisfy the envelope contract instead
@@ -76,19 +76,26 @@ async function decodeResponse(res, { allowNoContent = false, validate } = {}) {
     if (res.ok) throw new ApiProtocolError(res.status);
   }
   if (res.ok) {
-    if (!isObject(body) || !Object.hasOwn(body, 'data') ||
+    if (
+      !isObject(body) ||
+      !Object.hasOwn(body, 'data') ||
       (body.meta !== undefined && !isObject(body.meta)) ||
       (body.pagination !== undefined && !isObject(body.pagination)) ||
-      (validate && !validate({ ...body, data: body.data }))) throw new ApiProtocolError(res.status);
+      (validate && !validate({ ...body, data: body.data }))
+    )
+      throw new ApiProtocolError(res.status);
     return body;
   }
   if (!isObject(body)) body = null;
   const retryHeader = res.headers?.get('Retry-After');
   if (retryHeader && !body?.retry_after) {
-    const seconds = /^\d+$/.test(retryHeader) ? Number(retryHeader) : Math.ceil((Date.parse(retryHeader) - Date.now()) / 1000);
+    const seconds = /^\d+$/.test(retryHeader)
+      ? Number(retryHeader)
+      : Math.ceil((Date.parse(retryHeader) - Date.now()) / 1000);
     if (Number.isFinite(seconds) && seconds > 0) body = { ...body, retry_after: seconds };
   }
-  const message = typeof body?.error === 'string' ? body.error : 'Request failed (' + res.status + ')';
+  const message =
+    typeof body?.error === 'string' ? body.error : 'Request failed (' + res.status + ')';
   if (res.status === 404) {
     throw new NotFoundError(message, 404, body);
   }

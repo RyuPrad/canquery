@@ -9,15 +9,21 @@ export function readResourceUrl(params) {
   try {
     const value = JSON.parse(params.get('cf') || '{}');
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      columnFilters = Object.fromEntries(Object.entries(value).filter(([, text]) => typeof text === 'string'));
+      columnFilters = Object.fromEntries(
+        Object.entries(value).filter(([, text]) => typeof text === 'string')
+      );
     }
-  } catch { /* A malformed link starts with no column filters. */ }
+  } catch {
+    /* A malformed link starts with no column filters. */
+  }
   const requested = params.get('view');
   const page = Number(params.get('page'));
   return {
-    q: params.get('q') || '', columnFilters, sort: params.get('sort') || null,
+    q: params.get('q') || '',
+    columnFilters,
+    sort: params.get('sort') || null,
     page: Number.isInteger(page) && page > 0 ? Math.min(page, MAX_PAGE_INDEX) : 0,
-    view: requested === 'chart' || requested === 'map' ? requested : 'table',
+    view: requested === 'chart' || requested === 'map' ? requested : 'table'
   };
 }
 
@@ -37,8 +43,17 @@ export function writeResourceUrl(params, { q, columnFilters, sort, page, view })
 // This is a presentation projection, not the preparation state machine. A
 // stale serving snapshot and a running refresh can coexist independently.
 /** @param {{view: import('../api/contracts').ResourceView, hasMap: boolean, filtersNeedPreparation: boolean, hasData: boolean, dataLoading: boolean, preparationRequired: boolean, downloadOnly: boolean, rowUnavailable: boolean, rowError: boolean}} state */
-export function resourceViewState({ view, hasMap, filtersNeedPreparation, hasData,
-  dataLoading, preparationRequired, downloadOnly, rowUnavailable, rowError }) {
+export function resourceViewState({
+  view,
+  hasMap,
+  filtersNeedPreparation,
+  hasData,
+  dataLoading,
+  preparationRequired,
+  downloadOnly,
+  rowUnavailable,
+  rowError
+}) {
   if (view === 'map') return hasMap ? 'map' : 'map-loading';
   if (view === 'table' && filtersNeedPreparation && !hasData) return 'filter-preparation';
   if (view === 'table' && dataLoading && !hasData && !preparationRequired) return 'loading';

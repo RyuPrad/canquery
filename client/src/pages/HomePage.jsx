@@ -1,7 +1,13 @@
 import LocalGuides from '../components/LocalGuides.jsx';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { searchDatasets, fetchOrganizations, fetchStats, fetchFeaturedPlaces, fetchSources } from '../api/catalog.js';
+import {
+  searchDatasets,
+  fetchOrganizations,
+  fetchStats,
+  fetchFeaturedPlaces,
+  fetchSources
+} from '../api/catalog.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -23,18 +29,23 @@ import {
   DatabaseIcon,
   ZapIcon,
   XIcon,
-  MapIcon,
+  MapIcon
 } from '../components/Icons.jsx';
 
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
-const EXAMPLES = { en: ['parks', 'playgrounds', 'building permits', 'water quality', 'census'], fr: ['parcs', 'aires de jeux', 'permis de construction', 'qualité de l’eau', 'recensement'] };
+const EXAMPLES = {
+  en: ['parks', 'playgrounds', 'building permits', 'water quality', 'census'],
+  fr: ['parcs', 'aires de jeux', 'permis de construction', 'qualité de l’eau', 'recensement']
+};
 
 function StatItem({ icon, value, label, tone }) {
   const n = useCountUp(value);
   const { lang } = useLang();
   return (
     <div className="cq-home-stat">
-      <span className={`hidden sm:flex w-9 h-9 rounded-lg items-center justify-center shrink-0 ${tone}`}>
+      <span
+        className={`hidden sm:flex w-9 h-9 rounded-lg items-center justify-center shrink-0 ${tone}`}
+      >
         {icon}
       </span>
       <div className="min-w-0">
@@ -50,7 +61,10 @@ function StatItem({ icon, value, label, tone }) {
 function StepItem({ number, title, desc }) {
   return (
     <li className="flex items-start gap-3">
-      <span className="w-8 h-8 rounded-full border border-base-content/15 flex items-center justify-center shrink-0 font-mono text-sm cq-fg-red" aria-hidden="true">
+      <span
+        className="w-8 h-8 rounded-full border border-base-content/15 flex items-center justify-center shrink-0 font-mono text-sm cq-fg-red"
+        aria-hidden="true"
+      >
         {number}
       </span>
       <div>
@@ -65,11 +79,14 @@ export default function HomePage() {
   const { t, lang } = useLang();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [arrival] = useState(() => ({ key: location.key, place: searchParams.has('place') ? '' : readPlace() }));
+  const [arrival] = useState(() => ({
+    key: location.key,
+    place: searchParams.has('place') ? '' : readPlace()
+  }));
   const searchQuery = searchParams.get('q') || '';
   const [draft, setDraft] = useState({ key: location.key, value: searchQuery });
   const query = draft.key === location.key ? draft.value : searchQuery;
-  const setQuery = value => setDraft({ key: location.key, value });
+  const setQuery = (value) => setDraft({ key: location.key, value });
   const org = searchParams.get('org') || '';
   const format = searchParams.get('format') || '';
   const place = searchParams.get('place') || (location.key === arrival.key ? arrival.place : '');
@@ -81,7 +98,7 @@ export default function HomePage() {
 
   const debouncedDraft = useDebouncedValue(query, 250);
 
-  const updateSearch = changes => {
+  const updateSearch = (changes) => {
     const next = new URLSearchParams(searchParams);
     if (query) next.set('q', query);
     else next.delete('q');
@@ -97,7 +114,12 @@ export default function HomePage() {
   // its pending debounce cannot overwrite a different search opened via Back,
   // Forward or an in-app link. Filter controls apply the current draft too.
   useEffect(() => {
-    if (draft.key !== location.key || debouncedDraft !== draft.value || debouncedDraft === searchQuery) return;
+    if (
+      draft.key !== location.key ||
+      debouncedDraft !== draft.value ||
+      debouncedDraft === searchQuery
+    )
+      return;
     const next = new URLSearchParams(searchParams);
     if (debouncedDraft) next.set('q', debouncedDraft);
     else next.delete('q');
@@ -121,7 +143,7 @@ export default function HomePage() {
       source,
       keyword,
       mappable,
-      language: lang,
+      language: lang
     });
   }, [searchQuery, org, format, place, source, keyword, mappable, lang]);
 
@@ -141,38 +163,54 @@ export default function HomePage() {
     fetchStats().then((env) => {
       if (!cancelled && env) setStats(env.data);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadOrganizations = useCallback(async signal => {
+  const loadOrganizations = useCallback(
+    async (signal) => {
       const rows = [];
       const seenCursors = new Set();
       let cursor;
       do {
-        const env = await fetchOrganizations({ place: place || undefined, source: source || undefined, limit: 100, cursor }, { signal });
+        const env = await fetchOrganizations(
+          { place: place || undefined, source: source || undefined, limit: 100, cursor },
+          { signal }
+        );
         if (signal.aborted) return [];
         rows.push(...(env.data || []));
         cursor = env.pagination?.nextCursor || null;
-        if (cursor && seenCursors.has(cursor)) throw new Error('Organization pagination returned a repeated cursor');
+        if (cursor && seenCursors.has(cursor))
+          throw new Error('Organization pagination returned a repeated cursor');
         if (cursor) seenCursors.add(cursor);
       } while (cursor);
       return rows;
-  }, [place, source]);
+    },
+    [place, source]
+  );
   const organizationOptions = useScopedOptions(JSON.stringify([place, source]), loadOrganizations);
   const orgs = organizationOptions.data;
 
   useEffect(() => {
     let cancelled = false;
     fetchFeaturedPlaces()
-      .then(env => { if (!cancelled) setPlaces(env.data || []); })
+      .then((env) => {
+        if (!cancelled) setPlaces(env.data || []);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadSources = useCallback(async signal => {
-    const env = await fetchSources({ place: place || undefined }, { signal });
-    return env.data || [];
-  }, [place]);
+  const loadSources = useCallback(
+    async (signal) => {
+      const env = await fetchSources({ place: place || undefined }, { signal });
+      return env.data || [];
+    },
+    [place]
+  );
   const sourceOptions = useScopedOptions(place, loadSources);
   const sources = sourceOptions.data;
 
@@ -189,17 +227,27 @@ export default function HomePage() {
         source: source || undefined,
         mappable: mappable || undefined,
         limit: filtering ? 20 : 6,
-        cursor,
+        cursor
       }),
     [searchQuery, org, format, keyword, place, source, mappable]
   );
 
   const reportedSearch = useRef(null);
   useEffect(() => {
-    if (loading || error || !searchQuery || meta?.search?.query !== searchQuery.trim() || reportedSearch.current === meta) return;
+    if (
+      loading ||
+      error ||
+      !searchQuery ||
+      meta?.search?.query !== searchQuery.trim() ||
+      reportedSearch.current === meta
+    )
+      return;
     reportedSearch.current = meta;
     track('catalog_search_result', {
-      place, language: lang, returned: items.length, empty: items.length === 0,
+      place,
+      language: lang,
+      returned: items.length,
+      empty: items.length === 0
     });
   }, [loading, error, searchQuery, place, lang, items.length, meta]);
 
@@ -234,17 +282,24 @@ export default function HomePage() {
             <PlaceSelect value={place} onChange={changePlace} places={places} />
           </div>
 
-          <Link to="/places" className="inline-flex mt-3 text-xs link link-hover text-base-content/45">
+          <Link
+            to="/places"
+            className="inline-flex mt-3 text-xs link link-hover text-base-content/45"
+          >
             {t('places.browse')}
           </Link>
 
           <div className="flex flex-wrap gap-2 items-center justify-center mt-4">
             <span className="text-xs text-base-content/35">{t('home.try')}</span>
             {EXAMPLES[lang].map((ex) => (
-              <button key={ex} className="cq-pill !text-xs" onClick={() => {
-                track('catalog_search', { query: ex, source: 'example' });
-                setQuery(ex);
-              }}>
+              <button
+                key={ex}
+                className="cq-pill !text-xs"
+                onClick={() => {
+                  track('catalog_search', { query: ex, source: 'example' });
+                  setQuery(ex);
+                }}
+              >
                 {ex}
               </button>
             ))}
@@ -263,16 +318,24 @@ export default function HomePage() {
 
         <section className="cq-home-section" aria-labelledby="home-catalogue-title">
           <div className="cq-home-section-heading">
-            <h2 id="home-catalogue-title" className="font-display font-semibold text-2xl sm:text-3xl">
+            <h2
+              id="home-catalogue-title"
+              className="font-display font-semibold text-2xl sm:text-3xl"
+            >
               {t(filtering ? 'home.results_title' : 'home.explore_title')}
             </h2>
-            {!filtering && <p className="text-sm text-base-content/70 mt-2">{t('home.explore_description')}</p>}
+            {!filtering && (
+              <p className="text-sm text-base-content/70 mt-2">{t('home.explore_description')}</p>
+            )}
           </div>
           <div className="cq-home-filters flex flex-wrap gap-2 items-center mt-5">
             <button
               className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
               aria-pressed={format === ''}
-              onClick={() => { track('catalog_filter', { filter: 'format', value: '' }); updateSearch({ format: '' }); }}
+              onClick={() => {
+                track('catalog_filter', { filter: 'format', value: '' });
+                updateSearch({ format: '' });
+              }}
             >
               {t('home.all_formats')}
             </button>
@@ -281,13 +344,18 @@ export default function HomePage() {
                 key={f}
                 className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
                 aria-pressed={format === f}
-                onClick={() => { track('catalog_filter', { filter: 'format', value: f }); updateSearch({ format: f }); }}
+                onClick={() => {
+                  track('catalog_filter', { filter: 'format', value: f });
+                  updateSearch({ format: f });
+                }}
               >
                 {f}
               </button>
             ))}
             <button
-              className={'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')}
+              className={
+                'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')
+              }
               onClick={() => {
                 track('catalog_filter', { filter: 'mappable', value: !mappable });
                 updateSearch({ mappable: mappable ? '' : 'true' });
@@ -306,17 +374,30 @@ export default function HomePage() {
               }}
               aria-label={t('source.choose')}
               aria-busy={sourceOptions.status === 'loading'}
-              aria-describedby={sourceOptions.status === 'error' ? 'source-options-error' : undefined}
+              aria-describedby={
+                sourceOptions.status === 'error' ? 'source-options-error' : undefined
+              }
             >
               <option value="">{t('source.all')}</option>
-              {source && !sources.some(item => item.id === source) && <option value={source} disabled>{source}</option>}
-              {sources.map(item => (
-                <option key={item.id} value={item.id}>{item.name?.[lang] || item.name?.en || item.id}</option>
+              {source && !sources.some((item) => item.id === source) && (
+                <option value={source} disabled>
+                  {source}
+                </option>
+              )}
+              {sources.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name?.[lang] || item.name?.en || item.id}
+                </option>
               ))}
             </select>
-            {sourceOptions.status === 'error' && <span id="source-options-error" role="status" className="text-sm">
-              {t('source.load_error')} <button className="link" type="button" onClick={sourceOptions.retry}>{t('common.retry')}</button>
-            </span>}
+            {sourceOptions.status === 'error' && (
+              <span id="source-options-error" role="status" className="text-sm">
+                {t('source.load_error')}{' '}
+                <button className="link" type="button" onClick={sourceOptions.retry}>
+                  {t('common.retry')}
+                </button>
+              </span>
+            )}
             <select
               className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
               value={org}
@@ -326,19 +407,30 @@ export default function HomePage() {
               }}
               aria-label={t('home.all_organizations')}
               aria-busy={organizationOptions.status === 'loading'}
-              aria-describedby={organizationOptions.status === 'error' ? 'organization-options-error' : undefined}
+              aria-describedby={
+                organizationOptions.status === 'error' ? 'organization-options-error' : undefined
+              }
             >
               <option value="">{t('home.all_organizations')}</option>
-              {org && !orgs.some(item => item.name === org) && <option value={org} disabled>{org}</option>}
+              {org && !orgs.some((item) => item.name === org) && (
+                <option value={org} disabled>
+                  {org}
+                </option>
+              )}
               {orgs.map((o) => (
                 <option key={o.name} value={o.name}>
                   {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
                 </option>
               ))}
             </select>
-            {organizationOptions.status === 'error' && <span id="organization-options-error" role="status" className="text-sm">
-              {t('home.organizations_error')} <button className="link" type="button" onClick={organizationOptions.retry}>{t('common.retry')}</button>
-            </span>}
+            {organizationOptions.status === 'error' && (
+              <span id="organization-options-error" role="status" className="text-sm">
+                {t('home.organizations_error')}{' '}
+                <button className="link" type="button" onClick={organizationOptions.retry}>
+                  {t('common.retry')}
+                </button>
+              </span>
+            )}
           </div>
 
           <div className="cq-home-datasets mt-5" aria-busy={loading}>
@@ -355,10 +447,20 @@ export default function HomePage() {
                 <MapleLeaf size={34} className="mx-auto text-base-content/15" />
                 <p className="text-base-content/60">{t('home.no_results')}</p>
                 <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>
-                {meta?.search?.suggestions?.length > 0 && <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
-                  <span>{t('discovery.suggest')}</span>
-                  {meta.search.suggestions.map(suggestion => <button className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>{suggestion}</button>)}
-                </div>}
+                {meta?.search?.suggestions?.length > 0 && (
+                  <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
+                    <span>{t('discovery.suggest')}</span>
+                    {meta.search.suggestions.map((suggestion) => (
+                      <button
+                        className="cq-pill"
+                        key={suggestion}
+                        onClick={() => setQuery(suggestion)}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {items.map((d) => (
@@ -370,7 +472,10 @@ export default function HomePage() {
             <div className="text-center mt-6">
               <button
                 className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
-                onClick={() => { track('catalog_filter', { action: 'load_more' }); loadMore(); }}
+                onClick={() => {
+                  track('catalog_filter', { action: 'load_more' });
+                  loadMore();
+                }}
                 disabled={loadingMore}
               >
                 {loadingMore ? t('home.loading') : t('home.load_more')}
@@ -388,12 +493,24 @@ export default function HomePage() {
 
         {!filtering && stats && (
           <section className="cq-home-stats" aria-label={t('home.stats_label')}>
-            <StatItem icon={<DatabaseIcon size={18} />} tone="bg-accent/10 text-accent"
-              value={stats.datasets} label={t('home.datasets_mirrored')} />
-            <StatItem icon={<ZapIcon size={18} />} tone="bg-success/10 text-success"
-              value={stats.datastore_active_resources} label={t('home.queryable_upstream')} />
-            <StatItem icon={<UnlockIcon size={18} />} tone="bg-primary/15 cq-fg-red"
-              value={stats.ingested_resources} label={t('home.unlocked_here')} />
+            <StatItem
+              icon={<DatabaseIcon size={18} />}
+              tone="bg-accent/10 text-accent"
+              value={stats.datasets}
+              label={t('home.datasets_mirrored')}
+            />
+            <StatItem
+              icon={<ZapIcon size={18} />}
+              tone="bg-success/10 text-success"
+              value={stats.datastore_active_resources}
+              label={t('home.queryable_upstream')}
+            />
+            <StatItem
+              icon={<UnlockIcon size={18} />}
+              tone="bg-primary/15 cq-fg-red"
+              value={stats.ingested_resources}
+              label={t('home.unlocked_here')}
+            />
           </section>
         )}
 
@@ -408,7 +525,12 @@ export default function HomePage() {
 
         {!filtering && (
           <section className="cq-home-section" aria-labelledby="home-steps-title">
-            <h2 id="home-steps-title" className="font-display font-semibold text-2xl sm:text-3xl mb-6">{t('home.how_it_works')}</h2>
+            <h2
+              id="home-steps-title"
+              className="font-display font-semibold text-2xl sm:text-3xl mb-6"
+            >
+              {t('home.how_it_works')}
+            </h2>
             <ol className="grid sm:grid-cols-3 gap-6 sm:gap-8">
               <StepItem number="1" title={t('home.step1_title')} desc={t('home.step1_desc')} />
               <StepItem number="2" title={t('home.step2_title')} desc={t('home.step2_desc')} />
@@ -417,7 +539,9 @@ export default function HomePage() {
           </section>
         )}
 
-        {!searchQuery && !org && !format && !source && !keyword && <LocalGuides place={place} limit={3} variant="compact" />}
+        {!searchQuery && !org && !format && !source && !keyword && (
+          <LocalGuides place={place} limit={3} variant="compact" />
+        )}
         {!filtering && <MochiPromotion variant="slim" />}
       </div>
     </div>

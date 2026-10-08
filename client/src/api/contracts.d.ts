@@ -36,7 +36,14 @@ export interface ResourceUrlState {
 }
 
 export type FailureReason = 'invalid_file' | 'upstream_unavailable' | 'capacity' | 'temporary';
-export type PreparationPhase = 'idle' | 'requesting' | 'pending' | 'running' | 'waiting' | 'failed' | 'unavailable';
+export type PreparationPhase =
+  | 'idle'
+  | 'requesting'
+  | 'pending'
+  | 'running'
+  | 'waiting'
+  | 'failed'
+  | 'unavailable';
 export interface PreparationState {
   jobId: string | number | null;
   phase: PreparationPhase;
@@ -45,7 +52,20 @@ export interface PreparationState {
   attempt: number;
 }
 export type PreparationEvent =
-  | { type: 'SOURCE_CHANGED' | 'READY_COPY' | 'JOB_COMPLETED' | 'JOB_GONE' | 'ADMISSION_STARTED' | 'RETRY_DUE' }
+  | {
+      type:
+        | 'SOURCE_CHANGED'
+        | 'READY_COPY'
+        | 'JOB_COMPLETED'
+        | 'JOB_GONE'
+        | 'ADMISSION_STARTED'
+        | 'RETRY_DUE';
+    }
   | { type: 'METADATA_FAILED' | 'JOB_FAILED'; retryAt: number; reason: unknown }
   | { type: 'JOB_ADOPTED'; jobId: string | number }
-  | { type: 'ADMISSION_REJECTED'; phase: PreparationPhase; retryAt: number | null; reason: unknown };
+  | {
+      type: 'ADMISSION_REJECTED';
+      phase: PreparationPhase;
+      retryAt: number | null;
+      reason: unknown;
+    };

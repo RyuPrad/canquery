@@ -6,7 +6,7 @@ export function schemaFingerprint(fields) {
 /** @param {Record<string, string>} filters @param {string | null} sort @param {import('../api/contracts').Field[] | undefined} fields */
 export function reconcileResourceFields(filters, sort, fields) {
   if (!Array.isArray(fields)) return { filters, sort, changed: false };
-  const names = new Set(['_id', ...fields.map(field => field.id)]);
+  const names = new Set(['_id', ...fields.map((field) => field.id)]);
   /** @type {Map<string, string | null>} */
   const aliases = new Map();
   for (const field of fields) {
@@ -16,9 +16,11 @@ export function reconcileResourceFields(filters, sort, fields) {
     }
   }
   /** @param {string} name */
-  const resolve = name => names.has(name) ? name : aliases.get(name) || null;
+  const resolve = (name) => (names.has(name) ? name : aliases.get(name) || null);
   // A canonical filter wins when an old link supplies both it and an alias.
-  const nextFilters = Object.fromEntries(Object.entries(filters).filter(([name]) => names.has(name)));
+  const nextFilters = Object.fromEntries(
+    Object.entries(filters).filter(([name]) => names.has(name))
+  );
   for (const [name, value] of Object.entries(filters)) {
     const canonical = resolve(name);
     if (canonical && !Object.hasOwn(nextFilters, canonical)) nextFilters[canonical] = value;
@@ -30,7 +32,9 @@ export function reconcileResourceFields(filters, sort, fields) {
     const column = match && resolve(match[1]);
     nextSort = exact || (column ? `${column} ${match[2]}` : null);
   }
-  const changed = nextSort !== sort || Object.keys(filters).length !== Object.keys(nextFilters).length ||
+  const changed =
+    nextSort !== sort ||
+    Object.keys(filters).length !== Object.keys(nextFilters).length ||
     Object.entries(filters).some(([name, value]) => nextFilters[name] !== value);
   return { filters: changed ? nextFilters : filters, sort: nextSort, changed };
 }
