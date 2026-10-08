@@ -102,6 +102,7 @@ app.use(express.json({limit:'64kb'}));
 app.use('/api/account', require('./routes/account'));
 
 app.get('/healthz', catalogController.healthz);
+app.get('/readyz', require('./controllers/componentHealthController').readyz);
 
 app.use('/api/v1', credentialLimiter, commercialApi);
 app.use(['/api','/web-api'], generalLimiter);
@@ -134,7 +135,7 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
     app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(clientDist, { index: false }));
     // Per-route SEO and initial content, with real 404s and retryable 503s.
-    app.get(/^\/(?!api\/|web-api\/|healthz).*/, spaController.serveSpa(clientDist));
+    app.get(/^\/(?!api\/|web-api\/|healthz|readyz).*/, spaController.serveSpa(clientDist));
 }
 
 app.use((req, res, next) => {

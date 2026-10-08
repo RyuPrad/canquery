@@ -1,0 +1,19 @@
+{
+  "database_os_user": "canquery",
+  "database": "canquery",
+  "deploy_user": "canquery",
+  "app_dir": "/srv/canquery/current",
+  "deployment_environment": "/etc/canquery/deploy.env",
+  "api_port": 3100,
+  "storage_path": "/var/lib",
+  "backup_status": "/var/lib/canquery-backup/status.json",
+  "output": "/run/canquery/ops-status.json",
+  "services": {
+    "api": "canquery-api.service",
+    "preparation": "canquery-worker.service",
+    "maps": "canquery-map-worker.service",
+    "mail_auth": "canquery-mail-auth.service",
+    "mail_dkim": "canquery-mail-dkim.service",
+    "mail_certificate": "canquery-mail-certificate.timer"
+  }
+}

@@ -33,7 +33,7 @@ test.each(['group_by', 'agg', 'agg_column', 'bucket'])('aggregate validation fai
     expect(operationFor({ path: '/resources/id/QUERY/', query: { [field]: '' } }).cost).toBe(CREDIT_COSTS.query);
 });
 
-test.each(['/ops', '/openapi.json'])('public GET and HEAD aliases bypass credentials and metering for %s', async path => {
+test.each(['/ops', '/openapi.json', '/ops/components/preparation'])('public GET and HEAD aliases bypass credentials and metering for %s', async path => {
     const app = express();
     app.use('/api/v1', commercialApi);
     app.get('/api/v1' + path, (_req, res) => res.json({ public: true }));

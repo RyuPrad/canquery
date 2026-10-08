@@ -132,13 +132,13 @@ describe('OpenAPI structure and published route coverage', () => {
         expect(JSON.stringify(spec).length).toBeLessThan(150000);
     });
 
-    test('all 28 documented credit costs match public exemptions and metered operations', () => {
+    test('all documented credit costs match public exemptions and metered operations', () => {
         let count = 0;
         for (const [path, methods] of Object.entries(spec.paths)) {
             for (const [method, operation] of Object.entries(methods)) {
                 const req = { path, method: method.toUpperCase(), query: {} };
                 const classified = operationFor(req);
-                const expected = path === '/healthz' || isPublicOperation(req) ? 0
+                const expected = ['/healthz', '/readyz'].includes(path) || isPublicOperation(req) ? 0
                     : classified.name === 'preparation' ? `${CREDIT_COSTS.preparation} new job / ${classified.cost} existing`
                         : classified.name === 'query' ? `${classified.cost} row query / ${operationFor({ ...req, query: { agg: 'count' } }).cost} aggregation`
                             : classified.cost;
@@ -146,7 +146,7 @@ describe('OpenAPI structure and published route coverage', () => {
                 count += 1;
             }
         }
-        expect(count).toBe(28);
+        expect(count).toBe(30);
     });
 
     test('models CSV, binary, empty, root health and degraded ops responses separately', () => {

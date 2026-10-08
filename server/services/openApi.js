@@ -20,7 +20,7 @@ const sample = (data, meta = {}, nextCursor = null) => ({ data, pagination: { ne
 const schemas = {
     Pagination: object({ nextCursor: { type: ['string', 'null'], description: 'Next catalogue offset as a string, or null. Row queries use data.total and offset instead.', 'x-description-fr': 'Décalage suivant du catalogue sous forme de chaîne, ou null. Les requêtes de lignes utilisent plutôt data.total et offset.' } }, ['nextCursor']),
     LocalizedText: object({ en: textOrNull, fr: textOrNull }),
-    Field: object({ id: string, type: string }, ['id', 'type']),
+    Field: object({ id: string, type: string, original_label: string, legacy_ids: array(string) }, ['id', 'type']),
     License: object({ title: ref('LocalizedText'), url: string, attribution: ref('LocalizedText') }),
     Provenance: object({ sources: array(ref('ProvenanceSource')), primary_license: nullable(ref('License')) }, ['sources', 'primary_license']),
     ProvenanceSource: object({ id: string, kind: string, name: ref('LocalizedText'), homepage_url: string,
@@ -108,6 +108,11 @@ const schemas = {
         explore: string, view: { type: 'string', enum: ['table', 'map', 'download'] }, dataset: string, datasetId: string,
         translations: object({ en: string, fr: string }), bodyHtml: { ...string, description: 'Present on article detail; sanitized HTML.', 'x-description-fr': 'Présent dans le détail de l’article; HTML assaini.' } }),
     Health: object({ ok: { type: 'boolean' }, db: { type: 'boolean' }, upstream: { type: 'boolean' } }, ['ok', 'db', 'upstream']),
+    Readiness: object({ ok: { type: 'boolean' }, db: { type: 'boolean' } }, ['ok', 'db']),
+    ComponentHealth: object({ component: { type: 'string', enum: ['availability', 'preparation', 'maps', 'sources', 'commercial', 'backups', 'storage'] },
+        ok: { type: 'boolean' }, status: { type: 'string', enum: ['ok', 'degraded', 'unavailable', 'stale'] },
+        observed_at: date, checks: { type: 'object', additionalProperties: { type: ['boolean', 'number'] } } },
+    ['component', 'ok', 'status', 'observed_at', 'checks']),
     Operations: object({ ok: { type: 'boolean' }, jobs: { type: 'object', additionalProperties: object({ last_ok_at: date,
         status: { type: 'string', enum: ['ok', 'pending', 'failed', 'stale'] } }) },
         maps: object({ pending: integer, deferred: integer, running: integer, ready: integer, skipped: integer, failed: integer, retrying_sources: integer,
@@ -218,7 +223,7 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     const responseComponents = {};
     const headerComponents = {};
     function add(path, method, id, tag, summary, frSummary, description, frDescription, params, schema, example, codes = []) {
-        const cost = path === '/healthz' || isPublicOperation({ path, method: method.toUpperCase() }) ? CREDIT_COSTS.activity
+        const cost = ['/healthz', '/readyz'].includes(path) || isPublicOperation({ path, method: method.toUpperCase() }) ? CREDIT_COSTS.activity
             : /\/(prepare|ingest)$/.test(path) ? `${CREDIT_COSTS.preparation} new job / ${CREDIT_COSTS.activity} existing`
                 : /\/query$/.test(path) ? `${CREDIT_COSTS.query} row query / ${CREDIT_COSTS.aggregate} aggregation`
                     : operationFor({ path, query: {} }).cost;
@@ -302,6 +307,22 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     health.security = [];
     health.responses = { 200: jsonResponse(ref('Health'), { ok: true, db: true, upstream: true }), 503: jsonResponse(ref('Health'), { ok: false, db: false, upstream: true }, 'Database or federal upstream probe failed.', 'La base ou la source fédérale ne répond pas.') };
     for (const response of Object.values(health.responses)) response.headers = publicHeaders;
+    const ready = add('/readyz', 'get', 'getReadiness', 'Operations', 'Check application and database availability', 'Vérifier la disponibilité du service et de la base',
+        'Site-root path. Public, unmetered and no-store. Checks database connectivity without requiring an upstream publisher or worker to be healthy.',
+        'Route racine, publique, sans crédits et sans cache. Vérifie la base sans dépendre de la santé des éditeurs ou des processus.', [], ref('Readiness'), { ok: true, db: true });
+    ready.servers = [{ url: '/' }];
+    ready.security = [];
+    ready.responses = { 200: jsonResponse(ref('Readiness'), { ok: true, db: true }), 503: jsonResponse(ref('Readiness'), { ok: false, db: false }) };
+    for (const response of Object.values(ready.responses)) response.headers = publicHeaders;
+    const componentExample = sample({ component: 'preparation', ok: true, status: 'ok', observed_at: '2026-01-01T00:00:00.000Z', checks: { service_active: true, stale_running: 0 } });
+    const component = add('/ops/components/{component}', 'get', 'getComponentHealth', 'Operations', 'Inspect one operational component', 'Consulter un composant opérationnel',
+        'Public, unmetered and no-store. Sanitized host observations older than 180 seconds fail closed with HTTP 503. Independent components separate availability, preparation, maps, sources, commercial backlogs, backups and storage. Existing /ops semantics remain unchanged.',
+        'Public, sans crédits et sans cache. Les observations de plus de 180 secondes donnent HTTP 503. Sépare disponibilité, préparation, cartes, sources, files commerciales, sauvegardes et stockage. Le comportement de /ops reste inchangé.',
+        [pathParameter('component', 'Operational component to inspect.', 'Composant opérationnel à consulter.', { type: 'string', enum: ['availability', 'preparation', 'maps', 'sources', 'commercial', 'backups', 'storage'] })],
+        envelope(ref('ComponentHealth')), componentExample, [404]);
+    component.security = [];
+    component.responses[503] = jsonResponse(envelope(ref('ComponentHealth')), sample({ component: 'preparation', ok: false, status: 'stale', observed_at: null, checks: {} }));
+    for (const code of [200, 503]) component.responses[code].headers = publicHeaders;
     const spec = add('/openapi.json', 'get', 'getOpenApi', 'Operations', 'Download the OpenAPI contract', 'Télécharger le contrat OpenAPI', 'Public, unmetered OpenAPI 3.1 document. Import into compatible developer tools. Examples are synthetic and do not establish current publisher data or availability.', 'Document OpenAPI 3.1 public, sans crédits. Importez-le dans vos outils compatibles. Exemples synthétiques, sans garantie de données ou disponibilité actuelles.', [], { type: 'object', required: ['openapi', 'info', 'paths'], properties: { openapi: string, info: { type: 'object' }, paths: { type: 'object' } } });
     spec.security = [];
     spec.responses = { 200: jsonResponse({ type: 'object' }), 429: errors([])[429] };
