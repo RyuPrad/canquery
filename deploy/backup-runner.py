@@ -11,9 +11,52 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import tarfile
 import tempfile
+import time
+from functools import partial
+
+
+def run_command(args, *, timeout, check=False, capture_output=False, deadline=None, **kwargs):
+    """Run one owned process group and stop its descendants on any interruption."""
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(args, 0)
+        timeout = min(timeout, remaining)
+    if capture_output:
+        kwargs.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    with subprocess.Popen(args, start_new_session=True, **kwargs) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                # The leader can exit before a descendant does. Kill the group
+                # even when communicate returned, then reap our direct child.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+            raise
+        result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+        if check:
+            result.check_returncode()
+        return result
+
+
+def interrupted(_signum, _frame):
+    raise InterruptedError('Backup interrupted')
 
 
 def utcnow():
@@ -64,7 +107,7 @@ def dump_candidates(directory, database):
 
 
 def valid_dump(path):
-    return path.stat().st_size > 0 and subprocess.run(
+    return path.stat().st_size > 0 and run_command(
         ['pg_restore', '--list', str(path)], stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, timeout=60).returncode == 0
 
@@ -104,9 +147,22 @@ def configuration_archive(paths, destination, recovery_roles=None):
 def run(config):
     status_path = pathlib.Path(config['status_path'])
     prior = json.loads(status_path.read_text()) if status_path.exists() else {}
-    state = {key: prior[key] for key in ['last_verified_at'] if key in prior}
-    state.update(last_attempt_at=utcnow(), last_attempt_ok=False)
+    state = {key: prior[key] for key in ['last_verified_at', 'last_attempt_ok'] if key in prior}
+    state.update(last_attempt_at=utcnow(), last_attempt_status='running')
     atomic_json(status_path, state)
+    try:
+        _run(config, state)
+    except BaseException:
+        state.update(last_attempt_ok=False, last_attempt_status='failed', last_finished_at=utcnow())
+        atomic_json(status_path, state)
+        raise
+
+
+def _run(config, state):
+    # Bound subprocess work across the attempt, rather than granting a fresh
+    # 90-minute allowance after the dump stage. Leave time for final status.
+    execute = partial(run_command, deadline=time.monotonic() + 7100)
+    status_path = pathlib.Path(config['status_path'])
     directory = pathlib.Path(config['backup_dir'])
     databases = [config['app_database'], config['analytics_database']]
     for database in databases:
@@ -120,7 +176,7 @@ def run(config):
                        # Retention follows remote verification below. The guarded
                        # original dump script still independently attempts both DBs.
                        CANQUERY_BACKUP_KEEP_DAYS='365000')
-    subprocess.run(['bash', str(trusted_file(config['dump_script']))],
+    execute(['bash', str(trusted_file(config['dump_script']))],
                    env=environment, check=True, timeout=5400)
     files = []
     for database in databases:
@@ -134,7 +190,7 @@ def run(config):
         configuration = temporary / 'configuration.tar.gz'
         roles = temporary / 'postgres-globals.sql'
         with roles.open('wb') as output:
-            subprocess.run(['runuser', '-u', 'postgres', '--', 'pg_dumpall', '--globals-only'],
+            execute(['runuser', '-u', 'postgres', '--', 'pg_dumpall', '--globals-only'],
                            stdout=output, stderr=subprocess.DEVNULL, check=True, timeout=120)
         roles.chmod(0o600)
         # Keep the global roles/memberships separately identified inside the
@@ -146,14 +202,15 @@ def run(config):
         if release.exists():
             commit = json.loads(release.read_text())['commit']
         else:
-            commit = subprocess.check_output(['runuser', '-u', config['deploy_user'], '--',
-                'git', '-C', config['legacy_checkout'], 'rev-parse', 'HEAD'], text=True).strip()
+            commit = execute(['runuser', '-u', config['deploy_user'], '--',
+                'git', '-C', config['legacy_checkout'], 'rev-parse', 'HEAD'],
+                stdout=subprocess.PIPE, text=True, check=True, timeout=30).stdout.strip()
         manifest = {'version': 1, 'stamp': stamp, 'release': commit, 'files': files}
         manifest_path = temporary / 'manifest.json'
         atomic_json(manifest_path, manifest)
         uploader = trusted_file(config['uploader'])
         credential = trusted_file(config['credential_file'], private=True)
-        result = subprocess.run([config['node'], '--env-file=' + str(credential), str(uploader),
+        result = execute([config['node'], '--env-file=' + str(credential), str(uploader),
                                  '--manifest', str(manifest_path)], check=True, capture_output=True,
                                 text=True, timeout=5400, env=environment)
         receipt = json.loads(result.stdout)
@@ -162,7 +219,8 @@ def run(config):
         atomic_json(status_path.parent / 'receipts' / (stamp + '.json'), receipt)
         verified_files = {item['name']: item['plaintext_sha256'] for item in receipt['files']}
         removed = retain_two(directory, databases, verified_files)
-        state.update(last_verified_at=receipt['verified_at'], last_attempt_ok=True)
+        state.update(last_verified_at=receipt['verified_at'], last_attempt_ok=True,
+                     last_attempt_status='succeeded', last_finished_at=utcnow())
         atomic_json(status_path, state)
         print(json.dumps({'ok': True, 'verified_at': receipt['verified_at'], 'expired_local_dumps': len(removed)}))
 
@@ -172,6 +230,8 @@ def main():
     parser.add_argument('--config', required=True)
     args = parser.parse_args()
     os.umask(0o077)
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     configuration = json.loads(trusted_file(args.config, private=True).read_text())
     run(configuration)
 

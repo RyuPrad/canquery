@@ -54,8 +54,11 @@ async function uploadFile(client, config, filename, key) {
     try { existing = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: key })); }
     catch (error) { if (error.$metadata?.httpStatusCode !== 404 && error.name !== 'NotFound') throw error; }
     if (existing) {
-        if (existing.Metadata?.plaintext_sha256 !== plaintext_sha256) throw new Error('Refusing backup object collision');
-        return { key, plaintext_sha256, ...(await verifyObject(client, config.bucket, key, undefined, existing.ContentLength)) };
+        // Object metadata is not an independently verified ciphertext digest.
+        // An interrupted attempt may have uploaded an object without recording
+        // its verified hash; never bless those bytes by calculating a new hash.
+        // Retry the complete set under a new stamp, preserving the old object.
+        throw new Error('Refusing existing backup object; retry with a new unique stamp');
     }
     const child = spawn('age', ['--encrypt', '--recipient', config.recipient], { stdio: ['pipe', 'pipe', 'ignore'] });
     const ended = new Promise((resolve, reject) => {

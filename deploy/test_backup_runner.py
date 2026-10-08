@@ -1,6 +1,9 @@
 import importlib.util
 import json
 import pathlib
+import os
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -51,13 +54,52 @@ class BackupRunnerTests(unittest.TestCase):
             config = {'status_path': str(state), 'backup_dir': str(root), 'app_database': 'app',
                       'analytics_database': 'analytics', 'min_free_gb': 35, 'dump_script': '/trusted/dump.sh'}
             with patch.object(runner, 'trusted_file', return_value=pathlib.Path('/trusted/dump.sh')):
-                with patch.object(runner.subprocess, 'run', side_effect=RuntimeError('dump failed')):
+                with patch.object(runner, 'run_command', side_effect=RuntimeError('dump failed')):
                     with self.assertRaises(RuntimeError):
                         runner.run(config)
             saved = json.loads(state.read_text())
             self.assertFalse(saved['last_attempt_ok'])
+            self.assertEqual(saved['last_attempt_status'], 'failed')
+            self.assertIn('last_finished_at', saved)
             self.assertEqual(saved['last_verified_at'], '2026-10-07T01:30:00Z')
             self.assertEqual(state.stat().st_mode & 0o777, 0o600)
+
+    def test_running_attempt_keeps_prior_result_until_it_completes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = pathlib.Path(temporary) / 'status.json'
+            runner.atomic_json(state, {'last_verified_at': '2026-10-07T01:30:00Z', 'last_attempt_ok': True})
+            def during_attempt(config, current):
+                saved = json.loads(state.read_text())
+                self.assertEqual(saved['last_attempt_status'], 'running')
+                self.assertTrue(saved['last_attempt_ok'])
+                self.assertEqual(saved['last_verified_at'], '2026-10-07T01:30:00Z')
+            with patch.object(runner, '_run', side_effect=during_attempt):
+                runner.run({'status_path': str(state)})
+
+    def test_timeout_stops_child_group_and_reaps_direct_process(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            pidfile, marker = root / 'child.pid', root / 'terminated'
+            child = ('import os,signal,time,pathlib; '
+                     f'pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid())); '
+                     f'signal.signal(signal.SIGTERM,lambda *_:(pathlib.Path({str(marker)!r}).write_text("yes"),exit(0))); '
+                     'time.sleep(60)')
+            parent = ('import subprocess,sys,signal,time; '
+                      'child=subprocess.Popen([sys.executable,"-c",sys.argv[1]]); '
+                      'signal.signal(signal.SIGTERM,lambda *_:(child.wait(timeout=2),exit(0))); '
+                      'time.sleep(60)')
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.run_command([sys.executable, '-c', parent, child], timeout=0.5)
+            self.assertEqual(marker.read_text(), 'yes')
+            with self.assertRaises(ProcessLookupError):
+                os.kill(int(pidfile.read_text()), 0)
+
+    def test_process_return_codes_and_captured_outputs_are_preserved(self):
+        result = runner.run_command([sys.executable, '-c', 'print("fixture")'],
+                                    timeout=5, check=True, capture_output=True, text=True)
+        self.assertEqual(result.stdout, 'fixture\n')
+        with self.assertRaises(subprocess.CalledProcessError):
+            runner.run_command([sys.executable, '-c', 'raise SystemExit(7)'], timeout=5, check=True)
 
     def test_configuration_archive_requires_all_paths_and_preserves_private_modes(self):
         with tempfile.TemporaryDirectory() as temporary:

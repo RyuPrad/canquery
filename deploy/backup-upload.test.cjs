@@ -1,6 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { configuration, validateManifest, validReceipt, expiredSets, verifyObject, prune } = require('./backup-upload.cjs');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { uploadFile, configuration, validateManifest, validReceipt, expiredSets, verifyObject, prune } = require('./backup-upload.cjs');
 
 const recipient = 'age1' + 'q'.repeat(58);
 const env = { CANQUERY_BACKUP_R2_ENDPOINT: 'https://example.r2.cloudflarestorage.com',
@@ -61,4 +65,21 @@ test('remote verification hashes the downloaded bytes rather than relying on ETa
     assert.equal((await verifyObject(client, 'bucket', 'key', expected, 3)).ciphertext_sha256, expected);
     await assert.rejects(verifyObject(client, 'bucket', 'key', '0'.repeat(64), 3));
     await assert.rejects(verifyObject(client, 'bucket', 'key', expected, 4));
+});
+
+test('an existing object is never reverified using its own untrusted metadata', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'canquery-backup-test-'));
+    try {
+        const filename = path.join(directory, 'app.dump');
+        await fs.writeFile(filename, 'actual plaintext');
+        const calls = [];
+        const client = { send: async command => {
+            calls.push(command.constructor.name);
+            return { ContentLength: 123, Metadata: {
+                plaintext_sha256: crypto.createHash('sha256').update('actual plaintext').digest('hex')
+            } };
+        } };
+        await assert.rejects(uploadFile(client, { bucket: 'test' }, filename, 'daily/same/app.dump.age'), /new unique stamp/);
+        assert.deepEqual(calls, ['HeadObjectCommand']);
+    } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
