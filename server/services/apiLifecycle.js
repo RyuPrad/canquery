@@ -18,6 +18,11 @@ function createShutdown(server, { stopMaintenance = async () => {}, closeResourc
     cleanupMs = positiveDuration('API_SHUTDOWN_CLEANUP_MS', 10000),
     exit = code => process.exit(code), log = entry => console.log(JSON.stringify(entry)) } = {}) {
     let shuttingDown;
+    // Connections busy when close() starts can become idle afterward. Reap
+    // them after each response finishes rather than waiting for keep-alive.
+    server.on?.('request', (_req, res) => res.once('finish', () => {
+        if (shuttingDown) setImmediate(() => server.closeIdleConnections?.());
+    }));
     return function shutdown(signal = 'SIGTERM') {
         if (shuttingDown) return shuttingDown;
         shuttingDown = (async () => {
