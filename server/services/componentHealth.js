@@ -7,7 +7,7 @@ const METRICS = new Set(['service_active', 'database_ready', 'mail_services_acti
     'stale_running', 'oldest_pending_seconds', 'failed_resources', 'failed_jobs', 'stale_jobs',
     'capacity_failures_last_hour', 'expired_reservations', 'billing_retries', 'delayed_billing_events',
     'failed_mail', 'delayed_mail', 'terminal_preparation_charges', 'missing_preparation_jobs',
-    'last_attempt_ok', 'latest_success_age_seconds', 'free_bytes', 'operating_margin_bytes', 'emergency_floor_bytes']);
+    'last_attempt_ok', 'attempt_in_progress', 'last_attempt_age_seconds', 'latest_success_age_seconds', 'free_bytes', 'operating_margin_bytes', 'emergency_floor_bytes']);
 
 async function readiness() {
     let db = false;

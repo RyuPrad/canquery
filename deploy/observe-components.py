@@ -172,10 +172,19 @@ def observe(config, run=command, fetch=json_http, now=None, statfs=os.statvfs, r
     try:
         backup = read_json(config.get("backup_status", "/var/lib/canquery-backup/status.json"))
         age = age_seconds(backup["last_verified_at"], now)
-        age_seconds(backup["last_attempt_at"], now)
-        attempt_ok = backup["last_attempt_ok"] is True
-        output["backups"] = healthy(attempt_ok and age <= 25 * 3600,
-                                     {"last_attempt_ok": attempt_ok, "latest_success_age_seconds": age})
+        attempt_age = age_seconds(backup["last_attempt_at"], now)
+        status = backup.get("last_attempt_status")
+        if status not in (None, "running", "failed", "succeeded"):
+            raise ValueError("Unknown backup attempt state")
+        running = status == "running"
+        # A scheduled upload is not a failure while it is making its bounded
+        # attempt. Freshness still comes from the previous verified recovery point.
+        attempt_healthy = attempt_age <= 2 * 3600 if running else (
+            status != "failed" and backup["last_attempt_ok"] is True)
+        output["backups"] = healthy(attempt_healthy and age <= 25 * 3600,
+                                     {"last_attempt_ok": backup["last_attempt_ok"] is True,
+                                      "attempt_in_progress": running, "last_attempt_age_seconds": attempt_age,
+                                      "latest_success_age_seconds": age})
     except Exception:
         pass
     try:

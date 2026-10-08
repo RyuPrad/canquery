@@ -43,8 +43,11 @@ map/resource history is retained and belongs to the maps component.
 
 The backup runner supplies root-private `/var/lib/canquery-backup/status.json`
 with `last_verified_at`, `last_attempt_at` (timezone-qualified ISO timestamps)
-and boolean `last_attempt_ok`. Missing, failed or more than 25-hour-old verified
-remote backups degrade the backup component. The observer does not upload,
+boolean `last_attempt_ok`, and `last_attempt_status` (`running`, `failed`, or
+`succeeded`). A running attempt is allowed two hours while the previous verified
+recovery point remains at most 25 hours old. A failed attempt degrades immediately;
+legacy status files without attempt state require `last_attempt_ok=true`. Missing,
+failed or more than 25-hour-old verified remote backups degrade the backup component. The observer does not upload,
 delete, decrypt or validate archives itself.
 
 After reviewed installation, enable the timer and inspect a fresh observation.

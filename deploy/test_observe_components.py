@@ -73,6 +73,22 @@ class ObservationTests(unittest.TestCase):
         self.free = 42 * 1024 ** 3
         self.assertFalse(self.collect()["storage"]["ok"])
 
+    def test_running_backup_has_two_hour_bound_without_claiming_new_recovery_point(self):
+        self.backup.update(last_attempt_status="running", last_attempt_ok=False)
+        self.assertTrue(self.collect()["backups"]["ok"])
+        self.assertTrue(self.collect()["backups"]["checks"]["attempt_in_progress"])
+        self.backup["last_attempt_at"] = (self.now - dt.timedelta(hours=2, seconds=1)).isoformat()
+        self.assertFalse(self.collect()["backups"]["ok"])
+        self.backup["last_attempt_at"] = self.now.isoformat()
+        self.backup["last_verified_at"] = (self.now - dt.timedelta(hours=26)).isoformat()
+        self.assertFalse(self.collect()["backups"]["ok"])
+
+    def test_terminal_failure_cannot_be_hidden_by_previous_success(self):
+        self.backup.update(last_attempt_status="failed", last_attempt_ok=True)
+        self.assertFalse(self.collect()["backups"]["ok"])
+        self.backup.update(last_attempt_status="succeeded", last_attempt_ok=True)
+        self.assertTrue(self.collect()["backups"]["ok"])
+
     def test_backlog_and_source_failure_preserve_independent_components(self):
         self.commercial["delayed_mail"] = 1
         self.ops["data"]["jobs"]["full"]["status"] = "failed"
