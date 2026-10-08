@@ -468,6 +468,12 @@ async function convertXlsInProcess(xlsPath, { maxRows, maxCols, maxCsvBytes, out
 function runIsolatedConversion(kind, inputPath, options) {
     const { signal, ...childOptions } = options;
     signal?.throwIfAborted();
+    // Resolve configured caps in the parent, then send explicit values. The
+    // converter has no reason to inherit database, billing or object secrets,
+    // NODE_OPTIONS preload hooks, or other runtime process configuration.
+    childOptions.archiveCaps = archiveLimits(childOptions.archiveCaps);
+    const childEnvironment = Object.fromEntries(['PATH', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'TMP', 'TEMP']
+        .filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]]));
     const memoryMb = positiveInt(process.env.EXCEL_CONVERT_MEMORY_MB, DEFAULT_MEMORY_MB, {
         min: 64,
         max: 1024
@@ -483,6 +489,7 @@ function runIsolatedConversion(kind, inputPath, options) {
     return new Promise((resolve, reject) => {
         const child = fork(__filename, [CHILD_ARG], {
             execArgv: ['--max-old-space-size=' + memoryMb],
+            env: childEnvironment,
             stdio: ['ignore', 'ignore', 'pipe', 'ipc']
         });
         let settled = false;

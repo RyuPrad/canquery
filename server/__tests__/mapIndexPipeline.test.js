@@ -85,6 +85,20 @@ describe('bounded local-map conversion', () => {
             .toThrow(MapSkipError);
     });
 
+    test.each([
+        '{"type":"FeatureCollection","__proto__":{},"features":[]}',
+        '{"type":"FeatureCollection","features":[{"__proto__":{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]}}}]}',
+        '{"type":"FeatureCollection","features":[{"properties":{"nested":{"__proto__":null}}}]}',
+        '{"type":"FeatureCollection","features":[{"properties":{"__pro\\u0074o__":{}}}]}'
+    ])('rejects prototype setter keys before feature assembly: %s', async input => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-prototype-test-'));
+        const file = path.join(dir, 'input.geojson');
+        try {
+            fs.writeFileSync(file, input);
+            await expect(inspectGeoJsonFile(file)).rejects.toMatchObject({ code: 'MAP_GEOMETRY' });
+        } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    });
+
     test('rejects deeply nested metadata before the path-filter pass', async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-depth-test-'));
         const file = path.join(dir, 'nested.geojson');
