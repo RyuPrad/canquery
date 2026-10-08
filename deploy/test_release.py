@@ -66,6 +66,14 @@ class ReleasePromotionTests(unittest.TestCase):
                 archive.addfile(item, io.BytesIO(data))
         return target, hashlib.sha256(target.read_bytes()).hexdigest()
 
+    def test_root_verification_runs_git_as_checkout_owner(self):
+        owner = self.repo.stat()
+        with patch.object(release.os, 'geteuid', return_value=0):
+            with patch.object(release.subprocess, 'check_output', return_value=b'fixture') as command:
+                self.assertEqual(release.git_bytes(self.repo, 'rev-parse', 'HEAD'), b'fixture')
+        expected = {'user': owner.st_uid, 'group': owner.st_gid, 'extra_groups': []} if owner.st_uid else {}
+        command.assert_called_once_with(['git', 'rev-parse', 'HEAD'], cwd=self.repo, **expected)
+
     def test_preview_is_read_only_and_stage_does_not_copy_private_environment(self):
         self.assertFalse(self.stage(False)['apply'])
         self.assertFalse(self.destination.exists())

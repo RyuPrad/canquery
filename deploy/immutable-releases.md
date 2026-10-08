@@ -83,8 +83,9 @@ Failed stages remain isolated for diagnosis and require separate scoped cleanup.
 
 ## Seal, promote and verify
 
-Root independently re-verifies the original trusted artifact and checkout,
-then checks the installed stage for source drift, unexpected files and escaping
+Root independently re-verifies the original trusted artifact and checkout.
+Git inspection drops to the checkout owner, so repository helpers never acquire
+root privileges and no global `safe.directory` exception is needed. It then checks the installed stage for source drift, unexpected files and escaping
 dependency symlinks. Sealing sets files to 0444 (0555 for executables), directories
 to 0555 and ownership to root before relocating the stage to the root-owned
 final-release parent. Runtime identities cannot edit source or dependencies.

@@ -30,8 +30,19 @@ def safe_name(name):
     return path
 
 
+def git_bytes(checkout, *args):
+    # A root seal verifies a deployment-owned checkout. Run Git as its owner:
+    # this avoids safe.directory bypasses and prevents repository-configured
+    # helpers (for example fsmonitor) from running with root privileges.
+    credentials = {}
+    owner = Path(checkout).stat()
+    if os.geteuid() == 0 and owner.st_uid != 0:
+        credentials = {'user': owner.st_uid, 'group': owner.st_gid, 'extra_groups': []}
+    return subprocess.check_output(['git', *args], cwd=checkout, **credentials)
+
+
 def git(checkout, *args):
-    return subprocess.check_output(['git', *args], cwd=checkout).decode().strip()
+    return git_bytes(checkout, *args).decode().strip()
 
 
 def archive_members(data):
@@ -69,7 +80,7 @@ def verify_archive(archive, checksum, commit, checkout):
     if git(checkout, 'rev-parse', 'HEAD^{tree}') != manifest['tree']:
         raise ValueError('Source tree differs from manifest')
     # Compare every tracked byte, not just the manifest's claimed commit.
-    source = subprocess.check_output(['git', 'archive', '--format=tar', commit], cwd=checkout)
+    source = git_bytes(checkout, 'archive', '--format=tar', commit)
     tracked = set()
     with tarfile.open(fileobj=io.BytesIO(source)) as native:
         for item in native:
