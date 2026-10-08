@@ -10,6 +10,7 @@ const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { getSource } = require('../config/catalogSources');
 const { withSnapshot } = require('../db/snapshotRead');
 const { validateSnapshot, requireSnapshot } = require('./snapshotIdentity');
+const { resolveLocalQueryColumns } = require('../utils/columnIdentifiers');
 
 const proxyCache = createCache({ name: 'datastore-proxy', ttlMs: 5 * 60 * 1000, negativeTtlMs: 60 * 1000, maxEntries: 1000 });
 // Ingested data is immutable until a re-ingest replaces it, so a profile can be
@@ -122,15 +123,20 @@ function planQuery(row, options = {}, exporting = false) {
     }
     if (mode === 'ingested') {
         const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
+        const resolved = resolveLocalQueryColumns({ filters: parsedFilters,
+            sort: hasAggParams(group_by, agg, agg_column, bucket) ? undefined : sort,
+            group_by, agg_column }, columns);
         const knownColumns = columns.map(column => column.id);
         const knownSet = new Set(knownColumns);
-        for (const filter of parsedFilters) {
+        for (const filter of resolved.filters) {
             if (!knownSet.has(filter.column)) throw new AppError('unknown column: ' + filter.column, 400);
         }
-        const aggregation = validateAggregation({ group_by, agg, agg_column, bucket }, columns);
-        const order = validateSort(sort, aggregation ? ['key', 'value'] : ['_id', ...knownColumns]);
+        const aggregation = validateAggregation({ group_by: resolved.group_by, agg,
+            agg_column: resolved.agg_column, bucket }, columns);
+        const order = validateSort(aggregation ? sort : resolved.sort,
+            aggregation ? ['key', 'value'] : ['_id', ...knownColumns]);
         return { mode, aggregation, fields: aggregation ? aggregation.fields : [{ id: '_id', type: 'int' }, ...columns],
-            options: { tableName: row.table_name, knownColumns, q: queryText, filters: parsedFilters,
+            options: { tableName: row.table_name, knownColumns, q: queryText, filters: resolved.filters,
                 sortSql: order ? order.sql : null, limit, offset, snapshotRowCount: row.ingested_row_count,
                 ...(aggregation ? { groupBy: aggregation.groupBy, agg: aggregation.agg,
                     aggColumn: aggregation.aggColumn, bucket: aggregation.bucket } : {}) } };

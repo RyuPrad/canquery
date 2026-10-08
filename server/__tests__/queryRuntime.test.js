@@ -85,6 +85,18 @@ test('snapshot identifiers hide table names, survive metadata changes and change
     expect(snapshotInfo({ ...local, table_name: 'r_a2' }).id).not.toBe(first.id);
 });
 
+test('recorded legacy aliases share query validation and canonical aggregate cache options', () => {
+    const row = { ...local, ingested_columns: [{ id: 'code', type: 'TEXT', legacy_ids: ['ancien'] },
+        { id: 'amount', type: 'NUMERIC', legacy_ids: ['old amount'] }] };
+    const plan = service.planQuery(row, { filters: JSON.stringify({ ancien: '00123' }), sort: 'ancien desc' });
+    expect(plan.options.filters[0].column).toBe('code');
+    expect(plan.options.sortSql).toContain('"code" DESC');
+    expect(plan.options.snapshotRowCount).toBe(2);
+    const aggregate = service.planQuery(row, { group_by: 'ancien', agg: 'sum', agg_column: 'old amount', sort: 'value desc' });
+    expect(aggregate.options).toMatchObject({ groupBy: 'code', aggColumn: 'amount' });
+    expect(aggregate.options.sortSql).toContain('"value" DESC');
+});
+
 test('required snapshot is checked after lease acquisition before reading', async () => {
     const expected = snapshotInfo(local).id;
     catalog.getResourceById.mockResolvedValueOnce(local).mockResolvedValueOnce({ ...local, table_name: 'r_a2' });
