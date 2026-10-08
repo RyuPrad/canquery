@@ -5,17 +5,18 @@ import { LangProvider } from '../i18n.jsx';
 import AccountPage from './AccountPage.jsx';
 import AuthPage from './AuthPage.jsx';
 import TermsPage from './TermsPage.jsx';
-import { accountRequest, authRequest } from '../api/account.js';
+import { accountRequest, authRequest, hasAccountSession } from '../api/account.js';
 import { createRequire } from 'node:module';
 const { BUSINESS_PRICE, TERMS_VERSION } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
 
-vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), authRequest: vi.fn() }));
+vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), authRequest: vi.fn(), hasAccountSession: vi.fn() }));
 const account = { plan: 'free', mode: 'live', user: { email: 'fixture@example.test' }, remaining: 1000, limit: 1000, used: 0, reserved: 0,
   resets_at: '2026-11-01T00:00:00Z', key_limit: 1, rate_limit: 30, concurrency: 1, keys: [], usage: [], business_price: BUSINESS_PRICE, terms_version: TERMS_VERSION };
 const key = { id: 'owned-key', name: 'Monthly report', prefix: 'cq_prefix', enabled: true, created_at: '2026-10-06T23:00:00Z' };
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); window.history.replaceState(null, '', '/');
   accountRequest.mockResolvedValue(account);
+  hasAccountSession.mockResolvedValue(false);
   // jsdom has no dialog top layer; browser checks cover native modality.
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 });
@@ -135,7 +136,7 @@ test('signup sends accepted terms and replaces the successful form with next ste
 test('signup waits for the current server terms version and recovers from unavailable terms', async () => {
   accountRequest.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ...account, enabled: true, checkout: true, terms_version: '2026-11-02' });
   authRequest.mockResolvedValue({}); renderAuth('/signup');
-  expect(screen.getByRole('button', { name: 'Create an account' })).toBeDisabled();
+  expect(await screen.findByRole('button', { name: 'Create an account' })).toBeDisabled();
   fireEvent.submit(document.querySelector('form')); expect(authRequest).not.toHaveBeenCalled();
   expect(await screen.findByRole('alert')).toHaveTextContent('The current terms could not be loaded');
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -169,8 +170,9 @@ test.each([['en', /Business costs CA\$9/, 'Terms effective:'], ['fr', /Business 
   expect(accountRequest.mock.calls.every(([path]) => path === '/plans')).toBe(true);
 });
 
-test('password visibility is accessible and preserves the entered password', () => {
-  renderAuth('/login'); const password = screen.getByLabelText('Password', { exact: true });
+test('password visibility is accessible and preserves the entered password', async () => {
+  renderAuth('/login'); await screen.findByRole('textbox', { name: 'Email address' });
+  const password = screen.getByLabelText('Password', { exact: true });
   fireEvent.change(password, { target: { value: 'long-fixture-password' } }); expect(password).toHaveAttribute('type', 'password');
   expect(password).toHaveAccessibleDescription('Enter your CanQuery account password.');
   fireEvent.click(screen.getByRole('button', { name: 'Show' })); expect(password).toHaveAttribute('type', 'text'); expect(password).toHaveValue('long-fixture-password');
@@ -206,7 +208,8 @@ test('temporary reset failure retains the form without claiming the link is inva
 });
 
 test('an unverified owner can resend verification and receives a confirmation screen', async () => {
-  authRequest.mockRejectedValueOnce({ code: 'EMAIL_NOT_VERIFIED' }).mockResolvedValue({}); renderAuth('/login'); fillCredentials(); fireEvent.submit(document.querySelector('form'));
+  authRequest.mockRejectedValueOnce({ code: 'EMAIL_NOT_VERIFIED' }).mockResolvedValue({}); renderAuth('/login');
+  await screen.findByRole('textbox', { name: 'Email address' }); fillCredentials(); fireEvent.submit(document.querySelector('form'));
   fireEvent.click(await screen.findByRole('button', { name: 'Resend verification email' }));
   await waitFor(() => expect(authRequest).toHaveBeenLastCalledWith('send-verification-email', { email: 'fixture@example.test', callbackURL: window.location.origin + '/account' }, 'en'));
   expect(await screen.findByRole('status')).toHaveTextContent('Check your email'); expect(document.querySelector('form')).toBeNull();

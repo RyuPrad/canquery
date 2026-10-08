@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { authRequest } from '../api/account.js';
 import useCommercialPlans from '../hooks/useCommercialPlans.js';
+import useAccountSession from '../hooks/useAccountSession.js';
 import { businessPrice, currentTermsVersion } from '../utils/businessPrice.js';
 import './AccountExperience.css';
 
@@ -10,7 +11,10 @@ export default function AuthPage() {
   const { pathname } = useLocation();
   const { t, lang } = useLang();
   const mode = pathname.slice(1);
-  const { plans, error: plansError, retry: retryPlans } = useCommercialPlans(mode === 'signup');
+  const needsSessionCheck = mode === 'login' || mode === 'signup';
+  const session = useAccountSession(needsSessionCheck);
+  const sessionPending = needsSessionCheck && (session.checking || session.status !== 'anonymous');
+  const { plans, error: plansError, retry: retryPlans } = useCommercialPlans(mode === 'signup' && session.status === 'anonymous');
   const termsVersion = currentTermsVersion(plans);
   const price = businessPrice(plans?.business_price, lang);
   const [resetLink] = useState(() => {
@@ -29,9 +33,12 @@ export default function AuthPage() {
   useEffect(() => { if (mode === 'reset-password') window.history.replaceState(null, '', '/reset-password'); }, [mode]);
   useEffect(() => { if (message || needsResetLink) resultHeading.current?.focus(); }, [message, needsResetLink]);
   useEffect(() => { if (error) errorBox.current?.focus(); }, [error]);
+  useEffect(() => {
+    if (needsSessionCheck && !session.checking && session.status === 'authenticated') window.location.replace('/account');
+  }, [needsSessionCheck, session.checking, session.status]);
   async function submit(event) {
     event.preventDefault();
-    if (pending || needsResetLink || (mode === 'signup' && !termsVersion)) return;
+    if (pending || sessionPending || needsResetLink || (mode === 'signup' && !termsVersion)) return;
     setPending(true); setError(''); setMessage(''); setVerificationEmail('');
     const values = Object.fromEntries(new FormData(event.currentTarget));
     try {
@@ -58,6 +65,13 @@ export default function AuthPage() {
     <header className="cq-auth-intro"><p className="cq-account-eyebrow">{t('account.workspace')}</p><h1 className="font-display font-bold text-3xl sm:text-4xl mt-3">{t('account.' + mode)}</h1>
       <p className="mt-4 text-base-content/75 leading-relaxed">{t('account.intro_' + mode)}</p></header>
     <div className="cq-auth-form-panel min-w-0">
+      {sessionPending && <div className="cq-card p-6 sm:p-8 space-y-4">
+        {!session.checking && session.status === 'error'
+          ? <><p role="alert">{t('account.session_error')}</p><button type="button" className="btn btn-outline" onClick={session.retry}>{t('account.retry')}</button><a className="link block" href="/account">{t('account.go_to_account')}</a></>
+          : <p role="status">{t(session.status === 'authenticated' && !session.checking ? 'account.opening' : 'account.checking_session')}</p>}
+      </div>}
+      {/* Keep drafts mounted while a returning tab rechecks its session. */}
+      <div hidden={sessionPending}>
       {needsResetLink ? <div className="cq-card p-6 sm:p-8 space-y-4"><h2 ref={resultHeading} tabIndex={-1} className="text-xl font-display font-bold">{t('account.reset_link_title')}</h2><p>{t('account.reset_link_help')}</p><a className="btn btn-primary" href="/forgot-password">{t('account.request_new_link')}</a></div>
         : message ? <div className="cq-card p-6 sm:p-8 space-y-4"><span className="cq-auth-success-mark" aria-hidden="true">✓</span><h2 ref={resultHeading} tabIndex={-1} className="text-xl font-display font-bold">{t(successTitle)}</h2>
           <p role="status" className="leading-relaxed">{t(message)}</p>{message !== 'account.password_changed' && <p className="text-sm text-base-content/75">{t('account.email_delivery_help')}</p>}<a className="btn btn-primary" href="/login">{t('account.login')}</a></div>
@@ -80,7 +94,7 @@ export default function AuthPage() {
           </form>}
       <nav className="cq-auth-navigation mt-5" aria-label={t('account.navigation')}>
         {mode === 'login' ? <><span>{t('account.new_here')}</span><a className="link" href="/signup">{t('account.signup')}</a></> : <><span>{t('account.already_registered')}</span><a className="link" href="/login">{t('account.login')}</a></>}
-      </nav><p className="mt-5 text-sm text-center text-base-content/75">{t('account.need_help')} <a className="link" href="mailto:support@canquery.com">support@canquery.com</a></p>
+      </nav></div><p className="mt-5 text-sm text-center text-base-content/75">{t('account.need_help')} <a className="link" href="mailto:support@canquery.com">support@canquery.com</a></p>
     </div>
     <aside className="cq-auth-context"><p className="cq-auth-note">{t('account.auth_privacy_note')}</p>{mode === 'signup' && plans?.enabled && plans.checkout && price && <p className="cq-auth-note">{t('account.signup_plans').replace('{price}', price)}</p>}<a className="link inline-block" href="/docs#quickstart">{t('account.preview_docs')}</a></aside>
   </div></section>;

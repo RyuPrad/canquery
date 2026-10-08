@@ -1,14 +1,35 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { LangProvider } from '../i18n.jsx';
 import PricingPage from './PricingPage.jsx';
-import { accountRequest } from '../api/account.js';
+import { accountRequest, hasAccountSession } from '../api/account.js';
 import { createRequire } from 'node:module';
 const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
-vi.mock('../api/account.js', () => ({ accountRequest: vi.fn() }));
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
+vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), hasAccountSession: vi.fn() }));
+beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); hasAccountSession.mockResolvedValue(false); });
 const plans = { enabled: true, mode: 'live', checkout: false, plans: PLANS, business_price: BUSINESS_PRICE, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS };
 const mount = () => render(<LangProvider><PricingPage /></LangProvider>);
+
+test.each([['en', 'Go to account'], ['fr', 'Accéder au compte']])('signed-in Free visitors open their account in %s', async (lang, label) => {
+  localStorage.setItem('cq-lang', lang);
+  accountRequest.mockResolvedValue({ ...plans, checkout: true });
+  hasAccountSession.mockResolvedValue(true);
+  mount();
+  expect(await screen.findByRole('link', { name: label })).toHaveAttribute('href', '/account');
+  expect(document.querySelector('a[href="/signup"]')).toBeNull();
+  expect(accountRequest.mock.calls.every(([path]) => path === '/plans')).toBe(true);
+});
+
+test('unknown and unavailable sessions keep a neutral account link without affecting plan availability', async () => {
+  let reject;
+  hasAccountSession.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  accountRequest.mockResolvedValue(plans);
+  mount();
+  expect(await screen.findByRole('link', { name: 'Developer account' })).toHaveAttribute('href', '/account');
+  await act(async () => reject(new Error('offline')));
+  expect(await screen.findByRole('link', { name: 'Developer account' })).toHaveAttribute('href', '/account');
+  expect(screen.queryByRole('link', { name: 'Create an account' })).toBeNull();
+});
 
 test.each([
   ['en', 'Free', 'Business', 'Create an account', 'Coming soon', 'Choose Business'],

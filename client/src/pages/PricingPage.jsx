@@ -1,5 +1,6 @@
 import { useLang } from '../i18n.jsx';
 import useCommercialPlans from '../hooks/useCommercialPlans.js';
+import useAccountSession from '../hooks/useAccountSession.js';
 import { businessPrice } from '../utils/businessPrice.js';
 import { CheckIcon } from '../components/Icons.jsx';
 import CreditWorkflows from '../components/docs/CreditWorkflows.jsx';
@@ -11,6 +12,8 @@ export default function PricingPage() {
   const label = (key, values) => t(key).replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
   const number = value => value == null ? '—' : Number(value).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');
   const { plans, error, retry } = useCommercialPlans();
+  const session = useAccountSession();
+  const sessionStatus = session.checking ? 'loading' : session.status;
   const price = businessPrice(plans?.business_price, lang);
   const inquiry = 'mailto:support@canquery.com?subject=' + encodeURIComponent(t('pricing.email_subject')) + '&body=' + encodeURIComponent(t('pricing.email_body'));
   const loaded = Boolean(plans);
@@ -33,7 +36,7 @@ export default function PricingPage() {
         <p className="cq-pricing-audience">{t('pricing.for_' + plan)}</p><p className="cq-pricing-price">{plan === 'free' ? t('account.price_free') : price ? label('account.price_business', { price }) : '—'}</p>
         <ul>{[label('pricing.plan_credits_' + plan, { credits: number(plans?.plans?.[plan]?.credits) }), label('pricing.plan_rate', { rate: number(plans?.plans?.[plan]?.rate) }), label('pricing.plan_keys', { keys: number(plans?.plans?.[plan]?.keys) }), label('pricing.plan_concurrency', { concurrency: number(plans?.plans?.[plan]?.concurrency) }), t('pricing.plan_access')].map(feature => <li key={feature}><CheckIcon size={17} className="shrink-0" /><span>{feature}</span></li>)}</ul>
         <div className="cq-pricing-plan-action">{!loaded ? <button className="btn btn-outline" disabled>{t(error ? 'pricing.unavailable' : 'pricing.checking')}</button>
-            : plan === 'free' && plans.enabled ? <a className="btn btn-primary" href="/signup">{t('account.signup')}</a>
+            : plan === 'free' && plans.enabled ? <a className="btn btn-primary" href={sessionStatus === 'anonymous' ? '/signup' : '/account'}>{t(sessionStatus === 'anonymous' ? 'account.signup' : sessionStatus === 'authenticated' ? 'account.go_to_account' : 'account.title')}</a>
               : plan === 'business' && checkout ? <a className="btn btn-primary" href="/account">{t('account.get_business')}</a>
                 : <a className="btn btn-outline" href={inquiry}>{t('pricing.discuss_workflow')}</a>}
           <p>{t(plan === 'business' ? checkout ? 'pricing.renewal' : 'pricing.business_wait' : 'pricing.free_period')}</p>{plan === 'business' && !checkout && <p>{t('pricing.renewal')}</p>}</div>

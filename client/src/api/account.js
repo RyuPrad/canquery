@@ -15,3 +15,19 @@ export async function authRequest(path, body, lang) {
   if (!response.ok) throw Object.assign(new Error('Authentication failed'), { code: data.code, status: response.status });
   return data;
 }
+
+// Public pages need only session presence, never account bootstrap or key data.
+export async function hasAccountSession({ signal } = {}) {
+  const response = await fetch('/api/auth/get-session', {
+    credentials: 'same-origin', cache: 'no-store', signal,
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error('Session lookup failed');
+  const data = await response.json();
+  if (data === null) return false;
+  if (typeof data?.session?.id !== 'string' || !data.session.id ||
+      typeof data?.user?.id !== 'string' || !data.user.id) {
+    throw new Error('Invalid session response');
+  }
+  return true;
+}

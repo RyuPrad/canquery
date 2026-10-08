@@ -3,8 +3,8 @@ import { afterEach, beforeEach } from 'vitest';
 import { createRequire } from 'node:module';
 import DocsPage from './DocsPage.jsx';
 import { LangProvider } from '../i18n.jsx';
-import { accountRequest } from '../api/account.js';
-vi.mock('../api/account.js', () => ({ accountRequest: vi.fn() }));
+import { accountRequest, hasAccountSession } from '../api/account.js';
+vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), hasAccountSession: vi.fn() }));
 
 const { buildOpenApi } = createRequire(import.meta.url)('../../../server/services/openApi.js');
 const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
@@ -42,8 +42,30 @@ const spec = {
 const response = value => Promise.resolve({ ok: true, json: async () => value });
 
 beforeEach(() => {
+  hasAccountSession.mockReset().mockResolvedValue(false);
   accountRequest.mockResolvedValue({ plans: PLANS, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS });
   vi.stubGlobal('fetch', vi.fn(() => response(spec)));
+});
+
+test.each([
+  ['en', true, 'Manage API keys', '/account'], ['fr', true, 'Gérer les clés API', '/account'],
+  ['en', false, 'Get a free API key', '/signup'], ['fr', false, 'Obtenir une clé API gratuite', '/signup'],
+])('docs account action follows the %s session (%s)', async (lang, signedIn, label, href) => {
+  localStorage.setItem('cq-lang', lang);
+  hasAccountSession.mockResolvedValue(signedIn);
+  render(<LangProvider><DocsPage /></LangProvider>);
+  expect(await screen.findByRole('link', { name: label })).toHaveAttribute('href', href);
+  expect(accountRequest.mock.calls.every(([path]) => path === '/plans')).toBe(true);
+});
+
+test('docs keep a neutral account action while session lookup is pending or fails', async () => {
+  let reject;
+  hasAccountSession.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(<DocsPage />);
+  expect(screen.getByRole('link', { name: 'Developer account' })).toHaveAttribute('href', '/account');
+  await act(async () => reject(new Error('offline')));
+  expect(screen.getByRole('link', { name: 'Developer account' })).toHaveAttribute('href', '/account');
+  expect(screen.queryByRole('link', { name: 'Get a free API key' })).toBeNull();
 });
 
 test('preparation demonstration preserves source context, bounded recipes and credit distinctions', async () => {
