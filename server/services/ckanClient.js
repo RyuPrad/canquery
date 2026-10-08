@@ -4,7 +4,7 @@ const AppError = require('../utils/AppError');
 const BASE = process.env.CKAN_BASE_URL || 'https://open.canada.ca/data/api/3/action';
 const USER_AGENT = process.env.CKAN_USER_AGENT || 'canquery/1.0';
 
-async function ckanAction(action, params, { baseUrl = BASE } = {}) {
+async function ckanAction(action, params, { baseUrl = BASE, signal } = {}) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params || {})) {
         if (value === null || value === undefined) {
@@ -22,9 +22,10 @@ async function ckanAction(action, params, { baseUrl = BASE } = {}) {
             'User-Agent': USER_AGENT,
             'Accept': 'application/json'
         },
-        timeoutMs: 30000
+        timeoutMs: 30000, signal
     });
     if (!response.ok) {
+        await response.body?.cancel();
         throw new AppError('CKAN upstream returned ' + response.status + ' for ' + action, 502);
     }
     const body = await response.json();
@@ -50,8 +51,8 @@ async function organizationList({ limit, offset, allFields, baseUrl } = {}) {
     return ckanAction('organization_list', { limit, offset, all_fields: allFields }, { baseUrl });
 }
 
-async function datastoreSearch({ resourceId, q, filters, limit, offset, sort, baseUrl } = {}) {
-    return ckanAction('datastore_search', { resource_id: resourceId, q, filters, limit, offset, sort }, { baseUrl });
+async function datastoreSearch({ resourceId, q, filters, limit, offset, sort, baseUrl, signal } = {}) {
+    return ckanAction('datastore_search', { resource_id: resourceId, q, filters, limit, offset, sort }, { baseUrl, signal });
 }
 
 module.exports = { ckanAction, packageSearch, packageShow, packageList, organizationList, datastoreSearch };

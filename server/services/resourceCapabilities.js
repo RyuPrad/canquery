@@ -1,17 +1,13 @@
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB) || 50;
-const MAX_XLSX_MB = Number(process.env.MAX_XLSX_MB) || 20;
-const MAX_ROWS = Number(process.env.MAX_ROWS) > 0 ? Number(process.env.MAX_ROWS) : 1_000_000;
-const MAX_COLS = Number(process.env.MAX_COLS) > 0 ? Number(process.env.MAX_COLS) : 120;
-
-const maxFileBytes = () => MAX_FILE_MB * 1024 * 1024;
+const { ingestLimits } = require('../config/ingest');
+const limits = ingestLimits();
 
 // Excel formats get a smaller cap than CSV: conversion is isolated and bounded,
 // but XLSX shared strings/styles and legacy XLS parsing still expand in memory
 // inside that child process.
 const ingestCapBytesFor = (format) => {
     const normalized = String(format || '').toUpperCase();
-    if (normalized === 'CSV') return maxFileBytes();
-    if (normalized === 'XLSX' || normalized === 'XLS') return MAX_XLSX_MB * 1024 * 1024;
+    if (normalized === 'CSV') return limits.maxFileBytes;
+    if (normalized === 'XLSX' || normalized === 'XLS') return limits.maxXlsxBytes;
     return null;
 };
 
@@ -45,8 +41,8 @@ const isIngestableFile = (row) => {
     const fieldCount = knownFieldCount(row);
     return cap !== null &&
         (row.size_bytes == null || Number(row.size_bytes) <= cap) &&
-        (recordCount == null || recordCount <= MAX_ROWS) &&
-        (fieldCount == null || fieldCount <= MAX_COLS);
+        (recordCount == null || recordCount <= limits.maxRows) &&
+        (fieldCount == null || fieldCount <= limits.maxCols);
 };
 
 // `capability` drives truthful presentation copy. `queryMode` preserves the

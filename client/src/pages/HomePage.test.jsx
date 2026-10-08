@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, expect, test, vi } from 'vitest';
 import HomePage from './HomePage.jsx';
@@ -104,6 +104,36 @@ test('one explainable preview is enough to display the chart section', async () 
   expect(await screen.findByRole('heading', { name: 'A closer look at the data' })).toBeInTheDocument();
 });
 
+test('changing place hides old publisher and source options through failure and retry', async () => {
+  start('/?place=oshawa-on');
+  await screen.findByRole('option', { name: 'Old publisher (1)' });
+  fetchOrganizations.mockRejectedValueOnce(new Error('offline'));
+  fetchSources.mockRejectedValueOnce(new Error('offline'));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Choose a place' }), { target: { value: 'toronto-on' } });
+  expect(screen.queryByRole('option', { name: 'Old publisher (1)' })).toBeNull();
+  expect(screen.queryByRole('option', { name: 'Federal' })).toBeNull();
+  const publisherError = await screen.findByText('Publishers could not be loaded for these filters.');
+  const sourceError = await screen.findByText('Source portals could not be loaded for this place.');
+  fetchOrganizations.mockResolvedValue({ data: [{ name: 'toronto', title: { en: 'Toronto publisher' }, dataset_count: 4 }] });
+  fetchSources.mockResolvedValue({ data: [{ id: 'toronto-source', name: { en: 'Toronto source' } }] });
+  fireEvent.click(within(publisherError).getByRole('button', { name: 'Retry' }));
+  fireEvent.click(within(sourceError).getByRole('button', { name: 'Retry' }));
+  await screen.findByRole('option', { name: 'Toronto publisher (4)' });
+  await screen.findByRole('option', { name: 'Toronto source' });
+  expect(screen.queryByRole('option', { name: 'Old publisher (1)' })).toBeNull();
+});
+
+test('an obsolete publisher scope cannot replace newer options or their error state', async () => {
+  let resolveOld;
+  fetchOrganizations.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+  start('/?place=oshawa-on');
+  await waitFor(() => expect(fetchOrganizations).toHaveBeenCalled());
+  fireEvent.change(screen.getByRole('combobox', { name: 'Choose a place' }), { target: { value: 'toronto-on' } });
+  await screen.findByRole('option', { name: 'New publisher (2)' });
+  await act(async () => resolveOld({ data: [{ name: 'obsolete', title: { en: 'Obsolete' }, dataset_count: 1 }] }));
+  expect(screen.queryByRole('option', { name: 'Obsolete (1)' })).toBeNull();
+});
+
 test('same-route searches and Back/Forward update every filter and the displayed results', async () => {
   start('/?q=parks&format=CSV&org=old&source=federal&mappable=true&place=oshawa-on&keyword=roads');
   expect(await screen.findByText('Results for parks')).toBeInTheDocument();
@@ -182,7 +212,7 @@ test('the publisher selector is labelled, translated and includes publishers aft
   expect(await screen.findByRole('option', { name: 'Dernier diffuseur (3)' })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: 'Toutes les organisations' })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Premier diffuseur (1)' })).toBeInTheDocument();
-  expect(fetchOrganizations).toHaveBeenCalledWith(expect.objectContaining({ limit: 100, cursor: '100' }));
+  expect(fetchOrganizations).toHaveBeenCalledWith(expect.objectContaining({ limit: 100, cursor: '100' }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
 });
 
 test('an unfiltered visit offers six previews and a link to the full catalogue', async () => {

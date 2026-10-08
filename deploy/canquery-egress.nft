@@ -15,13 +15,13 @@ table inet canquery_egress {
         ct state established,related accept
 
         # Local PostgreSQL and loopback resolvers are required by the app.
-        meta skuid "canquery" oifname "lo" tcp dport { 5432, 5433 } accept
-        meta skuid "canquery" ip daddr 127.0.0.0/8 udp dport 53 accept
-        meta skuid "canquery" ip daddr 127.0.0.0/8 tcp dport 53 accept
-        meta skuid "canquery" ip6 daddr ::1 udp dport 53 accept
-        meta skuid "canquery" ip6 daddr ::1 tcp dport 53 accept
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } oifname "lo" tcp dport { 5432, 5433 } accept
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } ip daddr 127.0.0.0/8 udp dport 53 accept
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } ip daddr 127.0.0.0/8 tcp dport 53 accept
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } ip6 daddr ::1 udp dport 53 accept
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } ip6 daddr ::1 tcp dport 53 accept
 
-        meta skuid "canquery" ip daddr {
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } ip daddr {
             0.0.0.0/8,
             10.0.0.0/8,
             100.64.0.0/10,
@@ -39,7 +39,7 @@ table inet canquery_egress {
             240.0.0.0/4
         } reject with icmpx type admin-prohibited
 
-        meta skuid "canquery" ip6 daddr {
+        meta skuid { "canquery-api", "canquery-ingest", "canquery-map" } ip6 daddr {
             ::/96,
             ::ffff:0:0/96,
             64:ff9b::/96,

@@ -47,4 +47,10 @@ async function requireOwner(req,res,next) {
         next();
     } catch (err) { next(err); }
 }
-module.exports = { getAuth, authHandler, requireOwner };
+async function closeAuth() {
+    if (runtime) await (await runtime).close();
+}
+const { track } = require('../utils/runtimeWork');
+module.exports = { getAuth, closeAuth,
+    authHandler: (req, res, next) => track(authHandler(req, res, next)),
+    requireOwner: (req, res, next) => track(requireOwner(req, res, next)) };

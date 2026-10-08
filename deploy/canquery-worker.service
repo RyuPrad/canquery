@@ -9,18 +9,22 @@ After=canquery-egress-firewall.service
 
 [Service]
 Type=simple
-User=canquery
-Group=canquery
-WorkingDirectory=/home/canquery/canquery/server
+User=canquery-ingest
+Group=canquery-ingest
+WorkingDirectory=/opt/canquery/current/server
 ExecStart=/usr/bin/node scripts/ingest-worker.js
+Environment=TMPDIR=/tmp
 Environment=NODE_ENV=production
+EnvironmentFile=/etc/canquery/runtime/canquery-ingest.env
 Restart=on-failure
 RestartSec=10
 KillSignal=SIGTERM
 # The worker handles SIGTERM by finishing its active ingest and then releasing
 # its database queue lock. A hard timeout is still finite; the replacement
 # worker immediately requeues a job if this process must be killed.
-TimeoutStopSec=10min
+# Cover the default 30-minute preparation deadline plus cancellation/cleanup.
+# Review this grace whenever INGEST_DEADLINE_MS changes.
+TimeoutStopSec=32min
 
 # Excel conversion can inflate compressed workbook data substantially. These
 # defaults protect a shared host; operators can tune them with a systemd drop-in.
@@ -28,8 +32,14 @@ MemoryHigh=768M
 MemoryMax=1G
 
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/canquery/canquery/server /tmp
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
 PrivateTmp=true
 NoNewPrivileges=true
 

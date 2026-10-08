@@ -2,11 +2,17 @@ const INT_RE = /^-?\d{1,15}$/;
 const NUM_RE = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TS_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)??)?(Z|[+-]\d{2}:?\d{2})?$/;
+const { truncateUtf8, MAX_IDENTIFIER_BYTES } = require('./columnIdentifiers');
+
+const hasLeadingZeroInteger = value => /^[+-]?0\d+$/.test(String(value).trim());
 
 function sanitizeColumnName(name, index, used) {
     let n = String(name == null ? '' : name).trim();
     n = n.replace(/"/g, '');
-    n = n.substring(0, 60);
+    // Preserve the old initial 60-character mapping where it was valid. For
+    // overlong Unicode names, match PostgreSQL's previous physical truncation.
+    n = truncateUtf8(n.substring(0, 60));
+    if (n.includes('\0')) throw Object.assign(new Error('CSV header contains a null character'), { code: 'CSV_COLUMN_NAME' });
     if (n === '') {
         n = 'column_' + (index + 1);
     }
@@ -14,10 +20,7 @@ function sanitizeColumnName(name, index, used) {
     let counter = 0;
     while (used.has(candidate)) {
         const suffix = counter === 0 ? '_' + (index + 1) : '_' + (index + 1) + '_' + counter;
-        // Trim the base so base + suffix stays within Postgres's 63-char
-        // identifier bound - a 60-char base plus "_100" would otherwise fail
-        // quoteIdent and abort the whole ingest over a column name.
-        candidate = n.substring(0, 63 - suffix.length) + suffix;
+        candidate = truncateUtf8(n, MAX_IDENTIFIER_BYTES - Buffer.byteLength(suffix)) + suffix;
         counter++;
     }
     used.add(candidate);
@@ -28,6 +31,7 @@ function inferType(values) {
     if (values.length === 0) {
         return 'TEXT';
     }
+    if (values.some(hasLeadingZeroInteger)) return 'TEXT';
     const allInt = values.every(v => INT_RE.test(v));
     if (allInt) {
         return 'INTEGER';
@@ -59,7 +63,11 @@ function inferColumns(headers, sampleRows) {
             .slice(0, 1000)
             .map(v => String(v));
         const type = inferType(sampleValues);
-        return { id, type };
+        const original_label = String(header == null ? '' : header);
+        const legacyId = original_label.trim().replace(/"/g, '').substring(0, 60);
+        const legacy_ids = Buffer.byteLength(legacyId) > MAX_IDENTIFIER_BYTES && truncateUtf8(legacyId) === id
+            ? [legacyId] : undefined;
+        return { id, type, original_label, ...(legacy_ids ? { legacy_ids } : {}) };
     });
 }
 
@@ -163,4 +171,4 @@ function mergeTwoRowHeader(headerRow, nextRow) {
     return merged;
 }
 
-module.exports = { sanitizeColumnName, inferType, inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader };
+module.exports = { sanitizeColumnName, inferType, inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader, hasLeadingZeroInteger };

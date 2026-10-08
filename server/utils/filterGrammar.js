@@ -1,4 +1,5 @@
 const AppError = require('./AppError');
+const { validColumnId } = require('./columnIdentifiers');
 
 const ALLOWED_OPS = { eq: '=', lt: '<', gt: '>', lte: '<=', gte: '>=', contains: null };
 
@@ -51,7 +52,7 @@ function parseFilters(raw) {
 }
 
 function quoteIdent(name) {
-    if (typeof name !== 'string' || name.includes('"') || name.length > 63) {
+    if (!validColumnId(name)) {
         throw new AppError('invalid identifier', 400);
     }
     return '"' + name + '"';

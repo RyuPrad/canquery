@@ -1,23 +1,17 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import { useParams, Link, useSearchParams, useLocation } from 'react-router-dom';
-import {
-  fetchResource,
-  queryResource,
-} from '../api/catalog.js';
-import {
-  NotFoundError,
-  NotIngestedError,
-  FileOnlyError,
-  DatastoreFilterError,
-  apiUrl,
-} from '../api/client.js';
-import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import { useParams, Link, useLocation } from 'react-router-dom';
+import { NotIngestedError, FileOnlyError, apiUrl } from '../api/client.js';
+import useResourceUrl from '../hooks/useResourceUrl.js';
+import useResourceMetadata from '../hooks/useResourceMetadata.js';
+import useResourceRows from '../hooks/useResourceRows.js';
+import { PAGE_SIZE, MAX_PAGE_INDEX, resourceViewState } from '../utils/resourceExplorerState.js';
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
 import useResourceActivity from '../hooks/useResourceActivity.js';
 import PreparationStatus from '../components/PreparationStatus.jsx';
 import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
+import { schemaFingerprint, reconcileResourceFields } from '../utils/resourceSchema.js';
 import { track } from '../utils/analytics.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
@@ -40,242 +34,144 @@ import {
   LineChartIcon,
   FileIcon,
   MapIcon,
-  BuildingIcon,
+  BuildingIcon
 } from '../components/Icons.jsx';
 
-const PAGE_SIZE = 50;
-const MAX_QUERY_OFFSET = 10000;
-const MAX_PAGE_INDEX = Math.floor(MAX_QUERY_OFFSET / PAGE_SIZE);
 function ResourceExplorer({ id, navigationKey }) {
   const { lang, t } = useLang();
-  const location = useLocation();
-
-  const [resource, setResource] = useState(null);
-  const [resourceError, setResourceError] = useState(null);
-  const [notFound, setNotFound] = useState(false);
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const parseCf = (raw) => {
-    if (!raw) return {};
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  };
-  const [q, setQ] = useState(searchParams.get('q') || '');
-  const [columnFilters, setColumnFilters] = useState(() => parseCf(searchParams.get('cf')));
-  const [sort, setSort] = useState(searchParams.get('sort') || null);
-  const [page, setPage] = useState(() => {
-    const n = Number(searchParams.get('page'));
-    return Number.isInteger(n) && n > 0 ? Math.min(n, MAX_PAGE_INDEX) : 0;
-  });
-
-  const [data, setData] = useState(null);
-  const [dataError, setDataError] = useState(null);
-  const [dataLoading, setDataLoading] = useState(true);
-
-  const [view, setView] = useState(() => {
-    const requested = searchParams.get('view');
-    return requested === 'chart' || requested === 'map' ? requested : 'table';
-  });
-  const [reloadKey, setReloadKey] = useState(0);
+  const {
+    resource,
+    error: resourceError,
+    notFound,
+    reload: onPrepared,
+    revision: reloadKey
+  } = useResourceMetadata(id);
+  const {
+    q,
+    setQ,
+    columnFilters,
+    setColumnFilters,
+    sort,
+    setSort,
+    page,
+    setPage,
+    view,
+    setView,
+    debouncedQ,
+    debouncedFilters
+  } = useResourceUrl(navigationKey);
   const [filterUpgrade, setFilterUpgrade] = useState(false);
   const [schemaChanged, setSchemaChanged] = useState(false);
-  const onPrepared = useCallback(() => setReloadKey(k => k + 1), []);
-  const expiredResource = useRef(null);
-  const onUnavailable = useCallback(() => {
-    if (!resource || expiredResource.current === resource) return;
-    expiredResource.current = resource;
-    setData(null);
-    setDataError(new NotIngestedError('Resource has no prepared copy', 409));
-    onPrepared();
-  }, [resource, onPrepared]);
-  useResourceActivity({ id, resource, active: view !== 'map', onUnavailable });
-  useEffect(() => {
-    if (resource && view === 'map' && !resource.map) setView('table');
-  }, [resource, view]);
-
-  const debouncedQ = useDebouncedValue(q, 250);
-  const debouncedFilters = useDebouncedValue(columnFilters, 250);
-  const hasNonEq = Object.values(buildColumnFilters(debouncedFilters)).some(f => f.op !== 'eq');
-  const preparation = useResourcePreparation({ id, resource, active: view !== 'map',
-    needsLocal: view === 'chart' || hasNonEq || filterUpgrade, onReady: onPrepared });
-  const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
+  const hasNonEq = Object.values(buildColumnFilters(debouncedFilters)).some(
+    (filter) => filter.op !== 'eq'
+  );
   const fileOnly = resource?.query_mode === 'file-only';
-  const preparationRequired = resource && !fileOnly && (resource.query_mode === 'ingestable' ||
-    (view === 'chart' && resource.query_mode !== 'ingested'));
+  const preparationRequired =
+    resource &&
+    !fileOnly &&
+    (resource.query_mode === 'ingestable' ||
+      (view === 'chart' && resource.query_mode !== 'ingested'));
   const filtersNeedPreparation = resource?.query_mode === 'datastore' && hasNonEq;
-  const previousSnapshot = useRef(null);
+  const fields = resource?.ingestion?.fields;
+  const fingerprint = schemaFingerprint(fields);
+  const [observedSchema, setObservedSchema] = useState(null);
+  const reconciled = reconcileResourceFields(columnFilters, sort, fields);
+  const appliedFields = reconcileResourceFields(debouncedFilters, sort, fields);
+  const schemaReady =
+    fingerprint === null ||
+    (observedSchema === fingerprint && !reconciled.changed && !appliedFields.changed);
   useEffect(() => {
-    const stamp = resource?.ingestion?.ingested_at;
-    const fields = resource?.ingestion?.fields;
-    if (stamp && previousSnapshot.current && previousSnapshot.current !== stamp && fields) {
-      const names = new Set(['_id', ...fields.map(f => f.id)]);
-      const valid = Object.fromEntries(Object.entries(columnFilters).filter(([name]) => names.has(name)));
-      const removedFilter = Object.keys(valid).length !== Object.keys(columnFilters).length;
-      const removedSort = sort && !names.has(sort) && !names.has(sort.replace(/\s+(asc|desc)$/i, ''));
-      if (removedFilter) setColumnFilters(valid);
-      if (removedSort) setSort(null);
-      if (removedFilter || removedSort) setSchemaChanged(true);
+    if (fingerprint === null) return;
+    if (reconciled.changed) {
+      setColumnFilters(reconciled.filters);
+      setSort(reconciled.sort);
+    }
+    if ((observedSchema !== null && observedSchema !== fingerprint) || reconciled.changed) {
+      setSchemaChanged(true);
       setPage(0);
     }
-    if (stamp) previousSnapshot.current = stamp;
-  }, [resource, columnFilters, sort]);
+    setObservedSchema(fingerprint);
+  }, [
+    fingerprint,
+    observedSchema,
+    reconciled.changed,
+    reconciled.filters,
+    reconciled.sort,
+    setColumnFilters,
+    setSort,
+    setPage
+  ]);
 
-
+  const expiredResource = useRef(null);
+  const reloadAfterExpiry = useCallback(() => {
+    if (!resource || expiredResource.current === resource) return false;
+    expiredResource.current = resource;
+    onPrepared();
+    return true;
+  }, [resource, onPrepared]);
+  const {
+    data,
+    error: dataError,
+    loading: dataLoading,
+    invalidate
+  } = useResourceRows({
+    id,
+    resource,
+    view,
+    debouncedQ,
+    debouncedFilters,
+    sort,
+    page,
+    reloadKey,
+    preparationRequired,
+    fileOnly,
+    hasNonEq,
+    schemaReady,
+    setFilterUpgrade,
+    onUnavailable: reloadAfterExpiry
+  });
+  const onUnavailable = useCallback(() => {
+    if (reloadAfterExpiry()) invalidate();
+  }, [reloadAfterExpiry, invalidate]);
+  useResourceActivity({ id, resource, active: view !== 'map', onUnavailable });
+  const preparation = useResourcePreparation({
+    id,
+    resource,
+    active: view !== 'map',
+    needsLocal: view === 'chart' || hasNonEq || filterUpgrade,
+    onReady: onPrepared
+  });
+  const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
   useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    fetchResource(id, { signal: controller.signal })
-      .then((env) => {
-        if (!cancelled) {
-          setResource(env.data);
-          setResourceError(null);
-          track('resource_open', {
-            resource_id: env.data.id,
-            dataset_id: env.data.dataset?.id || '',
-            format: env.data.format || '',
-            query_mode: env.data.query_mode || '',
-            source: 'page',
-          });
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          if (err instanceof NotFoundError) setNotFound(true);
-          else setResourceError(err);
-        }
-      });
-    return () => { cancelled = true; controller.abort(); };
-  }, [id, reloadKey]);
-
+    if (resource && view === 'map' && !resource.map) setView('table');
+  }, [resource, view, setView]);
   useEffect(() => {
-    const active = Object.fromEntries(Object.entries(debouncedFilters).filter(([, value]) => value));
-    if (Object.keys(active).length) {
+    const active = Object.fromEntries(
+      Object.entries(debouncedFilters).filter(([, value]) => value)
+    );
+    if (Object.keys(active).length)
       track('resource_filter', { resource_id: id, filters: JSON.stringify(active) });
-    }
   }, [id, debouncedFilters]);
 
-  // Snap back to the first page when the query changes - but not on the mount
-  // run (every effect runs once on mount), which would wipe a ?page= deep-link
-  // right after the state initializer restored it.
-  const pageResetArmedRef = useRef(false);
-  useEffect(() => {
-    if (!pageResetArmedRef.current) {
-      pageResetArmedRef.current = true;
-      return;
-    }
-    setPage(0);
-  }, [debouncedQ, debouncedFilters, sort]);
-
-  // Keep the explorer state shareable via the URL.
-  useEffect(() => {
-    const next = {};
-    if (debouncedQ) next.q = debouncedQ;
-    const activeCf = {};
-    for (const [col, text] of Object.entries(debouncedFilters)) {
-      if (text) activeCf[col] = text;
-    }
-    if (Object.keys(activeCf).length) next.cf = JSON.stringify(activeCf);
-    if (sort) next.sort = sort;
-    if (page > 0) next.page = String(page);
-    if (view !== 'table') next.view = view;
-    if (new URLSearchParams(next).toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true, state: { ...location.state, resourceExplorerKey: navigationKey } });
-    }
-  }, [debouncedQ, debouncedFilters, sort, page, view, setSearchParams, searchParams, location.state, navigationKey]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (view === 'map') {
-      setDataLoading(false);
-      return () => { cancelled = true; };
-    }
-    setDataLoading(true);
-
-    if (fileOnly) {
-      setData(null);
-      setDataError(null);
-      setDataLoading(false);
-      return () => { cancelled = true; };
-    }
-    if (!resource || preparationRequired || (resource.query_mode === 'datastore' && hasNonEq)) {
-      setDataLoading(false);
-      return () => { cancelled = true; };
-    }
-    const filters = buildColumnFilters(debouncedFilters);
-    const controller = new AbortController();
-    queryResource(id, {
-      q: debouncedQ || undefined,
-      filters: Object.keys(filters).length ? filters : undefined,
-      sort: sort || undefined,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
-    }, { signal: controller.signal })
-      .then((env) => {
-        if (!cancelled) {
-          setData({
-            fields: env.data.fields,
-            records: env.data.records,
-            total: env.data.total,
-            mode: env.meta.query_mode,
-          });
-          setDataError(null);
-          track('resource_query', {
-            resource_id: id,
-            query: debouncedQ || '',
-            filters: JSON.stringify(debouncedFilters),
-            sort: sort || '',
-            page: page + 1,
-            query_mode: env.meta.query_mode || '',
-            total: Number(env.data.total) || 0,
-            status: 'success',
-          });
-        }
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err instanceof DatastoreFilterError) {
-          // Fallback for the first load before the mode is known: the proxy
-          // rejected a non-equality filter, so upgrade to local storage. The
-          // rows already on screen stay visible while the ingest runs.
-          setFilterUpgrade(true);
-          return;
-        }
-        track('resource_query', {
-          resource_id: id,
-          query: debouncedQ || '',
-          filters: JSON.stringify(debouncedFilters),
-          sort: sort || '',
-          page: page + 1,
-          status: err instanceof NotIngestedError ? 'not_loaded' : err instanceof FileOnlyError ? 'file_only' : 'failed',
-        });
-        if (err instanceof NotIngestedError && resource.query_mode !== 'ingestable') onUnavailable();
-        setData(null);
-        setDataError(err);
-      })
-      .finally(() => {
-        if (!cancelled) setDataLoading(false);
-      });
-
-    return () => { cancelled = true; controller.abort(); };
-  }, [id, debouncedQ, debouncedFilters, sort, page, view, reloadKey, resource, preparationRequired, fileOnly, hasNonEq, onUnavailable]);
-
-  const changeSort = useCallback(next => {
-    track('resource_sort', { resource_id: id, sort: next || '' });
-    setSort(next);
-  }, [id]);
-  const changeColumnFilter = useCallback((field, text) => {
-    setColumnFilters(previous => ({ ...previous, [field]: text }));
-  }, []);
+  const changeSort = useCallback(
+    (next) => {
+      track('resource_sort', { resource_id: id, sort: next || '' });
+      setSort(next);
+    },
+    [id, setSort]
+  );
+  const changeColumnFilter = useCallback(
+    (field, text) => {
+      setColumnFilters((previous) => ({ ...previous, [field]: text }));
+    },
+    [setColumnFilters]
+  );
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/web-api/v1/resources/' + id + '/query.csv', {
     q: debouncedQ || undefined,
     filters: Object.keys(exportFilters).length ? exportFilters : undefined,
-    sort: sort || undefined,
+    sort: sort || undefined
   });
 
   if (notFound) {
@@ -293,33 +189,58 @@ function ResourceExplorer({ id, navigationKey }) {
   // moves them across the viewport when the title and overview arrive.
   // A refresh retains the existing metadata and serving rows instead.
   if (!resource) {
-    return <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6">
-      {resourceError ? <div className="alert alert-error" role="alert">
-        <span>{resourceError.message}</span>
-        <button type="button" className="btn btn-sm" onClick={onPrepared}>{t('common.retry')}</button>
-      </div> : <div role="status" aria-label={t('resource.loading_data')} aria-busy="true" className="space-y-4">
-        <span className="sr-only">{t('resource.loading_data')}</span>
-        <div className="cq-skel h-8 w-2/3" aria-hidden="true" />
-        <div className="cq-skel h-40" aria-hidden="true" />
-        <div className="cq-skel h-[420px]" aria-hidden="true" />
-      </div>}
-    </div>;
+    return (
+      <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6">
+        {resourceError ? (
+          <div className="alert alert-error" role="alert">
+            <span>{resourceError.message}</span>
+            <button type="button" className="btn btn-sm" onClick={onPrepared}>
+              {t('common.retry')}
+            </button>
+          </div>
+        ) : (
+          <div
+            role="status"
+            aria-label={t('resource.loading_data')}
+            aria-busy="true"
+            className="space-y-4"
+          >
+            <span className="sr-only">{t('resource.loading_data')}</span>
+            <div className="cq-skel h-8 w-2/3" aria-hidden="true" />
+            <div className="cq-skel h-40" aria-hidden="true" />
+            <div className="cq-skel h-[420px]" aria-hidden="true" />
+          </div>
+        )}
+      </div>
+    );
   }
 
-  const downloadOnly = fileOnly || dataError instanceof FileOnlyError;
+  const downloadOnly = fileOnly || (view === 'table' && dataError instanceof FileOnlyError);
   const downloadOnlyUrl = fileOnly ? resource.url : dataError?.download_url;
+  const display = resourceViewState({
+    view,
+    hasMap: Boolean(resource.map),
+    filtersNeedPreparation,
+    hasData: Boolean(data),
+    dataLoading,
+    preparationRequired,
+    downloadOnly,
+    rowUnavailable: dataError instanceof NotIngestedError,
+    rowError: Boolean(dataError)
+  });
 
   const totalPages = data
     ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(data.total / PAGE_SIZE)))
     : 1;
-
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6 space-y-4">
       {resourceError && (
         <div className="alert alert-error my-4" role="alert">
           <span>{resourceError.message}</span>
-          <button type="button" className="btn btn-sm" onClick={onPrepared}>{t('common.retry')}</button>
+          <button type="button" className="btn btn-sm" onClick={onPrepared}>
+            {t('common.retry')}
+          </button>
         </div>
       )}
       {resource && (
@@ -329,15 +250,29 @@ function ResourceExplorer({ id, navigationKey }) {
             items={[
               { label: t('nav.datasets'), to: '/datasets' },
               {
-                label: resource.dataset.title?.[lang] || resource.dataset.title?.en || resource.dataset.name,
+                label:
+                  resource.dataset.title?.[lang] ||
+                  resource.dataset.title?.en ||
+                  resource.dataset.name,
                 to: `/datasets/${resource.dataset.name || resource.dataset.id}`
               },
-              { label: resource.presentation?.title?.[lang] || resource.name?.[lang] || resource.name?.en || resource.name?.fr || resource.id }
+              {
+                label:
+                  resource.presentation?.title?.[lang] ||
+                  resource.name?.[lang] ||
+                  resource.name?.en ||
+                  resource.name?.fr ||
+                  resource.id
+              }
             ]}
           />
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold font-display tracking-tight">
-              {resource.presentation?.title?.[lang] || resource.name?.[lang] || resource.name?.en || resource.name?.fr || resource.id}
+              {resource.presentation?.title?.[lang] ||
+                resource.name?.[lang] ||
+                resource.name?.en ||
+                resource.name?.fr ||
+                resource.id}
             </h1>
             <ResourceBadge mode={resource.query_mode} />
             <a
@@ -366,9 +301,20 @@ function ResourceExplorer({ id, navigationKey }) {
                 resource.dataset.organization.name}
             </Link>
           )}
-          {resource.last_modified && <p className="text-xs text-base-content/60">{t('preview.resource_updated')} {new Date(resource.last_modified).toLocaleDateString(lang === 'fr' ? 'fr-CA' : 'en-CA')}</p>}
+          {resource.last_modified && (
+            <p className="text-xs text-base-content/60">
+              {t('preview.resource_updated')}{' '}
+              {new Date(resource.last_modified).toLocaleDateString(
+                lang === 'fr' ? 'fr-CA' : 'en-CA'
+              )}
+            </p>
+          )}
           <Provenance provenance={resource.provenance} compact />
-          {resource.presentation?.context?.[lang] && <p className="max-w-3xl whitespace-pre-wrap break-words text-base-content/70">{resource.presentation.context[lang]}</p>}
+          {resource.presentation?.context?.[lang] && (
+            <p className="max-w-3xl whitespace-pre-wrap break-words text-base-content/70">
+              {resource.presentation.context[lang]}
+            </p>
+          )}
           <CatalogOverview presentation={resource.presentation} />
         </div>
       )}
@@ -376,65 +322,108 @@ function ResourceExplorer({ id, navigationKey }) {
       {view !== 'map' && resource?.ingestion?.ingested_at && (
         <p className="text-xs text-base-content/60">
           {t('preparation.prepared_at')}{' '}
-          <time dateTime={resource.ingestion.ingested_at}>{new Date(resource.ingestion.ingested_at).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')}</time>
+          <time dateTime={resource.ingestion.ingested_at}>
+            {new Date(resource.ingestion.ingested_at).toLocaleString(
+              lang === 'fr' ? 'fr-CA' : 'en-CA'
+            )}
+          </time>
           {resource.preparation?.freshness !== 'current' && <> · {t('preparation.older_copy')}</>}
         </p>
       )}
-      {schemaChanged && <p role="status" className="text-sm">{t('preparation.schema_changed')}</p>}
-      {view !== 'map' && !preparationRequired && !filtersNeedPreparation && preparation.phase !== 'idle' && (
-        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} compact />
+      {schemaChanged && (
+        <p role="status" className="text-sm">
+          {t('preparation.schema_changed')}
+        </p>
       )}
+      {view !== 'map' &&
+        !preparationRequired &&
+        !filtersNeedPreparation &&
+        preparation.phase !== 'idle' && (
+          <PreparationStatus
+            preparation={preparation}
+            elapsed={formatDuration(loadElapsed)}
+            compact
+          />
+        )}
       {view === 'table' && filtersNeedPreparation && (
         <div className="cq-card p-4 space-y-2" role="status">
-          <p>{t(!preparation.supported || !preparation.enabled || preparation.phase === 'unavailable' ? 'resource.upgrade_unavailable' : preparation.phase === 'failed' ? 'resource.upgrade_failed' : 'resource.upgrading')}</p>
-          {data && <p className="text-sm text-base-content/60">{t('resource.filters_not_applied')}</p>}
-          {preparation.supported && preparation.enabled && <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} compact />}
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => { setColumnFilters({}); setFilterUpgrade(false); }}>
+          <p>
+            {t(
+              !preparation.supported || !preparation.enabled || preparation.phase === 'unavailable'
+                ? 'resource.upgrade_unavailable'
+                : preparation.phase === 'failed'
+                  ? 'resource.upgrade_failed'
+                  : 'resource.upgrading'
+            )}
+          </p>
+          {data && (
+            <p className="text-sm text-base-content/60">{t('resource.filters_not_applied')}</p>
+          )}
+          {preparation.supported && preparation.enabled && (
+            <PreparationStatus
+              preparation={preparation}
+              elapsed={formatDuration(loadElapsed)}
+              compact
+            />
+          )}
+          <button
+            type="button"
+            className="btn btn-sm btn-outline"
+            onClick={() => {
+              setColumnFilters({});
+              setFilterUpgrade(false);
+            }}
+          >
             {t('resource.clear_column_filters')}
           </button>
         </div>
       )}
 
-      {view !== 'map' && !downloadOnly && <div className="flex flex-wrap gap-2.5 items-center">
-        <div className="cq-search cq-search-sm w-full sm:w-80">
-          <SearchIcon size={14} className="opacity-40 shrink-0" />
-          <input
-            placeholder={t('resource.search_placeholder')}
-            aria-label={t('resource.search_placeholder')}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+      {view !== 'map' && !downloadOnly && (
+        <div className="flex flex-wrap gap-2.5 items-center">
+          <div className="cq-search cq-search-sm w-full sm:w-80">
+            <SearchIcon size={14} className="opacity-40 shrink-0" />
+            <input
+              placeholder={t('resource.search_placeholder')}
+              aria-label={t('resource.search_placeholder')}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          {view === 'table' && data && (
+            <span className="cq-chip cq-chip-mono ml-auto">
+              {data.total.toLocaleString()} {t('resource.rows')}
+            </span>
+          )}
+          {view === 'table' && data && !filtersNeedPreparation && (
+            <a
+              className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
+              href={exportHref}
+              rel="nofollow"
+              download
+              title={t('resource.export_tip')}
+              data-analytics-event="resource_export"
+              data-analytics-resource-id={id}
+              data-analytics-query={debouncedQ || ''}
+              data-analytics-filters={JSON.stringify(exportFilters)}
+              data-analytics-sort={sort || ''}
+            >
+              <DownloadIcon size={13} />
+              {t('resource.download_filtered')}
+            </a>
+          )}
         </div>
-        {data && (
-          <span className="cq-chip cq-chip-mono ml-auto">
-            {data.total.toLocaleString()} {t('resource.rows')}
-          </span>
-        )}
-        {data && !filtersNeedPreparation && (
-          <a
-            className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
-            href={exportHref}
-            rel="nofollow"
-            download
-            title={t('resource.export_tip')}
-            data-analytics-event="resource_export"
-            data-analytics-resource-id={id}
-            data-analytics-query={debouncedQ || ''}
-            data-analytics-filters={JSON.stringify(exportFilters)}
-            data-analytics-sort={sort || ''}
-          >
-            <DownloadIcon size={13} />
-            {t('resource.download_filtered')}
-          </a>
-        )}
-      </div>}
+      )}
 
       {resource && (
         <div className="cq-seg w-fit">
           <button
             className={'cq-seg-btn' + (view === 'table' ? ' cq-seg-active' : '')}
             aria-pressed={view === 'table'}
-            onClick={() => { track('resource_view', { resource_id: id, view: 'table' }); setView('table'); }}
+            onClick={() => {
+              track('resource_view', { resource_id: id, view: 'table' });
+              setView('table');
+            }}
           >
             <TableIcon size={13} />
             {t('resource.table')}
@@ -442,7 +431,10 @@ function ResourceExplorer({ id, navigationKey }) {
           <button
             className={'cq-seg-btn' + (view === 'chart' ? ' cq-seg-active' : '')}
             aria-pressed={view === 'chart'}
-            onClick={() => { track('resource_view', { resource_id: id, view: 'chart' }); setView('chart'); }}
+            onClick={() => {
+              track('resource_view', { resource_id: id, view: 'chart' });
+              setView('chart');
+            }}
           >
             <LineChartIcon size={13} />
             {t('resource.chart')}
@@ -451,7 +443,10 @@ function ResourceExplorer({ id, navigationKey }) {
             <button
               className={'cq-seg-btn' + (view === 'map' ? ' cq-seg-active' : '')}
               aria-pressed={view === 'map'}
-              onClick={() => { track('resource_view', { resource_id: id, view: 'map' }); setView('map'); }}
+              onClick={() => {
+                track('resource_view', { resource_id: id, view: 'map' });
+                setView('map');
+              }}
             >
               <MapIcon size={13} />
               {t('places.map')}
@@ -460,57 +455,74 @@ function ResourceExplorer({ id, navigationKey }) {
         </div>
       )}
 
-      {view === 'map' ? (
-        resource?.map ? (
+      {display === 'map' || display === 'map-loading' ? (
+        display === 'map' ? (
           <Suspense fallback={<div className="cq-skel h-[560px] rounded-xl" />}>
             <MapPanel resourceId={id} map={resource.map} />
           </Suspense>
-        ) : <LoadingSpinner label={t('map.loading')} />
-      ) : filtersNeedPreparation && view === 'table' && !data ? null : dataLoading && !data && !preparationRequired ? (
+        ) : (
+          <LoadingSpinner label={t('map.loading')} />
+        )
+      ) : display === 'filter-preparation' ? null : display === 'loading' ? (
         <div className="space-y-3">
           <div className="cq-skel h-10 w-64" />
           <div className="cq-skel h-[420px]" />
         </div>
-      ) : downloadOnly ? (
+      ) : display === 'download' ? (
         <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
           <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
             <FileIcon size={24} />
           </span>
           <p className="text-base-content/70">{t('resource.file_only')}</p>
-          {downloadOnlyUrl && <a
-            href={downloadOnlyUrl}
-            className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
-            data-analytics-event="resource_download"
-            data-analytics-resource-id={id}
-            data-analytics-source="file_only"
-          >
-            <DownloadIcon size={13} />
-            {t('resource.download_here')}
-          </a>}
-        </div>
-      ) : preparationRequired || dataError instanceof NotIngestedError ? (
-        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
-      ) : dataError ? (
-        <div className="alert alert-error">{dataError.message}</div>
-      ) : data ? (
-        <>
-          {view === 'chart' ? (
-            <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-              <ChartPanel key={resource?.ingestion?.ingested_at || id} resourceId={id} q={debouncedQ || undefined} filters={Object.keys(exportFilters).length ? exportFilters : undefined} fields={resource?.ingestion?.fields || data.fields} queryMode={data.mode} onUnavailable={onUnavailable} />
-            </Suspense>
-          ) : (
-            <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
-              <DataTable
-                fields={data.fields}
-                records={data.records}
-                sort={sort}
-                onSortChange={changeSort}
-                columnFilters={columnFilters}
-                onColumnFilterChange={changeColumnFilter}
-              />
-            </div>
+          {downloadOnlyUrl && (
+            <a
+              href={downloadOnlyUrl}
+              className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
+              data-analytics-event="resource_download"
+              data-analytics-resource-id={id}
+              data-analytics-source="file_only"
+            >
+              <DownloadIcon size={13} />
+              {t('resource.download_here')}
+            </a>
           )}
-          {view !== 'chart' && data.total > PAGE_SIZE && (
+        </div>
+      ) : display === 'preparation' ? (
+        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
+      ) : display === 'chart' ? (
+        <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
+          {schemaReady ? (
+            <ChartPanel
+              key={JSON.stringify([
+                resource?.ingestion?.snapshot_id || resource?.ingestion?.ingested_at || id,
+                fingerprint
+              ])}
+              resourceId={id}
+              q={debouncedQ || undefined}
+              filters={Object.keys(exportFilters).length ? exportFilters : undefined}
+              fields={fields || []}
+              queryMode={resource.query_mode}
+              onUnavailable={onUnavailable}
+            />
+          ) : (
+            <div className="cq-skel h-[420px] rounded-xl" />
+          )}
+        </Suspense>
+      ) : display === 'error' ? (
+        <div className="alert alert-error">{dataError.message}</div>
+      ) : display === 'table' ? (
+        <>
+          <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+            <DataTable
+              fields={data.fields}
+              records={data.records}
+              sort={sort}
+              onSortChange={changeSort}
+              columnFilters={columnFilters}
+              onColumnFilterChange={changeColumnFilter}
+            />
+          </div>
+          {data.total > PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <button
                 className="btn btn-sm btn-outline border-base-content/20 rounded-lg"

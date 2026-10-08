@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh CanQuery component observations every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=1s
+Unit=canquery-observer.service
+
+[Install]
+WantedBy=timers.target

@@ -1,43 +1,32 @@
-// Retry 429 and 5xx with exponential backoff and a hard per-request timeout.
-// Network errors retry on the same schedule; non-429 4xx responses return to
-// the caller.
-const DEFAULT_TIMEOUT_MS = 30_000;
+const { setTimeout: delay } = require('node:timers/promises');
+const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_RETRIES = 4;
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+function sleep(ms, signal) {
+    return delay(ms, undefined, { signal });
 }
 
+// One attempt budget covers network, 429 and 5xx failures. Retry responses are
+// disposed before waiting; caller cancellation also interrupts backoff/body I/O.
 async function fetchWithBackoff(url, options = {}, attempt = 0) {
-    const {
-        headers = {},
-        timeoutMs = DEFAULT_TIMEOUT_MS,
-        maxRetries = DEFAULT_MAX_RETRIES
-    } = options;
-    try {
-        const res = await fetch(url, {
-            headers,
-            signal: AbortSignal.timeout(timeoutMs)
-        });
-        if (res.status === 429) {
-            if (attempt >= maxRetries) throw new Error('Max retries on 429');
-            const delay = Math.min(120_000, 5000 * 2 ** attempt);
-            console.log(`  [429] backing off ${delay}ms`);
-            await sleep(delay);
-            return fetchWithBackoff(url, options, attempt + 1);
+    const { headers = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries = DEFAULT_MAX_RETRIES, signal } = options;
+    for (let current = attempt; ; current++) {
+        signal?.throwIfAborted();
+        let response;
+        try {
+            const timeout = AbortSignal.timeout(timeoutMs);
+            response = await fetch(url, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+        } catch (error) {
+            signal?.throwIfAborted();
+            if (current >= maxRetries) throw error;
+            await sleep(2000 * 2 ** current, signal);
+            continue;
         }
-        if (!res.ok && res.status >= 500) {
-            if (attempt >= maxRetries) throw new Error(`5xx after retries: ${res.status}`);
-            await sleep(2000 * 2 ** attempt);
-            return fetchWithBackoff(url, options, attempt + 1);
-        }
-        return res;
-    } catch (err) {
-        if (attempt >= maxRetries) throw err;
-        console.log(`  [retry] ${err.message}`);
-        await sleep(2000 * 2 ** attempt);
-        return fetchWithBackoff(url, options, attempt + 1);
+        if (response.status !== 429 && response.status < 500) return response;
+        await response.body?.cancel();
+        if (current >= maxRetries) throw new Error('Upstream retry limit reached: ' + response.status);
+        const wait = response.status === 429 ? Math.min(120000, 5000 * 2 ** current) : 2000 * 2 ** current;
+        await sleep(wait, signal);
     }
 }
-
 module.exports = { fetchWithBackoff, sleep };

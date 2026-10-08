@@ -7,7 +7,9 @@ function operationPath(req) {
 }
 
 function isPublicOperation(req) {
-    return ['GET', 'HEAD'].includes(req.method) && ['/ops', '/openapi.json'].includes(operationPath(req));
+    const path = operationPath(req);
+    return ['GET', 'HEAD'].includes(req.method) &&
+        (['/ops', '/openapi.json'].includes(path) || /^\/ops\/components\/[^/]+$/.test(path));
 }
 
 function operationFor(req) {

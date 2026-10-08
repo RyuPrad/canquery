@@ -7,12 +7,20 @@ const snapshotDb = () => context.getStore()?.client || pool;
 // A reader pins all versions of this resource until the request/stream ends.
 // Publication does not need this lock; retirement and eviction take its
 // exclusive counterpart without waiting, so neither interrupts a reader.
-async function withSnapshot(resourceId, callback, db = pool) {
+async function withSnapshot(resourceId, callback, db = pool, { signal } = {}) {
+    signal?.throwIfAborted();
     if (context.getStore()?.resourceId === resourceId) return callback();
     const client = await db.connect();
+    let released = false;
+    const abort = () => {
+        if (!released) { released = true; client.release(true); }
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let locked = false;
     let broken = false;
     try {
+        signal?.throwIfAborted();
         try {
             await client.query('SELECT pg_advisory_lock_shared(hashtext($1))', [snapshotKey(resourceId)]);
         } catch (error) {
@@ -24,12 +32,16 @@ async function withSnapshot(resourceId, callback, db = pool) {
         }
         locked = true;
         return await context.run({ client, resourceId }, callback);
+    } catch (error) {
+        if (signal?.aborted) throw signal.reason;
+        throw error;
     } finally {
-        if (locked) {
+        signal?.removeEventListener('abort', abort);
+        if (locked && !released) {
             try { await client.query('SELECT pg_advisory_unlock_shared(hashtext($1))', [snapshotKey(resourceId)]); }
             catch { broken = true; }
         }
-        client.release(broken);
+        if (!released) client.release(broken);
     }
 }
 

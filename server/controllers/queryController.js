@@ -1,6 +1,5 @@
 const catchAsync = require('../utils/catchAsync');
 const queryService = require('../services/queryService');
-const { withSnapshot } = require('../db/snapshotRead');
 const { envelope } = require('../utils/envelope');
 
 const NUMERIC_TYPE_RE = /^(smallint|integer|bigint|int[248]?|numeric|decimal|real|float[48]?|double( precision)?|money)$/i;
@@ -30,13 +29,14 @@ function hasSpreadsheetFormulaPrefix(value) {
 }
 
 async function queryResource(req, res) {
-    const { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket } = req.query;
-    const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket });
+    const { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot } = req.query;
+    const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot });
     res.set('Cache-Control', 'no-cache');
     res.json(envelope(
         { fields: result.fields, records: result.records, total: result.total },
         { meta: Object.assign(
-            { query_mode: result.query_mode },
+            { query_mode: result.query_mode, snapshot: result.snapshot, retrieved_at: result.retrieved_at,
+                publisher_modified_at: result.publisher_modified_at, limits: result.limits },
             provenanceMeta(result.provenance),
             result.aggregation ? { aggregation: result.aggregation } : {}
         ) }
@@ -86,17 +86,27 @@ function shouldNeutralizeCell(field, value) {
 }
 
 async function profileResource(req, res) {
-    const result = await queryService.profileResource(req.params.id);
+    const result = await queryService.profileResource(req.params.id, { snapshot: req.query.snapshot });
     res.set('Cache-Control', 'no-cache');
     res.json(envelope(
         { row_count: result.row_count, columns: result.columns },
-        { meta: { query_mode: result.query_mode, ...provenanceMeta(result.provenance) } }
+        { meta: { query_mode: result.query_mode, snapshot: result.snapshot, retrieved_at: result.retrieved_at,
+            publisher_modified_at: result.publisher_modified_at, ...provenanceMeta(result.provenance) } }
     ));
 }
 
 async function exportResourceCsv(req, res) {
-    const { q, filters, sort, group_by, agg, agg_column, bucket } = req.query;
-    const { fields, records, provenance } = await queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket });
+    const { q, filters, sort, group_by, agg, agg_column, bucket, snapshot } = req.query;
+    return queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket, snapshot },
+        result => writeResourceCsv(req, res, result));
+}
+
+async function writeResourceCsv(req, res, { fields, records, provenance, snapshot, retrieved_at }) {
+    if (snapshot) {
+        res.set('X-CanQuery-Snapshot', snapshot.id);
+        if (snapshot.prepared_at) res.set('X-CanQuery-Prepared-At', new Date(snapshot.prepared_at).toISOString());
+    }
+    res.set('X-CanQuery-Retrieved-At', retrieved_at);
     const safeFilenameId = String(req.params.id).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'attachment; filename="resource-' + safeFilenameId + '.csv"');
@@ -118,7 +128,7 @@ async function exportResourceCsv(req, res) {
     res.end();
 }
 
-const pin = handler => catchAsync((req, res) => withSnapshot(req.params.id, () => handler(req, res)));
+const pin = catchAsync;
 const recordResourceActivity = pin(async (req, res) => {
     res.set('Cache-Control', 'no-store');
     await queryService.recordResourceActivity(req.params.id);

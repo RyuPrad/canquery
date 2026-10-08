@@ -25,6 +25,7 @@ const { commercialApi, credentialLimiter } = require('./middleware/commercialApi
 const { authHandler } = require('./services/authRuntime');
 const { receiveWebhook } = require('./services/billingService');
 
+const catchAsync = require('./utils/catchAsync');
 const app = express();
 
 app.set('trust proxy', 1);
@@ -38,6 +39,11 @@ app.use(helmet({
     }
 }));
 app.use(requestId);
+app.use(require('./middleware/requestLifetime').requestLifetime());
+app.use((_req, res, next) => {
+    res.set('Access-Control-Expose-Headers', 'X-Request-Id, X-CanQuery-Snapshot, X-CanQuery-Prepared-At, X-CanQuery-Retrieved-At');
+    next();
+});
 
 // API responses remain crawlable for rendering, but are not search landing pages.
 // Mount before CORS, authentication and rate limiting so failures carry it too.
@@ -88,15 +94,16 @@ app.use((req, res, next) => {
 });
 
 // Signature verification and Better Auth both need the original request stream.
-app.post('/api/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), async(req,res)=>{
+app.post('/api/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), catchAsync(async(req,res)=>{
     await receiveWebhook(req.body,req.headers['stripe-signature']);
     res.set('Cache-Control','no-store').json({received:true});
-});
+}));
 app.all('/api/auth/*splat', authHandler);
 app.use(express.json({limit:'64kb'}));
 app.use('/api/account', require('./routes/account'));
 
 app.get('/healthz', catalogController.healthz);
+app.get('/readyz', require('./controllers/componentHealthController').readyz);
 
 app.use('/api/v1', credentialLimiter, commercialApi);
 app.use(['/api','/web-api'], generalLimiter);
@@ -129,7 +136,7 @@ if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
     app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(clientDist, { index: false }));
     // Per-route SEO and initial content, with real 404s and retryable 503s.
-    app.get(/^\/(?!api\/|web-api\/|healthz).*/, spaController.serveSpa(clientDist));
+    app.get(/^\/(?!api\/|web-api\/|healthz|readyz).*/, spaController.serveSpa(clientDist));
 }
 
 app.use((req, res, next) => {

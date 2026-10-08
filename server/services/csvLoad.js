@@ -2,7 +2,7 @@ const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader } = require('../utils/csvTypes');
+const { inferColumns, pgTypeFor, detectHeaderIndex, mergeTwoRowHeader, hasLeadingZeroInteger } = require('../utils/csvTypes');
 const { quoteIdent } = require('../utils/filterGrammar');
 const { createCsvReadStream } = require('./csvRead');
 
@@ -26,11 +26,11 @@ function escapeCsvValue(v) {
     return '"' + String(v).replace(/"/g, '""') + '"';
 }
 
-async function readSample(filePath, { delimiter, encoding }) {
+async function readSample(filePath, { delimiter, encoding, signal }) {
     return new Promise((resolve, reject) => {
         const records = [];
         let settled = false;
-        const readStream = createCsvReadStream(filePath, encoding);
+        const readStream = createCsvReadStream(filePath, encoding, { signal });
         const parser = parse(csvParseOptions({ delimiter }));
 
         const finish = () => {
@@ -77,8 +77,9 @@ async function readSample(filePath, { delimiter, encoding }) {
     });
 }
 
-async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols }) {
-    const { headers, rows, skipRecords } = await readSample(filePath, { delimiter, encoding });
+async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols, signal }) {
+    signal?.throwIfAborted();
+    const { headers, rows, skipRecords } = await readSample(filePath, { delimiter, encoding, signal });
     if (!headers || headers.length === 0) throw Object.assign(new Error('empty CSV'), { code: 'CSV_EMPTY' });
     if (headers.length > maxCols) {
         const err = new Error('column count ' + headers.length + ' exceeds cap ' + maxCols);
@@ -90,6 +91,8 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     const table = 'store.' + quoteIdent(tableName);
     await client.query('DROP TABLE IF EXISTS ' + table);
     await client.query('CREATE TABLE ' + table + ' (_id bigserial, ' + columns.map(c => quoteIdent(c.id) + ' text').join(', ') + ')');
+    const storeOwner = process.env.CANQUERY_STORE_OWNER_ROLE?.trim();
+    if (storeOwner) await client.query('ALTER TABLE ' + table + ' OWNER TO ' + quoteIdent(storeOwner));
 
     const colList = columns.map(c => quoteIdent(c.id)).join(', ');
     const copySql = 'COPY ' + table + ' (' + colList + ') FROM STDIN WITH (FORMAT csv)';
@@ -109,8 +112,22 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
                 err.code = 'CAP_ROWS';
                 return cb(err);
             }
+            if (record.length > columns.length) {
+                const err = new Error('CSV data record ' + rowCount + ' has ' + record.length +
+                    ' columns; expected at most ' + columns.length);
+                err.code = 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH';
+                err.record = rowCount;
+                err.expectedColumns = columns.length;
+                err.actualColumns = record.length;
+                return cb(err);
+            }
             const padded = [];
             for (let i = 0; i < columns.length; i += 1) {
+                // Sample inference cannot prove lexical fidelity. Check every
+                // value before the full-file cast pass, including late codes.
+                if (['INTEGER', 'NUMERIC'].includes(columns[i].type) && hasLeadingZeroInteger(record[i])) {
+                    columns[i].type = 'TEXT';
+                }
                 padded.push(escapeCsvValue(record[i] === undefined ? null : record[i]));
             }
             cb(null, padded.join(',') + '\n');
@@ -118,10 +135,11 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     });
 
     await pipeline(
-        createCsvReadStream(filePath, encoding),
+        createCsvReadStream(filePath, encoding, { signal }),
         parse(csvParseOptions({ delimiter })),
         toCsv,
-        client.query(copyFrom(copySql))
+        client.query(copyFrom(copySql)),
+        { signal }
     );
 
     const typedColumns = columns.filter(col => col.type !== 'TEXT');
@@ -156,6 +174,9 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
         }
     }
 
+    // Build after COPY and the single type rewrite; final publication measures
+    // pg_total_relation_size, including this index, before budget admission.
+    await client.query('CREATE UNIQUE INDEX ON ' + table + ' ("_id")');
     return { rowCount, columns };
 }
 

@@ -9,12 +9,13 @@ After=canquery-egress-firewall.service
 
 [Service]
 Type=simple
-User=canquery
-Group=canquery
-WorkingDirectory=/home/canquery/canquery/server
+User=canquery-map
+Group=canquery-map
+WorkingDirectory=/opt/canquery/current/server
 ExecStart=/usr/bin/node scripts/map-worker.js
+Environment=TMPDIR=/tmp
 Environment=NODE_ENV=production
-EnvironmentFile=-/etc/canquery-map-write.env
+EnvironmentFile=/etc/canquery/runtime/canquery-map.env
 # Direct GeoJSON files can contain a few very large Feature objects. stream-json
 # bounds the collection, but each feature still needs enough heap to be assembled.
 Environment=NODE_OPTIONS=--max-old-space-size=2048
@@ -29,8 +30,14 @@ MemoryHigh=2G
 MemoryMax=3G
 
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/canquery/canquery/server /tmp /var/tmp
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
 PrivateTmp=true
 NoNewPrivileges=true
 

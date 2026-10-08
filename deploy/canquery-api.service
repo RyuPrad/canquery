@@ -1,6 +1,6 @@
 # /etc/systemd/system/canquery-api.service
-# The app loads its own .env via dotenv; the unit sets only NODE_ENV.
-# Adjust User/Group and paths if your install differs from /home/canquery.
+# Runtime configuration is root-private and supplied by systemd.
+# The sealed release has no .env and is read-only to every runtime identity.
 [Unit]
 Description=canquery API (Express, :3100)
 After=network-online.target
@@ -10,21 +10,27 @@ After=canquery-egress-firewall.service
 
 [Service]
 Type=simple
-User=canquery
-Group=canquery
-WorkingDirectory=/home/canquery/canquery/server
+User=canquery-api
+Group=canquery-api
+WorkingDirectory=/opt/canquery/current/server
 ExecStart=/usr/bin/node server.js
 Environment=NODE_ENV=production
-# Read-only credentials for PMTiles byte-range reads. Keep this separate from
-# the worker's write-capable environment.
-EnvironmentFile=-/etc/canquery-map-read.env
+EnvironmentFile=/etc/canquery/runtime/canquery-api.env
 Restart=on-failure
 RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=300
 
 # Hardening
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/canquery/canquery/server
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
 PrivateTmp=true
 NoNewPrivileges=true
 

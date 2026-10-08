@@ -184,7 +184,7 @@ async function claimJob(db, workerId, resourceId = null) {
                     ELSE NULL
                 END NULLS LAST,
                 j.updated_at, j.resource_id
-            LIMIT 1 FOR UPDATE SKIP LOCKED
+            LIMIT 1 FOR UPDATE OF j SKIP LOCKED
         )
         RETURNING resource_id, desired_version AS claimed_version,
                   candidate, attempts

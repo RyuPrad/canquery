@@ -49,7 +49,7 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
     };
 
     return {
-        async get(key, fn) {
+        async get(key, fn, { deduplicate = true } = {}) {
             const now = Date.now();
             const cached = store.get(key);
             if (cached && cached.expiresAt > now) {
@@ -64,6 +64,17 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
                 store.delete(key);
                 stats.expired++;
                 stats.size = store.size;
+            }
+            // Request-owned work must not inherit another request's signal or
+            // reader connection. Completed immutable results remain reusable.
+            if (!deduplicate) {
+                stats.misses++;
+                const requestGeneration = generation;
+                const result = await fn();
+                if (generation === requestGeneration && cacheable(result)) {
+                    setEntry(key, { data: result, expiresAt: Date.now() + (result == null ? negativeTtlMs : ttlMs) });
+                }
+                return result;
             }
             const pending = inFlight.get(key);
             if (pending) {

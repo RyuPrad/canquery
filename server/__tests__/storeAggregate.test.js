@@ -207,4 +207,27 @@ describe('aggregateStoreTable', () => {
         expect(pool.query.mock.calls[0][0]).toContain('ORDER BY "province" ASC, "_id" ASC');
         expect(result.total).toBeNull();
     });
+
+    it.each([0, '123'])('uses the exact immutable row count %s for unfiltered pages', async snapshotRowCount => {
+        pool.query.mockReset().mockResolvedValue({ rows: [] });
+        const result = await queryStoreTable({ tableName: 'r_abc', knownColumns: ['province'],
+            q: '   ', filters: [], limit: 50, offset: 0, snapshotRowCount });
+        expect(result.total).toBe(Number(snapshotRowCount));
+        expect(pool.query).toHaveBeenCalledTimes(1);
+        expect(pool.query.mock.calls[0][0]).not.toContain('count(*)');
+    });
+
+    it.each([undefined, null, '', '-1', '1.5', '9007199254740992', 'bad'])('counts legacy invalid row metadata %p', async snapshotRowCount => {
+        pool.query.mockReset().mockResolvedValueOnce({ rows: [{ total: '3' }] }).mockResolvedValueOnce({ rows: [] });
+        expect((await queryStoreTable({ tableName: 'r_abc', knownColumns: ['province'],
+            filters: [], limit: 50, offset: 0, snapshotRowCount })).total).toBe(3);
+        expect(pool.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('counts filtered matches even when a snapshot row count is known', async () => {
+        pool.query.mockReset().mockResolvedValueOnce({ rows: [{ total: '3' }] }).mockResolvedValueOnce({ rows: [] });
+        expect((await queryStoreTable({ tableName: 'r_abc', knownColumns: ['province'],
+            filters: [{ column: 'province', op: 'eq', value: 'ON' }], limit: 50, offset: 0, snapshotRowCount: 100 })).total).toBe(3);
+        expect(pool.query.mock.calls[0][0]).toContain('WHERE "province" = $1');
+    });
 });

@@ -38,7 +38,8 @@ async function deliverMail(db = pool, transport) {
         connectionTimeout:5000,greetingTimeout:5000,socketTimeout:10000,
         disableFileAccess:true,disableUrlAccess:true,logger:false,debug:false
     });
-    await transaction(async client => {
+    try {
+        await transaction(async client => {
         await client.query("DELETE FROM commercial.mail_outbox WHERE created_at<now()-interval '1 day'");
         const { rows } = await client.query(`SELECT * FROM commercial.mail_outbox WHERE available_at<=now() AND attempts<5
             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`);
@@ -53,7 +54,9 @@ async function deliverMail(db = pool, transport) {
             await client.query("UPDATE commercial.mail_outbox SET attempts=attempts+1,available_at=now()+make_interval(secs=>60*power(2,attempts)::int) WHERE id=$1",[row.id]);
             console.error('CanQuery account email delivery failed; retry retained');
         }
-    },db);
-    if (!transport) smtp.close();
+        },db);
+    } finally {
+        if (!transport) smtp.close();
+    }
 }
 module.exports = { enqueueAccountMail, deliverMail, encrypt, decrypt };

@@ -45,6 +45,17 @@ async function convertAndRead(fixturePath, caps) {
 
 describe('convertXlsxToCsv', () => {
 
+    test('deadline cancellation waits for child exit before removing partial output', async () => {
+        const fixture = await workbookFixture();
+        const before = fs.readdirSync(os.tmpdir()).filter(name => name.startsWith('canquery-xlsx-') && name.endsWith('.csv'));
+        const controller = new AbortController();
+        const error = Object.assign(new Error('test deadline'), { code: 'INGEST_DEADLINE' });
+        const conversion = convertXlsxToCsv(fixture, { maxRows: 1000, maxCols: 50, maxCsvBytes: 1024 ** 2, signal: controller.signal });
+        controller.abort(error);
+        await expect(conversion).rejects.toBe(error);
+        expect(fs.readdirSync(os.tmpdir()).filter(name => name.startsWith('canquery-xlsx-') && name.endsWith('.csv'))).toEqual(before);
+    });
+
     afterEach(() => {
         for (const fp of fixturePaths) {
             try {

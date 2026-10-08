@@ -298,17 +298,37 @@ function decodedResponseBody(response) {
     throw downloadError('download uses unsupported content encoding', 'DOWNLOAD_ENCODING');
 }
 
-async function *chunksFromBody(body) {
-    if (body && typeof body[Symbol.asyncIterator] === 'function') {
-        for await (const chunk of body) yield chunk;
-        return;
-    }
+async function *chunksFromBody(body, signal) {
+    signal?.throwIfAborted();
     if (body && typeof body.getReader === 'function') {
         const reader = body.getReader();
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) return;
-            yield value;
+        const abort = () => { reader.cancel(signal.reason).catch(() => {}); };
+        signal?.addEventListener('abort', abort, { once: true });
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                signal?.throwIfAborted();
+                if (done) return;
+                yield value;
+            }
+        } finally {
+            signal?.removeEventListener('abort', abort);
+            await reader.cancel().catch(() => {});
+            reader.releaseLock();
+        }
+    }
+    if (body && typeof body[Symbol.asyncIterator] === 'function') {
+        const abort = () => body.destroy?.(signal.reason);
+        signal?.addEventListener('abort', abort, { once: true });
+        try {
+            for await (const chunk of body) {
+                signal?.throwIfAborted();
+                yield chunk;
+            }
+            signal?.throwIfAborted();
+            return;
+        } finally {
+            signal?.removeEventListener('abort', abort);
         }
     }
     throw downloadError('download response body is not readable', 'DOWNLOAD_BODY');
@@ -359,11 +379,14 @@ async function downloadToTempFile(url, {
     stallTimeoutMs,
     lookupImpl,
     requestImpl,
-    maxRedirects
+    maxRedirects,
+    signal
 } = {}) {
+    signal?.throwIfAborted();
     const stallMs = Number(stallTimeoutMs) > 0 ? Number(stallTimeoutMs) : 60000;
     const filePath = path.join(os.tmpdir(), 'canquery-ingest-' + crypto.randomUUID() + '.csv');
     const controller = new AbortController();
+    const downloadSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
 
     // Inactivity guard. Every other outbound fetch goes through
     // fetchWithBackoff's hard timeout, but this raw download had none, so a
@@ -386,12 +409,12 @@ async function downloadToTempFile(url, {
     try {
         const opened = fetchImpl
             ? await openInjectedResponse(url, fetchImpl, {
-                signal: controller.signal,
+                signal: downloadSignal,
                 userAgent,
                 maxRedirects
             })
             : await openValidatedResponse(url, {
-                signal: controller.signal,
+                signal: downloadSignal,
                 userAgent,
                 lookupImpl,
                 requestImpl,
@@ -400,6 +423,7 @@ async function downloadToTempFile(url, {
         res = opened.response;
     } catch (err) {
         disarm();
+        if (signal?.aborted) throw signal.reason;
         if (stalled) {
             const stalledError = downloadError(
                 'download stalled (no response within ' + stallMs + 'ms)',
@@ -440,10 +464,12 @@ async function downloadToTempFile(url, {
     }
     const ws = fs.createWriteStream(filePath);
     const writer = makeSafeWriter(ws);
+    const abortWrite = () => ws.destroy(downloadSignal.reason);
+    downloadSignal.addEventListener('abort', abortWrite, { once: true });
     try {
         const body = injectedFetch ? responseBody : decodedResponseBody(res);
         let bytes = 0;
-        for await (const value of chunksFromBody(body)) {
+        for await (const value of chunksFromBody(body, downloadSignal)) {
             arm();
             bytes += value.length;
             if (bytes > maxFileBytes) {
@@ -457,6 +483,7 @@ async function downloadToTempFile(url, {
         }
         disarm();
         await writer.end();
+        signal?.throwIfAborted();
         return { filePath, bytes };
     } catch (err) {
         disarm();
@@ -467,6 +494,7 @@ async function downloadToTempFile(url, {
         // worker. Wait for full close before unlinking: the lazy open() can
         // otherwise recreate the file *after* the unlink ran.
         await new Promise((resolve) => {
+            if (ws.closed) return resolve();
             ws.once('close', resolve);
             ws.destroy();
         });
@@ -475,6 +503,7 @@ async function downloadToTempFile(url, {
         } catch {
             // ignore
         }
+        if (signal?.aborted) throw signal.reason;
         if (stalled && err && err.code !== 'CAP_FILE') {
             const stalledError = downloadError(
                 'download stalled (no data within ' + stallMs + 'ms)',
@@ -484,6 +513,8 @@ async function downloadToTempFile(url, {
             throw stalledError;
         }
         throw err;
+    } finally {
+        downloadSignal.removeEventListener('abort', abortWrite);
     }
 }
 

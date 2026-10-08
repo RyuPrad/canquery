@@ -201,6 +201,12 @@ async function inspectGeoJsonFile(filePath) {
                 } else if (token.name === 'endObject' || token.name === 'endArray') {
                     depth -= 1;
                 } else if (token.name === 'keyValue') {
+                    // The pinned stream-json Assembler assigns object keys,
+                    // which treats __proto__ as a setter. Reject that key in
+                    // preflight, before any feature object is assembled.
+                    if (token.value === '__proto__') {
+                        throw new MapSkipError('GeoJSON contains an unsupported object key', 'MAP_GEOMETRY');
+                    }
                     if (depth === 1) {
                         rootKey = token.value;
                     } else if (rootKey === 'crs' && token.value === 'type') {

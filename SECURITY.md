@@ -48,14 +48,41 @@ audit. The [proxy advisory](https://github.com/jshttp/proxy-addr/security/adviso
 concerns subnet trust rules; CanQuery retains its existing one-hop proxy setting.
 Keep the API listener behind the configured reverse proxy.
 
-The current `stream-json` audit also reports
+The October 8, 2026 source review reproduced the pinned `stream-json`
 [Assembler prototype handling](https://github.com/uhop/stream-json/security/advisories/GHSA-mjw6-4jj6-33hc)
-and [JSONC comment parsing](https://github.com/uhop/stream-json/security/advisories/GHSA-hqr4-qq8f-hg3x).
-Those paths need a separate compatibility and reachability review; the existing
-depth guard below is not a blanket mitigation for every parser advisory.
+issue in GeoJSON feature assembly. Preflight now rejects decoded `__proto__`
+object keys at every depth before assembly. The separate
+[JSONC comment parsing](https://github.com/uhop/stream-json/security/advisories/GHSA-hqr4-qq8f-hg3x)
+path is not used: map ingestion imports the plain JSON parser. Keep these checks
+separate from the nesting guard; no one guard covers every parser advisory.
+
+That review's production-only server audit still reported four moderate
+package findings and no high/critical findings. Full development audits also
+include Jest dependency findings; release runtime dependencies are installed
+with `npm ci --omit=dev`. Audit counts describe that dated lockfile and do not
+establish that every dependency is safe or every advisory is reachable. Keep
+build/test inputs trusted and review major tooling upgrades separately.
 
 | Dependency | Current handling |
 | --- | --- |
 | [stream-json path-filter nesting](https://github.com/advisories/GHSA-528h-pc64-c93x) | GeoJSON preflight rejects nesting deeper than 128 before the path-filter pass. Keep this guard during a future parser upgrade. |
 | [csv-parse duplicate column handling](https://github.com/advisories/GHSA-8cw4-87c7-c6xx) | The application does not enable `group_columns_by_name`, which is required by the reported duplicate-column path. Review major-version changes separately. |
-| [ExcelJS transitive uuid](https://github.com/advisories/GHSA-w5hq-g745-h8pq) | Track the upstream ExcelJS dependency update; retain the existing isolated Excel conversion limits. |
+| [ExcelJS transitive uuid](https://github.com/advisories/GHSA-w5hq-g745-h8pq) | The pinned ExcelJS source uses `v4`, while this advisory concerns `v3`/`v5`/`v6` with caller-provided output buffers. No affected call was found. Track upstream compatibility; do not downgrade ExcelJS to satisfy an automated audit suggestion. |
+
+## Converter and runtime boundaries
+
+The converter runs in a memory-limited child with archive, output and execution
+limits. It receives only locale, executable-path and temporary-directory
+settings; database/billing/object credentials and `NODE_OPTIONS` are not
+inherited. Archive limits are resolved by the parent and passed explicitly.
+The child still runs as the ingestion Unix identity and shares that identity's
+permitted filesystem and network access. This is process isolation and secret
+minimization, not a separate OS sandbox or proof against arbitrary code
+execution. Keep runtime identities separate, configuration root-private, release
+source read-only and the ingestion identity's privileges narrow.
+
+The single ingest worker drains its current attempt on SIGTERM. The supplied
+32-minute service stop grace covers the default 30-minute preparation deadline
+plus cancellation and cleanup. If that deadline is increased, review the service
+grace too; forced termination can interrupt cleanup even though publication
+receipts and normal queue recovery preserve accounting evidence.

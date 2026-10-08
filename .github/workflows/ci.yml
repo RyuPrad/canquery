@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   server:
     name: server (lint + tests)
@@ -14,16 +17,21 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.22.1
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run blog:check
       - run: python3 -m unittest discover -s ../deploy/analytics -p 'test_*.py'
+      - run: python3 -m unittest discover -s ../deploy/mail -p 'test_*.py'
+      - run: python3 -m unittest discover -s ../deploy/cloudflare -p 'test_*.py'
+      - run: python3 -m unittest discover -s ../deploy -p 'test_*.py'
+      - run: python3 -m unittest discover -s ../scripts -p 'test_*.py'
+      - run: node --test ../deploy/backup-upload.test.cjs
       - run: npm test # jest; the suite mocks the database, so no Postgres needed
 
   client:
@@ -33,16 +41,24 @@ jobs:
       run:
         working-directory: client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.22.1
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
       - run: npm test # vitest
       - run: npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: client/dist/
+          if-no-files-found: error
+          retention-days: 14
 
   spatial:
     name: database (PostGIS + search reporting)
@@ -69,13 +85,40 @@ jobs:
       SPATIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
       COMMERCIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.22.1
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
-      - run: npm run migrate
-      - run: npx jest __tests__/spatialIntegration.test.js __tests__/searchConsoleIntegration.test.js __tests__/localSearchIntegration.test.js __tests__/catalogDiscoveryIntegration.test.js __tests__/preparationIntegration.test.js --runInBand
-      - run: node --test --test-concurrency=1 integration/*.test.cjs
+      - run: npm run verify:integration
+
+  release:
+    name: release (verified artifact)
+    needs: [server, client, spatial]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.22.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: client/dist/
+      - name: Bundle standalone operations runtime
+        run: |
+          npm ci --prefix server --omit=dev
+          npm ci --prefix client
+          node scripts/build-operations.mjs
+      - name: Package tested source and frontend
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: python3 scripts/build-release.py --commit "$RELEASE_COMMIT" --output-dir "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: canquery-${{ github.sha }}
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 30

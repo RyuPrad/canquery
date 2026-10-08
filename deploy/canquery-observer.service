@@ -1,0 +1,18 @@
+[Unit]
+Description=CanQuery read-only component observations
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/lib/canquery/observe-components.py --config /etc/canquery/observer.json
+RuntimeDirectory=canquery
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0077
+TimeoutStartSec=55
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/run/canquery

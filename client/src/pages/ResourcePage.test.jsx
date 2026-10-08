@@ -15,6 +15,9 @@ vi.mock('../api/catalog.js', () => ({
 vi.mock('../components/MapPanel.jsx', () => ({
   default: ({ resourceId }) => <div>live-map-{resourceId}</div>,
 }));
+vi.mock('../components/ChartPanel.jsx', () => ({
+  default: ({ resourceId, fields, queryMode }) => <div data-testid="chart" data-fields={JSON.stringify(fields)} data-mode={queryMode}>chart-{resourceId}</div>,
+}));
 import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity } from '../api/catalog.js';
 
 function resourceEnvelope(id) {
@@ -64,6 +67,56 @@ beforeEach(() => {
 });
 
 describe('ResourcePage navigation', () => {
+  test('a ready chart uses metadata without a row query and Table loads the selected page', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
+      ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'name', type: 'TEXT' }] } } });
+    render(<MemoryRouter initialEntries={['/resources/a?view=chart&page=2&sort=name']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByTestId('chart')).toHaveAttribute('data-fields', '[{"id":"name","type":"TEXT"}]');
+    expect(queryResource).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+    expect(await screen.findByText('row-a')).toBeInTheDocument();
+    expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ offset: 100, sort: 'name' }), expect.any(Object));
+  });
+
+  test('a failed Table query does not prevent a ready Chart from rendering', async () => {
+    queryResource.mockRejectedValue(new Error('Row query unavailable'));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('Row query unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Chart' }));
+    expect(await screen.findByTestId('chart')).toHaveAttribute('data-mode', 'ingested');
+    expect(screen.queryByText('Row query unavailable')).toBeNull();
+  });
+
+  test('Chart does not display a prior Table total or its row export', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    expect(screen.getByRole('link', { name: 'Download CSV (filtered)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Chart' }));
+    await screen.findByTestId('chart');
+    expect(screen.queryByRole('link', { name: 'Download CSV (filtered)' })).toBeNull();
+    expect(screen.queryByText('200 rows')).toBeNull();
+    expect(queryResource).toHaveBeenCalledTimes(1);
+  });
+
+  test('a legacy field link is reconciled before its first query', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
+      ingestion: { fields: [{ id: 'code', type: 'TEXT', legacy_ids: ['old_code'] }] } } });
+    render(<MemoryRouter initialEntries={['/resources/a?cf=' + encodeURIComponent(JSON.stringify({ old_code: '=0012' })) + '&sort=old_code%20desc']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    expect(queryResource).toHaveBeenCalled();
+    for (const [, options] of queryResource.mock.calls) {
+      expect(options.sort).toBe('code desc');
+      expect(options.filters).toEqual({ code: { op: 'eq', value: '0012' } });
+    }
+  });
   test('uses the contextual publisher download title for the heading and breadcrumb', async () => {
     const resource = resourceEnvelope('a');
     resource.data.name.en = 'Download EDI through HTTP';
@@ -338,7 +391,7 @@ describe('ResourcePage navigation', () => {
       preparation: { supported: true, freshness: 'stale' },
       ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'name', type: 'TEXT' }] } };
     const after = { ...before, preparation: { supported: true, freshness: 'current' },
-      ingestion: { ingested_at: '2026-09-02', fields: [{ id: 'province', type: 'TEXT' }] } };
+      ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'province', type: 'TEXT' }] } };
     fetchResource.mockResolvedValueOnce({ data: before }).mockResolvedValue({ data: after });
     prepareResource.mockResolvedValue({ data: { id: 777, status: 'pending' } });
     let finish;

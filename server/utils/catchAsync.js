@@ -1,6 +1,10 @@
+const { track } = require('./runtimeWork');
 function catchAsync(fn) {
     return (req, res, next) => {
-        fn(req, res, next).catch(next);
+        return track(Promise.resolve().then(() => fn(req, res, next))).catch(error => {
+            if (req.signal?.aborted) return; // Lifecycle already replied/closed.
+            next(error);
+        });
     };
 }
 
