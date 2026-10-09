@@ -88,6 +88,8 @@ describe('pages sitemap', () => {
         expect(res.text).toContain('<loc>https://canquery.com/privacy</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/pricing</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/terms</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/faq</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/about</loc>');
         expect(res.text).not.toMatch(/\/account|\/signup|\/api\/v1/);
     });
 });
@@ -264,6 +266,15 @@ describe('resolveMeta routing', () => {
 });
 
 describe('resolvePage crawl responses', () => {
+    test.each(['faq', 'about'])('resolves %s without any catalogue dependency', async type => {
+        const unavailable = new Proxy({}, { get() { throw new Error('Catalogue must not be accessed'); } });
+        const page = await resolvePage('/' + type + '?from=footer', unavailable);
+        expect(page.status).toBe(200);
+        expect(page.canonicalPath).toBe('/' + type);
+        expect(page.meta.canonical).toBe('https://canquery.com/' + type);
+        expect(page.body).toContain('href="mailto:support@canquery.com"');
+    });
+
     it('renders homepage metadata, explanation and guides without accessing catalogue data', async () => {
         const unavailable = new Proxy({}, { get() { throw new Error('Catalogue must not be accessed'); } });
         const page = await resolvePage('/?q=climate&place=toronto-on', unavailable);
@@ -339,6 +350,29 @@ describe('production SPA response semantics', () => {
     });
 
     afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+
+    test.each([
+        ['faq', 'Frequently asked questions'],
+        ['about', 'About CanQuery']
+    ])('serves complete indexable %s HTML during a catalogue outage', async (type, heading) => {
+        for (const method of Object.values(catalogRead)) method.mockRejectedValue(new Error('Catalogue unavailable'));
+        const res = await request(spa).get('/' + type);
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toMatch(/text\/html/);
+        expect(res.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
+        expect(res.text.match(/<h1>/g)).toHaveLength(1);
+        expect(res.text).toContain('<h1>' + heading + '</h1>');
+        expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/' + type + '"');
+        expect(res.text).toContain('href="mailto:support@canquery.com"');
+        expect(res.text).not.toContain('name="robots" content="noindex');
+        for (const method of Object.values(catalogRead)) expect(method).not.toHaveBeenCalled();
+    });
+
+    test.each(['faq', 'about'])('redirects the %s trailing slash and preserves query parameters', async type => {
+        const res = await request(spa).get('/' + type + '/?from=footer');
+        expect(res.status).toBe(301);
+        expect(res.headers.location).toBe('/' + type + '?from=footer');
+    });
 
     it('serves the homepage introduction and guide anchors in initial HTML during a catalogue outage', async () => {
         for (const method of Object.values(catalogRead)) method.mockRejectedValue(new Error('Catalogue unavailable'));

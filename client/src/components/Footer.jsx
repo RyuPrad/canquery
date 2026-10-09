@@ -185,6 +185,14 @@ export default function Footer() {
           <div className="text-xs font-semibold uppercase tracking-widest text-base-content/40">
             {t('footer.about')}
           </div>
+          <ul className="space-y-2 text-sm">
+            <li><Link to="/about" className="text-base-content/65 hover:text-base-content transition-colors">{t('nav.about')}</Link></li>
+            <li><Link to="/faq" className="text-base-content/65 hover:text-base-content transition-colors">{t('nav.faq')}</Link></li>
+          </ul>
+          <p className="text-sm text-base-content/65">
+            <span className="block">{t('support.title')}</span>
+            <a href="mailto:support@canquery.com" className="link link-hover break-all hover:text-base-content">support@canquery.com</a>
+          </p>
           <p className="text-sm text-base-content/55">{t('footer.licence_by_source')}</p>
           <p className="text-sm text-base-content/55">{t('footer.independent')}</p>
           <p className="text-xs text-base-content/45">{t('footer.analytics_notice')}</p>

@@ -306,6 +306,24 @@ const STATIC_COPY = {
         title: 'Privacy and analytics',
         summary: 'Learn about CanQuery product analytics, browser opt-outs, account data, hosting and security processing, and encrypted recovery backups.',
         links: [{ path: '/', label: 'Return to CanQuery' }]
+    },
+    faq: {
+        title: 'Frequently asked questions',
+        summary: 'A few useful answers about finding data, preparing tables and using your developer account.',
+        links: [
+            { path: '/docs', label: 'Read the API documentation' },
+            { path: '/pricing', label: 'Compare plans and credits' },
+            { path: '/terms', label: 'Read the service terms' },
+            { path: '/privacy', label: 'Privacy and your data' }
+        ]
+    },
+    about: {
+        title: 'About CanQuery',
+        summary: 'Canadian public data is published across many portals. CanQuery brings those catalogues together so you can search by place or topic, find the original source and work with supported data in one place.',
+        links: [
+            { path: '/datasets', label: 'Browse the catalogue' },
+            { path: '/faq', label: 'Read the FAQ' }
+        ]
     }
 };
 
@@ -333,6 +351,69 @@ function privacyExplanation() {
             summary: 'Encrypted recovery copies of the application and analytics databases and required configuration are stored in private Cloudflare R2 storage. These copies include account and usage records retained by CanQuery. Backup access is restricted, and decryption keys are kept separately from the uploaded copies. Data removed from the live service may remain in a retained backup until that copy expires; backup retention is managed separately from live-service retention.' }
     ];
     return sections.map(section => '<section><h2>' + text(section.title) + '</h2><p>' + text(section.summary) + '</p></section>').join('');
+}
+
+function supportExplanation() {
+    return '<section id="support"><h2>Contact support</h2>' +
+        '<p>Have a question, found a bug or need account help? Email us at: ' +
+        pathLink('mailto:support@canquery.com', 'support@canquery.com') + '</p>' +
+        '<p>For a technical issue, include the page or resource URL, what you were trying to do and the error message. If available, include the time, HTTP status and X-Request-Id. Leave out API keys, passwords and sensitive query contents.</p>' +
+        '<p>For the first few customers, the founder can help by email with one existing supported resource and one working query. Custom integrations need a separate scope.</p></section>';
+}
+
+function aboutExplanation() {
+    const sections = [
+        { title: 'Find the data. Keep the context.', paragraphs: [
+            'CanQuery is for anyone exploring Canadian public data, from curious residents to researchers and developers building reports or dashboards. The website and API help you discover datasets without losing sight of who published them or what they cover.'
+        ] },
+        { title: 'From public sources to useful tools', paragraphs: [
+            'CanQuery mirrors catalogue metadata from Canadian federal, municipal, regional and territorial publishers. You can follow original download links, query supported live tables, prepare eligible CSV and Excel files, and explore supported maps. Availability depends on the resource and its publisher.',
+            'Each dataset keeps its publisher, source links and applicable licence. Field meanings and coverage remain publisher-specific. Check the original source and attribution requirements when using the data.'
+        ] },
+        { title: 'Independently built, openly shared', paragraphs: [
+            'CanQuery is an independent project and is not affiliated with the Government of Canada. It is built by @RyuPrad, and its source code is available under the MIT licence. The software licence is separate from the licences that apply to the published data.'
+        ] }
+    ];
+    return sections.map(section => '<section><h2>' + text(section.title) + '</h2>' +
+        section.paragraphs.map(paragraph => '<p>' + text(paragraph) + '</p>').join('') + '</section>').join('') +
+        '<p>' + pathLink('https://github.com/RyuPrad', 'Meet the creator on GitHub') + ' · ' +
+        pathLink('https://github.com/RyuPrad/canquery', 'Explore the source code') + '</p>' + supportExplanation();
+}
+
+function faqExplanation() {
+    const groups = [
+        { id: 'getting-started', title: 'Getting started', questions: [
+            { question: 'What can I do with CanQuery?',
+                answer: 'Search Canadian public-data catalogues by topic, place, publisher or format. Follow original downloads, explore supported tables and maps, or use the developer API in your own tools. A catalogue listing does not guarantee that every file is available or can be queried.' },
+            { question: 'Do I need an account?',
+                answer: 'You can browse the website and use its supported data tools without an account. A verified developer account lets you create API keys and view your API usage. Creating a Free account does not start a paid subscription.' },
+            { question: 'Where does the data come from, and can I reuse it?',
+                answer: 'The data comes from public-sector publishers, including federal, municipal, regional and territorial sources. Dataset pages link to the publisher, source portal and applicable licence. Check that licence and its attribution requirements before reusing the data; different datasets can have different terms.' }
+        ] },
+        { id: 'working-with-data', title: 'Working with data', questions: [
+            { question: 'Why do some resources only offer a download?',
+                answer: 'Table and map support depend on the resource. Supported live tables can be queried directly, while eligible CSV and Excel files can be prepared for querying. Other formats, oversized files or unavailable publisher downloads may remain download-only. A resource can support a map without supporting a table.' },
+            { question: 'What happens when a file is being prepared?',
+                answer: 'When you open an eligible resource in Table or Chart, CanQuery may download the file and prepare a queryable copy. Visitors share existing preparation work. File, row, column and storage limits apply. Opening catalogue pages or Map does not start table preparation.' },
+            { question: 'How fresh is a prepared table?',
+                answer: 'A prepared table is a snapshot, not a continuously updated feed. CanQuery can refresh an eligible copy on a later visit when tracked source metadata changes. Publisher modification and preparation times are different. Copies may expire after inactivity or be evicted, so check the displayed dates and original source before relying on the data.' },
+            { question: 'Can I download the complete dataset?',
+                answer: 'Use the original publisher download when you need the source file. CanQuery CSV exports are bounded to at most 10,000 rows and can be subject to a lower installed limit. Filters and aggregation affect the export. An export is not a guarantee of a complete historical dataset.' }
+        ] },
+        { id: 'accounts-and-api', title: 'Accounts and the API', questions: [
+            { question: 'What is the difference between Free and Business?',
+                answer: 'Both plans offer the same supported data capabilities. Business provides a larger API allowance, more keys and higher request capacity. It does not remove file, query, export or map limits. See Pricing for current prices and allowances.' },
+            { question: 'How do API credits work?',
+                answer: 'Keyed API requests use credits according to the operation. Successful cached requests still count. A newly admitted preparation job has its own charge; joining existing work, checking job status and renewing activity cost no credits. Rate and capacity limits still apply. The Pricing and API documentation pages explain current costs and workflow examples.' },
+            { question: 'Are credits returned if preparation fails?',
+                answer: 'If a charged preparation job ends in failure without publishing a successful copy, its original charge is returned once to the original payer and allowance period. Internal retries or stopping polling do not establish failure. A return to an expired period does not add credits to the current period. These are account credits, not cash refunds.' },
+            { question: 'How do I cancel Business or get account help?',
+                answer: 'Open the billing portal from your account to cancel before renewal. Access continues through the paid period, then follows Free allowances. Email support for billing questions, account deletion or help with verification and password-reset messages.' }
+        ] }
+    ];
+    return groups.map(group => '<section id="' + text(group.id) + '"><h2>' + text(group.title) + '</h2>' +
+        group.questions.map(item => '<details><summary>' + text(item.question) + '</summary><p>' +
+            text(item.answer) + '</p></details>').join('') + '</section>').join('') + supportExplanation();
 }
 
 function staticSnapshot(type, items = [], pagination) {
@@ -373,7 +454,9 @@ function staticSnapshot(type, items = [], pagination) {
         overviewHtml: type === 'home' ? homeExplanation()
             : type === 'pricing' ? require('./developerPresentation').pricingOverview()
                 : type === 'docs' ? require('./developerPresentation').docsOverview()
-                    : type === 'privacy' ? privacyExplanation() : '',
+                    : type === 'privacy' ? privacyExplanation()
+                        : type === 'faq' ? faqExplanation()
+                            : type === 'about' ? aboutExplanation() : '',
         guides: type === 'home' ? listArticles({ lang: 'en' }).slice(0, 3).map(article => ({
             path: article.path, label: article.title, detail: article.description
         })) : [],

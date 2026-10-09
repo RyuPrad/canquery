@@ -1067,6 +1067,17 @@ a.cq-card:hover,
   font-size: 1.15rem;
   font-weight: 650;
 }
+
+.cq-seo-snapshot summary {
+  min-height: 44px;
+  padding: .75rem 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.cq-seo-snapshot summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
 .cq-seo-snapshot p {
   margin-top: 1rem;
   color: color-mix(in oklab, var(--color-base-content) 72%, transparent);

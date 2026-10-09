@@ -89,6 +89,8 @@ const sitemapPages = (req, res) => {
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7' },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8' },
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
+            { loc: SITE_URL + '/faq', changefreq: 'monthly', priority: '0.5' },
+            { loc: SITE_URL + '/about', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/pricing', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/terms', changefreq: 'yearly', priority: '0.3' },
             { loc: SITE_URL + '/privacy', changefreq: 'yearly', priority: '0.3' },
