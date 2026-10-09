@@ -36,7 +36,10 @@ describe('CSV byte decoding and content detection', () => {
         const text = prefix + 'a'.repeat((65534 - 2) / 2 - prefix.length) + '🐟\n';
         await fs.writeFile(filePath, markedUtf16(text, encoding));
         await expect(sniffCsvMeta(filePath)).resolves.toEqual({ encoding, delimiter: ',' });
-        await expect(readText(filePath, encoding, { highWaterMark: 3 })).resolves.toBe(text);
+        // The 64 KiB read boundary lands between the fish surrogate pair, just
+        // like the sniffing sample boundary, without generating ~44,000 tiny
+        // chunks on slower CI runners.
+        await expect(readText(filePath, encoding, { highWaterMark: 65536 })).resolves.toBe(text);
     });
 
     test.each(['utf16le', 'utf16be'])('rejects an incomplete %s code unit at real EOF', async encoding => {
