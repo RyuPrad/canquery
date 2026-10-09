@@ -25,6 +25,7 @@ KillSignal=SIGTERM
 # Cover the default 30-minute preparation deadline plus cancellation/cleanup.
 # Review this grace whenever INGEST_DEADLINE_MS changes.
 TimeoutStopSec=32min
+LimitCORE=0
 
 # Excel conversion can inflate compressed workbook data substantially. These
 # defaults protect a shared host; operators can tune them with a systemd drop-in.

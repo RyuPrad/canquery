@@ -15,6 +15,6 @@ if [[ "${NODE_ENV:-}" == production || "${STRIPE_MODE:-}" == live ]]; then
 fi
 cd "$ROOT_DIR/server"
 npm run migrate
-npx --no-install jest __tests__/spatialIntegration.test.js __tests__/searchConsoleIntegration.test.js __tests__/localSearchIntegration.test.js __tests__/catalogDiscoveryIntegration.test.js __tests__/preparationIntegration.test.js --runInBand
+node --experimental-vm-modules ./node_modules/jest/bin/jest.js __tests__/spatialIntegration.test.js __tests__/searchConsoleIntegration.test.js __tests__/localSearchIntegration.test.js __tests__/catalogDiscoveryIntegration.test.js __tests__/preparationIntegration.test.js --runInBand
 node --test --test-concurrency=1 integration/*.test.cjs
 echo 'Disposable database integration verification passed.'

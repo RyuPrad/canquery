@@ -23,6 +23,7 @@ Restart=on-failure
 RestartSec=10
 KillSignal=SIGTERM
 TimeoutStopSec=20min
+LimitCORE=0
 
 Nice=10
 IOSchedulingClass=idle

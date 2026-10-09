@@ -4,9 +4,6 @@ const { Transform, Writable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
-const streamJson = require('stream-json');
-const streamPick = require('stream-json/filters/pick.js');
-const streamArray = require('stream-json/streamers/stream-array.js');
 const metadataPool = require('../db/pool');
 const indexPool = require('../db/longRunningPool');
 const { downloadToTempFile, sniffCsvMeta } = require('./csvDownload');
@@ -16,6 +13,22 @@ const { assertDiskHeadroom } = require('./ingestPipeline');
 
 const GB = 1024 * 1024 * 1024;
 const FIELD_PRIORITY = /^(?:name|title|address|street|location|type|status|category|ward|year|date)|(?:name|title|address|type|status|category|ward|year|date)$/i;
+let streamJsonModules;
+
+function jsonStreams() {
+    if (!streamJsonModules) {
+        streamJsonModules = Promise.all([
+            import('stream-json'),
+            import('stream-json/filters/pick.js'),
+            import('stream-json/streamers/stream-array.js')
+        ]).then(([json, pick, array]) => ({
+            parser: json.parser,
+            pick: pick.default,
+            array: array.default
+        }));
+    }
+    return streamJsonModules;
+}
 
 class MapSkipError extends Error {
     constructor(message, code = 'MAP_CAP') {
@@ -232,7 +245,8 @@ async function inspectGeoJsonFile(filePath) {
         }
     });
     try {
-        await pipeline(fs.createReadStream(filePath), streamJson.parser.asStream(), sink);
+        const streams = await jsonStreams();
+        await pipeline(fs.createReadStream(filePath), streams.parser.asStream(), sink);
     } catch (error) {
         if (error instanceof MapSkipError) throw error;
         throw new MapSkipError('source is not valid JSON: ' + error.message, 'MAP_GEOMETRY');
@@ -427,12 +441,13 @@ async function copyCandidateToStage({ mode, filePath, csvMeta, caps, client }) {
     let metadata = null;
     let transform;
     if (mode === 'geojson-file') {
+        const streams = await jsonStreams();
         transform = geoJsonStagingTransform({ caps, onMetadata: value => { metadata = value; } });
         await pipeline(
             fs.createReadStream(filePath),
-            streamJson.parser.asStream(),
-            streamPick.asStream({ filter: 'features' }),
-            streamArray.asStream(),
+            streams.parser.asStream(),
+            streams.pick.asStream({ filter: 'features' }),
+            streams.array.asStream(),
             transform,
             client.query(copyFrom('COPY map_stage (feature_id, geom_json, properties) FROM STDIN WITH (FORMAT csv)'))
         );

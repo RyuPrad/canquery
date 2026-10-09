@@ -7,7 +7,7 @@ const helmet = require('helmet');
 const AppError = require('./utils/AppError');
 const errorHandler = require('./middleware/errorHandler');
 const requestId = require('./middleware/requestId');
-const { generalLimiter } = require('./middleware/rateLimits');
+const { generalLimiter, authAbuseLimiter, webhookLimiter } = require('./middleware/rateLimits');
 const catalogController = require('./controllers/catalogController');
 const datasetsRouter = require('./routes/datasets');
 const resourcesRouter = require('./routes/resources');
@@ -74,10 +74,7 @@ app.use((req, res, next) => {
         return next();
     }
 
-    // Same-origin requests carry an Origin header too (e.g. module scripts
-    // are always fetched in CORS mode) - the app's own origin is always allowed.
-    const selfOrigin = req.protocol + '://' + req.headers.host;
-    if (allowlist.has(origin) || origin === selfOrigin) {
+    if (allowlist.has(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -93,11 +90,22 @@ app.use((req, res, next) => {
     return res.status(403).json({ error: 'Origin not allowed' });
 });
 
-// Signature verification and Better Auth both need the original request stream.
-app.post('/api/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), catchAsync(async(req,res)=>{
+// Verify Stripe signatures against the bounded, unmodified request bytes.
+app.post('/api/stripe/webhook', webhookLimiter, express.raw({type:'application/json',limit:'1mb'}), catchAsync(async(req,res)=>{
     await receiveWebhook(req.body,req.headers['stripe-signature']);
     res.set('Cache-Control','no-store').json({received:true});
 }));
+// Better Auth's Node adapter does not set its optional raw-body limit. Parse
+// only the two supported auth media types here so chunked bodies are bounded
+// before they reach authentication or PostgreSQL.
+const authJson = express.json({limit:'64kb'});
+const authForm = express.urlencoded({limit:'64kb',extended:false});
+app.use('/api/auth', authAbuseLimiter, (req,res,next) => {
+    if (['GET','HEAD'].includes(req.method)) return next();
+    if (req.is('application/json')) return authJson(req,res,next);
+    if (req.is('application/x-www-form-urlencoded')) return authForm(req,res,next);
+    return next(new AppError('Authentication requests require JSON or form data',415));
+});
 app.all('/api/auth/*splat', authHandler);
 app.use(express.json({limit:'64kb'}));
 app.use('/api/account', require('./routes/account'));

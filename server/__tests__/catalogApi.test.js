@@ -212,6 +212,15 @@ describe('Catalog API', () => {
         expect(res.status).toBe(403);
         expect(res.body.error).toBe('Origin not allowed');
     });
+
+    it('does not trust a reflected Host header as a CORS origin', async () => {
+        const res = await request(app).get('/api/v1/stats')
+            .set('Host', 'evil.example.com')
+            .set('X-Forwarded-Proto', 'https')
+            .set('Origin', 'https://evil.example.com');
+        expect(res.status).toBe(403);
+        expect(res.body.error).toBe('Origin not allowed');
+    });
 });
 
 it('returns spelling suggestions only on an empty first page while retaining the selected place', async () => {

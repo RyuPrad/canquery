@@ -20,6 +20,7 @@ Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=300
+LimitCORE=0
 
 # Hardening
 ProtectSystem=strict
