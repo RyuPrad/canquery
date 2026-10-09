@@ -31,7 +31,7 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
 
 const STATIC_PATHS = Object.freeze({
     home: '/', datasets: '/datasets', insights: '/insights', organizations: '/organizations',
-    places: '/places', docs: '/docs', privacy: '/privacy', pricing:'/pricing', terms:'/terms',
+    places: '/places', docs: '/docs', privacy: '/privacy', faq: '/faq', about: '/about', pricing:'/pricing', terms:'/terms',
     account:'/account',login:'/login',signup:'/signup','forgot-password':'/forgot-password','reset-password':'/reset-password'
 });
 

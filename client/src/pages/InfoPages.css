@@ -1,0 +1,21 @@
+.cq-info-page { overflow-wrap: anywhere; }
+.cq-info-header { margin-bottom: 2.75rem; }
+.cq-info-eyebrow { font-size: .75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--cq-accent-red); }
+.cq-info-header h1 { margin-top: .75rem; font-family: var(--font-display); font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; line-height: 1.15; letter-spacing: -.035em; }
+.cq-info-intro { margin-top: 1.25rem; font-size: 1.125rem; line-height: 1.75; color: var(--cq-muted-text); }
+.cq-info-section { margin-top: 2.5rem; }
+.cq-info-page h2 { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; line-height: 1.4; }
+.cq-info-section > p, .cq-info-support > p, .cq-faq-answer p { margin-top: .875rem; line-height: 1.8; color: var(--cq-muted-text); }
+.cq-info-links { display: flex; gap: .5rem 1.5rem; flex-wrap: wrap; margin-top: 1rem; }
+.cq-info-links a { display: inline-flex; align-items: center; min-height: 44px; }
+.cq-faq-list { margin-top: 1rem; border-top: 1px solid color-mix(in srgb, var(--color-base-content) 18%, transparent); }
+.cq-faq-item { border-bottom: 1px solid color-mix(in srgb, var(--color-base-content) 18%, transparent); }
+.cq-faq-item summary { min-height: 44px; padding: 1rem .5rem; cursor: pointer; font-weight: 600; line-height: 1.6; border-radius: .375rem; }
+.cq-faq-item summary::marker { color: var(--cq-accent-red); }
+.cq-faq-item summary:hover { background: var(--color-base-200); }
+.cq-faq-answer { padding: 0 .5rem 1.25rem; }
+.cq-faq-answer p { margin-top: 0; }
+.cq-faq-answer > a { display: inline-flex; align-items: center; min-height: 44px; margin-top: .5rem; }
+.cq-info-support { margin-top: 3rem; padding: 1.5rem; border: 1px solid color-mix(in srgb, var(--color-base-content) 18%, transparent); border-radius: 1rem; background: var(--color-base-200); }
+.cq-info-email { display: inline-flex; align-items: center; min-height: 44px; margin-top: .5rem; font-weight: 600; }
+.cq-info-page a:focus-visible, .cq-faq-item summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }

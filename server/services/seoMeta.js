@@ -188,6 +188,8 @@ function classifyRoute(pathname) {
     if (/^\/organizations\/?$/.test(p)) return { type: 'organizations' };
     if (/^\/docs\/?$/.test(p)) return { type: 'docs' };
     if (/^\/privacy\/?$/.test(p)) return { type: 'privacy' };
+    if (/^\/faq\/?$/.test(p)) return { type: 'faq' };
+    if (/^\/about\/?$/.test(p)) return { type: 'about' };
     for (const type of ['pricing','account','login','signup','forgot-password','reset-password','terms']) {
         if (p === '/' + type || p === '/' + type + '/') return { type };
     }
@@ -233,6 +235,16 @@ const STATIC_META = {
         description:
             'How CanQuery uses anonymous, self-hosted product analytics, honors browser privacy signals, and protects visitor data.',
         path: '/privacy',
+    },
+    faq: {
+        title: 'Frequently asked questions - CanQuery',
+        description: 'Get answers about Canadian open data, supported tables and maps, file preparation, developer accounts and contacting CanQuery support.',
+        path: '/faq',
+    },
+    about: {
+        title: 'About CanQuery - CanQuery',
+        description: 'Learn about CanQuery, an independent, open-source project for finding and working with Canadian public data, and how to contact support.',
+        path: '/about',
     },
 };
 

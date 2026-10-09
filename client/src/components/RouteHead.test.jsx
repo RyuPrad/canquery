@@ -24,6 +24,8 @@ function Navigation() {
     <Link to="/resources/r1">Resource</Link>
     <Link to="/datasets/roads?page=2">Second page</Link>
     <Link to="/resources/r1?sort=name#table">Sort</Link>
+    <Link to="/faq">FAQ</Link>
+    <Link to="/about">About us</Link>
     <button onClick={() => navigate(-1)}>Back</button>
   </>;
 }
@@ -84,6 +86,24 @@ test('Back to the homepage restores its government-data metadata and canonical w
   expect(document.querySelector('meta[name=description]').content).toBe(description);
   expect(document.querySelector('meta[property="og:title"]').content).toBe(title);
   expect(document.querySelector('meta[name="twitter:description"]').content).toBe(description);
+  expect(document.querySelectorAll('title')).toHaveLength(1);
+  expect(document.querySelectorAll('link[rel=canonical]')).toHaveLength(1);
+  expect(document.querySelector('meta[name=cq-analytics]').content).toBe('preserve');
+  expect(document.querySelector('link[rel=stylesheet]')).not.toBeNull();
+});
+
+test('restores FAQ and About metadata through navigation and Back', async () => {
+  fetch.mockImplementation(async path => response(path, path === '/faq' ? 'Frequently asked questions - CanQuery' : 'About us - CanQuery'));
+  start();
+  fireEvent.click(screen.getByRole('link', { name: 'FAQ' }));
+  await waitFor(() => expect(document.title).toBe('Frequently asked questions - CanQuery'));
+  expect(document.querySelector('link[rel=canonical]').href).toBe('https://canquery.com/faq');
+  fireEvent.click(screen.getByRole('link', { name: 'About us' }));
+  await waitFor(() => expect(document.title).toBe('About us - CanQuery'));
+  expect(document.querySelector('link[rel=canonical]').href).toBe('https://canquery.com/about');
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  await waitFor(() => expect(document.title).toBe('Frequently asked questions - CanQuery'));
+  expect(document.querySelector('link[rel=canonical]').href).toBe('https://canquery.com/faq');
   expect(document.querySelectorAll('title')).toHaveLength(1);
   expect(document.querySelectorAll('link[rel=canonical]')).toHaveLength(1);
   expect(document.querySelector('meta[name=cq-analytics]').content).toBe('preserve');

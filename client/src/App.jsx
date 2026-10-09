@@ -17,6 +17,8 @@ const ResourcePage = lazy(() => import('./pages/ResourcePage.jsx'));
 const OrganizationsPage = lazy(() => import('./pages/OrganizationsPage.jsx'));
 const OrganizationPage = lazy(() => import('./pages/OrganizationPage.jsx'));
 const DocsPage = lazy(() => import('./pages/DocsPage.jsx'));
+const FaqPage = lazy(() => import('./pages/FaqPage.jsx'));
+const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
 const PlacesPage = lazy(() => import('./pages/PlacesPage.jsx'));
 const PlacePage = lazy(() => import('./pages/PlacePage.jsx'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage.jsx'));
@@ -69,6 +71,8 @@ export default function App() {
             <Route path="/places" element={<PlacesPage />} />
             <Route path="/places/:slug" element={<PlacePage />} />
             <Route path="/docs" element={<DocsPage />} />
+            <Route path="/faq" element={<FaqPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/blog/:slug" element={<BlogPage />} />
             <Route path="/fr/blog" element={<BlogPage language="fr" />} />

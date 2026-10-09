@@ -102,3 +102,25 @@ describe('Footer privacy disclosure', () => {
     expect(screen.getByText(/analytics are on by default/i)).toBeInTheDocument();
   });
 });
+
+describe('Footer information and support links', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(envelopeRepo(null))));
+  });
+
+  test.each([
+    ['en', 'About us', 'Contact support'],
+    ['fr', 'À propos', 'Contacter le soutien'],
+  ])('offers FAQ, About and a readable support email in %s', async (lang, about, support) => {
+    localStorage.setItem('cq-lang', lang);
+    render(<MemoryRouter><LangProvider><Footer /></LangProvider></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'FAQ' })).toHaveAttribute('href', '/faq');
+    expect(screen.getByRole('link', { name: about })).toHaveAttribute('href', '/about');
+    expect(screen.getByText(support)).toBeInTheDocument();
+    const email = screen.getByRole('link', { name: 'support@canquery.com' });
+    expect(email).toHaveAttribute('href', 'mailto:support@canquery.com');
+    expect(email).not.toHaveAttribute('target');
+    expect(screen.getByRole('link', { name: '@RyuPrad' })).toHaveAttribute('href', 'https://github.com/RyuPrad');
+    await waitFor(() => expect(screen.getByText(lang === 'fr' ? 'Étoilez-le !' : 'Star here!')).toBeInTheDocument());
+  });
+});

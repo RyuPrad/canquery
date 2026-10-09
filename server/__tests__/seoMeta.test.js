@@ -28,11 +28,15 @@ describe('seoMeta - route classification', () => {
         expect(seo.classifyRoute('/places/oshawa-on')).toEqual({ type: 'place', id: 'oshawa-on' });
         expect(seo.classifyRoute('/docs')).toEqual({ type: 'docs' });
         expect(seo.classifyRoute('/privacy')).toEqual({ type: 'privacy' });
+        expect(seo.classifyRoute('/faq')).toEqual({ type: 'faq' });
+        expect(seo.classifyRoute('/about')).toEqual({ type: 'about' });
     });
 
     it('ignores query strings and trailing slashes', () => {
         expect(seo.classifyRoute('/datasets/x?highlight=r1')).toEqual({ type: 'dataset', id: 'x' });
         expect(seo.classifyRoute('/insights/')).toEqual({ type: 'insights' });
+        expect(seo.classifyRoute('/faq/?from=footer')).toEqual({ type: 'faq' });
+        expect(seo.classifyRoute('/about/')).toEqual({ type: 'about' });
     });
 
     it('treats anything else as other', () => {
@@ -322,6 +326,16 @@ describe('seoMeta - site + static meta', () => {
         expect(seo.staticMeta('docs').title).toContain('API documentation');
         expect(seo.staticMeta('insights').title).toContain('Top 100');
         expect(seo.staticMeta('privacy').canonical).toBe('https://canquery.com/privacy');
+    });
+
+    test.each(['faq', 'about'])('keeps the %s information page indexable with its own canonical', type => {
+        const meta = seo.staticMeta(type, '/' + type + '/?from=footer');
+        expect(meta.canonical).toBe('https://canquery.com/' + type);
+        expect(meta.title).not.toBe(seo.DEFAULT_TITLE);
+        expect(meta.title.length).toBeLessThanOrEqual(80);
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+        expect(meta.noindex).not.toBe(true);
+        expect(JSON.stringify(meta.jsonLd || [])).not.toContain('FAQPage');
     });
 
     it('keeps empty place and organization pages out of the index', () => {

@@ -54,6 +54,8 @@ test('discloses ordinary links and removes closed navigation from focus order', 
   expect(within(panel).getByRole('link', { name: 'Organizations' })).toHaveAttribute('href', '/organizations');
   expect(within(panel).getByRole('link', { name: 'Data guides' })).toHaveAttribute('href', '/blog');
   expect(within(panel).getByRole('link', { name: 'API docs' })).toHaveAttribute('href', '/docs');
+  expect(within(panel).getByRole('link', { name: 'FAQ' })).toHaveAttribute('href', '/faq');
+  expect(within(panel).getByRole('link', { name: 'About us' })).toHaveAttribute('href', '/about');
   expect(within(panel).getByRole('link', { name: 'open.canada.ca' })).toHaveAttribute('rel', 'noopener noreferrer');
   expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'EN', exact: true })).toHaveLength(1);
@@ -98,6 +100,21 @@ test('route changes and selecting the current route dismiss the panel', async ()
   expect(panel).not.toBeInTheDocument();
 });
 
+test.each([
+  ['FAQ', '/faq'],
+  ['About us', '/about'],
+])('the %s link navigates, closes the panel and marks its current route', async (name, path) => {
+  start();
+  const panel = openMenu();
+  fireEvent.click(within(panel).getByRole('link', { name }));
+  await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(path));
+  expect(panel).not.toBeInTheDocument();
+  const currentLink = within(openMenu()).getByRole('link', { name });
+  expect(currentLink).toHaveAttribute('aria-current', 'page');
+  fireEvent.click(currentLink);
+  expect(screen.queryByRole('navigation', { name: 'Navigation' })).not.toBeInTheDocument();
+});
+
 test('both theme controls retain the preference and analytics behavior', () => {
   start();
   const panel = openMenu();
@@ -121,6 +138,8 @@ test('language controls keep their selected state and translate disclosure links
   const panel = screen.getByRole('navigation', { name: 'Navigation' });
   expect(within(panel).getByRole('link', { name: 'Guides des données' })).toHaveAttribute('href', '/fr/blog');
   expect(within(panel).getByRole('link', { name: 'Rechercher', exact: true })).toHaveAttribute('href', '/');
+  expect(within(panel).getByRole('link', { name: 'FAQ' })).toHaveAttribute('href', '/faq');
+  expect(within(panel).getByRole('link', { name: 'À propos' })).toHaveAttribute('href', '/about');
 });
 
 test('blog language controls remain disabled until article translations resolve', () => {
