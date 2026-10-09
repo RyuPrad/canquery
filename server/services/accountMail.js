@@ -9,13 +9,13 @@ function key() {
 }
 function encrypt(value) {
     const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm',key(),iv);
+    const cipher = createCipheriv('aes-256-gcm',key(),iv,{authTagLength:16});
     const body = Buffer.concat([cipher.update(JSON.stringify(value),'utf8'),cipher.final()]);
     return Buffer.concat([iv,cipher.getAuthTag(),body]).toString('base64');
 }
 function decrypt(value) {
     const data = Buffer.from(value,'base64');
-    const decipher = createDecipheriv('aes-256-gcm',key(),data.subarray(0,12));
+    const decipher = createDecipheriv('aes-256-gcm',key(),data.subarray(0,12),{authTagLength:16});
     decipher.setAuthTag(data.subarray(12,28));
     return JSON.parse(Buffer.concat([decipher.update(data.subarray(28)),decipher.final()]).toString('utf8'));
 }

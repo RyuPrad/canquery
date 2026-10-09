@@ -34,6 +34,13 @@ happy to credit you unless you'd prefer to stay anonymous.
 
 ## Dependency audit follow-up
 
+The [October 2026 security review](SECURITY-AUDIT-2026-10.md) updated the three
+production dependency paths tracked below. The resulting server and client
+production audits reported no known vulnerabilities. The server's full
+development audit retains a moderate Jest/Istanbul advisory chain with no patched
+upstream release; those packages are excluded by `npm ci --omit=dev` and process
+only repository-controlled test/build inputs.
+
 The September 9, 2026 closeout updates compatible Browserslist, browser mapping,
 js-yaml, qs and Vitest dependencies. The remaining moderate upstream advisories
 require separate compatibility review; do not use `npm audit fix --force` to
@@ -48,26 +55,11 @@ audit. The [proxy advisory](https://github.com/jshttp/proxy-addr/security/adviso
 concerns subnet trust rules; CanQuery retains its existing one-hop proxy setting.
 Keep the API listener behind the configured reverse proxy.
 
-The October 8, 2026 source review reproduced the pinned `stream-json`
-[Assembler prototype handling](https://github.com/uhop/stream-json/security/advisories/GHSA-mjw6-4jj6-33hc)
-issue in GeoJSON feature assembly. Preflight now rejects decoded `__proto__`
-object keys at every depth before assembly. The separate
-[JSONC comment parsing](https://github.com/uhop/stream-json/security/advisories/GHSA-hqr4-qq8f-hg3x)
-path is not used: map ingestion imports the plain JSON parser. Keep these checks
-separate from the nesting guard; no one guard covers every parser advisory.
-
-That review's production-only server audit still reported four moderate
-package findings and no high/critical findings. Full development audits also
-include Jest dependency findings; release runtime dependencies are installed
-with `npm ci --omit=dev`. Audit counts describe that dated lockfile and do not
-establish that every dependency is safe or every advisory is reachable. Keep
-build/test inputs trusted and review major tooling upgrades separately.
-
 | Dependency | Current handling |
 | --- | --- |
-| [stream-json path-filter nesting](https://github.com/advisories/GHSA-528h-pc64-c93x) | GeoJSON preflight rejects nesting deeper than 128 before the path-filter pass. Keep this guard during a future parser upgrade. |
-| [csv-parse duplicate column handling](https://github.com/advisories/GHSA-8cw4-87c7-c6xx) | The application does not enable `group_columns_by_name`, which is required by the reported duplicate-column path. Review major-version changes separately. |
-| [ExcelJS transitive uuid](https://github.com/advisories/GHSA-w5hq-g745-h8pq) | The pinned ExcelJS source uses `v4`, while this advisory concerns `v3`/`v5`/`v6` with caller-provided output buffers. No affected call was found. Track upstream compatibility; do not downgrade ExcelJS to satisfy an automated audit suggestion. |
+| `stream-json` | Updated to 3.6.0. GeoJSON preflight still rejects decoded `__proto__` keys at every depth and nesting deeper than 128 before feature assembly. |
+| `csv-parse` | Updated to 7.0.2. The streaming row, column, byte and type-validation limits remain enforced. |
+| ExcelJS transitive `uuid` | Overridden to 11.1.1 while retaining ExcelJS 4.4.0 and its existing conversion limits. |
 
 ## Converter and runtime boundaries
 

@@ -8,6 +8,8 @@ jest.mock('../services/preparationService', () => ({ prepareResource: jest.fn() 
 // The real ingest limiter (5/hour) would 429 the later requests in this suite.
 jest.mock('../middleware/rateLimits', () => ({
     generalLimiter: (req, res, next) => next(),
+    authAbuseLimiter: (req, res, next) => next(),
+    webhookLimiter: (req, res, next) => next(),
     ingestLimiter: (req, res, next) => next(),
     profileLimiter: (req, res, next) => next(),
     exportLimiter: (req, res, next) => next(),
