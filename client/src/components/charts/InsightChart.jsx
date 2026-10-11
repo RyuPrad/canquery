@@ -6,7 +6,7 @@ import {
   ChartCard, ChartSkeleton, ChartEmpty,
   DonutChart, CategoryBar, TimeSeriesChart,
 } from './Visuals.jsx';
-import { humanize, cleanRecords } from './theme.js';
+import { humanize, cleanRecords, chronological } from './theme.js';
 
 // One self-contained insight: fetches its own aggregation (respecting the
 // current search + filters) and renders the matching visual. Shared by the
@@ -33,10 +33,16 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
       agg: spec.agg,
       agg_column: spec.aggColumn,
       bucket: spec.bucket,
-      sort: isTime ? 'key asc' : 'value desc',
+      // Newest first so a capped window keeps the latest periods.
+      sort: isTime ? 'key desc' : 'value desc',
       limit: isTime ? 100 : 12,
     }, { signal: controller.signal })
-      .then((env) => { if (!cancelled) { setRows(cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
+      .then((env) => {
+        if (cancelled) return;
+        const records = cleanRecords(env.data.records);
+        setRows(isTime ? chronological(records) : records);
+        setTruncated(env.data.total > env.data.records.length);
+      })
       .catch((err) => { if (!cancelled) { setError(err); if (err instanceof NotIngestedError) onUnavailable?.(); } });
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -48,6 +54,8 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
   else if (spec.role === 'time') subtitle = t('chart.role_time');
   else if (spec.role === 'measure') subtitle = t('chart.role_sum') + ' ' + humanize(spec.aggColumn);
   else subtitle = t('chart.role_share');
+
+  const limitedNote = isTime && rows ? t('chart.latest_periods').replace('{n}', rows.length) : t('preparation.limited_groups');
 
   let body;
   if (error) body = <ChartEmpty label={t('chart.no_data')} height={height} />;
@@ -61,9 +69,9 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
     body = <CategoryBar records={rows} lang={lang} colorOffset={spec.colorOffset} height={height} />;
   }
 
-  if (!framed) return <>{body}{truncated && <p className="text-xs text-base-content/60">{t('preparation.limited_groups')}</p>}</>;
+  if (!framed) return <>{body}{truncated && <p className="text-xs text-base-content/60">{limitedNote}</p>}</>;
   return (
-    <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + t('preparation.limited_groups') : subtitle} accent={spec.colorOffset}>
+    <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + limitedNote : subtitle} accent={spec.colorOffset}>
       {body}
     </ChartCard>
   );

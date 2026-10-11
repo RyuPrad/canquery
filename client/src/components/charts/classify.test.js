@@ -138,3 +138,38 @@ describe('hasAnyInsight', () => {
     expect(hasAnyInsight(c)).toBe(false);
   });
 });
+
+describe('time axes need period-like values', () => {
+  const c = classifyColumns({
+    row_count: 362,
+    columns: [
+      { id: 'multi_year_capital_project_budgets_previously_approved', type: 'INTEGER', distinct: 265, nulls: 0, min: 0, max: 2650000 },
+      { id: 'fiscal_year', type: 'INTEGER', distinct: 10, nulls: 0, min: 2015, max: 2024 },
+      { id: 'month', type: 'INTEGER', distinct: 12, nulls: 0, min: 1, max: 12 },
+      { id: 'reporting_period', type: 'TEXT', distinct: 8, nulls: 0 },
+      { id: 'service_category', type: 'TEXT', distinct: 13, nulls: 0 },
+    ],
+  });
+  const dateIds = c.dates.map((d) => d.id);
+
+  test('an amount whose name merely contains "year" is a measure, not a time axis', () => {
+    expect(dateIds).not.toContain('multi_year_capital_project_budgets_previously_approved');
+    expect(c.measures.map((m) => m.id)).toContain('multi_year_capital_project_budgets_previously_approved');
+  });
+
+  test('year values, month numbers and named text periods remain time axes', () => {
+    expect(dateIds).toEqual(expect.arrayContaining(['fiscal_year', 'month', 'reporting_period']));
+  });
+});
+
+test('few-valued amounts are measures rather than categories', () => {
+  const c = classifyColumns({
+    row_count: 362,
+    columns: [
+      { id: 'changes_to_2023_2026_capital_plan_from_2025_capital_budget', type: 'INTEGER', distinct: 14, nulls: 0, min: -1800000, max: 8310000 },
+      { id: 'rating', type: 'INTEGER', distinct: 5, nulls: 0, min: 1, max: 5 },
+    ],
+  });
+  expect(c.dimensions.map((d) => d.id)).toEqual(['rating']);
+  expect(c.measures.map((m) => m.id)).toContain('changes_to_2023_2026_capital_plan_from_2025_capital_budget');
+});

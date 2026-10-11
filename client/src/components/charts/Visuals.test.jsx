@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { DonutChart } from './Visuals.jsx';
+import { CategoryBar, DonutChart } from './Visuals.jsx';
 
 vi.mock('recharts', () => {
   const Container = ({ children }) => <div>{children}</div>;
@@ -25,4 +25,21 @@ test.each([
   expect(screen.getByText('Signed value bars')).toBeInTheDocument();
   expect(screen.getByText('Donut charts require nonnegative values and a positive total. Showing bars.')).toBeInTheDocument();
   expect(screen.queryByText(/%$/)).toBeNull();
+});
+
+test('long category lists scroll inside the card instead of squeezing bars', () => {
+  const many = Array.from({ length: 40 }, (_, i) => ({ key: 'Group ' + i, value: 40 - i }));
+  const { unmount } = render(<CategoryBar lang="en" records={many} height={320} />);
+  expect(screen.getByRole('region', { name: 'Chart groups, scrollable' })).toHaveAttribute('tabindex', '0');
+  unmount();
+  render(<CategoryBar lang="en" records={many.slice(0, 6)} height={320} />);
+  expect(screen.queryByRole('region')).toBeNull();
+});
+
+test('empty and missing categories keep distinct donut entries', () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  render(<DonutChart lang="en" records={[{ key: null, value: 1 }, { key: '', value: 2 }, { key: 'A', value: 3 }]} totalLabel="Total" />);
+  expect(screen.getAllByText('(empty)')).toHaveLength(2);
+  expect(errors.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
+  errors.mockRestore();
 });
