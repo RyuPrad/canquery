@@ -6,13 +6,16 @@ import {
   ChartCard, ChartSkeleton, ChartEmpty,
   DonutChart, CategoryBar, TimeSeriesChart,
 } from './charts/Visuals.jsx';
-import { humanize, cleanRecords } from './charts/theme.js';
+import { humanize, cleanRecords, chronological } from './charts/theme.js';
 import { track } from '../utils/analytics.js';
 
 const selectClass = 'select select-sm bg-base-200 border-base-content/10 rounded-lg font-mono text-xs';
 const NUM_RE = /int|numeric|float|double|money|real|decimal/i;
 const DATE_RE = /date|time/i;
 const BAD_DEFAULT_RE = /(^|[_\s])(id|uuid|guid|code|number|num|no|key|name|title)([_\s]|$)/i;
+// A donut is a share of a whole: it needs every group and an additive metric.
+const DONUT_LIMIT = 16;
+const DONUT_AGGS = new Set(['count', 'sum']);
 
 function Label({ children, htmlFor }) {
   return <label htmlFor={htmlFor} className="text-xs text-base-content/50">{children}</label>;
@@ -26,6 +29,9 @@ function TypeToggle({ value, onChange, options }) {
           key={o.value}
           className={'cq-seg-btn' + (value === o.value ? ' cq-seg-active' : '')}
           aria-pressed={value === o.value}
+          disabled={o.disabled}
+          title={o.disabledReason}
+          aria-label={o.disabledReason ? o.label + ' (' + o.disabledReason + ')' : undefined}
           onClick={() => onChange(o.value)}
         >
           {o.label}
@@ -54,7 +60,9 @@ function initialConfig(cols, classified) {
     if (dim) return { groupBy: dim.id, agg: 'count', aggCol: '', chartType: dim.distinct <= 6 ? 'donut' : 'bars', bucket: 'year' };
     if (time) return { groupBy: time.id, agg: 'count', aggCol: '', chartType: 'line', bucket: time.bucket || 'year' };
   }
-  return { groupBy: pickDefaultGroup(cols), agg: 'count', aggCol: '', chartType: 'bars', bucket: 'year' };
+  const groupBy = pickDefaultGroup(cols);
+  const dated = DATE_RE.test(cols.find((c) => c.id === groupBy)?.type || '');
+  return { groupBy, agg: 'count', aggCol: '', chartType: dated ? 'line' : 'bars', bucket: 'year' };
 }
 
 // Ingested resources: full group-by + aggregate builder.
@@ -73,17 +81,28 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
 
   const groupCol = cols.find((c) => c.id === groupBy);
   const isDate = groupCol ? DATE_RE.test(groupCol.type) : false;
+  // Year-like columns recognised by the profile classifier are time axes too.
+  const temporalIds = useMemo(() => new Set((classified?.dates || []).map((d) => d.id)), [classified]);
+  const isTimeAxis = isDate || temporalIds.has(groupBy);
+  const groupDistinct = classified?.columns?.find((c) => c.id === groupBy)?.distinct;
   const wantsAggCol = agg !== 'count';
   const aggColOptions = (agg === 'sum' || agg === 'avg') ? numericCols : cols;
   const nonNumericAggregate = wantsAggCol && !NUM_RE.test(cols.find(c => c.id === aggCol)?.type || '');
 
-  // When the user switches group-by to/from a date, follow with a sensible chart
-  // type - but don't clobber the smart initial choice (e.g. a donut) on mount.
+  // When the user switches group-by to/from a time axis, follow with a sensible
+  // chart type - but don't clobber the smart initial choice (e.g. a donut) on mount.
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
-    setChartType(isDate ? 'line' : 'bars');
-  }, [isDate]);
+    setChartType(isTimeAxis ? 'line' : 'bars');
+  }, [isTimeAxis]);
+
+  // A line implies continuity, so it is only offered for time axes. A donut is
+  // only offered when it can show the complete additive distribution.
+  const donutBlocked = !DONUT_AGGS.has(agg)
+    ? t('chart.donut_unavailable_agg')
+    : (groupDistinct != null && groupDistinct > DONUT_LIMIT ? t('chart.donut_unavailable_groups') : null);
+  const shownType = (chartType === 'line' && !isTimeAxis) || (chartType === 'donut' && donutBlocked) ? 'bars' : chartType;
   // Keep the selected target valid, including min/max on text-only files.
   useEffect(() => {
     const options = (agg === 'sum' || agg === 'avg') ? numericCols : cols;
@@ -104,7 +123,6 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
     const controller = new AbortController();
     setRows(null);
     setError(null);
-    const isLine = chartType === 'line';
     queryResource(resourceId, {
       q,
       filters,
@@ -112,14 +130,20 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
       agg,
       agg_column: wantsAggCol ? aggCol : undefined,
       bucket: isDate ? bucket : undefined,
-      sort: (isDate || isLine) ? 'key asc' : 'value desc',
-      limit: chartType === 'donut' ? 16 : (isDate ? 100 : 50),
+      // Time axes are fetched newest first so a capped window keeps the latest periods.
+      sort: isTimeAxis ? 'key desc' : 'value desc',
+      limit: shownType === 'donut' ? DONUT_LIMIT : (isTimeAxis ? 100 : 50),
     }, { signal: controller.signal })
-      .then((env) => { if (!cancelled) { setRows(nonNumericAggregate ? env.data.records : cleanRecords(env.data.records)); setTruncated(env.data.total > env.data.records.length); } })
+      .then((env) => {
+        if (cancelled) return;
+        const records = nonNumericAggregate ? env.data.records : cleanRecords(env.data.records);
+        setRows(isTimeAxis ? chronological(records) : records);
+        setTruncated(env.data.total > env.data.records.length);
+      })
       .catch((err) => { if (!cancelled) { setError(err); if (err instanceof NotIngestedError) onUnavailable?.(); } });
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resourceId, q, filtersKey, groupBy, agg, aggCol, bucket, isDate, chartType, wantsAggCol, nonNumericAggregate, aggColOptions]);
+  }, [resourceId, q, filtersKey, groupBy, agg, aggCol, bucket, isDate, isTimeAxis, shownType, wantsAggCol, nonNumericAggregate, aggColOptions]);
 
   let body;
   if (!cols.length) body = <ChartEmpty label={t('chart.no_data')} height={320} />;
@@ -134,17 +158,24 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
       </table>
     </div>
   );
-  else if (chartType === 'donut' && !truncated) body = <DonutChart records={rows} lang={lang} height={320} totalLabel={t('chart.total')} />;
-  else if (chartType === 'line') body = <TimeSeriesChart records={rows} lang={lang} bucket={isDate ? bucket : null} categorical={!isDate} type="area" height={320} />;
+  else if (shownType === 'donut' && !truncated) body = <DonutChart records={rows} lang={lang} height={320} totalLabel={t('chart.total')} />;
+  else if (shownType === 'donut') body = (
+    <div className="space-y-2">
+      <p className="text-xs text-base-content/60">{t('chart.donut_too_many')}</p>
+      <CategoryBar records={rows} lang={lang} height={320} />
+    </div>
+  );
+  else if (shownType === 'line') body = <TimeSeriesChart records={rows} lang={lang} bucket={isDate ? bucket : null} categorical={!isDate} type="area" height={320} />;
   else body = <CategoryBar records={rows} lang={lang} height={320} />;
 
+  const limitedNote = isTimeAxis && rows ? t('chart.latest_periods').replace('{n}', rows.length) : t('preparation.limited_groups');
   const title = agg === 'count' ? humanize(groupBy) : humanize(aggCol);
   const subtitle = agg === 'count'
     ? t('chart.role_share')
     : agg + ' ' + t('chart.by') + ' ' + humanize(groupBy);
 
   return (
-    <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + t('preparation.limited_groups') : subtitle}>
+    <ChartCard title={title} subtitle={truncated ? subtitle + ' · ' + limitedNote : subtitle}>
       {cols.length > 0 && <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
         <Label htmlFor={controlId + '-group'}>{t('chart.x')}</Label>
         <select id={controlId + '-group'} className={selectClass} value={groupBy} onChange={(e) => {
@@ -190,15 +221,15 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
         )}
         {!nonNumericAggregate && <div className="ml-auto">
           <TypeToggle
-            value={chartType}
+            value={shownType}
             onChange={(value) => {
               track('chart_config', { resource_id: resourceId, setting: 'chart_type', value });
               setChartType(value);
             }}
             options={[
               { value: 'bars', label: t('chart.type_bars') },
-              { value: 'donut', label: t('chart.type_donut') },
-              { value: 'line', label: t('chart.type_line') },
+              { value: 'donut', label: t('chart.type_donut'), disabled: Boolean(donutBlocked), disabledReason: donutBlocked || undefined },
+              ...(isTimeAxis ? [{ value: 'line', label: t('chart.type_line') }] : []),
             ]}
           />
         </div>}
