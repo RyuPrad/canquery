@@ -10,7 +10,7 @@ vi.mock('./charts/Visuals.jsx', () => ({
   ChartEmpty: ({ label }) => <div>{label}</div>,
   DonutChart: () => <div>Donut chart</div>,
   CategoryBar: () => <div>Bar chart</div>,
-  TimeSeriesChart: () => <div>Time chart</div>,
+  TimeSeriesChart: ({ records }) => <div>Time chart {records.map((r) => r.key).join(',')}</div>,
 }));
 
 const fields = [{ id: '_id', type: 'INTEGER' }, { id: 'province', type: 'TEXT' }, { id: 'amount', type: 'NUMERIC' }];
@@ -56,5 +56,46 @@ describe('custom aggregation controls', () => {
     expect(screen.getByText('No data yet.')).toBeInTheDocument();
     expect(screen.queryByText('Chart loading')).toBeNull();
     expect(queryResource).not.toHaveBeenCalled();
+  });
+
+  test('date axes fetch the newest periods and render them chronologically', async () => {
+    queryResource.mockResolvedValue({ data: { records: [{ key: '2026', value: 3 }, { key: '2025', value: 2 }], total: 40 } });
+    const dateFields = [{ id: 'recorded_at', type: 'TIMESTAMPTZ' }, { id: 'amount', type: 'NUMERIC' }];
+    render(<ChartBuilder resourceId="r1" fields={dateFields} queryMode="ingested" />);
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'recorded_at', sort: 'key desc', limit: 100 }), expect.any(Object)));
+    expect(await screen.findByText('Time chart 2025,2026')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Line' })).toBeInTheDocument();
+  });
+
+  test('categorical axes do not offer a line and keep largest-first bars', async () => {
+    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" />);
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'province', sort: 'value desc' }), expect.any(Object)));
+    expect(screen.queryByRole('button', { name: 'Line' })).toBeNull();
+  });
+
+  test('year-like columns from the profile classifier still offer a line', async () => {
+    const yearFields = [{ id: 'fiscal_year', type: 'INTEGER' }, { id: 'amount', type: 'NUMERIC' }];
+    const classified = { dates: [{ id: 'fiscal_year', bucket: null }], dimensions: [], measures: [{ id: 'amount' }], columns: [{ id: 'fiscal_year', distinct: 10 }] };
+    render(<ChartBuilder resourceId="r1" fields={yearFields} queryMode="ingested" classified={classified} />);
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'fiscal_year', agg: 'avg', sort: 'key desc' }), expect.any(Object)));
+    expect(screen.getByRole('button', { name: 'Line' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('donut is unavailable for averages and for too many groups', async () => {
+    const classified = { dates: [], dimensions: [{ id: 'province', distinct: 40 }], measures: [], columns: [{ id: 'province', distinct: 40 }] };
+    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" classified={classified} />);
+    const donut = await screen.findByRole('button', { name: /Donut unavailable: too many groups/ });
+    expect(donut).toBeDisabled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Function' }), { target: { value: 'avg' } });
+    expect(screen.getByRole('button', { name: /Donut unavailable: only counts and sums/ })).toBeDisabled();
+  });
+
+  test('a donut that would be incomplete explains why bars are shown', async () => {
+    queryResource.mockResolvedValue({ data: { records: [{ key: 'ON', value: 2 }], total: 30 } });
+    const classified = { dates: [], dimensions: [{ id: 'province', distinct: 5 }], measures: [], columns: [{ id: 'province', distinct: 5 }] };
+    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" classified={classified} />);
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'province', limit: 16 }), expect.any(Object)));
+    expect(await screen.findByText(/more groups than a donut can show/)).toBeInTheDocument();
+    expect(screen.getByText('Bar chart')).toBeInTheDocument();
   });
 });

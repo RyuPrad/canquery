@@ -90,6 +90,27 @@ export function truncate(s, n) {
   return str.length > n ? str.slice(0, n - 1) + '…' : str;
 }
 
+// Axis ticks use 11px JetBrains Mono, roughly 6.7px per character. Size an
+// axis from its actual labels so they are neither clipped nor padded out.
+const TICK_CHAR_PX = 6.7;
+const TICK_GAP_PX = 12;
+
+export function axisWidthFor(labels, { min = 40, max = 200 } = {}) {
+  const longest = (labels || []).reduce((m, l) => Math.max(m, String(l ?? '').length), 0);
+  return Math.ceil(Math.min(max, Math.max(min, longest * TICK_CHAR_PX + TICK_GAP_PX)));
+}
+
+// How many characters fit in an axis of the given pixel width.
+export function charsForWidth(width) {
+  return Math.max(4, Math.floor((width - TICK_GAP_PX) / TICK_CHAR_PX));
+}
+
+// Temporal groups are queried newest first so a capped window keeps the latest
+// periods; flip them back so the chart still reads left to right in time.
+export function chronological(records) {
+  return (records || []).slice().reverse();
+}
+
 // Sanitized column ids look like "incorporation_date" / "governing_legislation".
 // Make them presentable without mangling acronyms (light touch: underscores →
 // spaces, capitalize the first letter only).

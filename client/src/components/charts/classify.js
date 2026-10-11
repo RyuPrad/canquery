@@ -21,11 +21,16 @@ const DIM_NAME_RE =/(province|state|region|territo|jurisdiction|status|statut|ty
 const frac = (c, rowCount) => (rowCount > 0 ? (c.nulls || 0) / rowCount : 0);
 const ratio = (c, rowCount) => (rowCount > 0 ? c.distinct / rowCount : 1);
 
+const MONTH_NAME_RE = /(^|[_\s])(month|mois|quarter|trimestre)([_\s]|$)/i;
+const yearRange = (c) => c.min != null && c.max != null && c.min >= 1700 && c.max <= 2200;
+const monthRange = (c) => c.min != null && c.max != null && c.min >= 1 && c.max <= 12;
+
 function isTemporal(c) {
   if (DATE_RE.test(c.type)) return true;
+  // A numeric column is only a time axis when its values look like periods.
+  // Names such as "multi_year_capital_budget" contain "year" but hold amounts.
+  if (NUM_RE.test(c.type)) return yearRange(c) || (MONTH_NAME_RE.test(c.id) && monthRange(c));
   if (YEAR_NAME_RE.test(c.id)) return true;
-  // Bare numbers that all sit in a plausible year range read as a time axis.
-  if (NUM_RE.test(c.type) && c.min != null && c.max != null && c.min >= 1700 && c.max <= 2200) return true;
   return false;
 }
 
@@ -53,6 +58,8 @@ function isSurrogateId(c, rowCount) {
 function isCategorical(c, rowCount) {
   if (isTemporal(c) || isIdentifier(c, rowCount)) return false;
   if (c.distinct < 2 || c.distinct > 60) return false;
+  // An amount with few distinct values is still an amount, not a category.
+  if (NUM_RE.test(c.type) && MEASURE_NAME_RE.test(c.id)) return false;
   if (NUM_RE.test(c.type)) return c.distinct <= 20 && ratio(c, rowCount) < 0.25;
   return true;
 }

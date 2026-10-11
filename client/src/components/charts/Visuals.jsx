@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useSyncExternalStore } from 'react';
 import {
   ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -10,8 +10,24 @@ import { useTheme } from '../../theme.jsx';
 import { useLang } from '../../i18n.jsx';
 import {
   PALETTE, colorAt, axisTick, gridStroke, tooltipStyle, sliceStroke, cursorFill, tooltipMuted, tooltipValue,
-  fmtInt, fmtNum, fmtBucketKey, fmtCategory, truncate,
+  fmtInt, fmtNum, fmtBucketKey, fmtCategory, truncate, axisWidthFor, charsForWidth,
 } from './theme.js';
+
+// Axis budgets shrink on phones so the plot keeps most of the card width.
+const NARROW_QUERY = '(max-width: 639px)';
+function subscribeNarrow(onChange) {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {};
+  const mq = window.matchMedia(NARROW_QUERY);
+  mq.addEventListener?.('change', onChange);
+  return () => mq.removeEventListener?.('change', onChange);
+}
+function useNarrow() {
+  return useSyncExternalStore(
+    subscribeNarrow,
+    () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(NARROW_QUERY).matches : false),
+    () => false,
+  );
+}
 
 // ── Shared tooltip ────────────────────────────────────────────────────────
 function ChartTooltip({ active, payload, lang }) {
@@ -39,9 +55,9 @@ export function ChartCard({ title, subtitle, accent, action, children, className
             {accent != null && (
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorAt(accent) }} />
             )}
-            <span className="truncate">{title}</span>
+            <span className="line-clamp-2 break-words" title={typeof title === 'string' ? title : undefined}>{title}</span>
           </h3>
-          {subtitle && <p className="text-xs text-base-content/45 font-mono mt-0.5 truncate">{subtitle}</p>}
+          {subtitle && <p className="text-xs text-base-content/45 font-mono mt-0.5 line-clamp-2 break-words" title={subtitle}>{subtitle}</p>}
         </div>
         {action}
       </div>
@@ -106,7 +122,7 @@ export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height 
           <PieChart>
             <Pie data={data} dataKey="value" nameKey="label" innerRadius="60%" outerRadius="88%"
                  paddingAngle={1.5} stroke={sliceStroke(dark)} strokeWidth={2} startAngle={90} endAngle={-270}>
-              {data.map((d) => <Cell key={d.label} fill={d.color} />)}
+              {data.map((d, i) => <Cell key={i + ':' + d.label} fill={d.color} />)}
             </Pie>
             <Tooltip content={<ChartTooltip lang={lang} />} />
           </PieChart>
@@ -116,9 +132,9 @@ export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height 
           {totalLabel && <span className="text-[0.66rem] text-base-content/40 mt-1">{totalLabel}</span>}
         </div>
       </div>
-      <ul className="space-y-1.5 text-xs max-h-[260px] overflow-auto pr-1">
-        {data.map((d) => (
-          <li key={d.label} className="flex items-center gap-2">
+      <ul className="space-y-1.5 text-xs overflow-auto pr-1" style={{ maxHeight: height }}>
+        {data.map((d, i) => (
+          <li key={i + ':' + d.label} className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
             <span className="truncate text-base-content/70" title={d.label}>{d.label}</span>
             <span className="ml-auto tabular-nums font-mono text-base-content/45">{d.pct}%</span>
@@ -132,29 +148,48 @@ export function DonutChart({ records, lang, colorOffset = 0, totalLabel, height 
 // ── Horizontal category bars ────────────────────────────────────────────────
 export function CategoryBar({ records, lang, colorOffset = 0, height = 260 }) {
   const { dark } = useTheme();
+  const { t } = useLang();
+  const narrow = useNarrow();
   const gradId = useId();
   const base = colorAt(colorOffset);
   const data = records.map((r) => ({ label: fmtCategory(r.key), value: Number(r.value || 0) }));
-  const dynamicHeight = Math.max(height, data.length * 26 + 24);
+  // Every group gets a readable row; long lists scroll inside the card instead
+  // of squeezing bars and labels on top of each other.
+  const chartHeight = Math.max(height, data.length * 28 + 24);
+  const viewport = Math.max(height, 520);
+  const scrolls = chartHeight > viewport;
+  const yWidth = axisWidthFor(data.map((d) => d.label), { min: 64, max: narrow ? 116 : 200 });
+  const maxChars = charsForWidth(yWidth);
+  // The last value tick is centred on the plot edge; leave room for half of it.
+  const extent = data.length ? Math.max(...data.map((d) => Math.abs(d.value))) : 0;
+  const rightMargin = Math.max(18, Math.ceil(axisWidthFor([fmtNum(extent, lang) + '0'], { min: 0, max: 120 }) / 2));
 
   return (
-    <ResponsiveContainer width="100%" height={Math.min(dynamicHeight, 460)}>
-      <BarChart data={data} layout="vertical" margin={{ left: 4, right: 18, top: 4, bottom: 4 }}>
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={base} stopOpacity={0.5} />
-            <stop offset="1" stopColor={base} stopOpacity={1} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid horizontal={false} stroke={gridStroke(dark)} />
-        <XAxis type="number" tick={axisTick(dark)} tickLine={false} axisLine={false}
-               tickFormatter={(v) => fmtNum(v, lang)} />
-        <YAxis type="category" dataKey="label" width={132} tick={axisTick(dark)} tickLine={false} axisLine={false}
-               interval={0} tickFormatter={(v) => truncate(v, 20)} />
-        <Tooltip cursor={{ fill: cursorFill(dark) }} content={<ChartTooltip lang={lang} />} />
-        <Bar dataKey="value" fill={'url(#' + gradId + ')'} radius={[0, 6, 6, 0]} maxBarSize={28} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div
+      className={scrolls ? 'overflow-y-auto overscroll-contain' : undefined}
+      style={scrolls ? { maxHeight: viewport } : undefined}
+      tabIndex={scrolls ? 0 : undefined}
+      role={scrolls ? 'region' : undefined}
+      aria-label={scrolls ? t('chart.scroll_groups') : undefined}
+    >
+      <ResponsiveContainer width="100%" height={chartHeight}>
+        <BarChart data={data} layout="vertical" margin={{ left: 4, right: rightMargin, top: 4, bottom: 4 }}>
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor={base} stopOpacity={0.5} />
+              <stop offset="1" stopColor={base} stopOpacity={1} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid horizontal={false} stroke={gridStroke(dark)} />
+          <XAxis type="number" tick={axisTick(dark)} tickLine={false} axisLine={false}
+                 tickFormatter={(v) => fmtNum(v, lang)} />
+          <YAxis type="category" dataKey="label" width={yWidth} tick={axisTick(dark)} tickLine={false} axisLine={false}
+                 interval={0} tickFormatter={(v) => truncate(v, maxChars)} />
+          <Tooltip cursor={{ fill: cursorFill(dark) }} content={<ChartTooltip lang={lang} />} />
+          <Bar dataKey="value" fill={'url(#' + gradId + ')'} radius={[0, 6, 6, 0]} maxBarSize={28} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -163,16 +198,27 @@ export function TimeSeriesChart({ records, lang, bucket, type = 'area', categori
   const { dark } = useTheme();
   const gradId = useId();
   const color = colorAt(colorOffset);
+  const narrow = useNarrow();
   const data = records.map((r) => ({
     label: categorical ? fmtCategory(r.key) : fmtBucketKey(r.key, bucket, lang),
     value: Number(r.value || 0),
   }));
+  // Size the value axis from the widest number it can show; rounded "nice"
+  // ticks can add a digit beyond the data extremes, hence the extra 0 padding.
+  const values = data.map((d) => d.value);
+  const extremes = values.length ? [Math.max(...values), Math.min(...values), 0] : [0];
+  const yWidth = axisWidthFor(extremes.map((v) => fmtNum(v, lang) + '0'), { min: 40, max: 96 });
+  const xChars = narrow ? 10 : 16;
+  // First and last ticks sit on the plot edges; pad by half their width.
+  const edgeChars = data.length ? Math.min(categorical ? xChars : 24, Math.max(String(data[0].label).length, String(data[data.length - 1].label).length)) : 0;
+  const edgePad = Math.max(8, Math.ceil(axisWidthFor(['x'.repeat(edgeChars)], { min: 0, max: 140 }) / 2) - 6);
 
   const axes = (
     <>
       <CartesianGrid vertical={false} stroke={gridStroke(dark)} />
-      <XAxis dataKey="label" tick={axisTick(dark)} tickLine={false} axisLine={false} minTickGap={26} />
-      <YAxis tick={axisTick(dark)} tickLine={false} axisLine={false} width={46}
+      <XAxis dataKey="label" tick={axisTick(dark)} tickLine={false} axisLine={false} minTickGap={26}
+             padding={{ left: edgePad, right: edgePad }} tickFormatter={categorical ? (v) => truncate(v, xChars) : undefined} />
+      <YAxis tick={axisTick(dark)} tickLine={false} axisLine={false} width={yWidth}
              tickFormatter={(v) => fmtNum(v, lang)} />
       <Tooltip cursor={{ stroke: color, strokeOpacity: 0.35 }} content={<ChartTooltip lang={lang} />} />
     </>
