@@ -3,6 +3,7 @@ const AppError = require('../utils/AppError');
 const catalogRead = require('../db/catalogReadQueries');
 const { listArticles } = require('../services/blogContent');
 const { SITE_URL } = require('../services/seoMeta');
+const { hostedRoutes } = require('../extensions');
 
 // Sitemap files cap at 50,000 URLs each; we chunk datasets well under that and
 // expose a sitemap index so the catalogue can keep growing.
@@ -96,8 +97,7 @@ const sitemapPages = (req, res) => {
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/faq', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/about', changefreq: 'monthly', priority: '0.5' },
-            { loc: SITE_URL + '/pricing', changefreq: 'monthly', priority: '0.5' },
-            { loc: SITE_URL + '/terms', changefreq: 'yearly', priority: '0.3' },
+            ...hostedRoutes().filter(route => route.sitemap).map(route => ({ loc: SITE_URL + route.path, ...route.sitemap })),
             { loc: SITE_URL + '/privacy', changefreq: 'yearly', priority: '0.3' },
         ])
     );

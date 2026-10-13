@@ -54,4 +54,6 @@ const preparation = {
     settle: (client, jobId) => require('../db/preparationAccounting').settlePreparationOn(client, jobId)
 };
 
-module.exports = { edition: 'enterprise', mountBeforeBodyParsing, mountAfterBodyParsing, apiMiddleware, start, close, preparation };
+const pages = () => require('./pages').pages();
+
+module.exports = { edition: 'enterprise', mountBeforeBodyParsing, mountAfterBodyParsing, apiMiddleware, start, close, preparation, pages };

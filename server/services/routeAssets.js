@@ -1,14 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { classifyRoute } = require('./seoMeta');
+const { hostedRoute } = require('../extensions');
 
 const ROUTE_MODULES = Object.freeze({
     datasets: 'DatasetsPage', dataset: 'DatasetPage', resource: 'ResourcePage',
     organizations: 'OrganizationsPage', organization: 'OrganizationPage',
     places: 'PlacesPage', place: 'PlacePage', insights: 'InsightsPage',
-    docs: 'DocsPage', privacy: 'PrivacyPage', faq: 'FaqPage', about: 'AboutPage', blog: 'BlogPage',
-    pricing:'PricingPage',account:'AccountPage',terms:'TermsPage',login:'AuthPage',signup:'AuthPage',
-    'forgot-password':'AuthPage','reset-password':'AuthPage'
+    docs: 'DocsPage', privacy: 'PrivacyPage', faq: 'FaqPage', about: 'AboutPage', blog: 'BlogPage'
 });
 let cachedDirectory;
 let cachedManifest;
@@ -36,7 +35,7 @@ function safeAsset(file) {
 function routeAssets(requestTarget, manifest) {
     const pathname = requestTarget.split('?')[0];
     const type = /^\/(?:fr\/)?blog(?:\/[^/]+)?\/?$/.test(pathname) ? 'blog' : classifyRoute(pathname).type;
-    const moduleName = ROUTE_MODULES[type];
+    const moduleName = ROUTE_MODULES[type] || hostedRoute(type)?.module;
     if (!moduleName) return [];
     const seen = new Set();
     const assets = new Map();

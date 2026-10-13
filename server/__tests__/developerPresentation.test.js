@@ -1,4 +1,7 @@
-const { pricingOverview, docsOverview } = require('../services/developerPresentation');
+const { pricingOverview, hostedDocs } = require('../enterprise/developerPresentation');
+const { docsOverview: coreDocsOverview } = require('../services/developerPresentation');
+// The hosted deployment renders /docs with its account and credit options.
+const docsOverview = () => coreDocsOverview(hostedDocs);
 const { resolvePage } = require('../controllers/spaController');
 const openApi = require('../services/openApi');
 const seo = require('../services/seoMeta');

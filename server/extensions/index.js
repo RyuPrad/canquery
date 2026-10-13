@@ -46,4 +46,15 @@ async function assertEditionMatchesDatabase(db) {
     if (rows[0]?.hosted) throw new Error('This database belongs to the hosted edition; install its extension before starting');
 }
 
-module.exports = { extension, assertEditionMatchesDatabase };
+// Hosted-only page types and hosted replacements for core page content.
+function hostedRoutes() {
+    return extension().pages().routes;
+}
+function hostedRoute(type) {
+    return hostedRoutes().find(route => route.type === type) || null;
+}
+function pageOverride(type) {
+    return extension().pages().overrides[type] || null;
+}
+
+module.exports = { extension, assertEditionMatchesDatabase, hostedRoutes, hostedRoute, pageOverride };

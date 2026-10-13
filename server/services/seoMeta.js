@@ -6,7 +6,7 @@
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { classifyResource } = require('./resourceCapabilities');
 const { plainText, collapse, truncate, resourceLanguages } = require('./catalogText');
-const { BUSINESS_PRICE } = require('./commercialConfig');
+const { hostedRoutes, hostedRoute, pageOverride } = require('../extensions');
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
 const SITE_NAME = 'CanQuery';
@@ -190,20 +190,13 @@ function classifyRoute(pathname) {
     if (/^\/privacy\/?$/.test(p)) return { type: 'privacy' };
     if (/^\/faq\/?$/.test(p)) return { type: 'faq' };
     if (/^\/about\/?$/.test(p)) return { type: 'about' };
-    for (const type of ['pricing','account','login','signup','forgot-password','reset-password','terms']) {
-        if (p === '/' + type || p === '/' + type + '/') return { type };
+    for (const route of hostedRoutes()) {
+        if (p === route.path || p === route.path + '/') return { type: route.type };
     }
     return { type: 'other' };
 }
 
 const STATIC_META = {
-    pricing: {path:'/pricing',title:'Canadian open data API pricing - CanQuery',description:`A hosted Canadian public-data API for recurring reports and dashboards. Start free; Business is CA$${BUSINESS_PRICE.amount / 100}/month, with custom requirements scoped separately.`},
-    account: {path:'/account',title:'Developer account - CanQuery',description:'Manage your API keys, usage and billing.',noindex:true},
-    login: {path:'/login',title:'Sign in - CanQuery',description:'Sign in to your developer account.',noindex:true},
-    signup: {path:'/signup',title:'Create an account - CanQuery',description:'Create a free developer account.',noindex:true},
-    'forgot-password': {path:'/forgot-password',title:'Reset your password - CanQuery',description:'Request a password reset.',noindex:true},
-    'reset-password': {path:'/reset-password',title:'Save a new password - CanQuery',description:'Reset your account password.',noindex:true},
-    terms: {path:'/terms',title:'API terms - CanQuery',description:'API service access, allowances, billing and publisher licences.'},
     datasets: { path: '/datasets', title: 'Browse all Canadian datasets - CanQuery',
         description: 'Browse the complete Canadian open data catalogue: downloadable files, live tables and maps from federal, provincial and municipal publishers.' },
     home: { title: DEFAULT_TITLE, description: DEFAULT_DESC, path: '/' },
@@ -227,7 +220,7 @@ const STATIC_META = {
     docs: {
         title: 'Canadian open data API documentation - CanQuery',
         description:
-            'Build with Canadian public data: working curl, Python and JavaScript examples, endpoint reference, API keys, pagination, preparation and error handling.',
+            'Build with Canadian public data: working curl, Python and JavaScript examples, endpoint reference, pagination, preparation and error handling.',
         path: '/docs',
     },
     privacy: {
@@ -238,7 +231,7 @@ const STATIC_META = {
     },
     faq: {
         title: 'Frequently asked questions - CanQuery',
-        description: 'Get answers about Canadian open data, supported tables and maps, file preparation, developer accounts and contacting CanQuery support.',
+        description: 'Get answers about Canadian open data, supported tables and maps, file preparation and contacting CanQuery support.',
         path: '/faq',
     },
     about: {
@@ -418,7 +411,7 @@ function homeMeta() {
 
 function staticMeta(type, pathname) {
     if (type === 'home') return homeMeta();
-    const entry = STATIC_META[type];
+    const entry = pageOverride(type)?.meta || STATIC_META[type] || hostedRoute(type)?.meta;
     if (entry) {
         return {
             title: entry.title,

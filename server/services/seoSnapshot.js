@@ -2,7 +2,7 @@ const seo = require('./seoMeta');
 const { listArticles } = require('./blogContent');
 const { classifyResource } = require('./resourceCapabilities');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
-const { BUSINESS_PRICE, TERMS_VERSION } = require('./commercialConfig');
+const { hostedRoute, pageOverride } = require('../extensions');
 
 const { PAGE_SIZE, pagePath } = require('./catalogPagination');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
@@ -261,13 +261,6 @@ function organizationSnapshot(organization, datasets, pagination) {
 }
 
 const STATIC_COPY = {
-    pricing: {title:'Canadian data for your next client report.',summary:'A hosted API for analytics and research teams. Find supported public datasets, query the records you need, and reuse the integration in your reports and dashboards.',links:[{path:'/docs#quickstart',label:'Try the example free'},{path:'/terms',label:'API terms'}]},
-    account: {title:'Developer account',summary:'Sign in to manage API keys, usage and billing. JavaScript is required for account actions.',links:[{path:'/login',label:'Sign in'}]},
-    login: {title:'Sign in',summary:'Enable JavaScript to sign in securely. For help, contact support@canquery.com.'},
-    signup: {title:'Create a developer account',summary:'Start with a free API allowance and no payment card. Enable JavaScript to create and verify your account.'},
-    'forgot-password': {title:'Reset your password',summary:'Enable JavaScript to request a password reset.'},
-    'reset-password': {title:'Save a new password',summary:'Enable JavaScript to use your password reset link.'},
-    terms: {title:'API terms',summary:`Effective ${TERMS_VERSION}. Subscriptions provide CanQuery service access within published allowances. Publisher licences and attribution remain applicable. Business renews monthly at CA$${BUSINESS_PRICE.amount / 100} plus applicable taxes; cancel before renewal through the billing portal. Access continues through the paid period. No automatic overages or credit rollover. Contact support@canquery.com about billing, deletion or Enterprise agreements.`,links:[{path:'/pricing',label:'Plans and credit costs'},{path:'/privacy',label:'Privacy'}]},
     home: {
         title: 'Search Canadian open data',
         summary: seo.DEFAULT_DESC,
@@ -309,11 +302,9 @@ const STATIC_COPY = {
     },
     faq: {
         title: 'Frequently asked questions',
-        summary: 'A few useful answers about finding data, preparing tables and using your developer account.',
+        summary: 'A few useful answers about finding data and preparing tables.',
         links: [
             { path: '/docs', label: 'Read the API documentation' },
-            { path: '/pricing', label: 'Compare plans and credits' },
-            { path: '/terms', label: 'Read the service terms' },
             { path: '/privacy', label: 'Privacy and your data' }
         ]
     },
@@ -380,13 +371,12 @@ function aboutExplanation() {
         pathLink('https://github.com/RyuPrad/canquery', 'Explore the source code') + '</p>' + supportExplanation();
 }
 
-function faqExplanation() {
+// hosted adds questions and groups for a deployment with developer accounts.
+function faqExplanation(hosted = {}) {
     const groups = [
         { id: 'getting-started', title: 'Getting started', questions: [
             { question: 'What can I do with CanQuery?',
                 answer: 'Search Canadian public-data catalogues by topic, place, publisher or format. Follow original downloads, explore supported tables and maps, or use the developer API in your own tools. A catalogue listing does not guarantee that every file is available or can be queried.' },
-            { question: 'Do I need an account?',
-                answer: 'You can browse the website and use its supported data tools without an account. A verified developer account lets you create API keys and view your API usage. Creating a Free account does not start a paid subscription.' },
             { question: 'Where does the data come from, and can I reuse it?',
                 answer: 'The data comes from public-sector publishers, including federal, municipal, regional and territorial sources. Dataset pages link to the publisher, source portal and applicable licence. Check that licence and its attribution requirements before reusing the data; different datasets can have different terms.' }
         ] },
@@ -400,24 +390,24 @@ function faqExplanation() {
             { question: 'Can I download the complete dataset?',
                 answer: 'Use the original publisher download when you need the source file. CanQuery CSV exports are bounded to at most 10,000 rows and can be subject to a lower installed limit. Filters and aggregation affect the export. An export is not a guarantee of a complete historical dataset.' }
         ] },
-        { id: 'accounts-and-api', title: 'Accounts and the API', questions: [
-            { question: 'What is the difference between Free and Business?',
-                answer: 'Both plans offer the same supported data capabilities. Business provides a larger API allowance, more keys and higher request capacity. It does not remove file, query, export or map limits. See Pricing for current prices and allowances.' },
-            { question: 'How do API credits work?',
-                answer: 'Keyed API requests use credits according to the operation. Successful cached requests still count. A newly admitted preparation job has its own charge; joining existing work, checking job status and renewing activity cost no credits. Rate and capacity limits still apply. The Pricing and API documentation pages explain current costs and workflow examples.' },
-            { question: 'Are credits returned if preparation fails?',
-                answer: 'If a charged preparation job ends in failure without publishing a successful copy, its original charge is returned once to the original payer and allowance period. Internal retries or stopping polling do not establish failure. A return to an expired period does not add credits to the current period. These are account credits, not cash refunds.' },
-            { question: 'How do I cancel Business or get account help?',
-                answer: 'Open the billing portal from your account to cancel before renewal. Access continues through the paid period, then follows Free allowances. Email support for billing questions, account deletion or help with verification and password-reset messages.' }
-        ] }
-    ];
+        ...(hosted.groups || [])
+    ].map(group => {
+        const extra = hosted.insert?.[group.id];
+        if (!extra) return group;
+        const questions = [...group.questions];
+        questions.splice(extra.index, 0, ...extra.questions);
+        return { ...group, questions };
+    });
     return groups.map(group => '<section id="' + text(group.id) + '"><h2>' + text(group.title) + '</h2>' +
         group.questions.map(item => '<details><summary>' + text(item.question) + '</summary><p>' +
             text(item.answer) + '</p></details>').join('') + '</section>').join('') + supportExplanation();
 }
 
 function staticSnapshot(type, items = [], pagination) {
-    const copy = STATIC_COPY[type] || STATIC_COPY.home;
+    const override = pageOverride(type);
+    const route = hostedRoute(type);
+    const copy = override?.copy || STATIC_COPY[type] || route?.copy || STATIC_COPY.home;
+    const hostedOverview = override?.overview || route?.overview;
     const regions = items.filter(item => item.kind === 'region');
     const regionIds = new Set(regions.map(item => item.id));
     const ordered = type === 'places' ? [
@@ -451,8 +441,8 @@ function staticSnapshot(type, items = [], pagination) {
         breadcrumbs: type === 'home' ? [] : [{ label: 'CanQuery', path: '/' }, { label: copy.title }],
         title: copy.title,
         summary: copy.summary,
-        overviewHtml: type === 'home' ? homeExplanation()
-            : type === 'pricing' ? require('./developerPresentation').pricingOverview()
+        overviewHtml: hostedOverview ? hostedOverview()
+            : type === 'home' ? homeExplanation()
                 : type === 'docs' ? require('./developerPresentation').docsOverview()
                     : type === 'privacy' ? privacyExplanation()
                         : type === 'faq' ? faqExplanation()
@@ -477,6 +467,7 @@ function errorSnapshot(title, summary) {
 
 module.exports = {
     MAX_LINKS,
+    faqExplanation,
     MAX_SUMMARY,
     datasetSnapshot,
     overviewSnapshot,

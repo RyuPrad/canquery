@@ -4,6 +4,7 @@ const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
+const { hostedRoutes, hostedRoute } = require('../extensions');
 const catalogRead = require('../db/catalogReadQueries');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
 
@@ -31,9 +32,12 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
 
 const STATIC_PATHS = Object.freeze({
     home: '/', datasets: '/datasets', insights: '/insights', organizations: '/organizations',
-    places: '/places', docs: '/docs', privacy: '/privacy', faq: '/faq', about: '/about', pricing:'/pricing', terms:'/terms',
-    account:'/account',login:'/login',signup:'/signup','forgot-password':'/forgot-password','reset-password':'/reset-password'
+    places: '/places', docs: '/docs', privacy: '/privacy', faq: '/faq', about: '/about'
 });
+const staticPath = type => STATIC_PATHS[type] || hostedRoute(type)?.path;
+// Hosted account and sign-in pages stay out of caches and analytics.
+const isPrivatePage = pathname => hostedRoutes().some(route => route.private &&
+    (pathname === route.path || pathname.startsWith(route.path + '/')));
 
 function searchArgs(overrides) {
     return {
@@ -145,11 +149,11 @@ async function resolvePage(requestTarget, deps = catalogRead) {
             q: null, kind: null, parent: null, featured: true, limit: PAGE_SIZE + 1, offset
         });
     }
-    if (paginated) return paginatedPage(STATIC_PATHS[route.type], seoMeta.staticMeta(route.type, reqPath), items, page,
+    if (paginated) return paginatedPage(staticPath(route.type), seoMeta.staticMeta(route.type, reqPath), items, page,
         pagination => seoSnapshot.staticSnapshot(route.type, pagination.items, pagination));
     return {
         status: 200,
-        canonicalPath: STATIC_PATHS[route.type],
+        canonicalPath: staticPath(route.type),
         meta: seoMeta.staticMeta(route.type, reqPath),
         body: seoSnapshot.staticSnapshot(route.type, items)
     };
@@ -201,7 +205,7 @@ function serveSpa(distDir) {
             return res.redirect(301, page.canonicalPath + suffix);
         }
         let html = seoMeta.renderHtml(template, page.meta, page.body);
-        const privatePage = /^\/(account|login|signup|forgot-password|reset-password)(?:\/|$)/.test(req.path);
+        const privatePage = isPrivatePage(req.path);
         html = injectAnalytics(html,privatePage ? '' : process.env.ANALYTICS_WEBSITE_ID);
         html = injectRouteAssets(html, req.originalUrl, distDir);
         res.set('Content-Type', 'text/html; charset=utf-8');
