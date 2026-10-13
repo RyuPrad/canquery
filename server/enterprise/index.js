@@ -55,5 +55,9 @@ const preparation = {
 };
 
 const pages = () => require('./pages').pages();
+const openApi = context => require('./openApi').openApi(context);
+// The commercial component reports account mail, billing and preparation accounting backlogs.
+const health = () => ({ components: ['commercial'], metrics: ['mail_services_active', 'expired_reservations', 'billing_retries',
+    'delayed_billing_events', 'failed_mail', 'delayed_mail', 'terminal_preparation_charges', 'missing_preparation_jobs'] });
 
-module.exports = { edition: 'enterprise', mountBeforeBodyParsing, mountAfterBodyParsing, apiMiddleware, start, close, preparation, pages };
+module.exports = { edition: 'enterprise', mountBeforeBodyParsing, mountAfterBodyParsing, apiMiddleware, start, close, preparation, pages, openApi, health };

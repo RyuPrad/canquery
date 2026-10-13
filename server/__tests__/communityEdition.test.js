@@ -18,7 +18,8 @@ function community() {
             app: require('../app'),
             seo: require('../services/seoMeta'),
             spa: require('../controllers/spaController'),
-            routeAssets: require('../services/routeAssets')
+            routeAssets: require('../services/routeAssets'),
+            openApi: require('../services/openApi')
         };
     });
     return modules;
@@ -41,11 +42,9 @@ test('documentation and FAQ describe anonymous use without accounts or credits',
     expect(docs.status).toBe(200);
     expect(docs.body).toContain('Read metadata before querying rows');
     expect(docs.body).toContain('Distinguish PREPARATION_BUSY, PREPARATION_COOLDOWN and AUTOMATED_CLIENT.');
-    // The endpoint reference renders the OpenAPI descriptions; check the written sections.
-    const written = docs.body.slice(0, docs.body.indexOf('<section id="reference">')) +
-        docs.body.slice(docs.body.indexOf('<section id="reliability">'));
-    for (const hosted of ['Authorization: Bearer', 'href="/pricing"', 'href="/account"', 'Create an API key', 'credits', 'QUOTA_EXCEEDED']) {
-        expect(written).not.toContain(hosted);
+    for (const hosted of ['Authorization: Bearer', 'href="/pricing"', 'href="/account"', 'Create an API key', 'credits',
+        'QUOTA_EXCEEDED', 'Keyed', 'keyed', 'plan request', 'commercial']) {
+        expect(docs.body).not.toContain(hosted);
     }
     expect(seo.staticMeta('docs', '/docs').description).not.toContain('API keys');
     const faq = await spa.resolvePage('/faq');
@@ -67,4 +66,20 @@ test('crawl files list no hosted pages and hosted endpoints are absent', async (
     expect((await request(app).post('/api/stripe/webhook').send('{}')).status).toBe(404);
     expect((await request(app).get('/api/auth/get-session')).status).toBe(404);
     expect((await request(app).get('/api/account/plans')).status).toBe(404);
+});
+
+test('the OpenAPI contract has no security scheme, credit costs or hosted components', async () => {
+    const { app, openApi } = community();
+    const document = openApi.buildOpenApi({ env: { COMMERCIAL_API_ENABLED: 'true' }, now: Date.parse('2026-10-13T00:00:00Z') });
+    for (const key of ['security', 'x-authentication', 'x-credit-costs', 'x-workflow-costs']) expect(document).not.toHaveProperty(key);
+    expect(document.components).not.toHaveProperty('securitySchemes');
+    expect(document['x-limits']).not.toHaveProperty('keyed_preparations_per_account_hour');
+    expect(Object.keys(document.components.headers)).not.toContain('X-CanQuery-Credits-Remaining');
+    expect(document.components.responses).not.toHaveProperty('Error401');
+    expect(document.components.schemas.ComponentHealth.properties.component.enum).toEqual(['availability', 'preparation', 'maps', 'sources', 'backups', 'storage']);
+    const text = JSON.stringify(document);
+    for (const hosted of ['x-credit-cost', 'bearerAuth', 'API key', 'credit', 'forfait', 'avec clé', 'QUOTA_EXCEEDED', 'commercial']) expect(text).not.toContain(hosted);
+    // "Sans crédits" is the French "unmetered" for public routes; nothing else mentions credits.
+    expect(text.replace(/sans crédits/g, '')).not.toContain('crédit');
+    expect((await request(app).get('/api/v1/ops/components/commercial')).status).toBe(404);
 });

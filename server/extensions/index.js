@@ -23,6 +23,8 @@ const COMMUNITY = Object.freeze({
     preparation: Object.freeze({ charge: async () => {}, settle: async () => {} }),
     // Hosted-only pages and content for initial HTML; see services/seoMeta.js.
     pages: () => ({ routes: [], overrides: {} }),
+    // Hosted OpenAPI descriptor (security, credits, keyed wording) or null.
+    openApi: () => null,
     // Hosted-only health components and their public metric names.
     health: () => ({ components: [], metrics: [] })
 });
