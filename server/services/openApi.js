@@ -1,5 +1,5 @@
 const { extension } = require('../extensions');
-const { componentNames } = require('./componentHealth');
+const { componentNames } = require('./componentNames');
 // Documentation only. Keep these shapes aligned with the public controllers;
 // this module neither queries data nor exposes private runtime configuration.
 const ref = name => ({ $ref: '#/components/schemas/' + name });
