@@ -168,30 +168,30 @@ describe.each([['keyed', true], ['anonymous', false]])('%s examples', (_mode, ap
   const executeWorkflowRuntime = (language, { timeout = false } = {}) => {
     const command = createDocsSnippets(base, { apiKey }).cabinWorkflow[language];
     const javascript = `
-      const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
-      let clock = 0;
-      const fixtureFetch = async (...args) => {
-        if (${timeout} && String(args[0]).includes('/jobs/')) throw new DOMException('Fixture request timed out', 'TimeoutError');
-        return fetch(...args);
-      };
-      await new AsyncFunction('performance', 'setTimeout', 'fetch', ${JSON.stringify(command)})(
-        { now: () => clock }, (resolve, duration) => { clock += duration; resolve(); }, fixtureFetch,
-      );`;
+    const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+    let clock = 0;
+    const fixtureFetch = async (...args) => {
+      if (${timeout} && String(args[0]).includes('/jobs/')) throw new DOMException('Fixture request timed out', 'TimeoutError');
+      return fetch(...args);
+    };
+    await new AsyncFunction('performance', 'setTimeout', 'fetch', ${JSON.stringify(command)})(
+      { now: () => clock }, (resolve, duration) => { clock += duration; resolve(); }, fixtureFetch,
+    );`;
     const python = `
-  import time
-  import urllib.request
-  clock = [0]
-  time.monotonic = lambda: clock[0]
-  def advance(duration):
-      clock[0] += duration
-  time.sleep = advance
-  original_urlopen = urllib.request.urlopen
-  def fixture_urlopen(req, *args, **kwargs):
-      if ${timeout ? 'True' : 'False'} and '/jobs/' in req.full_url:
-          raise TimeoutError('Fixture request timed out')
-      return original_urlopen(req, *args, **kwargs)
-  urllib.request.urlopen = fixture_urlopen
-  exec(${JSON.stringify(command)})`;
+import time
+import urllib.request
+clock = [0]
+time.monotonic = lambda: clock[0]
+def advance(duration):
+    clock[0] += duration
+time.sleep = advance
+original_urlopen = urllib.request.urlopen
+def fixture_urlopen(req, *args, **kwargs):
+    if ${timeout ? 'True' : 'False'} and '/jobs/' in req.full_url:
+        raise TimeoutError('Fixture request timed out')
+    return original_urlopen(req, *args, **kwargs)
+urllib.request.urlopen = fixture_urlopen
+exec(${JSON.stringify(command)})`;
     return execute(language === 'python' ? 'python3' : process.execPath,
       language === 'python' ? ['-c', python] : ['--input-type=module', '-e', javascript], { env, timeout: 8000 });
   };
