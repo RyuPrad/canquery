@@ -9,10 +9,12 @@ on:
 permissions:
   contents: read
 
+# Jobs run on GitHub-hosted Ubuntu unless the repository variable CI_RUNS_ON
+# names other runner labels as JSON, for example ["self-hosted","canquery"].
 jobs:
   server:
     name: server (lint + tests)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: server
@@ -39,7 +41,7 @@ jobs:
 
   client:
     name: client (lint + tests + build)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: client
@@ -65,7 +67,7 @@ jobs:
 
   spatial:
     name: database (PostGIS + search reporting)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     services:
       postgres:
         image: postgis/postgis:16-3.5
@@ -73,8 +75,9 @@ jobs:
           POSTGRES_USER: canquery
           POSTGRES_PASSWORD: canquery_test
           POSTGRES_DB: canquery
+        # Any free host port: a self-hosted runner may already serve PostgreSQL on 5432.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U canquery -d canquery"
           --health-interval 10s
@@ -83,12 +86,16 @@ jobs:
     defaults:
       run:
         working-directory: server
-    env:
-      CANQUERY_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
-      SPATIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
-      COMMERCIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Point the integration gates at the service database
+        env:
+          DATABASE_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          url="postgres://canquery:canquery_test@127.0.0.1:$DATABASE_PORT/canquery"
+          for name in CANQUERY_DATABASE_URL SPATIAL_TEST_DATABASE_URL COMMERCIAL_TEST_DATABASE_URL; do
+            echo "$name=$url" >> "$GITHUB_ENV"
+          done
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.22.1
@@ -102,7 +109,7 @@ jobs:
 
   community:
     name: community edition (core without the extension)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     services:
       postgres:
         image: postgis/postgis:16-3.5
@@ -110,17 +117,20 @@ jobs:
           POSTGRES_USER: canquery
           POSTGRES_PASSWORD: canquery_test
           POSTGRES_DB: canquery
+        # Any free host port: a self-hosted runner may already serve PostgreSQL on 5432.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U canquery -d canquery"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-    env:
-      CANQUERY_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Point the smoke test at the service database
+        env:
+          DATABASE_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: echo "CANQUERY_DATABASE_URL=postgres://canquery:canquery_test@127.0.0.1:$DATABASE_PORT/canquery" >> "$GITHUB_ENV"
       # The open-source edition must build, test and start on its own.
       - name: Remove the hosted extension
         run: rm -rf server/enterprise client/src/enterprise
@@ -144,7 +154,7 @@ jobs:
   release:
     name: release (verified artifact)
     needs: [server, client, spatial, community]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
