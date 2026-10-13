@@ -72,8 +72,9 @@ jobs:
           POSTGRES_USER: canquery
           POSTGRES_PASSWORD: canquery_test
           POSTGRES_DB: canquery
+        # Any free host port: a self-hosted runner may already serve PostgreSQL on 5432.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U canquery -d canquery"
           --health-interval 10s
@@ -82,12 +83,16 @@ jobs:
     defaults:
       run:
         working-directory: server
-    env:
-      CANQUERY_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
-      SPATIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
-      COMMERCIAL_TEST_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Point the integration gates at the service database
+        env:
+          DATABASE_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          url="postgres://canquery:canquery_test@127.0.0.1:$DATABASE_PORT/canquery"
+          for name in CANQUERY_DATABASE_URL SPATIAL_TEST_DATABASE_URL COMMERCIAL_TEST_DATABASE_URL; do
+            echo "$name=$url" >> "$GITHUB_ENV"
+          done
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.22.1
