@@ -7,7 +7,7 @@ const helmet = require('helmet');
 const AppError = require('./utils/AppError');
 const errorHandler = require('./middleware/errorHandler');
 const requestId = require('./middleware/requestId');
-const { generalLimiter, authAbuseLimiter, webhookLimiter } = require('./middleware/rateLimits');
+const { generalLimiter } = require('./middleware/rateLimits');
 const catalogController = require('./controllers/catalogController');
 const datasetsRouter = require('./routes/datasets');
 const resourcesRouter = require('./routes/resources');
@@ -21,11 +21,8 @@ const placesRouter = require('./routes/places');
 const sourcesRouter = require('./routes/sources');
 const seoRouter = require('./routes/seo');
 const spaController = require('./controllers/spaController');
-const { commercialApi, credentialLimiter } = require('./middleware/commercialApi');
-const { authHandler } = require('./services/authRuntime');
-const { receiveWebhook } = require('./services/billingService');
+const { extension } = require('./extensions');
 
-const catchAsync = require('./utils/catchAsync');
 const app = express();
 
 app.set('trust proxy', 1);
@@ -90,30 +87,18 @@ app.use((req, res, next) => {
     return res.status(403).json({ error: 'Origin not allowed' });
 });
 
-// Verify Stripe signatures against the bounded, unmodified request bytes.
-app.post('/api/stripe/webhook', webhookLimiter, express.raw({type:'application/json',limit:'1mb'}), catchAsync(async(req,res)=>{
-    await receiveWebhook(req.body,req.headers['stripe-signature']);
-    res.set('Cache-Control','no-store').json({received:true});
-}));
-// Better Auth's Node adapter does not set its optional raw-body limit. Parse
-// only the two supported auth media types here so chunked bodies are bounded
-// before they reach authentication or PostgreSQL.
-const authJson = express.json({limit:'64kb'});
-const authForm = express.urlencoded({limit:'64kb',extended:false});
-app.use('/api/auth', authAbuseLimiter, (req,res,next) => {
-    if (['GET','HEAD'].includes(req.method)) return next();
-    if (req.is('application/json')) return authJson(req,res,next);
-    if (req.is('application/x-www-form-urlencoded')) return authForm(req,res,next);
-    return next(new AppError('Authentication requests require JSON or form data',415));
-});
-app.all('/api/auth/*splat', authHandler);
+// Extension routes that need raw or specially bounded bodies, such as signed
+// webhooks and authentication, mount before the general JSON parser.
+extension().mountBeforeBodyParsing(app);
 app.use(express.json({limit:'64kb'}));
-app.use('/api/account', require('./routes/account'));
+extension().mountAfterBodyParsing(app);
 
 app.get('/healthz', catalogController.healthz);
 app.get('/readyz', require('./controllers/componentHealthController').readyz);
 
-app.use('/api/v1', credentialLimiter, commercialApi);
+// Extension metering admits /api/v1 requests before the general limiter.
+const apiMiddleware = extension().apiMiddleware();
+if (apiMiddleware.length) app.use('/api/v1', ...apiMiddleware);
 app.use(['/api','/web-api'], generalLimiter);
 for (const base of ['/api/v1','/web-api/v1']) {
     app.use(base+'/datasets', datasetsRouter);

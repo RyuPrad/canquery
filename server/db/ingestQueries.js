@@ -1,8 +1,7 @@
 const pool = require('./pool');
 const { lockIngestResource } = require('./ingestResourceLock');
 const AppError = require('../utils/AppError');
-const { chargePreparation } = require('./commercialQueries');
-const { settlePreparationOn } = require('./preparationAccounting');
+const { extension } = require('../extensions');
 
 async function enqueueJob(resourceId, commercial = null) {
     const client = await pool.connect();
@@ -37,7 +36,7 @@ async function enqueueJob(resourceId, commercial = null) {
                  RETURNING id`,
                 [resourceId]
             );
-            for (const job of completed.rows) await settlePreparationOn(client, job.id);
+            for (const job of completed.rows) await extension().preparation.settle(client, job.id);
             await client.query('COMMIT');
             return {
                 id: null,
@@ -73,7 +72,7 @@ async function enqueueJob(resourceId, commercial = null) {
                        claimed_at, finished_at, created_at`,
             [resourceId]
         );
-        await chargePreparation(client, commercial, queuedResult.rows[0].id);
+        await extension().preparation.charge(client, commercial, queuedResult.rows[0].id);
         await client.query('COMMIT');
         return queuedResult.rows[0] || null;
     } catch (err) {

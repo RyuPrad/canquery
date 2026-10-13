@@ -1,21 +1,17 @@
 const app = require('./app');
 const { createShutdown } = require('./services/apiLifecycle');
+const { extension, assertEditionMatchesDatabase } = require('./extensions');
 const port = process.env.PORT || 3100;
 const host = process.env.HOST?.trim() || '127.0.0.1';
 
 async function closeResources() {
-    await require('./services/authRuntime').closeAuth();
+    await extension().close();
     await require('./db/pool').end();
 }
 
 async function start() {
-    const { config } = require('./services/commercialConfig');
-    await require('./services/billingService').verifyEnvironment();
-    let stopMaintenance;
-    if (config().enabled) {
-        await require('./services/authRuntime').getAuth();
-        stopMaintenance = require('./services/commercialMaintenance').startMaintenance();
-    }
+    await assertEditionMatchesDatabase(require('./db/pool'));
+    const { stopMaintenance } = await extension().start();
     const server = app.listen(port, host, () => console.log('canquery-api listening on ' + host + ':' + port));
     const shutdown = createShutdown(server, { stopMaintenance, closeResources });
     process.on('SIGTERM', () => void shutdown('SIGTERM'));
