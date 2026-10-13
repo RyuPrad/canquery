@@ -1,4 +1,4 @@
-jest.mock('../db/pool', () => ({}));
+jest.mock('../../db/pool', () => ({}));
 jest.mock('../db/commercialQueries', () => ({ transaction: jest.fn() }));
 
 const { encrypt, decrypt } = require('../services/accountMail');

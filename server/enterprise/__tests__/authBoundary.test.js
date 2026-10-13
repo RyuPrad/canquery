@@ -9,7 +9,7 @@ jest.mock('../services/billingService', () => ({
 const request = require('supertest');
 const http = require('node:http');
 const { once } = require('node:events');
-const app = require('../app');
+const app = require('../../app');
 
 test('auth accepts bounded JSON and form bodies', async () => {
     const json = await request(app).post('/api/auth/ok').send({ fixture:'json' });

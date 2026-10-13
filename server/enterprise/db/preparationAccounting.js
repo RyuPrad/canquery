@@ -1,6 +1,6 @@
-const pool = require('./pool');
+const pool = require('../../db/pool');
 const { transaction, meterLock } = require('./commercialQueries');
-const { INGEST_RESOURCE_LOCK_NAMESPACE } = require('./ingestResourceLock');
+const { INGEST_RESOURCE_LOCK_NAMESPACE } = require('../../db/ingestResourceLock');
 
 // Caller holds the resource lock and owns/has locked the job. Keep this ordering
 // everywhere: resource -> job -> commercial meter -> charge/period. Never take a

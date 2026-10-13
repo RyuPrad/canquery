@@ -40,11 +40,3 @@ describe('extension hooks without an installed extension', () => {
         await expect(assertEditionMatchesDatabase(community)).resolves.toBeUndefined();
     });
 });
-
-test('the installed hosted extension skips the database edition check', async () => {
-    const { extension, assertEditionMatchesDatabase } = require('../extensions');
-    expect(extension().edition).toBe('enterprise');
-    const db = { query: jest.fn() };
-    await assertEditionMatchesDatabase(db);
-    expect(db.query).not.toHaveBeenCalled();
-});

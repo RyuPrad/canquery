@@ -1,4 +1,4 @@
-jest.mock('../db/pool', () => ({ connect: jest.fn(), end: jest.fn() }));
+jest.mock('../db/pool', () => ({ connect: jest.fn(), end: jest.fn(), query: jest.fn() }));
 jest.mock('../db/longRunningPool', () => ({ end: jest.fn() }));
 jest.mock('../services/ingestPipeline', () => ({ validateStorageFilesystems: jest.fn() }));
 jest.mock('../services/retiredIngestTables', () => ({ cleanRetiredTables: jest.fn() }));
@@ -23,6 +23,7 @@ beforeEach(() => {
             const client = { on: jest.fn(), release: jest.fn() };
             jest.clearAllMocks();
             pool.connect.mockResolvedValue(client);
+            pool.query.mockResolvedValue({ rows: [{ hosted: false }] });
             queries.acquireWorkerLock.mockResolvedValue(true);
             queries.recoverOrphanedJobs.mockResolvedValue({ rowCount: 0 });
             queries.claimJob.mockResolvedValue(null);

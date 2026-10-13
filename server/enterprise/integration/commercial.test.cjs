@@ -13,14 +13,14 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     process.env.SITE_URL='http://localhost:3100';
     process.env.STRIPE_BUSINESS_PRICE_ID='price_fixture_business';
     delete process.env.STRIPE_SECRET_KEY;
-    const db = require('../db/pool');
+    const db = require('../../db/pool');
     const q = require('../db/commercialQueries');
     const { BUSINESS_PRICE, TERMS_VERSION } = require('../services/commercialConfig');
     const billing = require('../services/billingService');
     const admin = require('../services/commercialAdmin');
     const { decrypt, deliverMail, enqueueAccountMail } = require('../services/accountMail');
     const { getAuth } = require('../services/authRuntime');
-    const app = require('../app');
+    const app = require('../../app');
     const ownerId='commercial-test-'+randomUUID();
     let account;
     let key;

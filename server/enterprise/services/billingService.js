@@ -1,5 +1,5 @@
 const { createHash } = require('crypto');
-const pool = require('../db/pool');
+const pool = require('../../db/pool');
 const { transaction, failure } = require('../db/commercialQueries');
 const { config, PLANS, BUSINESS_PRICE } = require('./commercialConfig');
 

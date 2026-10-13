@@ -1,7 +1,7 @@
 // Hosted canquery.com additions to the developer journey's initial HTML: the
 // pricing page, and the account, API-key and credit content of /docs.
 const { escapeHtml: escape } = require('../services/seoMeta');
-const { config, PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = require('../services/commercialConfig');
+const { config, PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = require('./services/commercialConfig');
 const section = (id, title, body) => '<section id="' + escape(id) + '"><h2>' + escape(title) + '</h2>' + body + '</section>';
 const link = (path, label) => '<a href="' + escape(path) + '">' + escape(label) + '</a>';
 

@@ -1,4 +1,4 @@
-const { track } = require('../utils/runtimeWork');
+const { track } = require('../../utils/runtimeWork');
 
 // One settlement, followed by an optional disconnect reversal. No connection
 // or transaction is retained during response streaming.

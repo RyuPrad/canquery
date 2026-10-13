@@ -6,9 +6,9 @@ function mountBeforeBodyParsing(app) {
     const express = require('express');
     const AppError = require('../utils/AppError');
     const catchAsync = require('../utils/catchAsync');
-    const { authAbuseLimiter, webhookLimiter } = require('../middleware/rateLimits');
-    const { receiveWebhook } = require('../services/billingService');
-    const { authHandler } = require('../services/authRuntime');
+    const { authAbuseLimiter, webhookLimiter } = require('./middleware/abuseLimits');
+    const { receiveWebhook } = require('./services/billingService');
+    const { authHandler } = require('./services/authRuntime');
     // Verify Stripe signatures against the bounded, unmodified request bytes.
     app.post('/api/stripe/webhook', webhookLimiter, express.raw({type:'application/json',limit:'1mb'}), catchAsync(async(req,res)=>{
         await receiveWebhook(req.body,req.headers['stripe-signature']);
@@ -29,29 +29,29 @@ function mountBeforeBodyParsing(app) {
 }
 
 function mountAfterBodyParsing(app) {
-    app.use('/api/account', require('../routes/account'));
+    app.use('/api/account', require('./routes/account'));
 }
 
 function apiMiddleware() {
-    const { commercialApi, credentialLimiter } = require('../middleware/commercialApi');
+    const { commercialApi, credentialLimiter } = require('./middleware/commercialApi');
     return [credentialLimiter, commercialApi];
 }
 
 async function start() {
-    const { config } = require('../services/commercialConfig');
-    await require('../services/billingService').verifyEnvironment();
+    const { config } = require('./services/commercialConfig');
+    await require('./services/billingService').verifyEnvironment();
     if (!config().enabled) return {};
-    await require('../services/authRuntime').getAuth();
-    return { stopMaintenance: require('../services/commercialMaintenance').startMaintenance() };
+    await require('./services/authRuntime').getAuth();
+    return { stopMaintenance: require('./services/commercialMaintenance').startMaintenance() };
 }
 
 async function close() {
-    await require('../services/authRuntime').closeAuth();
+    await require('./services/authRuntime').closeAuth();
 }
 
 const preparation = {
-    charge: (client, context, jobId) => require('../db/commercialQueries').chargePreparation(client, context, jobId),
-    settle: (client, jobId) => require('../db/preparationAccounting').settlePreparationOn(client, jobId)
+    charge: (client, context, jobId) => require('./db/commercialQueries').chargePreparation(client, context, jobId),
+    settle: (client, jobId) => require('./db/preparationAccounting').settlePreparationOn(client, jobId)
 };
 
 const pages = () => require('./pages').pages();

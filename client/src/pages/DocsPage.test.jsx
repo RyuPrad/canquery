@@ -7,7 +7,7 @@ import { accountRequest, hasAccountSession } from '../api/account.js';
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), hasAccountSession: vi.fn() }));
 
 const { buildOpenApi } = createRequire(import.meta.url)('../../../server/services/openApi.js');
-const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
+const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/enterprise/services/commercialConfig.js');
 
 const spec = {
   openapi: '3.1.0', servers: [{ url: '/api/v1' }], security: [{ bearerAuth: [] }],

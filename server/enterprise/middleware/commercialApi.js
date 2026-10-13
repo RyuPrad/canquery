@@ -1,10 +1,10 @@
 const queries = require('../db/commercialQueries');
-const pool = require('../db/pool');
+const pool = require('../../db/pool');
 const { config } = require('../services/commercialConfig');
 const { operationFor, isPublicOperation } = require('../services/commercialOperations');
 const rateLimit = require('express-rate-limit');
 const { attachMeteredResponse } = require('./meteredResponse');
-const { track } = require('../utils/runtimeWork');
+const { track } = require('../../utils/runtimeWork');
 
 // Failed credential attempts must be bounded before they can query PostgreSQL.
 // Successful keyed traffic uses its durable per-account limits instead.

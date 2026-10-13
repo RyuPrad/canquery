@@ -12,7 +12,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { Pool } = require('pg');
     const { loadCsvIntoStore } = require('../services/csvLoad');
     const { prepareResource } = require('../services/preparationService');
-    const { settlePreparationOn } = require('../db/preparationAccounting');
+    const { settlePreparationOn } = require('../enterprise/db/preparationAccounting');
     const { cleanRetiredTables } = require('../services/retiredIngestTables');
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const admin = new Pool({ connectionString: enabled });

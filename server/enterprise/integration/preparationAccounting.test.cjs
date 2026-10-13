@@ -11,13 +11,13 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     process.env.STRIPE_MODE='sandbox';
     process.env.SITE_URL='http://localhost:3100';
     delete process.env.STRIPE_SECRET_KEY;
-    const db=require('../db/pool');
+    const db=require('../../db/pool');
     const q=require('../db/commercialQueries');
     const accounting=require('../db/preparationAccounting');
-    const worker=require('../db/ingestWorkerQueries');
-    const {lockIngestResource}=require('../db/ingestResourceLock');
-    const {prepareResource}=require('../services/preparationService');
-    const {resourceVersion}=require('../services/resourceVersion');
+    const worker=require('../../db/ingestWorkerQueries');
+    const {lockIngestResource}=require('../../db/ingestResourceLock');
+    const {prepareResource}=require('../../services/preparationService');
+    const {resourceVersion}=require('../../services/resourceVersion');
     const admin=require('../services/commercialAdmin');
     const fixtures=[];
     async function fixture({charged=true,rawCredits=null,ledger=true}={}) {

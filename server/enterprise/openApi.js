@@ -2,8 +2,8 @@
 // credit costs, keyed headers and the hosted wording of shared definitions and
 // metered operations. Generated from the pre-extension core output, so the text
 // matches what canquery.com published before the extension hooks.
-const { CREDIT_COSTS, WORKFLOW_COSTS } = require('../services/commercialConfig');
-const { operationFor, isPublicOperation } = require('../services/commercialOperations');
+const { CREDIT_COSTS, WORKFLOW_COSTS } = require('./services/commercialConfig');
+const { operationFor, isPublicOperation } = require('./services/commercialOperations');
 
 // Response headers in their published order, and the hosted French wording.
 const HEADERS = {

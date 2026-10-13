@@ -1,6 +1,6 @@
 const { randomUUID, randomBytes, createHash } = require('crypto');
-const pool = require('./pool');
-const AppError = require('../utils/AppError');
+const pool = require('../../db/pool');
+const AppError = require('../../utils/AppError');
 const { PLANS, CREDIT_COSTS } = require('../services/commercialConfig');
 
 function failure(message, code, status = 429, seconds = 60) {

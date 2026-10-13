@@ -14,8 +14,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const request = require('supertest');
 const { buildOpenApi } = require('../services/openApi');
-const { operationFor, isPublicOperation } = require('../services/commercialOperations');
-const { CREDIT_COSTS } = require('../services/commercialConfig');
 const queries = require('../db/catalogReadQueries');
 const ckan = require('../services/ckanClient');
 const store = require('../db/storeQueries');
@@ -102,7 +100,6 @@ describe('OpenAPI structure and published route coverage', () => {
                 ids.push(operation.operationId);
                 expect(operation['x-summary-fr']).toBeTruthy();
                 expect(operation['x-description-fr']).toBeTruthy();
-                expect(operation['x-credit-cost']).toBeDefined();
                 expect(spec.tags.map(tag => tag.name)).toContain(operation.tags[0]);
                 for (const match of route.matchAll(/\{(\w+)\}/g)) {
                     expect(operation.parameters).toContainEqual(expect.objectContaining({ name: match[1], in: 'path', required: true }));
@@ -132,23 +129,6 @@ describe('OpenAPI structure and published route coverage', () => {
         expect(JSON.stringify(spec).length).toBeLessThan(150000);
     });
 
-    test('all documented credit costs match public exemptions and metered operations', () => {
-        let count = 0;
-        for (const [path, methods] of Object.entries(spec.paths)) {
-            for (const [method, operation] of Object.entries(methods)) {
-                const req = { path, method: method.toUpperCase(), query: {} };
-                const classified = operationFor(req);
-                const expected = ['/healthz', '/readyz'].includes(path) || isPublicOperation(req) ? 0
-                    : classified.name === 'preparation' ? `${CREDIT_COSTS.preparation} new job / ${classified.cost} existing`
-                        : classified.name === 'query' ? `${classified.cost} row query / ${operationFor({ ...req, query: { agg: 'count' } }).cost} aggregation`
-                            : classified.cost;
-                expect(operation['x-credit-cost']).toBe(expected);
-                count += 1;
-            }
-        }
-        expect(count).toBe(30);
-    });
-
     test('models CSV, binary, empty, root health and degraded ops responses separately', () => {
         expect(responseFor('/resources/{id}/query.csv', 'get', 200).content['text/csv']).toBeDefined();
         expect(responseFor('/resources/{id}/map/tiles/{version}/{z}/{x}/{y}.pbf', 'get', 200).content['application/x-protobuf']).toBeDefined();
@@ -166,41 +146,6 @@ describe('OpenAPI structure and published route coverage', () => {
         expect(configured['x-limits'].csv_rows).toBe(500);
         expect(buildOpenApi({ env: { EXPORT_MAX_ROWS: '10001', MAX_QUERY_OFFSET: '-1' } })['x-limits']).toMatchObject({ csv_rows: 10000, query_offset: 10000 });
         expect(buildOpenApi({ env: { MAX_QUERY_OFFSET: '0' } })['x-limits'].query_offset).toBe(0);
-    });
-});
-
-describe('authentication documentation follows anonymous compatibility', () => {
-    test('public health/ops/spec do not inherit bearer requirements', () => {
-        const enabled = buildOpenApi({ env: { COMMERCIAL_API_ENABLED: 'true' } });
-        expect(enabled.security).toEqual([{}, { bearerAuth: [] }]);
-        const cutover = buildOpenApi({ env: { COMMERCIAL_API_ENABLED: 'true', API_KEY_REQUIRED_AT: '2026-01-02T00:00:00Z' }, now: Date.parse('2026-01-02T00:00:00Z') });
-        expect(cutover.security).toEqual([{ bearerAuth: [] }]);
-        expect(cutover['x-authentication'].anonymous_access).toBe(false);
-        for (const route of ['/healthz', '/ops', '/openapi.json']) {
-            expect(cutover.paths[route].get.security).toEqual([]);
-            expect(cutover.paths[route].get['x-credit-cost']).toBe(0);
-        }
-        expect(buildOpenApi({ env: { COMMERCIAL_API_ENABLED: 'false', API_KEY_REQUIRED_AT: '2020-01-01' } }).security).toEqual([{}]);
-        expect(buildOpenApi({ env: { COMMERCIAL_API_ENABLED: 'true', API_KEY_REQUIRED_AT: '2999-01-01' } }).security).toEqual([{}, { bearerAuth: [] }]);
-    });
-
-    test('public contract can be fetched after cutover without auth, database activity or secret disclosure', async () => {
-        process.env.COMMERCIAL_API_ENABLED = 'true';
-        process.env.API_KEY_REQUIRED_AT = '2020-01-01T00:00:00Z';
-        process.env.BETTER_AUTH_SECRET = 'not-a-real-secret-but-at-least-32-characters';
-        const res = await request(app).get('/api/v1/openapi.json').set('Authorization', 'Bearer deliberately-invalid');
-        expect(res.status).toBe(200);
-        expect(res.body.security).toEqual([{ bearerAuth: [] }]);
-        expect(res.body.paths['/openapi.json'].get['x-credit-cost']).toBe(0);
-        expect(res.headers['x-canquery-credits-remaining']).toBeUndefined();
-        expect(res.headers['cache-control']).toBe('no-store');
-        expect(JSON.stringify(res.body)).not.toContain(process.env.BETTER_AUTH_SECRET);
-        expect(queries.getResourceById).not.toHaveBeenCalled();
-        expect(preparation.prepareResource).not.toHaveBeenCalled();
-        const unauthorized = await request(app).get('/api/v1/resources/missing');
-        expect(unauthorized.status).toBe(401);
-        expect(unauthorized.body.code).toBe('API_KEY_REQUIRED');
-        expectResponse('/resources/{id}', 'get', unauthorized);
     });
 });
 

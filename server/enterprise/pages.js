@@ -1,7 +1,7 @@
 // Hosted canquery.com pages for initial HTML and crawl files: pricing, terms,
 // the developer account and sign-in pages, plus hosted wording for /docs and
 // /faq. The text matches what the core served before the extension hooks.
-const { BUSINESS_PRICE, TERMS_VERSION } = require('../services/commercialConfig');
+const { BUSINESS_PRICE, TERMS_VERSION } = require('./services/commercialConfig');
 const { pricingOverview, hostedDocs } = require('./developerPresentation');
 
 const META = {

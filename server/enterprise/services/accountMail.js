@@ -1,6 +1,6 @@
 const { randomUUID, randomBytes, createHash, createCipheriv, createDecipheriv } = require('crypto');
 const nodemailer = require('nodemailer');
-const pool = require('../db/pool');
+const pool = require('../../db/pool');
 const { transaction } = require('../db/commercialQueries');
 
 function key() {

@@ -1,7 +1,6 @@
 const http = require('node:http');
 const { track } = require('../../utils/runtimeWork');
 const { createShutdown } = require('../../services/apiLifecycle');
-const { startMaintenance } = require('../../services/commercialMaintenance');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let active = 0;
 const server = http.createServer((req, res) => {
@@ -13,7 +12,9 @@ const server = http.createServer((req, res) => {
     })()).catch(() => res.destroy());
 });
 server.listen(0, '127.0.0.1', () => process.send({ event: 'ready', port: server.address().port }));
-const stopMaintenance = startMaintenance({ tasks: [{ name: 'held', run: () => wait(200) }], log: () => {} });
+// Stands in for an extension's maintenance loop with a pass still in flight.
+const maintenancePass = wait(200);
+const stopMaintenance = () => maintenancePass;
 const shutdown = createShutdown(server, {
     stopMaintenance, drainMs: 2000, cleanupMs: 1000,
     closeResources: async () => process.send({ event: 'resources_closed' }), log: () => {}

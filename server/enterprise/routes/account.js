@@ -1,11 +1,11 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const catchAsync = require('../utils/catchAsync');
+const catchAsync = require('../../utils/catchAsync');
 const { requireOwner } = require('../services/authRuntime');
 const { config, PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE, TERMS_VERSION } = require('../services/commercialConfig');
 const queries = require('../db/commercialQueries');
 const billing = require('../services/billingService');
-const { envelope } = require('../utils/envelope');
+const { envelope } = require('../../utils/envelope');
 const router = express.Router();
 router.get('/plans', (_req, res) => {
     const { enabled, mode, checkout, sunset } = config();

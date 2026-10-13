@@ -1,5 +1,5 @@
 const { randomUUID } = require('crypto');
-const pool = require('../db/pool');
+const pool = require('../../db/pool');
 const { transaction, meterLock, failure } = require('../db/commercialQueries');
 const { stripeClient } = require('./billingService');
 const { config } = require('./commercialConfig');

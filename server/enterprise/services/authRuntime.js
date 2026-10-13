@@ -1,6 +1,6 @@
 const { config } = require('./commercialConfig');
 const { failure } = require('../db/commercialQueries');
-const pool = require('../db/pool');
+const pool = require('../../db/pool');
 const { createHmac, randomUUID } = require('crypto');
 const AUTH_PATHS = new Set(['sign-up/email','sign-in/email','sign-out','request-password-reset','reset-password','verify-email','send-verification-email','get-session','ok']);
 let runtime;
@@ -50,7 +50,7 @@ async function requireOwner(req,res,next) {
 async function closeAuth() {
     if (runtime) await (await runtime).close();
 }
-const { track } = require('../utils/runtimeWork');
+const { track } = require('../../utils/runtimeWork');
 module.exports = { getAuth, closeAuth,
     authHandler: (req, res, next) => track(authHandler(req, res, next)),
     requireOwner: (req, res, next) => track(requireOwner(req, res, next)) };

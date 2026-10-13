@@ -6,7 +6,6 @@ const { requestSignal } = require('../utils/requestContext');
 const catchAsync = require('../utils/catchAsync');
 const { fetchWithBackoff } = require('../utils/fetchWithBackoff');
 const { createCache } = require('../utils/cache');
-const { attachMeteredResponse } = require('../middleware/meteredResponse');
 const { drain } = require('../utils/runtimeWork');
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -16,14 +15,11 @@ function waitForAbort(signal) {
     });
 }
 
-test('no-progress timeout returns504, cancels upstream work and refunds keyed reservations', async () => {
+test('no-progress timeout returns504 and cancels upstream work', async () => {
     const app = express();
-    const queries = { settle: jest.fn(async () => {}), abortRequest: jest.fn(async () => {}) };
     let signal, completed = false;
     app.use(requestLifetime({ idleMs: 25 }));
-    app.get('/', (req, res, next) => {
-        attachMeteredResponse(res, { id: 'fixture' }, { queries, pool: { query: jest.fn() } }); next();
-    }, catchAsync(async () => {
+    app.get('/', catchAsync(async () => {
         signal = requestSignal();
         try { await waitForAbort(signal); } finally { completed = true; }
     }));
@@ -33,7 +29,6 @@ test('no-progress timeout returns504, cancels upstream work and refunds keyed re
     await drain();
     expect(signal.aborted).toBe(true);
     expect(completed).toBe(true);
-    expect(queries.settle).toHaveBeenCalledWith('fixture', false);
 });
 
 test('stream writes reset the progress deadline and completion clears it', async () => {
@@ -111,23 +106,18 @@ test('request-owned cache misses cannot cancel another request and still cache c
     expect(await cache.get('same', () => { throw new Error('cache miss'); })).toBe('completed');
 });
 
-test('a partial stalled export closes the stream and reverses its request once', async () => {
+test('a partial stalled export closes the stream', async () => {
     const app = express();
-    const queries = { settle: jest.fn(async () => {}), abortRequest: jest.fn(async () => {}) };
     let closed;
     app.use(requestLifetime({ idleMs: 25 }));
-    app.get('/', (req, res, next) => {
+    app.get('/', catchAsync(async (req, res) => {
         closed = new Promise(resolve => res.once('close', resolve));
-        attachMeteredResponse(res, { id: 'export' }, { queries, pool: { query: jest.fn() } }); next();
-    }, catchAsync(async (req, res) => {
         res.write('header\n');
         await waitForAbort(req.signal);
     }));
     await expect(request(app).get('/')).rejects.toThrow();
     await closed;
     await drain();
-    expect(queries.settle).not.toHaveBeenCalled();
-    expect(queries.abortRequest).toHaveBeenCalledTimes(1);
 });
 
 test('caller cancellation interrupts reading a stalled response body', async () => {

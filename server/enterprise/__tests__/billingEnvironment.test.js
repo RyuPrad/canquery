@@ -1,5 +1,5 @@
 jest.mock('stripe', () => jest.fn());
-jest.mock('../db/pool', () => ({ query: jest.fn() }));
+jest.mock('../../db/pool', () => ({ query: jest.fn() }));
 
 const Stripe = require('stripe');
 const { verifyEnvironment } = require('../services/billingService');
