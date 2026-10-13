@@ -19,6 +19,11 @@ psql --no-psqlrc --set=ON_ERROR_STOP=1 \
   --file=deploy/database/runtime-roles.sql REVIEWED_DATABASE
 ```
 
+An installed hosted extension ships the grants for its own schemas in
+`server/enterprise/database/runtime-roles.sql`. Apply it immediately after this
+script, in the same reviewed window, with the same `app_database` value. This
+script leaves those schemas' grants unchanged.
+
 Use a PostgreSQL administrative connection, with secrets supplied privately. The
 script creates three LOGIN roles without passwords and one NOLOGIN owner. Set
 separate private SCRAM credentials or matching local peer mappings during the
@@ -57,9 +62,9 @@ role canaries for account access, anonymous/keyed catalogue reads, a bounded
 preparation/refund, local read/export, map claim/publication and retirement. Denial
 checks must establish that runtime identities cannot change catalogue/pins,
 assume the deployment role, modify API-read-only snapshots, or read other service
-secrets. `integration/runtimeRoles.test.cjs` provisions and exercises these grants
-only when all three disposable database gates match; never point it at a useful
-preview or production database.
+secrets. `integration/runtimeRoles.test.cjs` (and the extension's own role suite)
+provisions and exercises these grants only when all three disposable database
+gates match; never point it at a useful preview or production database.
 
 A recovery bundle must include role definitions, memberships, object/default
 ACLs and independently recoverable private runtime configuration. Restore roles

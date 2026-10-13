@@ -64,18 +64,16 @@ REVOKE CREATE, TEMPORARY ON DATABASE :"app_database" FROM PUBLIC;
 REVOKE ALL ON DATABASE :"app_database" FROM canquery_api, canquery_ingest, canquery_map, canquery_store_owner;
 GRANT CONNECT ON DATABASE :"app_database" TO canquery_api, canquery_ingest, canquery_map;
 GRANT TEMPORARY ON DATABASE :"app_database" TO canquery_map;
-REVOKE CREATE ON SCHEMA public, store, map_store, commercial, canquery_auth FROM PUBLIC;
-REVOKE ALL ON SCHEMA public, store, map_store, commercial, canquery_auth
+REVOKE CREATE ON SCHEMA public, store, map_store FROM PUBLIC;
+REVOKE ALL ON SCHEMA public, store, map_store
     FROM canquery_api, canquery_ingest, canquery_map, canquery_store_owner;
 GRANT USAGE ON SCHEMA public TO canquery_api, canquery_ingest, canquery_map;
-GRANT USAGE ON SCHEMA commercial TO canquery_api, canquery_ingest;
-GRANT USAGE ON SCHEMA canquery_auth TO canquery_api;
 GRANT USAGE ON SCHEMA store TO canquery_api;
 GRANT USAGE, CREATE ON SCHEMA store TO canquery_store_owner;
 GRANT USAGE ON SCHEMA map_store TO canquery_api, canquery_map;
-REVOKE ALL ON ALL TABLES IN SCHEMA public, store, map_store, commercial, canquery_auth
+REVOKE ALL ON ALL TABLES IN SCHEMA public, store, map_store
     FROM canquery_api, canquery_ingest, canquery_map;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, store, map_store, commercial, canquery_auth
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, store, map_store
     FROM canquery_api, canquery_ingest, canquery_map;
 GRANT SELECT ON public.resources, public.datasets, public.organizations, public.dataset_sources,
     public.catalog_sources, public.dataset_places, public.places, public.place_aliases,
@@ -89,11 +87,6 @@ GRANT INSERT, UPDATE ON public.ingest_jobs TO canquery_api;
 GRANT UPDATE(last_accessed_at) ON public.ingested_resources TO canquery_api;
 GRANT INSERT ON public.query_log TO canquery_api;
 GRANT USAGE ON SEQUENCE public.ingest_jobs_id_seq, public.query_log_id_seq TO canquery_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA canquery_auth TO canquery_api;
-GRANT SELECT, INSERT, UPDATE, DELETE ON commercial.accounts, commercial.api_keys, commercial.mail_outbox,
-    commercial.periods, commercial.preparation_charges, commercial.rate_windows, commercial.requests,
-    commercial.stripe_events, commercial.usage_daily TO canquery_api;
-GRANT SELECT, INSERT ON commercial.environment TO canquery_api;
 GRANT EXECUTE ON FUNCTION public.canquery_lock_public_resource(text) TO canquery_api;
 GRANT UPDATE ON public.ingest_jobs TO canquery_ingest;
 GRANT SELECT, INSERT, UPDATE ON public.ingest_runs TO canquery_ingest;
@@ -101,11 +94,6 @@ GRANT USAGE ON SEQUENCE public.ingest_runs_id_seq TO canquery_ingest;
 GRANT INSERT, UPDATE, DELETE ON public.ingested_resources TO canquery_ingest;
 GRANT SELECT, INSERT, DELETE ON public.retired_ingest_tables TO canquery_ingest;
 GRANT SELECT ON public.pinned_resources TO canquery_ingest;
-GRANT SELECT ON commercial.preparation_charges TO canquery_ingest;
-GRANT UPDATE(outcome, resolved_at, reversal_reason) ON commercial.preparation_charges TO canquery_ingest;
-GRANT SELECT(id, account_id, used), UPDATE(used) ON commercial.periods TO canquery_ingest;
-GRANT SELECT(id, account_id, period_id, job_id, credits, state), UPDATE(state, finished_at)
-    ON commercial.requests TO canquery_ingest;
 GRANT EXECUTE ON FUNCTION public.canquery_lock_resource_publication(text), public.canquery_lock_pins()
     TO canquery_ingest;
 GRANT SELECT, UPDATE ON public.map_index_jobs TO canquery_map;
@@ -113,7 +101,7 @@ GRANT INSERT, UPDATE, DELETE ON public.resource_maps TO canquery_map;
 GRANT SELECT, INSERT, DELETE ON map_store.features TO canquery_map;
 GRANT SELECT ON public.spatial_ref_sys TO canquery_api, canquery_map;
 -- ALTER TABLE OWNER also transfers its owned serial sequences. Leave schemas,
--- catalogue objects, and financial rows owned by the deployment identity.
+-- catalogue objects and extension objects owned by the deployment identity.
 DO $$
 DECLARE item record;
 BEGIN

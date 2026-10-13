@@ -16,5 +16,7 @@ fi
 cd "$ROOT_DIR/server"
 npm run migrate
 node --experimental-vm-modules ./node_modules/jest/bin/jest.js __tests__/spatialIntegration.test.js __tests__/searchConsoleIntegration.test.js __tests__/localSearchIntegration.test.js __tests__/catalogDiscoveryIntegration.test.js __tests__/preparationIntegration.test.js --runInBand
-node --test --test-concurrency=1 integration/*.test.cjs
+# An installed hosted extension brings its own database suites.
+shopt -s nullglob
+node --test --test-concurrency=1 integration/*.test.cjs enterprise/integration/*.test.cjs
 echo 'Disposable database integration verification passed.'

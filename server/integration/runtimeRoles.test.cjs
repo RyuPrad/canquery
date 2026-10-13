@@ -10,45 +10,21 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     test('runtime roles require three matching disposable database URLs', { skip: true }, () => {});
 } else {
     const { Pool } = require('pg');
+    const { applyRoleScript, connectAs, dbFor, quoteId } = require('./roleFixture.cjs');
     const { loadCsvIntoStore } = require('../services/csvLoad');
     const { prepareResource } = require('../services/preparationService');
-    const { settlePreparationOn } = require('../enterprise/db/preparationAccounting');
     const { cleanRetiredTables } = require('../services/retiredIngestTables');
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
-    const account = randomUUID(), request = randomUUID();
-    const period = prefix;
     let job, directory;
     const clients = [];
-    const quoteId = value => '"' + value.replaceAll('"', '""') + '"';
-    const quoteValue = value => "'" + value.replaceAll("'", "''") + "'";
-    async function asRole(role) {
-        const client = await admin.connect();
-        // Unlike SET ROLE alone, SESSION AUTHORIZATION also prevents a runtime
-        // identity from using the original superuser's SET ROLE authority.
-        await client.query('SET SESSION AUTHORIZATION ' + quoteId(role));
-        clients.push(client);
-        return client;
-    }
-    function dbFor(client) {
-        return { query: (...args) => client.query(...args), connect: async () => ({
-            query: (...args) => client.query(...args), release() {}
-        }) };
-    }
+    const asRole = role => connectAs(admin, role, clients);
     before(async () => {
-        const { rows: [identity] } = await admin.query('SELECT current_database() AS database, current_user AS owner');
-        let sql = await fs.readFile(path.join(__dirname, '../../deploy/database/runtime-roles.sql'), 'utf8');
-        sql = sql.replace(/^\\.*$/gm, '').replaceAll(':"app_database"', quoteId(identity.database))
-            .replaceAll(':"deploy_role"', quoteId(identity.owner)).replaceAll(":'app_database'", quoteValue(identity.database))
-            .replaceAll(":'deploy_role'", quoteValue(identity.owner));
-        await admin.query(sql);
+        await applyRoleScript(admin, path.join(__dirname, '../../deploy/database/runtime-roles.sql'));
         await admin.query('INSERT INTO datasets(id,name) VALUES ($1,$1)', [prefix]);
         await admin.query("INSERT INTO resources(id,dataset_id,format,url) VALUES ($1,$1,'CSV','https://example.test/fixture.csv')", [prefix]);
-        await admin.query('INSERT INTO commercial.accounts(id) VALUES ($1)', [account]);
-        await admin.query(`INSERT INTO commercial.periods(id,account_id,plan,starts_at,ends_at,allowance,used,key_limit,rate_limit,concurrency)
-            VALUES ($1,$2,'free',now()-interval '1 day',now()+interval '1 day',1000,100,1,30,1)`, [period, account]);
         directory = await fs.mkdtemp(path.join(os.tmpdir(), 'canquery-roles-'));
     });
     after(async () => {
@@ -58,10 +34,6 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             client.release();
         }
         await admin.query('DROP TABLE IF EXISTS store.' + quoteId(table));
-        await admin.query('DELETE FROM commercial.preparation_charges WHERE account_id=$1', [account]);
-        await admin.query('DELETE FROM commercial.requests WHERE account_id=$1', [account]);
-        await admin.query('DELETE FROM commercial.periods WHERE account_id=$1', [account]);
-        await admin.query('DELETE FROM commercial.accounts WHERE id=$1', [account]);
         for (const relation of ['ingest_jobs','ingested_resources','retired_ingest_tables']) {
             await admin.query('DELETE FROM ' + relation + ' WHERE resource_id=$1', [prefix]);
         }
@@ -121,23 +93,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         await assert.rejects(api.query('UPDATE store.' + quoteId(table) + ' SET amount=0'), { code: '42501' });
         await api.query('UPDATE ingested_resources SET last_accessed_at=now() WHERE resource_id=$1', [prefix]);
     });
-    test('ingest settles the original preparation debit without auth, keys or debit-edit rights', async () => {
-        await admin.query("UPDATE ingest_jobs SET status='failed' WHERE id=$1", [job.id]);
-        await admin.query(`INSERT INTO commercial.requests(id,account_id,period_id,operation,credits,state,expires_at,job_id)
-            VALUES ($1,$2,$3,'preparation',100,'charged',now(),$4)`, [request, account, period, job.id]);
-        await admin.query(`INSERT INTO commercial.preparation_charges(request_id,job_id,account_id,period_id,credits,charged_at)
-            VALUES ($1,$2,$3,$4,100,now())`, [request, job.id, account, period]);
-        const client = await asRole('canquery_ingest');
-        await client.query('BEGIN');
-        assert.deepEqual(await settlePreparationOn(client, job.id), { outcome: 'refunded', changed: true });
-        await client.query('COMMIT');
-        assert.equal((await admin.query('SELECT used FROM commercial.periods WHERE id=$1', [period])).rows[0].used, '0');
-        for (const sql of ['SELECT * FROM canquery_auth."user"', 'SELECT * FROM commercial.api_keys',
-            'SELECT * FROM commercial.mail_outbox', 'UPDATE commercial.preparation_charges SET credits=1',
-            'UPDATE commercial.periods SET allowance=2000']) await assert.rejects(client.query(sql), { code: '42501' });
-        assert.deepEqual(await settlePreparationOn(client, job.id), { outcome: 'refunded', changed: false });
-    });
-    test('map worker claims its queue and transforms geometry without account or snapshot access', async () => {
+    test('map worker claims its queue and transforms geometry without snapshot access', async () => {
         await admin.query("INSERT INTO map_index_jobs(resource_id,desired_version,candidate) VALUES ($1,'fixture','{}')", [prefix]);
         const client = await asRole('canquery_map');
         const claimed = await claimMapJob(dbFor(client), randomUUID(), prefix);
@@ -147,7 +103,6 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         await client.query('INSERT INTO map_stage VALUES (ST_SetSRID(ST_Point(-79,43),4326))');
         await client.query("INSERT INTO map_store.features(resource_id,feature_id,geom) SELECT $1,1,geom FROM map_stage", [prefix]);
         await client.query('COMMIT');
-        await assert.rejects(client.query('SELECT * FROM commercial.accounts'), { code: '42501' });
         await assert.rejects(client.query('SELECT * FROM store.' + quoteId(table)), { code: '42501' });
     });
     test('ingest retirement can drop shared snapshots and pins remain protected', async () => {
