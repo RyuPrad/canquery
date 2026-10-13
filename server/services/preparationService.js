@@ -33,7 +33,7 @@ function reserveToken(key, now = Date.now()) {
     return () => { bucket.count = Math.max(0, bucket.count - 1); };
 }
 
-async function prepareResource(resourceId, ip, db = pool, commercial = null) {
+async function prepareResource(resourceId, ip, db = pool, commercial = null, { automated = false } = {}) {
     if (!preparationEnabled()) throw unavailable('Automatic preparation is temporarily paused', 60);
     const client = await db.connect();
     let refund;
@@ -69,6 +69,13 @@ async function prepareResource(resourceId, ip, db = pool, commercial = null) {
         if (job?.source_version === version && job.status === 'failed' && new Date(job.retry_at).getTime() > Date.now()) {
             throw unavailable('Preparation could not finish; a retry will be available later',
                 (new Date(job.retry_at).getTime() - Date.now()) / 1000, 'PREPARATION_COOLDOWN');
+        }
+        // Rendering crawlers open many resource pages and never read the tables.
+        // They may see current copies and join shared work, but never start a
+        // new download; keyed requests are accounted for separately.
+        if (automated && !commercial) {
+            throw unavailable('Crawlers cannot start automatic preparation; existing tables and original downloads remain available',
+                86400, 'AUTOMATED_CLIENT');
         }
         // Serialize admission across API processes and different resource IDs.
         await client.query("SELECT pg_advisory_xact_lock(hashtext('canquery-prepare-admission'))");

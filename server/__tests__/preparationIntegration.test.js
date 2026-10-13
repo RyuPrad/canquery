@@ -79,6 +79,22 @@ suite('automatic preparation and immutable snapshots (PostgreSQL)', () => {
         await expect(prepareResource(other, id)).rejects.toMatchObject({ statusCode: 429 });
     });
 
+    test('self-identified crawlers read current copies and join shared jobs but never start preparation', async () => {
+        const crawler = { automated: true };
+        const id = await seed();
+        const address = 'crawler-' + id;
+        process.env.AUTO_PREPARE_PER_IP_HOUR = '1';
+        await expect(prepareResource(id, address, undefined, null, crawler))
+            .rejects.toMatchObject({ statusCode: 429, publicCode: 'AUTOMATED_CLIENT', retryAfter: 86400 });
+        expect((await pool.query('SELECT count(*)::int AS n FROM ingest_jobs WHERE resource_id=$1', [id])).rows[0].n).toBe(0);
+        // The refusal consumed no anonymous admission for that address.
+        const shared = await prepareResource(id, address);
+        expect(await prepareResource(id, address, undefined, null, crawler)).toMatchObject({ id: shared.id, status: 'pending' });
+        const ready = await seed();
+        await ingestResource(await getResourceById(ready), caps(csv()));
+        expect(await prepareResource(ready, address, undefined, null, crawler)).toMatchObject({ already_loaded: true, row_count: 600 });
+    });
+
     test('different resources cannot race past the global queue bound', async () => {
         process.env.AUTO_PREPARE_MAX_ACTIVE = '2';
         const ids = await Promise.all(Array.from({ length: 5 }, seed));

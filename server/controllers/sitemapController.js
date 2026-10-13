@@ -42,12 +42,17 @@ function chunkNumber(value) {
 }
 
 // GET /robots.txt - allow everything, point at the sitemap index. We do NOT
-// block /api: Googlebot fetches it while rendering the SPA, and the per-page
-// <head> injection and API X-Robots-Tag headers distinguish search landing pages.
+// block /api reads: Googlebot fetches them while rendering the SPA, and the
+// per-page <head> injection and API X-Robots-Tag headers distinguish search
+// landing pages. Only the resource writes that start or renew table preparation
+// are disallowed, so rendering crawlers do not prepare files nobody reads.
+const PREPARATION_WRITES = ['/web-api/v1', '/api/v1'].flatMap(base =>
+    ['prepare', 'ingest', 'activity'].map(action => 'Disallow: ' + base + '/resources/*/' + action));
 const robots = (req, res) => {
     res.type('text/plain');
     res.set('Cache-Control', 'public, max-age=86400');
-    res.send('User-agent: *\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
+    // Specific rules precede Allow for crawlers that apply the first matching line.
+    res.send('User-agent: *\n' + PREPARATION_WRITES.join('\n') + '\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 
 // GET /sitemap.xml - the index: static/place pages plus complete dataset

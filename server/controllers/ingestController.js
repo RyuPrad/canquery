@@ -1,10 +1,11 @@
 const catchAsync = require('../utils/catchAsync');
 const ingestService = require('../services/ingestService');
 const { prepareResource } = require('../services/preparationService');
+const { isAutomatedClient } = require('../utils/automatedClient');
 
 const prepare = catchAsync(async (req, res) => {
     const job = req.commercial ? await prepareResource(req.params.id, req.ip, undefined, req.commercial)
-        : await prepareResource(req.params.id, req.ip);
+        : await prepareResource(req.params.id, req.ip, undefined, null, { automated: isAutomatedClient(req.get('user-agent')) });
     if (req.commercial) res.set('X-CanQuery-Credits-Remaining',String(req.commercial.remaining));
     res.set('Cache-Control', 'no-store');
     res.status(job.already_loaded ? 200 : 202).json(envelope(job));

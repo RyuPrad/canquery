@@ -41,13 +41,21 @@ beforeEach(() => {
 });
 
 describe('robots.txt', () => {
-    it('allows all and points at the sitemap index', async () => {
+    it('allows all reads, disallows only preparation writes and points at the sitemap index', async () => {
         const res = await request(app).get('/robots.txt');
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/text\/plain/);
         expect(res.text).toContain('User-agent: *');
+        expect(res.text).toContain('Allow: /\n');
         expect(res.text).toContain('Sitemap: https://canquery.com/sitemap.xml');
-        expect(res.text).not.toContain('Disallow:');
+        expect(res.text.split('\n').filter(line => line.startsWith('Disallow:'))).toEqual([
+            'Disallow: /web-api/v1/resources/*/prepare',
+            'Disallow: /web-api/v1/resources/*/ingest',
+            'Disallow: /web-api/v1/resources/*/activity',
+            'Disallow: /api/v1/resources/*/prepare',
+            'Disallow: /api/v1/resources/*/ingest',
+            'Disallow: /api/v1/resources/*/activity'
+        ]);
         expect(res.headers['x-robots-tag']).toBeUndefined();
     });
 });
