@@ -2,12 +2,11 @@
 // Stripe billing, registered through the core extension hooks in
 // server/extensions/index.js. Modules load on first use, so the ingest worker
 // only loads preparation accounting.
-const express = require('express');
-const AppError = require('../utils/AppError');
-const catchAsync = require('../utils/catchAsync');
-const { authAbuseLimiter, webhookLimiter } = require('../middleware/rateLimits');
-
 function mountBeforeBodyParsing(app) {
+    const express = require('express');
+    const AppError = require('../utils/AppError');
+    const catchAsync = require('../utils/catchAsync');
+    const { authAbuseLimiter, webhookLimiter } = require('../middleware/rateLimits');
     const { receiveWebhook } = require('../services/billingService');
     const { authHandler } = require('../services/authRuntime');
     // Verify Stripe signatures against the bounded, unmodified request bytes.

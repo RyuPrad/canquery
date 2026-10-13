@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const { assertEditionMatchesDatabase } = require('../extensions');
 
 const client = new Client({
     connectionString: process.env.CANQUERY_DATABASE_URL || process.env.OPENCANADA_DATABASE_URL
@@ -9,6 +10,7 @@ const client = new Client({
 
 async function main() {
     await client.connect();
+    await assertEditionMatchesDatabase(client);
 
     await client.query(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -17,8 +19,18 @@ async function main() {
         )
     `);
 
-    const migrationsDir = path.join(__dirname, '..', 'sql', 'migrations');
-    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    // Core migrations ship with the open-source edition; an installed extension
+    // adds its own directory. Filenames are unique across both and apply in one
+    // global filename order, matching the ledger keyed by filename.
+    const sources = new Map();
+    for (const directory of [path.join(__dirname, '..', 'sql', 'migrations'), path.join(__dirname, '..', 'enterprise', 'sql', 'migrations')]) {
+        if (!fs.existsSync(directory)) continue;
+        for (const filename of fs.readdirSync(directory).filter(f => f.endsWith('.sql'))) {
+            if (sources.has(filename)) throw new Error(`duplicate migration filename ${filename}`);
+            sources.set(filename, path.join(directory, filename));
+        }
+    }
+    const files = [...sources.keys()].sort();
 
     const { rows: applied } = await client.query('SELECT filename FROM schema_migrations');
     const appliedSet = new Set(applied.map(r => r.filename));
@@ -29,7 +41,7 @@ async function main() {
             continue;
         }
 
-        const sql = fs.readFileSync(path.join(migrationsDir, filename), 'utf8');
+        const sql = fs.readFileSync(sources.get(filename), 'utf8');
 
         try {
             await client.query('BEGIN');
