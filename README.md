@@ -316,6 +316,18 @@ GeoJSON plus projected-CRS map conversion, private-R2 PMTiles generation/range r
 queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
 concurrent job-lease heartbeats, store/map-budget eviction, and client UI routing, tables, and charts.
 
+## Editions
+
+This repository is the open-source core of CanQuery, under the MIT licence: the catalogue
+website, the anonymous `/api/v1` and `/web-api/v1` APIs, table preparation, maps and the
+operations tooling. It runs on its own, and CI checks that it builds, passes its tests and
+starts against a fresh database without anything else installed.
+
+canquery.com also runs a hosted service on top of this core, with developer accounts, API
+keys, credits and paid plans. That layer is not part of this repository. It plugs in through
+the extension hooks in `server/extensions/index.js` and `client/src/extensions.js`; without
+it, every hook does nothing and the core serves no account pages, keyed limits or billing.
+
 ## Deployment
 
 Dedicated VPS `canquery-prod-01` at Little Creek Hosting (IPv4 `38.45.71.90`).

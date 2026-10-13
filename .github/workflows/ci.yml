@@ -151,6 +151,22 @@ jobs:
       - run: npm --prefix client run build
       - run: bash scripts/community-smoke.sh
 
+  # This repository publishes only the core; hosted-service code lives elsewhere.
+  public-boundary:
+    name: public boundary (no hosted-service code)
+    if: github.repository == 'RyuPrad/canquery'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Refuse private-only paths
+        run: |
+          leaked=$(git ls-files -- server/enterprise client/src/enterprise ENTERPRISE.md LICENSE-ENTERPRISE .github/workflows/enterprise.yml)
+          if [ -n "$leaked" ]; then
+            echo "::error::Hosted-service paths must not be committed to the public repository."
+            printf '%s\n' "$leaked"
+            exit 1
+          fi
+
   release:
     name: release (verified artifact)
     needs: [server, client, spatial, community]

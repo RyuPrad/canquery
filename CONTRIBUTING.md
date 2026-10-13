@@ -36,9 +36,13 @@ npm --prefix server run verify
   `SPATIAL_TEST_DATABASE_URL` and `COMMERCIAL_TEST_DATABASE_URL` to the same
   **disposable** database. Then `npm --prefix server run verify:integration`
   applies migrations and runs every CI database suite. Missing/mismatched gates
-  fail instead of silently skipping. Fixtures must never target production or
-  a persistent Stripe sandbox. `verify:release` combines source and database
-  checks; task-specific browser and native analytics acceptance remain separate.
+  fail instead of silently skipping. Fixtures must never target production.
+  `verify:release` combines source and database checks; task-specific browser
+  and native analytics acceptance remain separate.
+- The hosted canquery.com service adds its own code through the extension hooks
+  in `server/extensions/index.js` and `client/src/extensions.js`. Changes here
+  must work without it: CI's community job lints, tests, builds and starts the
+  core on its own. Keep hosted-only behaviour behind those hooks.
 - Boundary modules use JSDoc with `client/tsconfig.boundaries.json`; run
   `npm --prefix client run typecheck`. Extend this explicit scope as contracts
   stabilize. `format:check` and `format:boundaries` apply only to the listed
