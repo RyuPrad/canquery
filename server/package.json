@@ -71,7 +71,8 @@
     },
     "jest": {
         "testMatch": [
-            "<rootDir>/__tests__/**/*.test.js"
+            "<rootDir>/__tests__/**/*.test.js",
+            "<rootDir>/enterprise/__tests__/**/*.test.js"
         ]
     }
 }

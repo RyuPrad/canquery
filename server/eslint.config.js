@@ -17,11 +17,11 @@ module.exports = [
         }
     },
     {
-        files: ['**/*.mjs', 'integration/**/*.cjs'],
+        files: ['**/*.mjs', 'integration/**/*.cjs', 'enterprise/integration/**/*.cjs'],
         languageOptions: { globals: { ...globals.node } }
     },
     {
-        files: ['__tests__/**'],
+        files: ['__tests__/**', 'enterprise/__tests__/**'],
         languageOptions: {
             globals: { ...globals.node, ...globals.jest }
         }
