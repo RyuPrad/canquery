@@ -15,6 +15,15 @@ MANIFEST = 'release-manifest.json'
 RECEIPT = 'stage-receipt.json'
 ASSET_PREFIX = 'client/dist/assets/'
 HASHED_ASSET = re.compile(r'^.+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$')
+# Each package root installs its own locked dependencies; the hosted extension
+# root exists only in releases that ship it.
+PACKAGE_ROOTS = ('server', 'server/enterprise')
+DEPENDENCY_DIRS = tuple(root + '/node_modules/' for root in PACKAGE_ROOTS)
+
+
+def package_roots(manifest):
+    # From the verified inventory, so removing a lockfile cannot skip its check.
+    return [root for root in PACKAGE_ROOTS if root + '/package-lock.json' in manifest['files']]
 
 
 def sha256(data):
@@ -186,7 +195,7 @@ def inspect_stage(path):
         name = target.relative_to(path).as_posix()
         if not target.resolve().is_relative_to(path):
             raise ValueError('Stage contains an escaping dependency symlink')
-        if target.is_symlink() and not name.startswith('server/node_modules/'):
+        if target.is_symlink() and not name.startswith(DEPENDENCY_DIRS):
             raise ValueError('Source contains an unexpected symlink')
         if target.is_dir():
             continue
@@ -194,9 +203,25 @@ def inspect_stage(path):
             raise ValueError('Stage contains a non-regular runtime file')
         if not target.is_symlink() and target.stat().st_nlink != 1:
             raise ValueError('Stage contains a hard-linked runtime file')
-        if name not in inventory and name not in (MANIFEST, RECEIPT) and not name.startswith('server/node_modules/'):
+        if name not in inventory and name not in (MANIFEST, RECEIPT) and not name.startswith(DEPENDENCY_DIRS):
             raise ValueError('Stage contains an unexpected file: ' + name)
     return path, manifest
+
+
+def verify_dependencies(root):
+    installed_lock = root / 'node_modules/.package-lock.json'
+    if not installed_lock.is_file():
+        raise ValueError('Install locked production server dependencies before sealing')
+    expected_packages = json.loads((root / 'package-lock.json').read_text()).get('packages', {})
+    installed_packages = json.loads(installed_lock.read_text()).get('packages', {})
+    for name, installed in installed_packages.items():
+        expected = expected_packages.get(name)
+        if not expected or any(installed.get(key) != expected.get(key) for key in ('version', 'resolved', 'integrity')):
+            raise ValueError('Installed dependency identity differs from the reviewed lockfile')
+    package = json.loads((root / 'package.json').read_text())
+    for name in package.get('dependencies', {}):
+        if 'node_modules/' + name not in installed_packages or not (root / 'node_modules' / name / 'package.json').is_file():
+            raise ValueError('Required production dependency is missing: ' + name)
 
 
 def seal(path, archive, checksum, commit, checkout, destination=None, apply=False):
@@ -204,19 +229,8 @@ def seal(path, archive, checksum, commit, checkout, destination=None, apply=Fals
     path, manifest = inspect_stage(path)
     if (path / MANIFEST).read_bytes() != trusted[MANIFEST][0]:
         raise ValueError('Stage manifest differs from trusted artifact')
-    installed_lock = path / 'server/node_modules/.package-lock.json'
-    if not installed_lock.is_file():
-        raise ValueError('Install locked production server dependencies before sealing')
-    expected_packages = json.loads((path / 'server/package-lock.json').read_text()).get('packages', {})
-    installed_packages = json.loads(installed_lock.read_text()).get('packages', {})
-    for name, installed in installed_packages.items():
-        expected = expected_packages.get(name)
-        if not expected or any(installed.get(key) != expected.get(key) for key in ('version', 'resolved', 'integrity')):
-            raise ValueError('Installed dependency identity differs from the reviewed lockfile')
-    package = json.loads((path / 'server/package.json').read_text())
-    for name in package.get('dependencies', {}):
-        if 'node_modules/' + name not in installed_packages or not (path / 'server/node_modules' / name / 'package.json').is_file():
-            raise ValueError('Required production dependency is missing: ' + name)
+    for root in package_roots(manifest):
+        verify_dependencies(path / root)
     final = Path(destination).absolute() if destination else path
     if final.name != commit or (final != path and (final.exists() or final.is_symlink())):
         raise ValueError('Final release must be a new directory named by its commit')
@@ -237,7 +251,7 @@ def seal(path, archive, checksum, commit, checkout, destination=None, apply=Fals
 
 def activate(path, current, expected_current, apply=False):
     path, manifest = inspect_stage(path)
-    if not (path / 'server/node_modules/.package-lock.json').is_file():
+    if any(not (path / root / 'node_modules/.package-lock.json').is_file() for root in package_roots(manifest)):
         raise ValueError('Sealed production dependencies are missing')
     current = Path(current)
     if current.exists() and not current.is_symlink():

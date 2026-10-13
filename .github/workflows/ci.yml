@@ -24,6 +24,9 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - name: Install the hosted extension's dependencies
+        if: hashFiles('server/enterprise/package-lock.json') != ''
+        run: npm ci --prefix enterprise
       - run: npm run lint
       - run: npm run blog:check
       - run: python3 -m unittest discover -s ../deploy/analytics -p 'test_*.py'
@@ -92,11 +95,55 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - name: Install the hosted extension's dependencies
+        if: hashFiles('server/enterprise/package-lock.json') != ''
+        run: npm ci --prefix enterprise
       - run: npm run verify:integration
+
+  community:
+    name: community edition (core without the extension)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5
+        env:
+          POSTGRES_USER: canquery
+          POSTGRES_PASSWORD: canquery_test
+          POSTGRES_DB: canquery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U canquery -d canquery"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CANQUERY_DATABASE_URL: postgres://canquery:canquery_test@127.0.0.1:5432/canquery
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The open-source edition must build, test and start on its own.
+      - name: Remove the hosted extension
+        run: rm -rf server/enterprise client/src/enterprise
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.22.1
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci --prefix server
+      - run: npm --prefix server run lint
+      - run: npm --prefix server test
+      - run: npm ci --prefix client
+      - run: npm --prefix client run lint
+      - run: npm --prefix client run typecheck
+      - run: npm --prefix client test
+      - run: npm --prefix client run build
+      - run: bash scripts/community-smoke.sh
 
   release:
     name: release (verified artifact)
-    needs: [server, client, spatial]
+    needs: [server, client, spatial, community]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

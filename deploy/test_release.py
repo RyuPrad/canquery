@@ -148,6 +148,40 @@ class ReleasePromotionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'root-owned and read-only'):
             release.activate(self.destination, current, str(self.repo))
 
+    def test_extension_dependencies_are_verified_against_their_own_lockfile(self):
+        enterprise = self.repo / 'server/enterprise'
+        enterprise.mkdir()
+        (enterprise / 'package.json').write_text('{"dependencies":{"billing":"1.0.0"}}\n')
+        locked = {'version': '1.0.0', 'resolved': 'https://registry.example.test/billing-1.0.0.tgz', 'integrity': 'sha512-fixture'}
+        (enterprise / 'package-lock.json').write_text(json.dumps({'packages': {'node_modules/billing': locked}}))
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Extension fixture')
+        self.commit = self.git('rev-parse', 'HEAD')
+        self.archive = builder.package(self.repo, self.base / 'extension-artifacts', self.commit)
+        self.checksum = hashlib.sha256(self.archive.read_bytes()).hexdigest()
+        self.destination = self.base / self.commit
+        self.stage()
+        (self.destination / 'server/node_modules').mkdir()
+        (self.destination / 'server/node_modules/.package-lock.json').write_text('{"packages":{}}')
+        with self.assertRaisesRegex(ValueError, 'production server dependencies'):
+            release.seal(self.destination, self.archive, self.checksum, self.commit, self.repo)
+        installed = self.destination / 'server/enterprise/node_modules'
+        (installed / 'billing').mkdir(parents=True)
+        (installed / 'billing/package.json').write_text('{}')
+        (installed / '.package-lock.json').write_text(json.dumps({'packages': {'node_modules/billing': {**locked, 'version': '1.0.1'}}}))
+        with self.assertRaisesRegex(ValueError, 'differs from the reviewed lockfile'):
+            release.seal(self.destination, self.archive, self.checksum, self.commit, self.repo)
+        (installed / '.package-lock.json').write_text(json.dumps({'packages': {'node_modules/billing': locked}}))
+        (installed / '.bin').mkdir()
+        (installed / '.bin/billing').symlink_to('../billing/package.json')
+        self.assertFalse(release.seal(self.destination, self.archive, self.checksum, self.commit, self.repo)['sealed'])
+        (installed / '.package-lock.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'Sealed production dependencies are missing'):
+            release.activate(self.destination, self.base / 'current', 'none')
+        (self.destination / 'server/enterprise/package-lock.json').unlink()
+        with self.assertRaises((ValueError, FileNotFoundError)):
+            release.seal(self.destination, self.archive, self.checksum, self.commit, self.repo)
+
 
 if __name__ == '__main__':
     unittest.main()
