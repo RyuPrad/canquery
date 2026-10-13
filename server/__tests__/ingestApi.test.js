@@ -198,8 +198,28 @@ describe('automatic preparation API', () => {
         expect(response.status).toBe(202);
         expect(response.headers['cache-control']).toBe('no-store');
         expect(response.body.data).toMatchObject({ id: 21, serving_cached: true });
-        expect(prepareResource).toHaveBeenCalledWith('csv-1', expect.any(String));
+        expect(prepareResource).toHaveBeenCalledWith('csv-1', expect.any(String), undefined, null, { automated: false });
         expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
+    });
+
+    it('marks self-identified crawlers on both namespaces', async () => {
+        prepareResource.mockResolvedValue({ id: null, already_loaded: true });
+        const googlebot = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/141.0.7390.122 Safari/537.36';
+        for (const base of ['/api/v1', '/web-api/v1']) {
+            const response = await request(app).post(base + '/resources/csv-1/prepare').set('User-Agent', googlebot);
+            expect(response.status).toBe(200);
+        }
+        expect(prepareResource).toHaveBeenCalledTimes(2);
+        for (const call of prepareResource.mock.calls) expect(call).toEqual(['csv-1', expect.any(String), undefined, null, { automated: true }]);
+    });
+
+    it('publishes the crawler admission code with Retry-After', async () => {
+        const error = Object.assign(new AppError('Crawlers cannot start automatic preparation', 429), { retryAfter: 86400, publicCode: 'AUTOMATED_CLIENT' });
+        prepareResource.mockRejectedValue(error);
+        const response = await request(app).post('/web-api/v1/resources/csv-1/prepare').set('User-Agent', 'GPTBot/1.2');
+        expect(response.status).toBe(429);
+        expect(response.headers['retry-after']).toBe('86400');
+        expect(response.body).toMatchObject({ retry_after: 86400, code: 'AUTOMATED_CLIENT' });
     });
 
     it('returns 200 when the current source is already prepared', async () => {
