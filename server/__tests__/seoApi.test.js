@@ -94,8 +94,6 @@ describe('pages sitemap', () => {
         expect(res.text).toContain('<loc>https://canquery.com/</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/insights</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/privacy</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/pricing</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/terms</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/faq</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/about</loc>');
         expect(res.text).not.toMatch(/\/account|\/signup|\/api\/v1/);

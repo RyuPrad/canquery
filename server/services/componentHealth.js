@@ -2,12 +2,7 @@ const fs = require('node:fs/promises');
 const { pingDb } = require('../db/catalogReadQueries');
 const AppError = require('../utils/AppError');
 
-const COMPONENTS = ['availability', 'preparation', 'maps', 'sources', 'commercial', 'backups', 'storage'];
-const METRICS = new Set(['service_active', 'database_ready', 'mail_services_active', 'eligible_pending', 'running',
-    'stale_running', 'oldest_pending_seconds', 'failed_resources', 'failed_jobs', 'stale_jobs',
-    'capacity_failures_last_hour', 'expired_reservations', 'billing_retries', 'delayed_billing_events',
-    'failed_mail', 'delayed_mail', 'terminal_preparation_charges', 'missing_preparation_jobs',
-    'last_attempt_ok', 'attempt_in_progress', 'last_attempt_age_seconds', 'latest_success_age_seconds', 'free_bytes', 'operating_margin_bytes', 'emergency_floor_bytes']);
+const { componentNames, metricNames } = require('./componentNames');
 
 async function readiness() {
     let db = false;
@@ -24,15 +19,16 @@ function sanitizeComponent(document, component, now = Date.now()) {
     if (!value || typeof value.ok !== 'boolean' || !['ok', 'degraded', 'unavailable'].includes(value.status) ||
         value.ok !== (value.status === 'ok')) return unknown('unavailable');
     const checks = {};
+    const metrics = metricNames();
     for (const [key, metric] of Object.entries(value.checks || {})) {
-        if (METRICS.has(key) && (typeof metric === 'boolean' || (typeof metric === 'number' && Number.isFinite(metric) && metric >= 0))) checks[key] = metric;
+        if (metrics.has(key) && (typeof metric === 'boolean' || (typeof metric === 'number' && Number.isFinite(metric) && metric >= 0))) checks[key] = metric;
     }
     return { component, ok: value.ok, status: value.status, observed_at: new Date(observed).toISOString(), checks };
 }
 
 async function componentHealth(name) {
     const component = String(name).toLowerCase();
-    if (!COMPONENTS.includes(component)) throw new AppError('Unknown health component', 404);
+    if (!componentNames().includes(component)) throw new AppError('Unknown health component', 404);
     const unavailable = { component, ok: false, status: 'unavailable', observed_at: null, checks: {} };
     const filename = process.env.OPS_STATUS_PATH;
     if (!filename) return unavailable;
@@ -49,4 +45,6 @@ async function componentHealth(name) {
     finally { if (file) await file.close(); }
 }
 
-module.exports = { COMPONENTS, readiness, componentHealth, sanitizeComponent };
+module.exports = { componentNames, readiness, componentHealth, sanitizeComponent };
+// Kept for callers that read the current list as a property.
+Object.defineProperty(module.exports, 'COMPONENTS', { enumerable: true, get: componentNames });

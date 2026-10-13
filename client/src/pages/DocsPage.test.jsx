@@ -3,11 +3,10 @@ import { afterEach, beforeEach } from 'vitest';
 import { createRequire } from 'node:module';
 import DocsPage from './DocsPage.jsx';
 import { LangProvider } from '../i18n.jsx';
-import { accountRequest, hasAccountSession } from '../api/account.js';
-vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), hasAccountSession: vi.fn() }));
+// Core behaviour without any extension; src/enterprise tests cover the hosted parts.
+vi.mock('../extensions.js', () => ({ hostedPart: (_modules, fallback) => fallback }));
 
 const { buildOpenApi } = createRequire(import.meta.url)('../../../server/services/openApi.js');
-const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS } = createRequire(import.meta.url)('../../../server/services/commercialConfig.js');
 
 const spec = {
   openapi: '3.1.0', servers: [{ url: '/api/v1' }], security: [{ bearerAuth: [] }],
@@ -42,33 +41,21 @@ const spec = {
 const response = value => Promise.resolve({ ok: true, json: async () => value });
 
 beforeEach(() => {
-  hasAccountSession.mockReset().mockResolvedValue(false);
-  accountRequest.mockResolvedValue({ plans: PLANS, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS });
   vi.stubGlobal('fetch', vi.fn(() => response(spec)));
 });
 
-test.each([
-  ['en', true, 'Manage API keys', '/account'], ['fr', true, 'Gérer les clés API', '/account'],
-  ['en', false, 'Get a free API key', '/signup'], ['fr', false, 'Obtenir une clé API gratuite', '/signup'],
-])('docs account action follows the %s session (%s)', async (lang, signedIn, label, href) => {
-  localStorage.setItem('cq-lang', lang);
-  hasAccountSession.mockResolvedValue(signedIn);
-  render(<LangProvider><DocsPage /></LangProvider>);
-  expect(await screen.findByRole('link', { name: label })).toHaveAttribute('href', href);
-  expect(accountRequest.mock.calls.every(([path]) => path === '/plans')).toBe(true);
-});
-
-test('docs keep a neutral account action while session lookup is pending or fails', async () => {
-  let reject;
-  hasAccountSession.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+test('the community edition has no account action, key setup or credit wording', async () => {
   render(<DocsPage />);
-  expect(screen.getByRole('link', { name: 'Developer account' })).toHaveAttribute('href', '/account');
-  await act(async () => reject(new Error('offline')));
-  expect(screen.getByRole('link', { name: 'Developer account' })).toHaveAttribute('href', '/account');
-  expect(screen.queryByRole('link', { name: 'Get a free API key' })).toBeNull();
+  await screen.findByText('Search the catalogue', { selector: '.cq-doc-operation-name span' });
+  expect(document.querySelector('.cq-doc-hero-actions')).toBeNull();
+  expect([...document.querySelectorAll('.cq-doc-steps > li')].map(step => step.querySelector('h3').textContent)).toEqual(['Search the catalogue']);
+  const text = document.body.textContent;
+  for (const hosted of ['API key', 'CANQUERY_API_KEY', 'Authorization', 'credit', 'Plans', 'subscription']) expect(text).not.toContain(hosted);
+  for (const path of ['/pricing', '/account', '/signup']) expect(document.querySelector(`a[href="${path}"]`)).toBeNull();
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/v1/openapi.json']);
 });
 
-test('preparation demonstration preserves source context, bounded recipes and credit distinctions', async () => {
+test('preparation demonstration preserves source context and bounded recipes', async () => {
   render(<DocsPage />);
   const section = document.getElementById('preparation-example');
   expect(within(section).getByRole('link', { name: /Original public CSV/ })).toHaveAttribute('href', 'https://cabin-rcba.ec.gc.ca/Cabin/opendata/cabin_benthic_data_mda09_1987-present.csv');
@@ -78,8 +65,6 @@ test('preparation demonstration preserves source context, bounded recipes and cr
   const languages = within(section).getByRole('group', { name: 'Complete bounded preparation recipe · Example language' });
   expect(within(languages).queryByRole('button', { name: 'curl' })).toBeNull();
   expect(within(languages).getByRole('button', { name: 'Python' })).toHaveAttribute('aria-pressed', 'true');
-  expect(await within(section).findByText('103')).toBeInTheDocument();
-  expect(within(section).getByText(/112 credits/)).toBeInTheDocument();
   expect(fetch.mock.calls.every(([url, options]) => !url.endsWith('/query') && !url.endsWith('/prepare') && !options?.method)).toBe(true);
 });
 afterEach(() => {
@@ -162,7 +147,8 @@ test('code language selection updates the copied example and reports clipboard f
   fireEvent.click(within(group).getByRole('button', { name: 'JavaScript · server' }));
   fireEvent.click(screen.getByRole('button', { name: 'Copy Search housing datasets' }));
   expect(await screen.findByText('Clipboard unavailable. Select the code below and copy it manually.')).toBeVisible();
-  expect(writeText.mock.calls[1][0]).toContain('process.env.CANQUERY_API_KEY');
+  expect(writeText.mock.calls[1][0]).toContain('await fetch(url');
+  expect(writeText.mock.calls[1][0]).not.toContain('CANQUERY_API_KEY');
 });
 
 test('French guides and reference descriptions follow the chosen language', async () => {
@@ -197,7 +183,7 @@ test('public operations preserve zero credits and an operation-level root server
   render(<DocsPage />);
   const endpoint = (await screen.findByText('Health probe')).closest('details');
   fireEvent.click(endpoint.querySelector('summary'));
-  expect(await within(endpoint).findByText('Public endpoint; no API key required.')).toBeInTheDocument();
+  expect(await within(endpoint).findByText('Public endpoint.')).toBeInTheDocument();
   expect(within(endpoint).getByText('Credits:', { exact: false })).toHaveTextContent('Credits: 0');
   const example = endpoint.querySelector('pre').textContent;
   expect(example).toContain(`${window.location.origin}/healthz`);
@@ -223,29 +209,6 @@ test('response examples can switch between rows and aggregates without fetching 
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
-test.each([
-  { enabled: true, keyRequired: true },
-  { enabled: false, keyRequired: false },
-])('first-request advice stays accurate when enabled=$enabled and keyRequired=$keyRequired', async ({ enabled, keyRequired }) => {
-  const actual = buildOpenApi({ env: { COMMERCIAL_API_ENABLED: String(enabled), API_KEY_REQUIRED_AT: '2026-10-01T00:00:00.000Z' }, now: Date.parse('2026-10-07T00:00:00.000Z') });
-  fetch.mockImplementationOnce(() => response(actual));
-  render(<DocsPage />);
-  const operation = actual.paths['/datasets'].get;
-  const endpoint = (await screen.findByText(operation.summary, { selector: '.cq-doc-operation-name span' })).closest('details');
-  expect(screen.getByText(/Authentication requirements depend on this deployment/)).toBeInTheDocument();
-  expect(screen.queryByText(/Anonymous compatibility is currently available/)).not.toBeInTheDocument();
-  fireEvent.click(endpoint.querySelector('summary'));
-  const publicMessage = 'Public endpoint; no API key required.';
-  if (keyRequired) {
-    await within(endpoint).findByText(/Use your server-side API key/);
-    expect(within(endpoint).queryByText(publicMessage)).not.toBeInTheDocument();
-    expect(endpoint.querySelector('pre').textContent).toContain('Authorization: Bearer');
-  } else {
-    await within(endpoint).findByText(publicMessage);
-    expect(endpoint.querySelector('pre').textContent).not.toContain('Authorization');
-  }
-});
-
 function expandSchemaField(container, name) {
   const table = container.querySelector(':scope > .cq-doc-table-scroll > table');
   const row = [...table.tBodies[0].rows].find(item => item.cells[0].querySelector('code').textContent === name);
@@ -257,13 +220,13 @@ function expandSchemaField(container, name) {
 }
 
 async function openActualResponseSchema(path) {
-  const actual = buildOpenApi({ env: { COMMERCIAL_API_ENABLED: 'true' } });
+  const actual = buildOpenApi({ env: {} });
   fetch.mockImplementationOnce(() => response(actual));
   render(<DocsPage />);
   const operation = actual.paths[path].get;
   const endpoint = (await screen.findByText(operation.summary, { selector: '.cq-doc-operation-name span' })).closest('details');
   fireEvent.click(endpoint.querySelector('summary'));
-  await within(endpoint).findByText(/Use your server-side API key/);
+  await waitFor(() => expect(endpoint.querySelector('.cq-doc-response')).not.toBeNull());
   const status = endpoint.querySelector('.cq-doc-response');
   fireEvent.click(status.querySelector(':scope > summary'));
   const rootSchema = status.querySelector('.cq-doc-content-schema > .cq-doc-recipe');

@@ -4,6 +4,9 @@ import { useLang } from '../i18n.jsx';
 import { useTheme } from '../theme.jsx';
 import { MapleLeaf, ExternalIcon, SparklesIcon, SunIcon, MoonIcon, XIcon } from './Icons.jsx';
 import { track } from '../utils/analytics.js';
+import { hostedPart } from '../extensions.js';
+
+const { NavLinks } = hostedPart(import.meta.glob('../enterprise/navigation.jsx', { eager: true }), {});
 
 const navClass = ({ isActive }) => 'cq-nav-link' + (isActive ? ' cq-nav-active' : '');
 
@@ -107,8 +110,7 @@ export default function Navbar() {
             <NavLink to="/docs" className={navClass} onClick={close}>{t('nav.docs')}</NavLink>
             <NavLink to="/faq" className={navClass} onClick={close}>{t('nav.faq')}</NavLink>
             <NavLink to="/about" className={navClass} onClick={close}>{t('nav.about')}</NavLink>
-            <NavLink to="/pricing" className={navClass} onClick={close}>{t('account.pricing')}</NavLink>
-            <a href="/account" className="cq-nav-link" onClick={close}>{t('account.title')}</a>
+            {NavLinks && <NavLinks navClass={navClass} close={close} />}
             <a href="https://open.canada.ca/data/en/dataset" target="_blank" rel="noopener noreferrer" className="cq-nav-link" onClick={close}>
               open.canada.ca<ExternalIcon size={12} />
             </a>

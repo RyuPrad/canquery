@@ -1,23 +1,21 @@
 import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import SupportContact from '../components/SupportContact.jsx';
+import { hostedPart } from '../extensions.js';
 import './InfoPages.css';
 
-const GROUPS = [
-  ['getting_started', ['what', 'account', 'sources']],
+// The hosted service adds account, plan and credit questions with their links.
+const HOSTED = hostedPart(import.meta.glob('../enterprise/faq.js', { eager: true }), null);
+const CORE_GROUPS = [
+  ['getting_started', ['what', 'sources']],
   ['working_with_data', ['availability', 'preparation', 'freshness', 'exports']],
-  ['accounts_and_api', ['plans', 'credits', 'refunds', 'cancellation']],
 ];
+const GROUPS = HOSTED ? HOSTED.groups(CORE_GROUPS) : CORE_GROUPS;
 const LINKS = {
   what: ['/docs', 'faq.docs_link'],
-  account: ['/pricing', 'faq.pricing_link'],
-  sources: ['/terms', 'faq.terms_link'],
   preparation: ['/docs#preparation-example', 'faq.docs_link'],
   exports: ['/docs', 'faq.docs_link'],
-  plans: ['/pricing', 'faq.pricing_link'],
-  credits: ['/pricing', 'faq.pricing_link'],
-  refunds: ['/docs#reliability', 'faq.docs_link'],
-  cancellation: ['/terms', 'faq.terms_link'],
+  ...HOSTED?.links,
 };
 
 export default function FaqPage() {

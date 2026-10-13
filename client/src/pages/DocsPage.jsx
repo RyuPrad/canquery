@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { PlayIcon } from '../components/Icons.jsx';
 import { useLang } from '../i18n.jsx';
-import useAccountSession from '../hooks/useAccountSession.js';
 import { track } from '../utils/analytics.js';
 import CodeSample from '../components/docs/CodeSample.jsx';
 import EndpointReference from '../components/docs/EndpointReference.jsx';
-import CreditWorkflows from '../components/docs/CreditWorkflows.jsx';
 import { createDocsSnippets, PERMITS_RESOURCE } from '../utils/docs/snippets.js';
+import { hostedPart } from '../extensions.js';
 import './DocsPage.css';
+
+// The hosted service adds its developer-account steps, keyed examples, credit
+// workflows and plan links.
+const { apiKey = false, HeroActions, quickstartSteps = [], AfterPreparationExample, LimitsLink } =
+  hostedPart(import.meta.glob('../enterprise/docs.jsx', { eager: true }), {});
 
 const SECTIONS = [
   ['quickstart', 'first'], ['workflow', 'workflow'], ['preparation-example', 'preparation_example'], ['capabilities', 'capabilities'],
@@ -57,10 +61,8 @@ function MetadataPreview() {
 
 export default function DocsPage() {
   const { t } = useLang();
-  const session = useAccountSession();
-  const sessionStatus = session.checking ? 'loading' : session.status;
   const base = window.location.origin;
-  const snippets = createDocsSnippets(base);
+  const snippets = createDocsSnippets(base, { apiKey });
   const [mobileContents, setMobileContents] = useState(false);
   const navigation = <>{SECTIONS.map(([id, key], index) => <a key={id} href={`#${id}`} onClick={() => setMobileContents(false)}><span aria-hidden="true">0{index + 1}</span>{t(`docs.nav_${key}`)}</a>)}</>;
 
@@ -69,7 +71,7 @@ export default function DocsPage() {
       <div className="cq-doc-eyebrow"><span aria-hidden="true" />{t('docs.eyebrow')}</div>
       <h1>{t('docs.title')}</h1>
       <p>{t('docs.intro')}</p>
-      <div className="cq-doc-hero-actions"><a className="btn btn-primary min-h-12" href={sessionStatus === 'anonymous' ? '/signup' : '/account'}>{t(sessionStatus === 'anonymous' ? 'docs.key_cta' : sessionStatus === 'authenticated' ? 'account.manage_keys' : 'account.title')} <span aria-hidden="true">→</span></a><a className="cq-doc-secondary-link" href="/pricing">{t('docs.pricing_cta')} <span aria-hidden="true">↗</span></a></div>
+      {HeroActions && <HeroActions />}
     </header>
     <div className="cq-doc-mobile-nav"><button type="button" aria-expanded={mobileContents} aria-controls="docs-mobile-contents" onClick={() => setMobileContents(value => !value)}>{t('docs.contents')}<span aria-hidden="true">{mobileContents ? '−' : '+'}</span></button><nav id="docs-mobile-contents" aria-label={t('docs.contents')} hidden={!mobileContents}>{navigation}</nav></div>
     <div className="cq-doc-layout">
@@ -78,9 +80,8 @@ export default function DocsPage() {
         <section id="quickstart" className="cq-doc-section">
           <SectionHeading number="01" title={t('docs.first_title')} intro={t('docs.first_intro')} />
           <ol className="cq-doc-steps">
-            <li><span className="cq-doc-step-dot" aria-hidden="true">1</span><div><h3>{t('docs.first_account')}</h3><p>{t('docs.first_account_body')} <a href="/account">{t('account.api_keys')} →</a></p></div></li>
-            <li><span className="cq-doc-step-dot" aria-hidden="true">2</span><div><h3>{t('docs.first_key')}</h3><p>{t('docs.first_key_body')}</p><CodeSample label={t('docs.setup_label')} code={'export CANQUERY_API_KEY=\'YOUR_API_KEY\''} /></div></li>
-            <li><span className="cq-doc-step-dot" aria-hidden="true">3</span><div><h3>{t('docs.first_request')}</h3><p>{t('docs.first_request_body')}</p><CodeSample label={t('docs.search_label')} snippets={snippets.first} endpoint="/datasets" /></div></li>
+            {[...quickstartSteps.map(Step => <Step />), <><h3>{t('docs.first_request')}</h3><p>{t('docs.first_request_body')}</p><CodeSample label={t('docs.search_label')} snippets={snippets.first} endpoint="/datasets" /></>]
+              .map((step, index) => <li key={index}><span className="cq-doc-step-dot" aria-hidden="true">{index + 1}</span><div>{step}</div></li>)}
           </ol>
           <div className="cq-doc-response-explainer"><h3>{t('docs.understand_title')}</h3><p>{t('docs.understand_body')}</p><dl>{[['data', 'data'], ['pagination.nextCursor', 'cursor'], ['meta', 'meta']].map(([name, key]) => <div key={name}><dt><code>{name}</code></dt><dd>{t(`docs.envelope_${key}`)}</dd></div>)}</dl></div>
           <p className="cq-doc-footnote">{t('docs.anonymous_note')}</p>
@@ -105,7 +106,7 @@ export default function DocsPage() {
             <CodeSample label={t('docs.cabin_result_label')} code={JSON.stringify({ data: { total: 327, records: [{ _id: '7548', 'Year/Année': '2024', 'Family/Famille': 'Chironomidae' }, { _id: '7549', 'Year/Année': '2024', 'Family/Famille': 'Chironomidae' }] } }, null, 2)} />
           </div>
           <div className="cq-doc-workflow-step"><h3>{t('docs.cabin_reuse')}</h3><p>{t('docs.cabin_reuse_body')}</p><p className="cq-doc-footnote">{t('docs.cabin_dates')}</p></div>
-          <CreditWorkflows />
+          {AfterPreparationExample && <AfterPreparationExample />}
         </section>
 
         <section id="capabilities" className="cq-doc-section">
@@ -125,7 +126,7 @@ export default function DocsPage() {
           <div className="cq-doc-reliability-section"><h3>{t('docs.pagination_title')}</h3><p>{t('docs.pagination_catalogue')}</p><p>{t('docs.pagination_rows')}</p></div>
           <div className="cq-doc-reliability-section"><h3>{t('docs.filters_title')}</h3><p>{t('docs.filters_body')}</p></div>
           <div id="preparation" className="cq-doc-reliability-section"><h3>{t('docs.prepare_title')}</h3><p>{t('docs.prepare_body')}</p><CodeSample label={t('docs.prepare_label')} code={snippets.prepare} endpoint="/resources/:id/prepare" /><p>{t('docs.prepare_steps')}</p><details className="cq-doc-recipe"><summary>{t('docs.job_label')}</summary><CodeSample label={t('docs.job_label')} code={snippets.job} endpoint="/jobs/:id" /></details><p className="cq-doc-footnote">{t('docs.prepare_limits')}</p></div>
-          <div className="cq-doc-reliability-section"><h3>{t('docs.limits_title')}</h3><p>{t('docs.limits_body')}</p><p>{t('docs.limits_headers')}</p><p>{t('docs.retry_body')}</p><a className="cq-doc-secondary-link" href="/pricing">{t('docs.pricing_cta')} →</a></div>
+          <div className="cq-doc-reliability-section"><h3>{t('docs.limits_title')}</h3><p>{t('docs.limits_body')}</p><p>{t('docs.limits_headers')}</p><p>{t('docs.retry_body')}</p>{LimitsLink && <LimitsLink />}</div>
           <div className="cq-doc-reliability-section"><h3>{t('docs.errors_title')}</h3><dl className="cq-doc-error-list">{[['400', '400'], ['401 / 403', '401'], ['409', '409'], ['422', '422'], ['429', '429'], ['502 / 503', '5xx']].map(([status, key]) => <div key={key}><dt><code>{status}</code></dt><dd>{t(`docs.error_${key}`)}</dd></div>)}</dl></div>
           <div className="cq-doc-reliability-section"><h3>{t('docs.freshness_title')}</h3><p>{t('docs.freshness_body')}</p><p>{t('docs.freshness_licence')}</p></div>
           <div className="cq-doc-support"><h3>{t('docs.support_title')}</h3><p>{t('docs.support_body')}</p><a href="mailto:support@canquery.com">support@canquery.com <span aria-hidden="true">↗</span></a></div>

@@ -3,7 +3,7 @@
 // the same queue concurrently.
 const WORKER_LOCK_KEYS = [1667329649, 2003792491];
 const { lockIngestResource } = require('./ingestResourceLock');
-const { settlePreparationOn } = require('./preparationAccounting');
+const { extension } = require('../extensions');
 
 async function acquireWorkerLock(db) {
     const result = await db.query(
@@ -97,7 +97,7 @@ async function finishJob(db, id, workerId, resourceId, status, error, failure = 
                     AND published_at IS NOT NULL FOR UPDATE`, [id, resourceId]);
             completed = recorded.rows.length === 1;
         }
-        if (completed) await settlePreparationOn(client, id);
+        if (completed) await extension().preparation.settle(client, id);
         await client.query('COMMIT');
         return completed;
     } catch (err) {

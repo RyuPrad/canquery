@@ -70,11 +70,14 @@ python3 deploy/release.py stage --archive "$RELEASE_ARCHIVE" \
   --checkout "$RELEASE_CHECKOUT" --destination "$RELEASE_STAGE" \
   --previous-release "$RELEASE_PREVIOUS" --apply
 npm ci --prefix "$RELEASE_STAGE/server" --omit=dev
+# Only when the release ships the hosted extension:
+npm ci --prefix "$RELEASE_STAGE/server/enterprise" --omit=dev
 ```
 
 Do not load production environment/secrets while installing dependencies. Only
-the server's locked production dependencies are installed; the tested frontend
-is never recompiled. Old hashed assets are copied only after their hashes match
+the server's locked production dependencies are installed, plus the hosted
+extension's own lockfile when the release includes it; sealing verifies each
+installed tree against its lockfile. The tested frontend is never recompiled. Old hashed assets are copied only after their hashes match
 the prior release inventory. A same-name/different-content collision fails.
 Unversioned files, including the old HTML index, are never carried forward.
 The new stage writes `client/dist/index.html` last. Retained assets are recorded

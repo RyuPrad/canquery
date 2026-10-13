@@ -4,7 +4,7 @@ const { resourceVersion, preparationEnabled } = require('./resourceVersion');
 const { isIngestableFile } = require('./resourceCapabilities');
 const AppError = require('../utils/AppError');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
-const { chargePreparation } = require('../db/commercialQueries');
+const { extension } = require('../extensions');
 
 const buckets = new Map();
 const HOUR = 3600000;
@@ -86,7 +86,7 @@ async function prepareResource(resourceId, ip, db = pool, commercial = null, { a
         if (!commercial) refund = reserveToken(ip);
         const queued = await client.query(`INSERT INTO ingest_jobs (resource_id, preparation, source_version)
             VALUES ($1, true, $2) RETURNING *`, [resourceId, version]);
-        await chargePreparation(client, commercial, queued.rows[0].id);
+        await extension().preparation.charge(client, commercial, queued.rows[0].id);
         await client.query('COMMIT');
         refund = null;
         return publicJob(queued.rows[0], row);

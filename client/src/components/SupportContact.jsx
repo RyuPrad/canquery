@@ -7,6 +7,6 @@ export default function SupportContact() {
     <p>{t('support.body')}</p>
     <a className="cq-info-email link" href="mailto:support@canquery.com">support@canquery.com</a>
     <p>{t('support.details')}</p>
-    <p>{t('support.scope')}</p>
+    {t('support.scope') && <p>{t('support.scope')}</p>}
   </section>;
 }

@@ -16,6 +16,7 @@ const POLL_MS = envNumber('INGEST_POLL_MS', 3000, { min: 1, max: 2 ** 31 - 1, in
 const HEARTBEAT_MS = envNumber('INGEST_HEARTBEAT_MS', 15000, { min: 1000, max: 2 ** 31 - 1, integer: true });
 
 const pool = require('../db/pool');
+const { assertEditionMatchesDatabase } = require('../extensions');
 const longRunningPool = require('../db/longRunningPool');
 const { getResourceById } = require('../db/catalogReadQueries');
 const { ingestResource, validateStorageFilesystems } = require('../services/ingestPipeline');
@@ -175,6 +176,7 @@ async function main() {
     let lockHeld = false;
     try {
         await validateStorageFilesystems(caps);
+        await assertEditionMatchesDatabase(pool);
         const storage = storageOptions(caps);
         delete storage.storeDataPath;
         console.log(JSON.stringify({ event: 'ingest_limits', units: { sizes: 'bytes', timeouts: 'milliseconds' },

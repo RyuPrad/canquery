@@ -58,7 +58,8 @@ def package(root, output, expected_commit):
         'source_date_epoch': timestamp, 'node': node,
         'npm': command(root, 'npm', '--version'),
         'dependencies': 'Install server production dependencies with npm ci --omit=dev using the included lockfile.',
-        'migrations': sorted(name for name in files if name.startswith('server/sql/migrations/') and name.endswith('.sql')),
+        'migrations': sorted(name for name in files if name.startswith(('server/sql/migrations/', 'server/enterprise/sql/migrations/'))
+                             and name.endswith('.sql')),
         'files': {name: {'sha256': digest(data), 'bytes': len(data), 'mode': mode}
                   for name, (data, mode) in sorted(files.items())}
     }

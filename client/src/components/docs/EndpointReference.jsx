@@ -87,7 +87,8 @@ function Operation({ document, path, method, operation, inheritedParameters, bas
   const id = operation.operationId || `${method}-${path.replace(/[^a-z\d]+/gi, '-')}`;
   const [expanded, setExpanded] = useState(() => window.location.hash.slice(1) === id);
   const security = operation.security ?? document.security;
-  const publicEndpoint = Array.isArray(security) && (!security.length || security.every(item => !Object.keys(item).length));
+  // A contract without security requirements has only public endpoints.
+  const publicEndpoint = !Array.isArray(security) || !security.length || security.every(item => !Object.keys(item).length);
   const serverUrl = new URL(operation.servers?.[0]?.url || document.servers?.[0]?.url || '/api/v1', base);
   const requestUrl = `${serverUrl.href.replace(/\/$/, '')}/${path.replace(/^\/+/, '')}`;
   const example = `curl --fail-with-body --silent --show-error${method === 'get' ? '' : ` --request ${method.toUpperCase()}`} \\\n  ${shellQuote(requestUrl)}${publicEndpoint ? '' : ' \\\n  --header "Authorization: Bearer $CANQUERY_API_KEY"'}`;

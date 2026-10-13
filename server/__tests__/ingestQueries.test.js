@@ -1,9 +1,11 @@
 jest.mock('../db/pool', () => ({ connect: jest.fn() }));
-jest.mock('../db/preparationAccounting', () => ({ settlePreparationOn: jest.fn() }));
+// Settlement runs through the extension hook; only the call matters here.
+const mockPreparation = { charge: jest.fn(), settle: jest.fn() };
+jest.mock('../extensions', () => ({ extension: () => ({ preparation: mockPreparation }) }));
 
 const pool = require('../db/pool');
 const { enqueueJob } = require('../db/ingestQueries');
-const { settlePreparationOn } = require('../db/preparationAccounting');
+const settlePreparationOn = mockPreparation.settle;
 
 function clientFor({ loaded = [], queued = [], completed = [], resource = [{ id: 'public-resource' }] } = {}) {
     const client = {

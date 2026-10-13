@@ -1,5 +1,7 @@
-jest.mock('../db/preparationAccounting', () => ({ settlePreparationOn: jest.fn() }));
-const { settlePreparationOn } = require('../db/preparationAccounting');
+// Settlement runs through the extension hook; only the call matters here.
+const mockPreparation = { charge: jest.fn(), settle: jest.fn() };
+jest.mock('../extensions', () => ({ extension: () => ({ preparation: mockPreparation }) }));
+const settlePreparationOn = mockPreparation.settle;
 const {
     WORKER_LOCK_KEYS,
     acquireWorkerLock,

@@ -1,5 +1,5 @@
-const { CREDIT_COSTS, WORKFLOW_COSTS } = require('./commercialConfig');
-const { operationFor, isPublicOperation } = require('./commercialOperations');
+const { extension } = require('../extensions');
+const { componentNames } = require('./componentNames');
 // Documentation only. Keep these shapes aligned with the public controllers;
 // this module neither queries data nor exposes private runtime configuration.
 const ref = name => ({ $ref: '#/components/schemas/' + name });
@@ -17,6 +17,17 @@ const failureReasons = ['invalid_file', 'upstream_unavailable', 'capacity', 'tem
 const envelope = data => object({ data, pagination: ref('Pagination'), meta: ref('Meta') }, ['data', 'pagination', 'meta']);
 const sample = (data, meta = {}, nextCursor = null) => ({ data, pagination: { nextCursor }, meta: { source: 'canquery', license: null, upstream: null, ...meta } });
 
+// Error codes a client can see. A hosted extension adds account, key and quota codes.
+const COMMUNITY_ERROR_CODES = ['Examples: PREPARATION_BUSY, PREPARATION_COOLDOWN, AUTOMATED_CLIENT, SNAPSHOT_UNAVAILABLE.',
+    'Exemples : PREPARATION_BUSY, PREPARATION_COOLDOWN, AUTOMATED_CLIENT, SNAPSHOT_UNAVAILABLE.'];
+const errorSchema = codes => object({ error: string, request_id: { ...string, description: 'Match X-Request-Id when contacting support. Some CORS/rate-limit responses omit this field.', 'x-description-fr': 'Correspond à X-Request-Id pour le soutien. Certaines réponses CORS ou de limite de fréquence omettent ce champ.' },
+        code: { ...string, description: codes[0], 'x-description-fr': codes[1] },
+        retry_after: { type: 'integer', minimum: 1 }, hint: string, download_url: string }, ['error']);
+const componentHealthSchema = names => object({ component: { type: 'string', enum: names },
+        ok: { type: 'boolean' }, status: { type: 'string', enum: ['ok', 'degraded', 'unavailable', 'stale'] },
+        observed_at: date, checks: { type: 'object', additionalProperties: { type: ['boolean', 'number'] } } },
+    ['component', 'ok', 'status', 'observed_at', 'checks']);
+
 const schemas = {
     Pagination: object({ nextCursor: { type: ['string', 'null'], description: 'Next catalogue offset as a string, or null. Row queries use data.total and offset instead.', 'x-description-fr': 'Décalage suivant du catalogue sous forme de chaîne, ou null. Les requêtes de lignes utilisent plutôt data.total et offset.' } }, ['nextCursor']),
     LocalizedText: object({ en: textOrNull, fr: textOrNull }),
@@ -31,9 +42,7 @@ const schemas = {
         query_mode: { type: 'string', enum: ['datastore', 'ingested'] }, aggregation: ref('Aggregation'), map: ref('ViewportMetadata'),
         search: object({ query: string, suggestions: array(string) }),
         period: nullable(object({ year: integer, month: { type: 'integer', minimum: 1, maximum: 12 } })) }, ['source', 'license', 'upstream']),
-    Error: object({ error: string, request_id: { ...string, description: 'Match X-Request-Id when contacting support. Some CORS/rate-limit responses omit this field.', 'x-description-fr': 'Correspond à X-Request-Id pour le soutien. Certaines réponses CORS ou de limite de fréquence omettent ce champ.' },
-        code: { ...string, description: 'Examples: INVALID_API_KEY, API_KEY_REQUIRED, KEY_DISABLED, ACCOUNT_SUSPENDED, QUOTA_EXCEEDED, RATE_LIMIT, CONCURRENCY_LIMIT, PREPARATION_BUSY, PREPARATION_COOLDOWN, AUTOMATED_CLIENT, SNAPSHOT_UNAVAILABLE, ACCOUNTING_UNAVAILABLE.', 'x-description-fr': 'Exemples : INVALID_API_KEY, API_KEY_REQUIRED, KEY_DISABLED, ACCOUNT_SUSPENDED, QUOTA_EXCEEDED, RATE_LIMIT, CONCURRENCY_LIMIT, PREPARATION_BUSY, PREPARATION_COOLDOWN, AUTOMATED_CLIENT, SNAPSHOT_UNAVAILABLE, ACCOUNTING_UNAVAILABLE.' },
-        retry_after: { type: 'integer', minimum: 1 }, hint: string, download_url: string }, ['error']),
+    Error: errorSchema(COMMUNITY_ERROR_CODES),
     PlaceIdentity: object({ id: string, slug: string, kind: { type: 'string', enum: kinds }, name: ref('LocalizedText'),
         relationship: { type: 'string', enum: ['direct', 'coverage'] }, includes_descendants: { type: 'boolean' } }),
     Location: object({ latitude: { type: 'number', minimum: -90, maximum: 90 }, longitude: { type: 'number', minimum: -180, maximum: 180 }, zoom: { type: ['integer', 'null'], minimum: 0, maximum: 22 } }),
@@ -109,10 +118,7 @@ const schemas = {
         translations: object({ en: string, fr: string }), bodyHtml: { ...string, description: 'Present on article detail; sanitized HTML.', 'x-description-fr': 'Présent dans le détail de l’article; HTML assaini.' } }),
     Health: object({ ok: { type: 'boolean' }, db: { type: 'boolean' }, upstream: { type: 'boolean' } }, ['ok', 'db', 'upstream']),
     Readiness: object({ ok: { type: 'boolean' }, db: { type: 'boolean' } }, ['ok', 'db']),
-    ComponentHealth: object({ component: { type: 'string', enum: ['availability', 'preparation', 'maps', 'sources', 'commercial', 'backups', 'storage'] },
-        ok: { type: 'boolean' }, status: { type: 'string', enum: ['ok', 'degraded', 'unavailable', 'stale'] },
-        observed_at: date, checks: { type: 'object', additionalProperties: { type: ['boolean', 'number'] } } },
-    ['component', 'ok', 'status', 'observed_at', 'checks']),
+    ComponentHealth: componentHealthSchema(componentNames()),
     Operations: object({ ok: { type: 'boolean' }, jobs: { type: 'object', additionalProperties: object({ last_ok_at: date,
         status: { type: 'string', enum: ['ok', 'pending', 'failed', 'stale'] } }) },
         maps: object({ pending: integer, deferred: integer, running: integer, ready: integer, skipped: integer, failed: integer, retrying_sources: integer,
@@ -120,63 +126,65 @@ const schemas = {
         preparations: object({ pending: integer, running: integer, failed_last_day: integer, completed_last_day: integer, oldest_pending_at: date }) }, ['ok', 'jobs', 'maps', 'preparations'])
 };
 
-const headers = {
-    'RateLimit-Limit': { description: 'Anonymous or failed-credential rate-limit ceiling when supplied by the limiter; keyed account limits are separate.', schema: integer },
+// Shared response headers. A hosted extension supplies its published set,
+// which adds keyed credit and deprecation headers.
+const communityHeaders = {
+    'RateLimit-Limit': { description: 'Rate-limit ceiling when supplied by the limiter.', schema: integer },
     'RateLimit-Remaining': { description: 'Requests remaining in the limiter window, when supplied.', schema: integer },
     'RateLimit-Reset': { description: 'Seconds until the limiter window resets, when supplied.', schema: integer },
-    'Deprecation': { description: 'Anonymous compatibility deprecation timestamp, when a cutoff is announced.', schema: string },
-    'Sunset': { description: 'HTTP date after which metered routes require a key, when announced.', schema: string },
     'X-Request-Id': { description: 'Request identifier for support and log correlation.', schema: string },
-    'Cache-Control': { description: 'Keyed API responses are private, no-store. Anonymous routes may use public caching.', schema: string },
-    'X-CanQuery-Credits-Limit': { description: 'Keyed requests: shared account allowance for the current period.', schema: integer },
-    'X-CanQuery-Credits-Remaining': { description: 'Keyed requests: remaining allowance after admission, including all outstanding reservations; not a final usage receipt.', schema: integer },
-    'X-CanQuery-Credits-Reset': { description: 'Keyed requests: current allowance period end (UTC).', schema: { type: 'string', format: 'date-time' } }
+    'Cache-Control': { description: 'Caching policy for this response; catalogue reads may be publicly cached.', schema: string }
 };
 const headerFrench = {
-    'RateLimit-Limit': 'Plafond des requêtes anonymes ou des échecs d’authentification, lorsqu’il est fourni. Les limites du compte avec clé sont distinctes.',
+    'RateLimit-Limit': 'Plafond du limiteur de requêtes, lorsqu’il est fourni.',
     'RateLimit-Remaining': 'Requêtes restantes dans la fenêtre du limiteur, lorsqu’il est fourni.',
     'RateLimit-Reset': 'Secondes avant la réinitialisation de la fenêtre du limiteur, lorsqu’il est fourni.',
-    Deprecation: 'Horodatage d’abandon de la compatibilité anonyme, lorsqu’une date limite est annoncée.',
-    Sunset: 'Date HTTP après laquelle les routes comptabilisées exigent une clé, lorsqu’elle est annoncée.',
     'X-Request-Id': 'Identifiant de requête pour le soutien et la recherche dans les journaux.',
-    'Cache-Control': 'Les réponses avec clé sont privées, no-store. Les routes anonymes peuvent utiliser un cache public.',
-    'X-CanQuery-Credits-Limit': 'Avec clé : allocation partagée du compte pour la période actuelle.',
-    'X-CanQuery-Credits-Remaining': 'Avec clé : solde après admission, comprenant toutes les réservations en cours; ce n’est pas un reçu d’utilisation définitif.',
-    'X-CanQuery-Credits-Reset': 'Avec clé : fin de la période d’allocation actuelle (UTC).',
-    'Retry-After': 'Si présent, nombre minimum de secondes avant un nouvel essai. Des crédits épuisés peuvent imposer d’attendre la prochaine période.',
     'Content-Disposition': 'Nom du fichier joint.',
     'X-CanQuery-Sources': 'Identifiants de sources séparés par des virgules, si disponibles.',
     'X-CanQuery-Snapshot': 'Identifiant opaque de la copie locale; absent pour le DataStore en direct.',
     'X-CanQuery-Prepared-At': 'Date de préparation locale, lorsqu’elle est connue.',
     'X-CanQuery-Retrieved-At': 'Début de cette extraction.',
-    Link: 'URL de la licence principale avec rel="license", si disponible.'
+    Link: 'URL de la licence principale avec rel="license", si disponible.',
+    'Cache-Control': 'Politique de cache de la réponse; les lectures du catalogue peuvent être mises en cache publiquement.',
+    'Retry-After': 'Si présent, nombre minimum de secondes avant un nouvel essai.'
 };
-const publicHeaders = { 'X-Request-Id': headers['X-Request-Id'], 'Cache-Control': headers['Cache-Control'] };
-const retryHeader = { description: 'When present, minimum seconds before retrying. Exhausted credits may require waiting until the next allowance period.', schema: { type: 'integer', minimum: 1 } };
 const errorDescriptions = {
     400: ['Invalid parameters, unsupported filter/aggregation, or invalid coordinates.', 'Paramètres, filtres, agrégation ou coordonnées non valides.'],
-    401: ['Missing required, invalid or revoked API key.', 'Clé requise manquante, non valide ou révoquée.'],
-    403: ['Disabled key/account or disallowed browser origin.', 'Clé ou compte désactivé, ou origine du navigateur refusée.'],
     404: ['The requested identity or tile version was not found.', 'Identité ou version de tuile introuvable.'],
     409: ['No ready local copy, or the serving snapshot changed. Inspect metadata; use /prepare when supported.', 'Aucune copie locale prête, ou copie remplacée. Consultez les métadonnées et utilisez /prepare si disponible.'],
     413: ['Viewport exceeds the response/tile bound. Zoom in or reduce the viewport.', 'La vue dépasse la limite de réponse ou de tuiles. Zoomez ou réduisez la zone.'],
     422: ['Unsupported capability. Inspect metadata and use the original download when available.', 'Fonction non prise en charge. Consultez les métadonnées et le téléchargement original, si disponible.'],
-    429: ['Limit reached. Distinguish QUOTA_EXCEEDED, RATE_LIMIT, CONCURRENCY_LIMIT, PREPARATION_BUSY, PREPARATION_COOLDOWN and AUTOMATED_CLIENT; honour Retry-After.', 'Limite atteinte : crédits, fréquence, concurrence, capacité, délai de préparation ou robot d’indexation. Respectez Retry-After.'],
     500: ['Unexpected server failure. Retain X-Request-Id for support.', 'Erreur du serveur. Conservez X-Request-Id pour le soutien.'],
     502: ['Publisher DataStore, map source or tile storage unavailable.', 'DataStore, source cartographique ou stockage des tuiles indisponible.'],
-    503: ['Service, accounts, accounting or bounded upstream concurrency temporarily unavailable.', 'Service, comptes, comptabilisation ou capacité temporairement indisponible.']
+    403: ['Disallowed browser origin.', 'Origine du navigateur refusée.'],
+    429: ['Limit reached. Distinguish PREPARATION_BUSY, PREPARATION_COOLDOWN and AUTOMATED_CLIENT; honour Retry-After.', 'Limite atteinte : fréquence, capacité, délai de préparation ou robot d’indexation. Respectez Retry-After.'],
+    503: ['Service or bounded upstream concurrency temporarily unavailable.', 'Service ou capacité temporairement indisponible.']
 };
-function errors(codes) {
-    return Object.fromEntries([...new Set([401, 403, 429, 500, 503, ...codes])].map(code => [code, {
-        description: errorDescriptions[code][0], 'x-description-fr': errorDescriptions[code][1],
-        headers: { ...headers, 'Retry-After': retryHeader }, content: {
-            'application/json': { schema: ref('Error'), example: { error: code === 429 ? 'Request rate exceeded' : errorDescriptions[code][0], request_id: 'example-request-id', ...(code === 429 ? { code: 'RATE_LIMIT', retry_after: 60 } : {}) } },
-            ...(code === 429 ? { 'text/plain': { schema: string, example: 'Too many requests, please try again later.' } } : {})
-        }
-    }]));
-}
-function jsonResponse(schema, example, description = 'Successful response.', fr = 'Réponse réussie.') {
-    return { description, 'x-description-fr': fr, headers, content: { 'application/json': { schema, ...(example !== undefined ? { example } : {}) } } };
+const COMMUNITY_INFO = ['Access to admitted Canadian open-data catalogues, supported tables and bounded maps. Requests are anonymous; honour Retry-After and the documented row, export and map limits.',
+    'Accès aux catalogues canadiens de données ouvertes admis, aux tables prises en charge et aux cartes limitées. Les requêtes sont anonymes; respectez Retry-After et les limites documentées de lignes, d’export et de cartes.'];
+
+// Header, error and response builders for one document; hosted wording
+// replaces the community defaults where the extension provides it.
+function definitions(hosted) {
+    const headers = hosted ? hosted.headers : communityHeaders;
+    const french = { ...headerFrench, ...hosted?.headerFrench };
+    const descriptions = { ...errorDescriptions, ...hosted?.errors };
+    const retryHeader = { description: hosted ? hosted.retryDescription : 'When present, minimum seconds before retrying.', schema: { type: 'integer', minimum: 1 } };
+    const defaults = hosted ? hosted.defaultErrors : [403, 429, 500, 503];
+    function errors(codes) {
+        return Object.fromEntries([...new Set([...defaults, ...codes])].map(code => [code, {
+            description: descriptions[code][0], 'x-description-fr': descriptions[code][1],
+            headers: { ...headers, 'Retry-After': retryHeader }, content: {
+                'application/json': { schema: ref('Error'), example: { error: code === 429 ? 'Request rate exceeded' : descriptions[code][0], request_id: 'example-request-id', ...(code === 429 ? hosted?.rateLimitExample : {}) } },
+                ...(code === 429 ? { 'text/plain': { schema: string, example: 'Too many requests, please try again later.' } } : {})
+            }
+        }]));
+    }
+    function jsonResponse(schema, example, description = 'Successful response.', fr = 'Réponse réussie.') {
+        return { description, 'x-description-fr': fr, headers, content: { 'application/json': { schema, ...(example !== undefined ? { example } : {}) } } };
+    }
+    return { headers, french, publicHeaders: { 'X-Request-Id': headers['X-Request-Id'], 'Cache-Control': headers['Cache-Control'] }, errors, jsonResponse };
 }
 function parameter(name, description, fr, schema = string, extra = {}) {
     return { name, in: 'query', description, 'x-description-fr': fr, schema, ...extra };
@@ -211,25 +219,22 @@ const rowExample = sample({ fields: [{ id: '_id', type: 'int' }, { id: 'STREET_N
 const jobExample = { id: 123, resource_id: 'example-resource', status: 'pending', attempts: 0, retry_at: null, failure_reason: null, error: null, created_at: '2026-01-01T00:00:00.000Z', claimed_at: null, finished_at: null, age_seconds: 0 };
 
 function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
-    const enabled = env.COMMERCIAL_API_ENABLED === 'true';
-    const cutoff = enabled && env.API_KEY_REQUIRED_AT && Number.isFinite(Date.parse(env.API_KEY_REQUIRED_AT)) ? env.API_KEY_REQUIRED_AT : null;
-    const anonymous = !cutoff || now < Date.parse(cutoff);
-    const security = enabled ? (anonymous ? [{}, { bearerAuth: [] }] : [{ bearerAuth: [] }]) : [{}];
+    const hosted = extension().openApi({ env, now });
     const configuredOffset = Number(env.MAX_QUERY_OFFSET);
     const maxOffset = env.MAX_QUERY_OFFSET !== undefined && env.MAX_QUERY_OFFSET !== '' && Number.isInteger(configuredOffset) && configuredOffset >= 0 ? configuredOffset : 10000;
     const configuredExport = Number(env.EXPORT_MAX_ROWS);
     const exportCap = Number.isInteger(configuredExport) && configuredExport > 0 ? Math.min(configuredExport, 10000) : 10000;
+    const { headers, french, publicHeaders, errors, jsonResponse } = definitions(hosted);
+    const hostedDescriptions = hosted ? hosted.descriptions({ exportCap }) : {};
+    const components = componentNames();
     const paths = {};
     const responseComponents = {};
     const headerComponents = {};
     function add(path, method, id, tag, summary, frSummary, description, frDescription, params, schema, example, codes = []) {
-        const cost = ['/healthz', '/readyz'].includes(path) || isPublicOperation({ path, method: method.toUpperCase() }) ? CREDIT_COSTS.activity
-            : /\/(prepare|ingest)$/.test(path) ? `${CREDIT_COSTS.preparation} new job / ${CREDIT_COSTS.activity} existing`
-                : /\/query$/.test(path) ? `${CREDIT_COSTS.query} row query / ${CREDIT_COSTS.aggregate} aggregation`
-                    : operationFor({ path, query: {} }).cost;
+        [description, frDescription] = hostedDescriptions[id] || [description, frDescription];
         paths[path] ||= {};
         paths[path][method] = { operationId: id, tags: [tag], summary, 'x-summary-fr': frSummary, description, 'x-description-fr': frDescription,
-            'x-credit-cost': cost, parameters: params, responses: { 200: jsonResponse(schema, example), ...errors(codes) } };
+            ...(hosted ? { 'x-credit-cost': hosted.cost(path, method) } : {}), parameters: params, responses: { 200: jsonResponse(schema, example), ...errors(codes) } };
         return paths[path][method];
     }
     const catalogueDescription = 'Discover admitted catalogue records. Availability of metadata does not guarantee a working file, table or map. Catalogue reads never request preparation. Follow pagination.nextCursor until null.';
@@ -249,18 +254,18 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     add('/resources/popular', 'get', 'listPopularResources', 'Discovery', 'List popular resources', 'Lister les ressources populaires', 'Counts CanQuery query-log hits, not publisher downloads.', 'Compte les requêtes enregistrées par CanQuery, pas les téléchargements de l’éditeur.', [place, parameter('days', 'Lookback days; values above 30 are clamped.', 'Jours précédents; les valeurs supérieures à 30 sont ramenées à 30.', { type: 'integer', minimum: 1, maximum: 30, default: 7 }), limit(6, 20)], envelope(array(ref('ActivityResource'))), sample([{ resource_id: 'example-resource', hits: 3, last_queried_at: '2026-01-01T00:00:00.000Z', name: resource.name, format: 'CSV', dataset: synthetic.dataset }]), [400]);
     const snapshotParameter = parameter('snapshot', 'Require this exact local snapshot. A replaced or unavailable copy returns 409 SNAPSHOT_UNAVAILABLE; no automatic fallback or preparation. This token does not promise retention or source-content freshness.', 'Exige cette copie locale exacte. Une copie remplacée ou indisponible retourne 409 SNAPSHOT_UNAVAILABLE, sans remplacement ni préparation automatique. Aucun engagement de conservation ou de fraîcheur du fichier source.', { type: 'string', pattern: '^cqs1_[0-9a-f]{64}$' });
     const query = add('/resources/{id}/query', 'get', 'queryResource', 'Query and export', 'Query rows or aggregate', 'Interroger ou agréger les lignes',
-        'Ready local snapshots take precedence over live CKAN DataStore. Live DataStore supports equality filters only, with no aggregation. Local aggregates cover the complete filtered snapshot; total then counts groups, not rows. Local reads renew copy activity and successful queries record popularity. Local responses include meta.snapshot, retrieval time and deployment limits. Supply snapshot on subsequent pages to require identical stored rows and schema; 409 requires an explicit new extraction. Catalogue provenance and publisher modification timestamps are observed at retrieval, not frozen at preparation. source_metadata_version is not a downloaded-content checksum. A 409 never automatically enqueues preparation; inspect metadata and explicitly use /prepare when supported. Aggregations have an additional 30 requests/minute limit and consume expensive-request concurrency.',
-        'La copie locale prête a priorité sur le DataStore CKAN. Le DataStore accepte seulement l’égalité, sans agrégation. Les agrégats locaux couvrent toute la copie filtrée; total compte alors les groupes. Les lectures locales renouvellent l’activité et les requêtes réussies alimentent la popularité. Les réponses locales comprennent meta.snapshot, la date de récupération et les limites. Fournissez snapshot aux pages suivantes pour conserver les mêmes données et champs; un 409 exige une nouvelle extraction explicite. La provenance est observée à la récupération. source_metadata_version ne vérifie pas le contenu du fichier. Un 409 ne lance aucune préparation; consultez les métadonnées et utilisez /prepare explicitement. Les agrégations sont aussi limitées à 30/minute et consomment la concurrence des requêtes coûteuses.',
+        'Ready local snapshots take precedence over live CKAN DataStore. Live DataStore supports equality filters only, with no aggregation. Local aggregates cover the complete filtered snapshot; total then counts groups, not rows. Local reads renew copy activity and successful queries record popularity. Local responses include meta.snapshot, retrieval time and deployment limits. Supply snapshot on subsequent pages to require identical stored rows and schema; 409 requires an explicit new extraction. Catalogue provenance and publisher modification timestamps are observed at retrieval, not frozen at preparation. source_metadata_version is not a downloaded-content checksum. A 409 never automatically enqueues preparation; inspect metadata and explicitly use /prepare when supported. Aggregations have an additional 30 requests/minute limit.',
+        'La copie locale prête a priorité sur le DataStore CKAN. Le DataStore accepte seulement l’égalité, sans agrégation. Les agrégats locaux couvrent toute la copie filtrée; total compte alors les groupes. Les lectures locales renouvellent l’activité et les requêtes réussies alimentent la popularité. Les réponses locales comprennent meta.snapshot, la date de récupération et les limites. Fournissez snapshot aux pages suivantes pour conserver les mêmes données et champs; un 409 exige une nouvelle extraction explicite. La provenance est observée à la récupération. source_metadata_version ne vérifie pas le contenu du fichier. Un 409 ne lance aucune préparation; consultez les métadonnées et utilisez /prepare explicitement. Les agrégations sont aussi limitées à 30/minute.',
         [resourceId, snapshotParameter, ...rowFilters, limit(20, 100), parameter('offset', 'Row/group offset; independent of catalogue cursor. Avoid relying on a stable snapshot across page calls.', 'Décalage de lignes/groupes, distinct du curseur du catalogue. Aucune copie stable garantie entre les pages.', { type: 'integer', minimum: 0, maximum: maxOffset, default: 0 })], envelope(ref('QueryResult')), rowExample, [400, 404, 409, 422, 502]);
-    query['x-credit-cost-fr'] = `${CREDIT_COSTS.query} requête de lignes / ${CREDIT_COSTS.aggregate} agrégation`;
+    if (hosted) query['x-credit-cost-fr'] = hosted.costFrench.query;
     query.responses[200].content['application/json'].examples = {
         rows: { summary: 'Illustrative live DataStore response', 'x-summary-fr': 'Exemple de réponse DataStore en direct', value: rowExample },
         aggregate: { summary: 'Illustrative complete-snapshot aggregate; numeric database values can be strings', 'x-summary-fr': 'Exemple d’agrégat de la copie complète; les nombres peuvent être des chaînes', value: sample({ fields: [{ id: 'key', type: 'TEXT' }, { id: 'value', type: 'INTEGER' }], records: [{ key: 'EXAMPLE', value: '2' }], total: 1 }, { query_mode: 'ingested', aggregation: { group_by: 'STREET_NAME', agg: 'count', agg_column: null, bucket: null }, provenance }) }
     };
     delete query.responses[200].content['application/json'].example;
     const csv = add('/resources/{id}/query.csv', 'get', 'exportResourceCsv', 'Query and export', 'Export a bounded CSV', 'Exporter un CSV limité',
-        `Exports from offset zero, at most ${exportCap} rows (deployment cap; hard maximum 10,000). Same query capabilities as /query, including local full-snapshot aggregation before limiting groups. There is no CSV pagination or full-file guarantee. Use the original download for complete publisher files. Formula-like spreadsheet cells are neutralized. A failure after headers closes the partial response: discard incomplete output and retry within limits. Keyed failed/interrupted exports are refunded. Ten exports/minute plus plan request/concurrency limits.`,
-        `Exporte à partir de zéro, au plus ${exportCap} lignes (limite de déploiement; plafond absolu de 10 000). Mêmes capacités que /query, y compris l’agrégation locale complète avant de limiter les groupes. Aucune pagination CSV ni garantie de fichier complet. Le téléchargement original donne le fichier de l’éditeur. Les formules de tableur sont neutralisées. Une erreur après les en-têtes ferme la réponse partielle : jetez ce fichier et réessayez dans les limites. Les exports authentifiés échoués ou interrompus sont remboursés. Dix exports/minute, sous réserve du forfait.`,
+        `Exports from offset zero, at most ${exportCap} rows (deployment cap; hard maximum 10,000). Same query capabilities as /query, including local full-snapshot aggregation before limiting groups. There is no CSV pagination or full-file guarantee. Use the original download for complete publisher files. Formula-like spreadsheet cells are neutralized. A failure after headers closes the partial response: discard incomplete output and retry within limits. Ten exports/minute.`,
+        `Exporte à partir de zéro, au plus ${exportCap} lignes (limite de déploiement; plafond absolu de 10 000). Mêmes capacités que /query, y compris l’agrégation locale complète avant de limiter les groupes. Aucune pagination CSV ni garantie de fichier complet. Le téléchargement original donne le fichier de l’éditeur. Les formules de tableur sont neutralisées. Une erreur après les en-têtes ferme la réponse partielle : jetez ce fichier et réessayez dans les limites. Dix exports/minute.`,
         [resourceId, snapshotParameter, ...rowFilters], undefined, undefined, [400, 404, 409, 422, 502]);
     csv.responses[200] = { description: 'CSV attachment (UTF-8); no JSON envelope.', 'x-description-fr': 'Pièce jointe CSV UTF-8, sans enveloppe JSON.', headers: { ...headers,
         'Content-Disposition': { description: 'Attachment filename.', schema: string }, 'X-CanQuery-Sources': { description: 'Comma-separated source IDs when available.', schema: string },
@@ -268,25 +273,25 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
         'X-CanQuery-Prepared-At': { description: 'Local preparation time when recorded; not publisher freshness.', schema: date },
         'X-CanQuery-Retrieved-At': { description: 'Time this extraction began.', schema: date },
         Link: { description: 'Primary licence URL with rel="license", when available.', schema: string } }, content: { 'text/csv': { schema: string, example: '_id,STREET_NAME\n1,EXAMPLE\n' } } };
-    add('/resources/{id}/profile', 'get', 'profileResource', 'Query and export', 'Profile a prepared table', 'Profiler une table préparée', 'Requires a ready local snapshot. Describes the whole file, not current filters. At most the first 60 recorded non-_id fields; numeric fields add min/max/avg and date fields min/max. Successful reads renew activity. Twenty requests/minute plus plan request/concurrency limits.', 'Exige une copie locale prête. Décrit le fichier entier, sans filtres. Les 60 premiers champs enregistrés hors _id au maximum; champs numériques avec min/max/avg, dates avec min/max. Renouvelle l’activité. Vingt requêtes/minute, sous réserve du forfait.', [resourceId, snapshotParameter], envelope(ref('Profile')), sample({ row_count: 1, columns: [{ id: 'STREET_NAME', type: 'TEXT', distinct: 1, nulls: 0 }] }, { query_mode: 'ingested', provenance }), [400, 404, 409, 422]);
+    add('/resources/{id}/profile', 'get', 'profileResource', 'Query and export', 'Profile a prepared table', 'Profiler une table préparée', 'Requires a ready local snapshot. Describes the whole file, not current filters. At most the first 60 recorded non-_id fields; numeric fields add min/max/avg and date fields min/max. Successful reads renew activity. Twenty requests/minute.', 'Exige une copie locale prête. Décrit le fichier entier, sans filtres. Les 60 premiers champs enregistrés hors _id au maximum; champs numériques avec min/max/avg, dates avec min/max. Renouvelle l’activité. Vingt requêtes/minute.', [resourceId, snapshotParameter], envelope(ref('Profile')), sample({ row_count: 1, columns: [{ id: 'STREET_NAME', type: 'TEXT', distinct: 1, nulls: 0 }] }, { query_mode: 'ingested', provenance }), [400, 404, 409, 422]);
     const prepare = add('/resources/{id}/prepare', 'post', 'prepareResource', 'Preparation', 'Prepare or refresh a file', 'Préparer ou actualiser un fichier',
-        'No body. Returns 200 for a current copy or 202 for a new/shared job. Only a newly admitted job deducts preparation credits. A terminal failure without a result published by that job returns the actual debit to its original allowance period exactly once. Retries retain the charge; stopping polling does not fail the job. A failed refresh returns its own charge even if an older copy still serves. A successful empty table counts as success; later expiry or eviction does not return credits. This is an account-credit reversal, not a payment refund. Current copies, joins and polling cost zero but still count toward request limits. Keyed new jobs are capped at 20/account/hour; anonymous admission has a configured per-IP limit. A shared active-queue ceiling and format/size/row/column/storage caps also apply. A stale copy can continue serving during refresh. Paused admission returns 429 even for current copies. Anonymous requests from self-identified crawlers can read current copies and join shared jobs but cannot start new ones (429 AUTOMATED_CLIENT). Honour cooldown Retry-After; a new source version can bypass the old cooldown. No scheduled-refresh guarantee.',
-        'Sans corps. Retourne 200 pour une copie actuelle ou 202 pour une tâche nouvelle/partagée. Seule une nouvelle admission déduit des crédits. Un échec définitif sans publication par cette tâche rend une seule fois le débit réel à sa période d’origine. Les réessais gardent le débit; arrêter le suivi ne fait pas échouer la tâche. Un renouvellement échoué rend son débit même si une ancienne copie reste disponible. Une table vide valide compte comme un succès; son expiration ultérieure ne rend pas les crédits. Aucun remboursement de paiement. Copie actuelle, tâche partagée et suivi : zéro crédit, mais comptent dans la fréquence. Maximum de 20 admissions/compte/heure avec clé; limite anonyme par IP configurée. La file commune et les plafonds de format, taille, lignes, colonnes et stockage s’appliquent. Une ancienne copie peut rester disponible. Une pause donne 429 même pour une copie actuelle. Sans clé, un robot d’indexation identifié peut lire une copie actuelle ou rejoindre une tâche partagée, mais pas en lancer une nouvelle (429 AUTOMATED_CLIENT). Respectez Retry-After; une nouvelle version peut contourner l’ancien délai. Aucune actualisation planifiée garantie.',
+        'No body. Returns 200 for a current copy or 202 for a new/shared job. Retries keep the same job; stopping polling does not fail the job. Current copies, joins and polling still count toward request limits. Admission has a configured per-IP limit, a shared active-queue ceiling and format/size/row/column/storage caps. A stale copy can continue serving during refresh. Paused admission returns 429 even for current copies. Self-identified crawlers can read current copies and join shared jobs but cannot start new ones (429 AUTOMATED_CLIENT). Honour cooldown Retry-After; a new source version can bypass the old cooldown. No scheduled-refresh guarantee.',
+        'Sans corps. Retourne 200 pour une copie actuelle ou 202 pour une tâche nouvelle/partagée. Les réessais gardent la même tâche; arrêter le suivi ne fait pas échouer la tâche. Copie actuelle, tâche partagée et suivi comptent dans la fréquence. L’admission a une limite par IP configurée, une file commune et des plafonds de format, taille, lignes, colonnes et stockage. Une ancienne copie peut rester disponible. Une pause donne 429 même pour une copie actuelle. Un robot d’indexation identifié peut lire une copie actuelle ou rejoindre une tâche partagée, mais pas en lancer une nouvelle (429 AUTOMATED_CLIENT). Respectez Retry-After; une nouvelle version peut contourner l’ancien délai. Aucune actualisation planifiée garantie.',
         [resourceId], envelope(ref('PreparationJob')), sample({ id: null, resource_id: 'example-resource', status: 'done', already_loaded: true, row_count: 1, prepared_at: '2026-01-01T00:00:00.000Z' }), [404, 422]);
-    prepare['x-credit-cost-fr'] = `${CREDIT_COSTS.preparation} nouvelle tâche / ${CREDIT_COSTS.activity} existante`;
+    if (hosted) prepare['x-credit-cost-fr'] = hosted.costFrench.preparation;
     prepare.responses[202] = jsonResponse(envelope(ref('PreparationJob')), sample({ id: 123, resource_id: 'example-resource', status: 'pending', created_at: '2026-01-01T00:00:00.000Z', serving_cached: false, prepared_at: null }), 'New or shared job. Poll GET /jobs/{id}, then re-read resource metadata.', 'Tâche nouvelle ou partagée. Suivez GET /jobs/{id}, puis relisez les métadonnées.');
-    const ingest = add('/resources/{id}/ingest', 'post', 'ingestResourceLegacy', 'Preparation', 'Prepare a file (legacy)', 'Préparer un fichier (historique)', 'No body. Compatibility endpoint; new integrations should use /prepare for freshness and refresh. It returns an existing ready copy without refreshing stale data. Five requests/hour, plus shared limits. New-job charging matches /prepare.', 'Sans corps. Compatibilité : utilisez /prepare pour gérer l’actualité et le renouvellement. Renvoie une copie prête sans actualiser une copie ancienne. Cinq requêtes/heure, plus les limites communes. Même coût d’admission que /prepare.', [resourceId], envelope(ref('Job')), sample({ ...jobExample, id: null, status: 'done', already_loaded: true, row_count: 1 }), [404, 422]);
+    const ingest = add('/resources/{id}/ingest', 'post', 'ingestResourceLegacy', 'Preparation', 'Prepare a file (legacy)', 'Préparer un fichier (historique)', 'No body. Compatibility endpoint; new integrations should use /prepare for freshness and refresh. It returns an existing ready copy without refreshing stale data. Five requests/hour, plus shared limits.', 'Sans corps. Compatibilité : utilisez /prepare pour gérer l’actualité et le renouvellement. Renvoie une copie prête sans actualiser une copie ancienne. Cinq requêtes/heure, plus les limites communes.', [resourceId], envelope(ref('Job')), sample({ ...jobExample, id: null, status: 'done', already_loaded: true, row_count: 1 }), [404, 422]);
     ingest.deprecated = true;
-    ingest['x-credit-cost-fr'] = prepare['x-credit-cost-fr'];
+    if (hosted) ingest['x-credit-cost-fr'] = prepare['x-credit-cost-fr'];
     ingest.responses[202] = jsonResponse(envelope(ref('Job')), sample(jobExample), 'New or shared legacy preparation job.', 'Tâche de préparation historique nouvelle ou partagée.');
-    const activity = add('/resources/{id}/activity', 'post', 'renewResourceActivity', 'Preparation', 'Renew local-copy activity', 'Renouveler l’activité d’une copie', 'No body. Renews an existing ready copy without preparing a file or recording popularity. A 409 means the copy is unavailable or replaced; re-read metadata. Zero credits still counts toward request limits.', 'Sans corps. Renouvelle une copie prête, sans préparation ni popularité. Un 409 indique une copie absente ou remplacée : relisez les métadonnées. Zéro crédit compte toujours dans la fréquence.', [resourceId], undefined, undefined, [404, 409]);
+    const activity = add('/resources/{id}/activity', 'post', 'renewResourceActivity', 'Preparation', 'Renew local-copy activity', 'Renouveler l’activité d’une copie', 'No body. Renews an existing ready copy without preparing a file or recording popularity. A 409 means the copy is unavailable or replaced; re-read metadata. Still counts toward request limits.', 'Sans corps. Renouvelle une copie prête, sans préparation ni popularité. Un 409 indique une copie absente ou remplacée : relisez les métadonnées. Compte toujours dans la fréquence.', [resourceId], undefined, undefined, [404, 409]);
     delete activity.responses[200];
     activity.responses[204] = { description: 'Activity renewed; empty body.', 'x-description-fr': 'Activité renouvelée; corps vide.', headers };
-    add('/jobs/{id}', 'get', 'getPreparationJob', 'Preparation', 'Poll a preparation job', 'Suivre une tâche de préparation', 'Poll one request at a time with a bounded delay and honour Retry-After on errors. A done job is historical: re-read resource metadata before querying because a prepared copy may expire. Failure messages are sanitized; failure_reason and retry_at explain retry eligibility. Zero credits still counts toward request limits.', 'Une requête de suivi à la fois, avec délai borné; respectez Retry-After en cas d’erreur. Une tâche done est historique : relisez les métadonnées, car une copie peut expirer. Messages assainis; failure_reason et retry_at décrivent le nouvel essai. Zéro crédit compte dans la fréquence.', [pathParameter('id', 'Positive job ID returned by preparation.', 'Identifiant positif reçu lors de la préparation.', { type: 'integer', minimum: 1 })], envelope(ref('Job')), sample(jobExample), [400, 404]);
-    add('/resources/{id}/map', 'get', 'getMapViewport', 'Maps', 'Get a bounded map viewport', 'Obtenir une vue cartographique limitée', 'Enveloped WGS84 GeoJSON for admitted ArcGIS, local PostGIS or PMTiles maps. live=true identifies the viewport interface; it does not promise a publisher fetch on every call. Check returned/truncated; requests are capped at 1,000 features and 8 MiB. PMTiles viewport decoding also bounds tile count. Sixty viewport calls/minute plus plan request/concurrency limits.', 'GeoJSON WGS84 enveloppé pour ArcGIS, PostGIS local ou PMTiles admis. live=true désigne l’interface, pas une lecture de l’éditeur à chaque appel. Consultez returned/truncated : 1 000 entités et 8 Mio maximum. Le décodage PMTiles limite aussi les tuiles. Soixante appels/minute, sous réserve du forfait.', [resourceId, parameter('bbox', 'Required WGS84 west,south,east,north: -180 ≤ west < east ≤ 180 and -90 ≤ south < north ≤ 90.', 'Requis : ouest,sud,est,nord en WGS84. -180 ≤ ouest < est ≤ 180; -90 ≤ sud < nord ≤ 90.', string, { required: true, example: '-79.5,43.6,-79.3,43.8' }),
+    add('/jobs/{id}', 'get', 'getPreparationJob', 'Preparation', 'Poll a preparation job', 'Suivre une tâche de préparation', 'Poll one request at a time with a bounded delay and honour Retry-After on errors. A done job is historical: re-read resource metadata before querying because a prepared copy may expire. Failure messages are sanitized; failure_reason and retry_at explain retry eligibility. Still counts toward request limits.', 'Une requête de suivi à la fois, avec délai borné; respectez Retry-After en cas d’erreur. Une tâche done est historique : relisez les métadonnées, car une copie peut expirer. Messages assainis; failure_reason et retry_at décrivent le nouvel essai. Compte dans la fréquence.', [pathParameter('id', 'Positive job ID returned by preparation.', 'Identifiant positif reçu lors de la préparation.', { type: 'integer', minimum: 1 })], envelope(ref('Job')), sample(jobExample), [400, 404]);
+    add('/resources/{id}/map', 'get', 'getMapViewport', 'Maps', 'Get a bounded map viewport', 'Obtenir une vue cartographique limitée', 'Enveloped WGS84 GeoJSON for admitted ArcGIS, local PostGIS or PMTiles maps. live=true identifies the viewport interface; it does not promise a publisher fetch on every call. Check returned/truncated; requests are capped at 1,000 features and 8 MiB. PMTiles viewport decoding also bounds tile count. Sixty viewport calls/minute.', 'GeoJSON WGS84 enveloppé pour ArcGIS, PostGIS local ou PMTiles admis. live=true désigne l’interface, pas une lecture de l’éditeur à chaque appel. Consultez returned/truncated : 1 000 entités et 8 Mio maximum. Le décodage PMTiles limite aussi les tuiles. Soixante appels/minute.', [resourceId, parameter('bbox', 'Required WGS84 west,south,east,north: -180 ≤ west < east ≤ 180 and -90 ≤ south < north ≤ 90.', 'Requis : ouest,sud,est,nord en WGS84. -180 ≤ ouest < est ≤ 180; -90 ≤ sud < nord ≤ 90.', string, { required: true, example: '-79.5,43.6,-79.3,43.8' }),
             parameter('zoom', 'Integer zoom level.', 'Niveau de zoom entier.', { type: 'integer', minimum: 0, maximum: 22, default: 11 }), parameter('limit', 'Feature ceiling; out-of-range values return 400.', 'Plafond d’entités; hors limites : 400.', { type: 'integer', minimum: 1, maximum: 1000, default: 1000 })],
         envelope(ref('FeatureCollection')), sample({ type: 'FeatureCollection', features: [] }, { map: { live: true, provider: 'arcgis', geometry_type: 'point', fields: [], returned: 0, truncated: false, indexed_at: null }, provenance }), [400, 413, 422, 502]);
-    const tile = add('/resources/{id}/map/tiles/{version}/{z}/{x}/{y}.pbf', 'get', 'getMapTile', 'Maps', 'Get a vector tile', 'Obtenir une tuile vectorielle', 'PMTiles maps only. Copy the current tiles template/version and zoom range from resource metadata. Coordinates must fit the tile grid and archive zoom range. Anonymous successful tiles cache immutably for one year; keyed responses remain private, no-store. Up to 240 tiles/minute, also subject to the keyed plan request limit.', 'Cartes PMTiles seulement. Utilisez le modèle tiles, la version et la plage de zoom des métadonnées. Les coordonnées doivent respecter la grille et l’archive. Cache anonyme immuable d’un an; réponses avec clé privées, no-store. Maximum de 240 tuiles/minute, et limite du forfait avec clé.', [resourceId, pathParameter('version', 'Current map version from resource metadata.', 'Version actuelle issue des métadonnées.'),
+    const tile = add('/resources/{id}/map/tiles/{version}/{z}/{x}/{y}.pbf', 'get', 'getMapTile', 'Maps', 'Get a vector tile', 'Obtenir une tuile vectorielle', 'PMTiles maps only. Copy the current tiles template/version and zoom range from resource metadata. Coordinates must fit the tile grid and archive zoom range. Successful tiles cache immutably for one year. Up to 240 tiles/minute.', 'Cartes PMTiles seulement. Utilisez le modèle tiles, la version et la plage de zoom des métadonnées. Les coordonnées doivent respecter la grille et l’archive. Cache immuable d’un an. Maximum de 240 tuiles/minute.', [resourceId, pathParameter('version', 'Current map version from resource metadata.', 'Version actuelle issue des métadonnées.'),
             pathParameter('z', 'Zoom within this archive’s min_zoom/max_zoom (0–22).', 'Zoom dans min_zoom/max_zoom de l’archive (0–22).', { type: 'integer', minimum: 0, maximum: 22 }),
             ...['x', 'y'].map(name => pathParameter(name, 'Tile coordinate from 0 through 2^z − 1.', 'Coordonnée de 0 à 2^z − 1.', { type: 'integer', minimum: 0 }))], undefined, undefined, [400, 404, 502]);
     tile.responses[200] = { description: 'Vector-tile protobuf bytes; no JSON envelope.', 'x-description-fr': 'Octets protobuf de la tuile, sans enveloppe JSON.', headers, content: { 'application/x-protobuf': { schema: { type: 'string', format: 'binary' } } } };
@@ -316,9 +321,9 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     for (const response of Object.values(ready.responses)) response.headers = publicHeaders;
     const componentExample = sample({ component: 'preparation', ok: true, status: 'ok', observed_at: '2026-01-01T00:00:00.000Z', checks: { service_active: true, stale_running: 0 } });
     const component = add('/ops/components/{component}', 'get', 'getComponentHealth', 'Operations', 'Inspect one operational component', 'Consulter un composant opérationnel',
-        'Public, unmetered and no-store. Sanitized host observations older than 180 seconds fail closed with HTTP 503. Independent components separate availability, preparation, maps, sources, commercial backlogs, backups and storage. Existing /ops semantics remain unchanged.',
-        'Public, sans crédits et sans cache. Les observations de plus de 180 secondes donnent HTTP 503. Sépare disponibilité, préparation, cartes, sources, files commerciales, sauvegardes et stockage. Le comportement de /ops reste inchangé.',
-        [pathParameter('component', 'Operational component to inspect.', 'Composant opérationnel à consulter.', { type: 'string', enum: ['availability', 'preparation', 'maps', 'sources', 'commercial', 'backups', 'storage'] })],
+        'Public, unmetered and no-store. Sanitized host observations older than 180 seconds fail closed with HTTP 503. Independent components separate availability, preparation, maps, sources, backups and storage. Existing /ops semantics remain unchanged.',
+        'Public, sans crédits et sans cache. Les observations de plus de 180 secondes donnent HTTP 503. Sépare disponibilité, préparation, cartes, sources, sauvegardes et stockage. Le comportement de /ops reste inchangé.',
+        [pathParameter('component', 'Operational component to inspect.', 'Composant opérationnel à consulter.', { type: 'string', enum: components })],
         envelope(ref('ComponentHealth')), componentExample, [404]);
     component.security = [];
     component.responses[503] = jsonResponse(envelope(ref('ComponentHealth')), sample({ component: 'preparation', ok: false, status: 'stale', observed_at: null, checks: {} }));
@@ -333,7 +338,7 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
             for (const [status, response] of Object.entries(operation.responses)) {
                 if (response.headers) {
                     response.headers = Object.fromEntries(Object.entries(response.headers).map(([name, definition]) => {
-                        headerComponents[name] = { ...definition, 'x-description-fr': headerFrench[name] };
+                        headerComponents[name] = { ...definition, 'x-description-fr': french[name] };
                         return [name, { $ref: '#/components/headers/' + name }];
                     }));
                 }
@@ -346,14 +351,15 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     }
     return {
         openapi: '3.1.0', info: { title: 'CanQuery API', version: '1.0.0', contact: { email: 'support@canquery.com' },
-            description: 'Hosted access to admitted Canadian open-data catalogues, supported tables and bounded maps. Store API keys server-side and send Authorization: Bearer YOUR_API_KEY; never place keys in a URL or browser bundle. Keys share account credits, request rates and expensive-request concurrency. Free allowances use UTC calendar months; Business uses confirmed paid periods. Cached successes count. Failed/interrupted ordinary requests are refunded; newly admitted preparation deducts credits until its final outcome; terminal failure without a published result reverses the original debit once, in its original allowance period. Internal retries keep the debit, and client timeouts do not fail jobs. Successful publication remains charged after expiry or eviction. These are credit returns, not cash refunds. No rollover or automatic overages. Successful JSON routes use data/pagination/meta except /healthz; CSV, tiles and 204 responses are exceptions. Error bodies are not enveloped. Examples use synthetic fixtures, not current observations. Publisher licences remain applicable. See /docs for runnable quickstarts.',
-            'x-description-fr': 'Accès hébergé aux catalogues canadiens admis, aux tables prises en charge et aux cartes limitées. Gardez les clés côté serveur : Authorization: Bearer YOUR_API_KEY, jamais dans l’URL ou le navigateur. Les clés partagent crédits, fréquence et concurrence du compte. Forfait gratuit : mois UTC; Business : périodes payées confirmées. Les succès en cache comptent. Les requêtes ordinaires échouées/interrompues sont remboursées; les crédits d’admission sont rendus une seule fois à leur période d’origine en cas d’échec définitif sans publication. Les réessais gardent le débit; un délai client n’est pas un échec de tâche. Une préparation réussie reste facturée après expiration. Ce retour de crédits n’est pas un remboursement de paiement. Aucun report ni dépassement automatique. Enveloppe data/pagination/meta sauf /healthz, CSV, tuiles et 204. Erreurs sans enveloppe. Exemples synthétiques. Les licences des éditeurs s’appliquent. Consultez /docs.' },
+            description: hosted ? hosted.info[0] : COMMUNITY_INFO[0], 'x-description-fr': hosted ? hosted.info[1] : COMMUNITY_INFO[1] },
         servers: [{ url: '/api/v1', description: 'Developer API on this host. /healthz overrides this base.' }],
-        security, 'x-authentication': { accounts_enabled: enabled, anonymous_access: anonymous, api_key_required_at: cutoff },
-        'x-credit-costs': CREDIT_COSTS, 'x-workflow-costs': WORKFLOW_COSTS,
-        'x-limits': { row_limit: 100, query_offset: maxOffset, csv_rows: exportCap, map_features: 1000, map_bytes: 8 * 1024 * 1024, keyed_preparations_per_account_hour: 20 },
+        ...(hosted ? { security: hosted.security, 'x-authentication': hosted.authentication,
+            'x-credit-costs': hosted.creditCosts, 'x-workflow-costs': hosted.workflowCosts } : {}),
+        'x-limits': { row_limit: 100, query_offset: maxOffset, csv_rows: exportCap, map_features: 1000, map_bytes: 8 * 1024 * 1024, ...hosted?.limits },
         tags: [['Discovery', 'Découverte'], ['Query and export', 'Requêtes et export'], ['Preparation', 'Préparation'], ['Maps', 'Cartes'], ['Guides and insights', 'Guides et analyses'], ['Operations', 'Opérations']].map(([name, fr]) => ({ name, 'x-display-name-fr': fr })),
-        components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'CanQuery API key', description: enabled ? (anonymous ? 'Optional during anonymous compatibility. An explicit invalid key is rejected; omit Authorization only for anonymous requests. Any announced cutoff applies at API_KEY_REQUIRED_AT.' : 'Required for metered developer routes; /ops, /openapi.json and site-root /healthz remain public.') : 'API accounts are disabled on this deployment. Anonymous requests are available; requests presenting an API key return 503.' } }, schemas, responses: responseComponents, headers: headerComponents }, paths
+        components: { ...(hosted ? { securitySchemes: hosted.securitySchemes } : {}),
+            schemas: { ...schemas, Error: errorSchema(hosted ? hosted.errorCodes : COMMUNITY_ERROR_CODES), ComponentHealth: componentHealthSchema(components) },
+            responses: responseComponents, headers: headerComponents }, paths
     };
 }
 

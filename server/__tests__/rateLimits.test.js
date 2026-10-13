@@ -1,7 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 const {
-    authAbuseLimiter, webhookLimiter, profileLimiter, exportLimiter, mapLimiter, aggregationLimiter
+    profileLimiter, exportLimiter, mapLimiter, aggregationLimiter
 } = require('../middleware/rateLimits');
 
 function appFor(path, limiter) {
@@ -42,19 +42,5 @@ describe('expensive endpoint rate limits', () => {
         }
         expect((await request(app).get('/query?group_by=province&agg=count')).status).toBe(429);
         expect((await request(app).get('/query')).status).toBe(200);
-    });
-});
-
-describe('pre-database abuse limits', () => {
-    it.each([
-        ['authentication', authAbuseLimiter],
-        ['webhook', webhookLimiter]
-    ])('bounds %s requests before expensive processing', async (_name, limiter) => {
-        const app = express();
-        app.post('/target', limiter, (_req, res) => res.json({ ok: true }));
-        for (let i = 0; i < 120; i++) {
-            expect((await request(app).post('/target')).status).toBe(200);
-        }
-        expect((await request(app).post('/target')).status).toBe(429);
     });
 });
