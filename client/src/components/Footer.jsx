@@ -5,6 +5,9 @@ import { getJSON } from '../api/client.js';
 import MochiPromotion from './MochiPromotion.jsx';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { MapleLeaf, ExternalIcon, GithubIcon, StarIcon, ArrowUpRightIcon, XLogoIcon, BlueskyIcon } from './Icons.jsx';
+import { hostedPart } from '../extensions.js';
+
+const { FooterLinks } = hostedPart(import.meta.glob('../enterprise/navigation.jsx', { eager: true }), {});
 
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
 const PROFILE_URL = 'https://github.com/RyuPrad';
@@ -166,8 +169,7 @@ export default function Footer() {
                 {t('footer.privacy')}
               </Link>
             </li>
-            <li><Link to="/pricing" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.pricing')}</Link></li>
-            <li><Link to="/terms" className="text-base-content/65 hover:text-base-content transition-colors">{t('account.terms')}</Link></li>
+            {FooterLinks && <FooterLinks />}
             <li>
               <a
                 href="https://open.canada.ca/data/en/dataset"

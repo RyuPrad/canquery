@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useLang } from '../i18n.jsx';
+import { useLang } from '../../i18n.jsx';
 import { authRequest } from '../api/account.js';
 import useCommercialPlans from '../hooks/useCommercialPlans.js';
 import useAccountSession from '../hooks/useAccountSession.js';

@@ -8,6 +8,7 @@ import { PromotionTracking } from './components/PromotionTracking.jsx'
 import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
+import { hostedPart } from './extensions.js'
 
 // Direct visits preload their route through the server's build manifest.
 // Other page code is fetched only when the visitor opens that route.
@@ -22,12 +23,10 @@ const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
 const PlacesPage = lazy(() => import('./pages/PlacesPage.jsx'));
 const PlacePage = lazy(() => import('./pages/PlacePage.jsx'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage.jsx'));
-const PricingPage = lazy(() => import('./pages/PricingPage.jsx'));
-const AccountPage = lazy(() => import('./pages/AccountPage.jsx'));
-const AuthPage = lazy(() => import('./pages/AuthPage.jsx'));
-const TermsPage = lazy(() => import('./pages/TermsPage.jsx'));
 const BlogPage = lazy(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazy(() => import('./pages/InsightsPage'))
+// Pages only the hosted service serves, such as pricing and the developer account.
+const HOSTED_ROUTES = hostedPart(import.meta.glob('./enterprise/routes.jsx', { eager: true }), [])
 
 function ScrollToTop() {
   const { pathname, search } = useLocation()
@@ -78,10 +77,7 @@ export default function App() {
             <Route path="/fr/blog" element={<BlogPage language="fr" />} />
             <Route path="/fr/blog/:slug" element={<BlogPage language="fr" />} />
             <Route path="/privacy" element={<PrivacyPage />} />
-            <Route path="/pricing" element={<PricingPage />} />
-            <Route path="/account" element={<AccountPage />} />
-            {['login', 'signup', 'forgot-password', 'reset-password'].map(path => <Route key={path} path={'/' + path} element={<AuthPage key={path} />} />)}
-            <Route path="/terms" element={<TermsPage />} />
+            {HOSTED_ROUTES.map(route => <Route key={route.path} path={route.path} element={route.element} />)}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

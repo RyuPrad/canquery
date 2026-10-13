@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { LangProvider } from '../i18n.jsx';
+import { LangProvider } from '../../i18n.jsx';
 import AccountPage from './AccountPage.jsx';
 import AuthPage from './AuthPage.jsx';
 import TermsPage from './TermsPage.jsx';
 import { accountRequest, authRequest, hasAccountSession } from '../api/account.js';
 import { createRequire } from 'node:module';
-const { BUSINESS_PRICE, TERMS_VERSION } = createRequire(import.meta.url)('../../../server/enterprise/services/commercialConfig.js');
+const { BUSINESS_PRICE, TERMS_VERSION } = createRequire(import.meta.url)('../../../../server/enterprise/services/commercialConfig.js');
 
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), authRequest: vi.fn(), hasAccountSession: vi.fn() }));
 const account = { plan: 'free', mode: 'live', user: { email: 'fixture@example.test' }, remaining: 1000, limit: 1000, used: 0, reserved: 0,

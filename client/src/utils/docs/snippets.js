@@ -1,64 +1,70 @@
 // These examples are exported so the exact published code can be executed against fixtures.
+// apiKey adds the Authorization header for a deployment that issues API keys.
 export const PERMITS_RESOURCE = 'ckan-toronto-open-data-resource-6d0229af-bc54-46de-9c2b-26759b01dd05';
 export const CABIN_RESOURCE = '718489a5-d132-4ee9-ab6f-0e2644297b78';
 const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+// One shell command across lines: every line but the last continues.
+const continued = lines => lines.map((line, index) => index < lines.length - 1 ? `${line} \\` : line).join('\n');
 
-export function requestSnippets(base, path, params = {}) {
+export function requestSnippets(base, path, params = {}, { apiKey = false } = {}) {
   const url = new URL(path, base).href;
-  const curl = [
-    `curl --fail-with-body --silent --show-error --get ${shellQuote(url)} \\`,
-    '  --header "Authorization: Bearer $CANQUERY_API_KEY"',
+  const curl = continued([
+    `curl --fail-with-body --silent --show-error --get ${shellQuote(url)}`,
+    ...(apiKey ? ['  --header "Authorization: Bearer $CANQUERY_API_KEY"'] : []),
     ...Object.entries(params).map(([key, value]) => `  --data-urlencode ${shellQuote(`${key}=${value}`)}`),
-  ].map((line, index, lines) => index > 0 && index < lines.length - 1 ? `${line} \\` : line).join('\n');
-  const python = `import json\nimport os\nfrom urllib.parse import urlencode\nfrom urllib.request import Request, urlopen\n\nurl = ${JSON.stringify(url)}\nparams = ${JSON.stringify(params, null, 4)}\nrequest = Request(\n    url + ("?" + urlencode(params) if params else ""),\n    headers={"Authorization": "Bearer " + os.environ["CANQUERY_API_KEY"]},\n)\nwith urlopen(request, timeout=30) as response:\n    result = json.load(response)\n    print(json.dumps(result, indent=2, ensure_ascii=False))`;
-  const javascript = `// Save as example.mjs; run with Node.js 22: node example.mjs\nconst key = process.env.CANQUERY_API_KEY;\nif (!key) throw new Error('Set CANQUERY_API_KEY first');\n\nconst url = new URL(${JSON.stringify(url)});\nurl.search = new URLSearchParams(${JSON.stringify(params, null, 2)}).toString();\nconst response = await fetch(url, {\n  headers: { Authorization: \`Bearer \${key}\` },\n  signal: AbortSignal.timeout(30_000),\n});\nif (!response.ok) {\n  throw new Error(\`HTTP \${response.status}: \${await response.text()}\`);\n}\nconsole.log(JSON.stringify(await response.json(), null, 2));`;
+  ]);
+  const python = `import json\n${apiKey ? 'import os\n' : ''}from urllib.parse import urlencode\nfrom urllib.request import Request, urlopen\n\nurl = ${JSON.stringify(url)}\nparams = ${JSON.stringify(params, null, 4)}\nrequest = Request(\n    url + ("?" + urlencode(params) if params else ""),\n${apiKey ? '    headers={"Authorization": "Bearer " + os.environ["CANQUERY_API_KEY"]},\n' : ''})\nwith urlopen(request, timeout=30) as response:\n    result = json.load(response)\n    print(json.dumps(result, indent=2, ensure_ascii=False))`;
+  const javascript = `// Save as example.mjs; run with Node.js 22: node example.mjs\n${apiKey ? "const key = process.env.CANQUERY_API_KEY;\nif (!key) throw new Error('Set CANQUERY_API_KEY first');\n" : ''}\nconst url = new URL(${JSON.stringify(url)});\nurl.search = new URLSearchParams(${JSON.stringify(params, null, 2)}).toString();\nconst response = await fetch(url, {\n${apiKey ? '  headers: { Authorization: `Bearer ${key}` },\n' : ''}  signal: AbortSignal.timeout(30_000),\n});\nif (!response.ok) {\n  throw new Error(\`HTTP \${response.status}: \${await response.text()}\`);\n}\nconsole.log(JSON.stringify(await response.json(), null, 2));`;
   return { curl, python, javascript };
 }
 
-export function createDocsSnippets(base) {
+export function createDocsSnippets(base, { apiKey = false } = {}) {
   const resourcePath = `/api/v1/resources/${PERMITS_RESOURCE}`;
   const cabinPath = `/api/v1/resources/${CABIN_RESOURCE}`;
-  const cabinPrepare = requestSnippets(base, `${cabinPath}/prepare`);
+  const request = (path, params) => requestSnippets(base, path, params, { apiKey });
+  const cabinPrepare = request(`${cabinPath}/prepare`);
   cabinPrepare.curl = cabinPrepare.curl.replace('--get', '--request POST');
-  cabinPrepare.python = cabinPrepare.python.replace('    headers={', '    method="POST",\n    headers={');
-  cabinPrepare.javascript = cabinPrepare.javascript.replace('  headers: {', "  method: 'POST',\n  headers: {");
+  cabinPrepare.python = cabinPrepare.python.replace('if params else ""),\n', 'if params else ""),\n    method="POST",\n');
+  cabinPrepare.javascript = cabinPrepare.javascript.replace('await fetch(url, {\n', "await fetch(url, {\n  method: 'POST',\n");
+  const header = apiKey ? ['  --header "Authorization: Bearer $CANQUERY_API_KEY"'] : [];
   return {
-    cabinMetadata: requestSnippets(base, cabinPath),
-    cabinRows: requestSnippets(base, `${cabinPath}/query`, { filters: JSON.stringify({ 'Year/Année': 2024, 'Family/Famille': 'Chironomidae' }), sort: '_id asc', limit: '10' }),
+    cabinMetadata: request(cabinPath),
+    cabinRows: request(`${cabinPath}/query`, { filters: JSON.stringify({ 'Year/Année': 2024, 'Family/Famille': 'Chironomidae' }), sort: '_id asc', limit: '10' }),
     cabinPrepare,
-    cabinWorkflow: preparationWorkflow(base),
-    first: requestSnippets(base, '/api/v1/datasets', { q: 'housing', limit: '2' }),
-    discover: requestSnippets(base, '/api/v1/datasets', { q: 'building permits', source: 'toronto-open-data', limit: '5' }),
-    metadata: requestSnippets(base, resourcePath),
-    rows: requestSnippets(base, `${resourcePath}/query`, { filters: JSON.stringify({ STREET_NAME: 'KING' }), limit: '10', offset: '0' }),
-    export: [
-      `curl --fail-with-body --silent --show-error --get ${shellQuote(new URL(`${resourcePath}/query.csv`, base).href)} \\`,
-      '  --header "Authorization: Bearer $CANQUERY_API_KEY" \\',
-      `  --data-urlencode '${'filters={"STREET_NAME":"KING"}'}' \\`,
+    cabinWorkflow: preparationWorkflow(base, { apiKey }),
+    first: request('/api/v1/datasets', { q: 'housing', limit: '2' }),
+    discover: request('/api/v1/datasets', { q: 'building permits', source: 'toronto-open-data', limit: '5' }),
+    metadata: request(resourcePath),
+    rows: request(`${resourcePath}/query`, { filters: JSON.stringify({ STREET_NAME: 'KING' }), limit: '10', offset: '0' }),
+    export: continued([
+      `curl --fail-with-body --silent --show-error --get ${shellQuote(new URL(`${resourcePath}/query.csv`, base).href)}`,
+      ...header,
+      `  --data-urlencode '${'filters={"STREET_NAME":"KING"}'}'`,
       '  --output permits.csv.partial && mv permits.csv.partial permits.csv',
-    ].join('\n'),
-    prepare: [
-      `curl --fail-with-body --silent --show-error --request POST \\`,
-      `  ${shellQuote(new URL('/api/v1/resources/RESOURCE_ID/prepare', base).href)} \\`,
-      '  --header "Authorization: Bearer $CANQUERY_API_KEY"',
-    ].join('\n'),
-    job: requestSnippets(base, '/api/v1/jobs/JOB_ID').curl,
+    ]),
+    prepare: continued([
+      `curl --fail-with-body --silent --show-error --request POST`,
+      `  ${shellQuote(new URL('/api/v1/resources/RESOURCE_ID/prepare', base).href)}`,
+      ...header,
+    ]),
+    job: request('/api/v1/jobs/JOB_ID').curl,
   };
 }
 
 // The exact published programs are executed in the snippet contract tests.
-export function preparationWorkflow(base) {
+export function preparationWorkflow(base, { apiKey = false } = {}) {
   const url = new URL(`/api/v1/resources/${CABIN_RESOURCE}`, base).href;
   const jobs = new URL('/api/v1/jobs/', base).href;
-  const javascript = `// Save as cabin.mjs; Node.js 22. Keep the key on your server.
+  const credit = apiKey ? ' Inspect account credit returns.' : '';
+  const javascript = `// Save as cabin.mjs; Node.js 22.${apiKey ? ` Keep the key on your server.
 const key = process.env.CANQUERY_API_KEY;
-if (!key) throw new Error('Set CANQUERY_API_KEY first');
+if (!key) throw new Error('Set CANQUERY_API_KEY first');` : ''}
 const resource = ${JSON.stringify(url)};
 const jobs = ${JSON.stringify(jobs)};
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function request(url, method = 'GET', timeout = 30_000) {
   const response = await fetch(url, {
-    method, headers: { Authorization: \`Bearer \${key}\` },
+    method,${apiKey ? ' headers: { Authorization: `Bearer ${key}` },' : ''}
     signal: AbortSignal.timeout(Math.max(1, Math.ceil(timeout))),
   });
   const body = await response.json();
@@ -92,7 +98,7 @@ if (metadata.query_mode !== 'ingested' || metadata.preparation.freshness !== 'cu
         delay = error.retryAfter;
       }
       if (job?.status === 'done') { done = true; break; }
-      if (job?.status === 'failed') throw new Error(\`Job \${admission.id} failed: \${job.failure_reason || 'unavailable'}. Inspect account credit returns.\`);
+      if (job?.status === 'failed') throw new Error(\`Job \${admission.id} failed: \${job.failure_reason || 'unavailable'}.${credit}\`);
       await sleep(Math.max(0, Math.min(delay * 1000, deadline - performance.now())));
     }
     if (!done) throw new Error(\`Stopped waiting for job \${admission.id}; it may still finish. Resume polling this ID, not a new POST.\`);
@@ -111,10 +117,9 @@ console.log(JSON.stringify({
   prepared_at: metadata.preparation.prepared_at,
   retrieved_at: new Date().toISOString(), result,
 }, null, 2));`;
-  const python = `# Save as cabin.py; Python 3 standard library. Keep the key on your server.
+  const python = `# Save as cabin.py; Python 3 standard library.${apiKey ? ' Keep the key on your server.' : ''}
 import json
-import os
-import sys
+${apiKey ? 'import os\n' : ''}import sys
 import time
 from datetime import datetime, timezone
 from urllib.error import HTTPError
@@ -123,10 +128,9 @@ from urllib.request import Request, urlopen
 
 resource = ${JSON.stringify(url)}
 jobs = ${JSON.stringify(jobs)}
-key = os.environ["CANQUERY_API_KEY"]
-
+${apiKey ? 'key = os.environ["CANQUERY_API_KEY"]\n' : ''}
 def request(url, method="GET", timeout=30):
-    req = Request(url, method=method, headers={"Authorization": "Bearer " + key})
+    req = Request(url, method=method${apiKey ? ', headers={"Authorization": "Bearer " + key}' : ''})
     with urlopen(req, timeout=max(0.001, timeout)) as response:
         return json.load(response)["data"]
 
@@ -152,7 +156,7 @@ if metadata["query_mode"] != "ingested" or metadata["preparation"]["freshness"] 
                 done = True
                 break
             if job is not None and job["status"] == "failed":
-                raise RuntimeError(f"Job {admission['id']} failed: {job.get('failure_reason') or 'unavailable'}. Inspect account credit returns.")
+                raise RuntimeError(f"Job {admission['id']} failed: {job.get('failure_reason') or 'unavailable'}.${credit}")
             time.sleep(max(0, min(delay, deadline - time.monotonic())))
         if not done:
             raise RuntimeError(f"Stopped waiting for job {admission['id']}; it may still finish. Resume polling this ID, not a new POST.")

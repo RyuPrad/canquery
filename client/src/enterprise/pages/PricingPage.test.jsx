@@ -1,10 +1,10 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { LangProvider } from '../i18n.jsx';
+import { LangProvider } from '../../i18n.jsx';
 import PricingPage from './PricingPage.jsx';
 import { accountRequest, hasAccountSession } from '../api/account.js';
 import { createRequire } from 'node:module';
-const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = createRequire(import.meta.url)('../../../server/enterprise/services/commercialConfig.js');
+const { PLANS, CREDIT_COSTS, WORKFLOW_COSTS, BUSINESS_PRICE } = createRequire(import.meta.url)('../../../../server/enterprise/services/commercialConfig.js');
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), hasAccountSession: vi.fn() }));
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); hasAccountSession.mockResolvedValue(false); });
 const plans = { enabled: true, mode: 'live', checkout: false, plans: PLANS, business_price: BUSINESS_PRICE, credit_costs: CREDIT_COSTS, workflow_costs: WORKFLOW_COSTS };

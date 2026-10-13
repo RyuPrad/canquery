@@ -1,4 +1,4 @@
-import { useLang } from '../i18n.jsx';
+import { useLang } from '../../i18n.jsx';
 import useCommercialPlans from '../hooks/useCommercialPlans.js';
 import { businessPrice, currentTermsVersion } from '../utils/businessPrice.js';
 export default function TermsPage() {

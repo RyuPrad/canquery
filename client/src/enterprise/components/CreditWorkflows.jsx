@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { accountRequest } from '../../api/account.js';
+import { accountRequest } from '../api/account.js';
 import { useLang } from '../../i18n.jsx';
 import './CreditWorkflows.css';
 

@@ -1,9 +1,9 @@
-import { useLang } from '../i18n.jsx';
+import { useLang } from '../../i18n.jsx';
 import useCommercialPlans from '../hooks/useCommercialPlans.js';
 import useAccountSession from '../hooks/useAccountSession.js';
 import { businessPrice } from '../utils/businessPrice.js';
-import { CheckIcon } from '../components/Icons.jsx';
-import CreditWorkflows from '../components/docs/CreditWorkflows.jsx';
+import { CheckIcon } from '../../components/Icons.jsx';
+import CreditWorkflows from '../components/CreditWorkflows.jsx';
 import './PricingPage.css';
 
 const RESOURCE = '718489a5-d132-4ee9-ab6f-0e2644297b78';

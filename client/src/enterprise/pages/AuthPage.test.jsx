@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import AuthPage from './AuthPage.jsx';
-import { LangProvider } from '../i18n.jsx';
+import { LangProvider } from '../../i18n.jsx';
 import { accountRequest, authRequest, hasAccountSession } from '../api/account.js';
 
 vi.mock('../api/account.js', () => ({ accountRequest: vi.fn(), authRequest: vi.fn(), hasAccountSession: vi.fn() }));

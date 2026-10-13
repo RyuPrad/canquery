@@ -32,7 +32,8 @@ const ROUTES = Object.freeze([
     ['forgot-password', 'AuthPage', { private: true }],
     ['reset-password', 'AuthPage', { private: true }],
     ['terms', 'TermsPage', { sitemap: { changefreq: 'yearly', priority: '0.3' } }]
-].map(([type, module, extra]) => Object.freeze({ type, path: META[type].path, module, meta: META[type], copy: COPY[type], ...extra })));
+].map(([type, page, extra]) => Object.freeze({ type, path: META[type].path, module: 'src/enterprise/pages/' + page + '.jsx',
+    meta: META[type], copy: COPY[type], ...extra })));
 
 const OVERRIDE_META = {
     docs: {

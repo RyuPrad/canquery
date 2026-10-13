@@ -32,7 +32,7 @@ test('hosted page types do not exist', async () => {
     for (const page of ['/pricing', '/terms', '/account', '/login', '/signup', '/forgot-password', '/reset-password']) {
         expect(seo.classifyRoute(page).type).toBe('other');
         expect((await spa.resolvePage(page)).status).toBe(404);
-        expect(routeAssets.routeAssets(page, { 'src/pages/PricingPage.jsx': { file: 'assets/PricingPage.js' } })).toEqual([]);
+        expect(routeAssets.routeAssets(page, { 'src/enterprise/pages/PricingPage.jsx': { file: 'assets/PricingPage.js' } })).toEqual([]);
     }
 });
 

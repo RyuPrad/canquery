@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLang } from '../i18n.jsx';
+import { useLang } from '../../i18n.jsx';
 import { accountRequest, authRequest } from '../api/account.js';
 import { businessPrice } from '../utils/businessPrice.js';
 import './AccountExperience.css';

@@ -49,7 +49,9 @@ beforeAll(() => {
     fs.writeFileSync(path.join(distDir, 'index.html'),
         '<!doctype html><html><head><!-- seo:start --><title>x</title><!-- seo:end -->' +
         '<!-- analytics:config --></head><body><div id="root"></div></body></html>');
-    const manifest = Object.fromEntries(MODULES.map(name => ['src/pages/' + name + '.jsx',
+    // The client build keys hosted pages under src/enterprise; the preloaded files are unchanged.
+    const HOSTED = ['PricingPage', 'AccountPage', 'TermsPage', 'AuthPage'];
+    const manifest = Object.fromEntries(MODULES.map(name => [(HOSTED.includes(name) ? 'src/enterprise/pages/' : 'src/pages/') + name + '.jsx',
         { file: 'assets/' + name + '-abc123.js', css: ['assets/' + name + '-abc123.css'], imports: ['src/shared.js'] }]));
     manifest['src/shared.js'] = { file: 'assets/shared-abc123.js' };
     fs.writeFileSync(path.join(distDir, 'asset-manifest.json'), JSON.stringify(manifest));

@@ -35,8 +35,9 @@ function safeAsset(file) {
 function routeAssets(requestTarget, manifest) {
     const pathname = requestTarget.split('?')[0];
     const type = /^\/(?:fr\/)?blog(?:\/[^/]+)?\/?$/.test(pathname) ? 'blog' : classifyRoute(pathname).type;
-    const moduleName = ROUTE_MODULES[type] || hostedRoute(type)?.module;
-    if (!moduleName) return [];
+    // Hosted routes name their own client module, as a build-manifest key.
+    const moduleKey = ROUTE_MODULES[type] ? 'src/pages/' + ROUTE_MODULES[type] + '.jsx' : hostedRoute(type)?.module;
+    if (!moduleKey) return [];
     const seen = new Set();
     const assets = new Map();
     function visit(key) {
@@ -51,7 +52,7 @@ function routeAssets(requestTarget, manifest) {
         for (const dependency of Array.isArray(chunk.imports) ? chunk.imports : []) visit(dependency);
         // dynamicImports are intentionally excluded: maps/charts load on demand.
     }
-    visit('src/pages/' + moduleName + '.jsx');
+    visit(moduleKey);
     return Array.from(assets, ([file, rel]) => ({ file, rel }));
 }
 

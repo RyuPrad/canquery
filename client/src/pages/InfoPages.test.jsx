@@ -5,6 +5,9 @@ import { LangProvider, useLang } from '../i18n.jsx';
 import AboutPage from './AboutPage.jsx';
 import FaqPage from './FaqPage.jsx';
 
+// Core pages without any extension; src/enterprise tests cover the hosted parts.
+vi.mock('../extensions.js', () => ({ hostedPart: (_modules, fallback) => fallback }));
+
 beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Informational pages must not need API data'); }));
@@ -28,16 +31,16 @@ test.each(['en', 'fr'])('FAQ offers readable answers and safe support without AP
   const { container } = renderPage(FaqPage, lang);
   expect(screen.getByRole('heading', { level: 1, name: lang === 'en' ? 'Frequently asked questions' : 'Foire aux questions' })).toBeInTheDocument();
   const questions = [...container.querySelectorAll('details')];
-  expect(questions).toHaveLength(11);
+  expect(questions).toHaveLength(6);
   for (const question of questions) {
     expect(question.firstElementChild.tagName).toBe('SUMMARY');
     expect(question.querySelector('p').textContent.length).toBeGreaterThan(30);
     expect(question).not.toHaveAttribute('open');
   }
-  expect(screen.getByText(lang === 'en' ? /A return to an expired period/ : /Un retour à une période expirée/)).toHaveTextContent(lang === 'en' ? 'not cash refunds' : 'pas d’un remboursement monétaire');
   expect(screen.getByRole('link', { name: 'support@canquery.com' })).toHaveAttribute('href', 'mailto:support@canquery.com');
-  expect(screen.getByText(/X-Request-Id/)).toHaveTextContent(lang === 'en' ? 'Leave out API keys, passwords' : 'N’incluez ni clé API, ni mot de passe');
-  expect(container.querySelector('a[href="/pricing"]')).not.toBeNull();
+  expect(screen.getByText(/X-Request-Id/)).toHaveTextContent(lang === 'en' ? 'Leave out passwords' : 'N’incluez ni mot de passe');
+  for (const path of ['/pricing', '/terms', '/account']) expect(container.querySelector(`a[href="${path}"]`)).toBeNull();
+  expect(container.textContent).not.toMatch(lang === 'en' ? /account|credit|API key/i : /compte|crédit|clé API/i);
   expect(container.querySelector('a[href="/docs#preparation-example"]')).not.toBeNull();
   expect(container.querySelector('a[href="/privacy"]')).not.toBeNull();
   expect(fetch).not.toHaveBeenCalled();
