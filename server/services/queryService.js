@@ -66,17 +66,18 @@ function validateQueryText(q) {
 }
 
 // Metadata lookup uses a short pool query. Only a local execution owns a
-// snapshot lease; remote CKAN I/O never retains a PostgreSQL client.
-async function withResource(id, expected, consume) {
-    const signal = requestSignal();
+// snapshot lease; remote CKAN I/O never retains a PostgreSQL client. A caller
+// that already holds the catalogue row (the resource page's HTML shell) passes
+// it as `initial`; the re-read under the lease still guards the lock race.
+async function withResource(id, expected, consume, { initial, signal = requestSignal() } = {}) {
     signal?.throwIfAborted();
     validateSnapshot(expected);
-    const initial = await getResourceById(id);
+    const first = initial || await getResourceById(id);
     signal?.throwIfAborted();
-    if (!initial) throw new AppError('Resource not found', 404);
-    if (computeQueryMode(initial) !== 'ingested') {
-        requireSnapshot(initial, expected);
-        return consume(initial);
+    if (!first) throw new AppError('Resource not found', 404);
+    if (computeQueryMode(first) !== 'ingested') {
+        requireSnapshot(first, expected);
+        return consume(first);
     }
     const result = await withSnapshot(id, async () => {
         const current = await getResourceById(id);
@@ -165,7 +166,10 @@ async function executeDatastore(plan, cached) {
     return result;
 }
 
-async function queryResource(id, options = {}) {
+// The HTTP endpoints keep the defaults: a successful local read renews the
+// copy's activity and records a popularity hit. The resource page's HTML
+// shell embeds a page passively (touch: false) and logs only real navigations.
+async function queryResource(id, options = {}, { initial, signal, touch = true, log = true } = {}) {
     // Preserve validation before database access for invalid paging/search.
     clampLimit(options.limit);
     clampOffset(options.offset);
@@ -180,13 +184,13 @@ async function queryResource(id, options = {}) {
             result = plan.aggregation && row.ingested_at
                 ? await aggregateCache.get(JSON.stringify([row.table_name, row.ingested_at, plan.options]), read, { deduplicate: !requestSignal() })
                 : await read();
-            await touchLastAccessed(id, row.table_name);
+            if (touch) await touchLastAccessed(id, row.table_name);
         }
-        logQueryHit(id, plan.mode).catch(() => {});
+        if (log) logQueryHit(id, plan.mode).catch(() => {});
         return { ...context, query_mode: plan.mode, fields: plan.fields || result.fields, ...result,
             ...(plan.aggregation ? { aggregation: { group_by: plan.aggregation.groupBy, agg: plan.aggregation.agg,
                 agg_column: plan.aggregation.aggColumn, bucket: plan.aggregation.bucket } } : {}) };
-    });
+    }, { initial, signal });
 }
 
 // The consumer MUST finish consuming (or close) records before returning. The

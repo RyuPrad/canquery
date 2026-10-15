@@ -1,20 +1,10 @@
 const catchAsync = require('../utils/catchAsync');
 const queryService = require('../services/queryService');
 const { envelope } = require('../utils/envelope');
+const { queryProvenanceMeta: provenanceMeta, queryEnvelope } = require('../services/resourceEnvelopes');
 
 const NUMERIC_TYPE_RE = /^(smallint|integer|bigint|int[248]?|numeric|decimal|real|float[48]?|double( precision)?|money)$/i;
 const NEGATIVE_NUMBER_RE = /^-(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i;
-
-function provenanceMeta(provenance) {
-    const sources = provenance && Array.isArray(provenance.sources) ? provenance.sources : [];
-    const primary = sources.find(source => source.authoritative) || sources[0] || null;
-    return {
-        provenance: provenance || { sources: [], primary_license: null },
-        sources: sources.map(source => source.id),
-        upstream: primary ? primary.upstream : null,
-        license: provenance && provenance.primary_license ? provenance.primary_license.title.en : null
-    };
-}
 
 function hasSpreadsheetFormulaPrefix(value) {
     const trimmed = value.trimStart();
@@ -32,15 +22,7 @@ async function queryResource(req, res) {
     const { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot } = req.query;
     const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot });
     res.set('Cache-Control', 'no-cache');
-    res.json(envelope(
-        { fields: result.fields, records: result.records, total: result.total },
-        { meta: Object.assign(
-            { query_mode: result.query_mode, snapshot: result.snapshot, retrieved_at: result.retrieved_at,
-                publisher_modified_at: result.publisher_modified_at, limits: result.limits },
-            provenanceMeta(result.provenance),
-            result.aggregation ? { aggregation: result.aggregation } : {}
-        ) }
-    ));
+    res.json(queryEnvelope(result));
 }
 
 function csvEscape(v, spreadsheetSafe = false) {

@@ -9,6 +9,7 @@ const pool = require('../db/pool');
 const catalog = require('../db/catalogReadQueries');
 const store = require('../db/storeQueries');
 const ckan = require('../services/ckanClient');
+const queryLog = require('../db/queryLogQueries');
 const service = require('../services/queryService');
 const { snapshotDb } = require('../db/snapshotRead');
 const { snapshotInfo } = require('../services/snapshotIdentity');
@@ -152,4 +153,37 @@ test('profile cache follows corrected schema even when serving table and prepara
     catalog.getResourceById.mockResolvedValue({ ...row, ingested_columns: [{ id: 'canonical', type: 'TEXT', legacy_ids: ['old'] }] });
     expect((await service.profileResource(row.id)).columns[0].id).toBe('canonical');
     expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
+});
+
+test('a preloaded catalogue row skips the pre-lease read but is still re-read under the lease', async () => {
+    catalog.getResourceById.mockImplementation(async () => {
+        expect(snapshotDb()).toBe(client);
+        return local;
+    });
+    const result = await service.queryResource(local.id, {}, { initial: local });
+    expect(catalog.getResourceById).toHaveBeenCalledTimes(1);
+    expect(result.total).toBe(1);
+    expect(result.snapshot.id).toBe(snapshotInfo(local).id);
+    expect(checkedOut).toBe(0);
+});
+
+test('passive execution neither renews copy activity nor records popularity', async () => {
+    await service.queryResource(local.id, {}, { touch: false, log: false });
+    expect(store.queryStoreTable).toHaveBeenCalledTimes(1);
+    expect(store.touchLastAccessed).not.toHaveBeenCalled();
+    expect(queryLog.logQueryHit).not.toHaveBeenCalled();
+    await service.queryResource(local.id, {}, { touch: false });
+    expect(store.touchLastAccessed).not.toHaveBeenCalled();
+    expect(queryLog.logQueryHit).toHaveBeenCalledWith(local.id, 'ingested');
+    await service.queryResource(local.id);
+    expect(store.touchLastAccessed).toHaveBeenCalledWith(local.id, local.table_name);
+    expect(queryLog.logQueryHit).toHaveBeenCalledTimes(2);
+});
+
+test('an already-aborted caller signal rejects before any database access', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('client gone'));
+    await expect(service.queryResource(local.id, {}, { signal: controller.signal })).rejects.toThrow('client gone');
+    expect(catalog.getResourceById).not.toHaveBeenCalled();
+    expect(pool.connect).not.toHaveBeenCalled();
 });

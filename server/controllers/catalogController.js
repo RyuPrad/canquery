@@ -1,6 +1,7 @@
 const catchAsync = require('../utils/catchAsync');
 const catalogService = require('../services/catalogService');
 const { envelope } = require('../utils/envelope');
+const { catalogProvenanceMeta: provenanceMeta, resourceEnvelope } = require('../services/resourceEnvelopes');
 const AppError = require('../utils/AppError');
 
 const cleanStr = (v) => {
@@ -47,18 +48,6 @@ const listDatasets = async (req, res) => {
     res.json(envelope(result.items, { nextCursor: result.nextCursor, meta }));
 };
 
-const provenanceMeta = (value) => {
-    const sources = value && value.provenance && value.provenance.sources || [];
-    const primary = sources.find(source => source.authoritative) || sources[0];
-    return {
-        sources: sources.map(source => source.id),
-        upstream: primary ? primary.upstream : null,
-        license: value && value.provenance && value.provenance.primary_license
-            ? value.provenance.primary_license.title.en
-            : null
-    };
-};
-
 const getDataset = async (req, res) => {
     const dataset = await catalogService.getDataset(req.params.idOrName);
     res.set('Cache-Control', 'public, max-age=300');
@@ -68,7 +57,7 @@ const getDataset = async (req, res) => {
 const getResource = async (req, res) => {
     const resource = await catalogService.getResource(req.params.id);
     res.set('Cache-Control', 'no-cache');
-    res.json(envelope(resource, { meta: provenanceMeta(resource) }));
+    res.json(resourceEnvelope(resource));
 };
 
 const listOrganizations = async (req, res) => {
