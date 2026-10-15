@@ -5,14 +5,18 @@ const { selectedPlaceCte, levelFromKinds, HAS_TABLE, HAS_MAP, match } = require(
 // Facet counts are shared and cached, so one slow combination must not hold a
 // connection for long or compile JIT code on every miss.
 const FACET_TIMEOUT_MS = 5000;
-const FACET_WORK_MEM = '16MB';
+const FACET_WORK_MEM = '32MB';
 const FACET_SQL_LIMITS = { organization: 500, source: 500, format: 40, keyword: 25 };
+// A top-25 keyword list over most of the catalogue is generic, and unnesting
+// every keyword is the costliest group. Broad searches list selected keywords only.
+const KEYWORD_MAX_DATASETS = 25000;
 
 // Counts for one group apply every active filter except that group's own, so
 // a visitor can see what adding another value would match. Only active
 // filters add conditions: always-true flags would distort row estimates, and
 // PostgreSQL rejects parameters a statement never references.
-function buildDatasetFacetQuery(filters) {
+function buildDatasetFacetQuery(filters, { keywordMaxDatasets = KEYWORD_MAX_DATASETS } = {}) {
+    if (!Number.isSafeInteger(keywordMaxDatasets) || keywordMaxDatasets < 0) throw new TypeError('keywordMaxDatasets must be a non-negative integer');
     const values = [];
     const param = (value, type) => {
         values.push(value);
@@ -36,30 +40,36 @@ function buildDatasetFacetQuery(filters) {
 
     const org = filters.org && param(filters.org, 'text[]');
     const level = filters.level && param(filters.level, 'text[]');
-    if (org) conditions.organization = `b.org_name = ANY(${org})`;
+    if (org) conditions.organization = (alias) => `${alias}.org_name = ANY(${org})`;
     if (filters.format) {
         columns.push(`${match.format(param(filters.format, 'text[]'))} AS m_format`);
-        conditions.format = 'b.m_format';
+        conditions.format = (alias) => `${alias}.m_format`;
     }
     if (filters.keyword) {
         const keywords = param(filters.keyword, 'text[]');
         columns.push(`ARRAY(SELECT k FROM unnest(${keywords}) AS k
                WHERE k = ANY(d.keywords_en) OR k = ANY(d.keywords_fr)) AS selected_keywords`);
-        conditions.keyword = 'cardinality(b.selected_keywords) > 0';
+        conditions.keyword = (alias) => `cardinality(${alias}.selected_keywords) > 0`;
     }
     if (filters.source) {
         columns.push(`${match.source(param(filters.source, 'text[]'))} AS m_source`);
-        conditions.source = 'b.m_source';
+        conditions.source = (alias) => `${alias}.m_source`;
     }
-    if (level) conditions.level = `b.level = ANY(${level})`;
-    if (filters.queryable) conditions.queryable = 'b.has_table';
-    if (filters.mappable) conditions.mappable = 'b.has_map';
+    if (level) conditions.level = (alias) => `${alias}.level = ANY(${level})`;
+    if (filters.queryable) conditions.queryable = (alias) => `${alias}.has_table`;
+    if (filters.mappable) conditions.mappable = (alias) => `${alias}.has_map`;
 
-    const where = (except) => {
-        const active = Object.entries(conditions).filter(([name]) => name !== except).map(([, sql]) => sql);
+    const where = (except, alias = 'b') => {
+        const active = Object.entries(conditions).filter(([name]) => name !== except).map(([, sql]) => sql(alias));
         return active.length ? active.join(' AND ') : 'true';
     };
     const extraColumns = columns.map(column => `,\n           ${column}`).join('');
+    // A dataset failing two or more active filters counts nowhere: each group
+    // drops only its own filter. With several filters, the base skips them.
+    const active = Object.values(conditions);
+    const pruned = active.length >= 2
+        ? `\n    OFFSET 0) flagged\n    WHERE ${active.map(sql => `coalesce((${sql('flagged')})::int, 0)`).join(' + ')} >= ${active.length - 1}`
+        : '';
     const selectedOrganizations = org ? `
 UNION ALL
 SELECT 'organization-label', o.name, 0, o.title_en, o.title_fr FROM organizations o WHERE o.name = ANY(${org})` : '';
@@ -81,7 +91,7 @@ GROUP BY k.value` : '';
     FROM dataset_places dp JOIN places p ON p.id = dp.place_id
     WHERE dp.relationship = 'direct'
     GROUP BY dp.dataset_id
-), base AS MATERIALIZED (
+), base AS MATERIALIZED (${pruned ? '\n    SELECT * FROM (' : ''}
     SELECT d.id, o.name AS org_name,
            coalesce(d.jurisdiction, pl.level) AS level,
            ${HAS_TABLE} AS has_table,
@@ -90,12 +100,13 @@ GROUP BY k.value` : '';
     FROM datasets d
     LEFT JOIN organizations o ON o.id = d.org_id
     LEFT JOIN place_levels pl ON pl.dataset_id = d.id
-    WHERE ${scope.length ? scope.join('\n      AND ') : 'true'}
+    WHERE ${scope.length ? scope.join('\n      AND ') : 'true'}${pruned}
 ), format_counts AS (
-    SELECT r.format, count(DISTINCT r.dataset_id)::int AS count
-    FROM base b JOIN resources r ON r.dataset_id = b.id
-    WHERE r.format IS NOT NULL AND ${where('format')}
-    GROUP BY r.format
+    SELECT f.format, count(*)::int AS count
+    FROM (SELECT DISTINCT r.dataset_id, r.format
+          FROM base b JOIN resources r ON r.dataset_id = b.id
+          WHERE r.format IS NOT NULL AND ${where('format')}) f
+    GROUP BY f.format
 )
 SELECT 'total'::text AS facet, NULL::text AS value, count(*)::int AS count, NULL::text AS label_en, NULL::text AS label_fr
 FROM base b WHERE ${where()}
@@ -115,9 +126,11 @@ UNION ALL
  ORDER BY c.count DESC, o.name LIMIT ${FACET_SQL_LIMITS.organization})
 UNION ALL
 (SELECT 'source', cs.id, c.count, cs.name_en, cs.name_fr
- FROM (SELECT ds.source_id, count(DISTINCT ds.dataset_id)::int AS count
-       FROM base b JOIN dataset_sources ds ON ds.dataset_id = b.id
-       WHERE ${where('source')} GROUP BY ds.source_id) c
+ FROM (SELECT m.source_id, count(*)::int AS count
+       FROM (SELECT DISTINCT ds.source_id, ds.dataset_id
+             FROM base b JOIN dataset_sources ds ON ds.dataset_id = b.id
+             WHERE ${where('source')}) m
+       GROUP BY m.source_id) c
  JOIN catalog_sources cs ON cs.id = c.source_id AND cs.enabled
  ORDER BY c.count DESC, cs.id LIMIT ${FACET_SQL_LIMITS.source})
 UNION ALL
@@ -126,14 +139,15 @@ UNION ALL
 UNION ALL
 (SELECT 'keyword', k.value, count(*)::int, NULL, NULL
  FROM base b CROSS JOIN LATERAL unnest(b.keywords) WITH ORDINALITY AS k(value, n)
- WHERE k.value <> '' AND array_position(b.keywords, k.value) = k.n AND ${where('keyword')}
+ WHERE (SELECT count(*) FROM base kb WHERE ${where('keyword', 'kb')}) <= ${keywordMaxDatasets}
+   AND k.value <> '' AND array_position(b.keywords, k.value) = k.n AND ${where('keyword')}
  GROUP BY k.value
  ORDER BY count(*) DESC, k.value COLLATE "C" LIMIT ${FACET_SQL_LIMITS.keyword})${selectedFormats}${selectedKeywords}${selectedOrganizations}${selectedSources}`;
     return { sql, values };
 }
 
-async function readDatasetFacets(filters, db = pool) {
-    const { sql, values } = buildDatasetFacetQuery(filters);
+async function readDatasetFacets(filters, db = pool, options = {}) {
+    const { sql, values } = buildDatasetFacetQuery(filters, options);
     // Integration tests pass their own transaction; it must see its fixtures.
     if (db !== pool) return (await db.query(sql, values)).rows;
     const client = await pool.connect();
@@ -155,4 +169,4 @@ async function readDatasetFacets(filters, db = pool) {
     }
 }
 
-module.exports = { buildDatasetFacetQuery, readDatasetFacets, FACET_TIMEOUT_MS, FACET_SQL_LIMITS };
+module.exports = { buildDatasetFacetQuery, readDatasetFacets, FACET_TIMEOUT_MS, FACET_SQL_LIMITS, KEYWORD_MAX_DATASETS };
