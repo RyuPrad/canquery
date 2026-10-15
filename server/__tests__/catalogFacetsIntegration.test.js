@@ -14,9 +14,9 @@ integrationDescribe('catalogue filters and facet counts PostgreSQL integration',
     const prefix = 'facet_test_' + process.pid;
     const id = name => prefix + '_' + name;
     const token = 'quokkafacetfixture';
-    const facets = async (filters = {}) => {
+    const facets = async (filters = {}, options = {}) => {
         const scoped = { q: token, lang: 'en', ...filters };
-        return shapeDatasetFacets(await readDatasetFacets(scoped, db), scoped);
+        return shapeDatasetFacets(await readDatasetFacets(scoped, db, options), scoped);
     };
     const list = async (filters = {}) => (await searchDatasets({ q: token, limit: 100, offset: 0, ...filters }, db)).map(row => row.id);
     const counts = items => Object.fromEntries(items.map(item => [item.value, item.count]));
@@ -117,6 +117,14 @@ integrationDescribe('catalogue filters and facet counts PostgreSQL integration',
         const missing = await facets({ keyword: ['absent'], org: ['no-such-publisher'] });
         expect(missing.facets.keyword.find(item => item.value === 'absent')).toEqual({ value: 'absent', count: 0 });
         expect(missing.facets.organization.find(item => item.value === 'no-such-publisher')).toEqual({ value: 'no-such-publisher', label: { en: null, fr: null }, count: 0 });
+    });
+
+    test('broad searches skip unselected keyword counts but keep selected ones', async () => {
+        const broad = await facets({ keyword: ['parks'] }, { keywordMaxDatasets: 3 });
+        expect(broad.facets.keyword).toEqual([{ value: 'parks', count: 2 }]);
+        expect(broad.total).toBe(2);
+        const narrow = await facets({ level: ['federal'] }, { keywordMaxDatasets: 3 });
+        expect(counts(narrow.facets.keyword)).toEqual({ roads: 1 });
     });
 
     test('title and update orders are total and follow the language', async () => {

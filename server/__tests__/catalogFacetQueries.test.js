@@ -34,6 +34,13 @@ describe('buildDatasetFacetQuery', () => {
         expect(counts).not.toContain('b.m_format');
     });
 
+    test('keyword counts are limited to searches that match at most the keyword limit', () => {
+        expect(buildDatasetFacetQuery({ lang: 'en' }).sql).toContain('FROM base kb WHERE true) <= 25000');
+        const { sql } = buildDatasetFacetQuery({ lang: 'en', org: ['a'], keyword: ['k'] }, { keywordMaxDatasets: 3 });
+        expect(sql).toMatch(/FROM base kb WHERE kb\.org_name = ANY\(\$\d+::text\[\]\)\) <= 3/);
+        expect(() => buildDatasetFacetQuery({ lang: 'en' }, { keywordMaxDatasets: '1; DROP' })).toThrow(TypeError);
+    });
+
     test('language values outside en/fr never reach the SQL text', () => {
         const { sql } = buildDatasetFacetQuery({ lang: "fr'; DROP TABLE datasets; --" });
         expect(sql).not.toContain('DROP');
@@ -53,7 +60,7 @@ describe('readDatasetFacets', () => {
     test('reads inside a bounded read-only transaction', async () => {
         const handle = client(async sql => (sql.startsWith('WITH') ? { rows: [{ facet: 'total', count: 1 }] } : { rows: [] }));
         await expect(readDatasetFacets({ lang: 'en' })).resolves.toEqual([{ facet: 'total', count: 1 }]);
-        expect(handle.query.mock.calls[0][0]).toMatch(/^BEGIN READ ONLY; SET LOCAL statement_timeout = 5000; SET LOCAL jit = off; SET LOCAL work_mem = '16MB'$/);
+        expect(handle.query.mock.calls[0][0]).toMatch(/^BEGIN READ ONLY; SET LOCAL statement_timeout = 5000; SET LOCAL jit = off; SET LOCAL work_mem = '32MB'$/);
         expect(handle.query.mock.calls.at(-1)[0]).toBe('COMMIT');
         expect(handle.release).toHaveBeenCalledWith(false);
     });

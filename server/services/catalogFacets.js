@@ -1,4 +1,4 @@
-const { createCache } = require('../utils/cache');
+const { track } = require('../utils/runtimeWork');
 const { searchExpression } = require('./localSearch');
 const { readDatasetFacets } = require('../db/catalogFacetQueries');
 const { LEVELS } = require('../db/catalogSqlFragments');
@@ -6,19 +6,63 @@ const { LEVELS } = require('../db/catalogSqlFragments');
 // Counts describe the whole catalogue, which changes at sync time, so they
 // outlive the 60-second list cache. They are optional: a busy, slow or failed
 // computation degrades to null and the list is still returned.
-const TTL_MS = 5 * 60 * 1000;
+const FRESH_MS = 5 * 60 * 1000;
+// The broadest counts take seconds to compute. After five minutes the previous
+// counts are still served while one background refresh replaces them.
+const STALE_MS = 60 * 60 * 1000;
 const COOLDOWN_MS = 30 * 1000;
 const WARN_INTERVAL_MS = 60 * 1000;
 const RESPONSE_LIMITS = { organization: 500, source: 500, format: 40, keyword: 25 };
 const ACCESS = ['queryable', 'mappable'];
 
-const facetCache = createCache({
-    name: 'catalog-facets',
-    ttlMs: TTL_MS,
-    negativeTtlMs: 0,
-    maxEntries: 64,
-    cacheable: value => value != null && Buffer.byteLength(JSON.stringify(value)) <= 256 * 1024
-});
+function createFacetStore({ freshMs, staleMs, maxEntries, maxBytes }) {
+    const entries = new Map();
+    const inFlight = new Map();
+    const remember = (key, value) => {
+        if (value == null || Buffer.byteLength(JSON.stringify(value)) > maxBytes) return;
+        entries.delete(key);
+        while (entries.size >= maxEntries) entries.delete(entries.keys().next().value);
+        const now = Date.now();
+        entries.set(key, { value, freshUntil: now + freshMs, staleUntil: now + staleMs });
+    };
+    // One computation per key at a time, shared by waiting requests and
+    // background refreshes alike.
+    const compute = (key, load) => {
+        let pending = inFlight.get(key);
+        if (!pending) {
+            pending = Promise.resolve().then(load).then((value) => {
+                remember(key, value);
+                return value;
+            }).finally(() => inFlight.delete(key));
+            inFlight.set(key, pending);
+        }
+        return pending;
+    };
+    return {
+        async get(key, load, { mayCompute = true, onRefreshError = () => {} } = {}) {
+            const entry = entries.get(key);
+            const now = Date.now();
+            if (entry && entry.freshUntil > now) {
+                entries.delete(key);
+                entries.set(key, entry);
+                return entry.value;
+            }
+            if (entry && entry.staleUntil > now) {
+                // Shutdown waits for the tracked refresh; its failure keeps the old counts.
+                if (mayCompute && !inFlight.has(key)) track(compute(key, load).catch((error) => onRefreshError(error)));
+                return entry.value;
+            }
+            if (entry) entries.delete(key);
+            return mayCompute ? compute(key, load) : null;
+        },
+        clear() {
+            entries.clear();
+            inFlight.clear();
+        }
+    };
+}
+
+const facetStore = createFacetStore({ freshMs: FRESH_MS, staleMs: STALE_MS, maxEntries: 64, maxBytes: 256 * 1024 });
 
 // At most `concurrency` computations run at once per process; a short queue
 // absorbs bursts and everything beyond it is answered without counts.
@@ -137,25 +181,32 @@ function shapeDatasetFacets(rows, filters) {
     };
 }
 
+function failed(key, error) {
+    const timedOut = error && error.code === '57014';
+    if (timedOut) coolDown(key);
+    warn(timedOut ? 'timeout' : 'error' + (error && error.code ? ' ' + error.code : ''));
+}
+
 // Never throws: counts are optional.
 async function datasetFacets(filters) {
     const key = facetKey(filters);
-    if ((cooldowns.get(key) || 0) > Date.now()) return null;
+    const load = async () => {
+        const outcome = await limiter.run(() => readDatasetFacets(filters));
+        if (outcome.skipped) {
+            warn('busy');
+            return null;
+        }
+        return shapeDatasetFacets(outcome.value, filters);
+    };
     try {
-        return await facetCache.get(key, async () => {
-            const outcome = await limiter.run(() => readDatasetFacets(filters));
-            if (outcome.skipped) {
-                warn('busy');
-                return null;
-            }
-            return shapeDatasetFacets(outcome.value, filters);
+        return await facetStore.get(key, load, {
+            mayCompute: !((cooldowns.get(key) || 0) > Date.now()),
+            onRefreshError: (error) => failed(key, error)
         });
     } catch (error) {
-        const timedOut = error && error.code === '57014';
-        if (timedOut) coolDown(key);
-        warn(timedOut ? 'timeout' : 'error' + (error && error.code ? ' ' + error.code : ''));
+        failed(key, error);
         return null;
     }
 }
 
-module.exports = { datasetFacets, shapeDatasetFacets, facetKey, createFacetLimiter, facetCache };
+module.exports = { datasetFacets, shapeDatasetFacets, facetKey, createFacetLimiter, createFacetStore, facetStore };
