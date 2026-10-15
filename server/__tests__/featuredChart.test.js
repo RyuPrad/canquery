@@ -75,6 +75,24 @@ describe('pickChartSpec (bounded featured previews)', () => {
         expect(specFor([{ id: 'Amount', type: 'NUMERIC', distinct: 60, nulls: 0, min: 1800, max: 2100 }])).toBeNull();
     });
 
+    const budgets = { id: 'multi_year_capital_project_budgets', type: 'NUMERIC', distinct: 80, nulls: 0, min: 15000, max: 9000000 };
+    it.each([['after', [year, budgets]], ['before', [budgets, year]]])('averages a year-named amount listed %s the year instead of using it as a time axis', (_order, columns) => {
+        expect(specFor(columns)).toEqual({
+            kind: 'line', groupBy: 'Year', agg: 'avg', aggColumn: 'multi_year_capital_project_budgets',
+            bucket: null, limit: 30, sort: 'key_desc'
+        });
+    });
+
+    it.each([['Month', 12], ['Quarter', 4], ['Mois', 12], ['Trimestre', 4]])('keeps the year axis when %s numbers come first', (id, max) => {
+        expect(specFor([{ id, type: 'INTEGER', distinct: max, nulls: 0, min: 1, max }, year, measure]))
+            .toMatchObject({ kind: 'line', groupBy: 'Year', agg: 'avg', aggColumn: 'temperature_departure' });
+    });
+
+    it('still reads a year recorded as text as a time axis', () => {
+        expect(specFor([{ id: 'Fiscal Year', type: 'TEXT', distinct: 10, nulls: 0 }]))
+            .toEqual({ kind: 'line', groupBy: 'Fiscal Year', agg: 'count', bucket: null, limit: 30, sort: 'key_desc' });
+    });
+
     it('retains a descriptive integer measure with many distinct values', () => {
         expect(pickChartSpec({ row_count: 500, columns: [
             year,
