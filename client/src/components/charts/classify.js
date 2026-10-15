@@ -25,13 +25,19 @@ const MONTH_NAME_RE = /(^|[_\s])(month|mois|quarter|trimestre)([_\s]|$)/i;
 const yearRange = (c) => c.min != null && c.max != null && c.min >= 1700 && c.max <= 2200;
 const monthRange = (c) => c.min != null && c.max != null && c.min >= 1 && c.max <= 12;
 
+// Period names are matched after splitting camel case and dropping accents and
+// separators, so FiscalYear and Année read like fiscal_year and annee.
+const normalizedName = (c) => String(c.id || '').replace(/([a-z])([A-Z])/g, '$1 $2').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[_-]+/g, ' ');
+
 function isTemporal(c) {
   if (DATE_RE.test(c.type)) return true;
-  // A numeric column is only a time axis when its values look like periods.
-  // Names such as "multi_year_capital_budget" contain "year" but hold amounts.
-  if (NUM_RE.test(c.type)) return yearRange(c) || (MONTH_NAME_RE.test(c.id) && monthRange(c));
-  if (YEAR_NAME_RE.test(c.id)) return true;
-  return false;
+  const name = normalizedName(c);
+  if (!YEAR_NAME_RE.test(name)) return false;
+  // A number column is a time axis only when its name and its values both look
+  // like periods: "multi_year_capital_budget" holds amounts, and an "amount"
+  // that happens to fall between 1700 and 2200 is not a year.
+  if (NUM_RE.test(c.type)) return yearRange(c) || (MONTH_NAME_RE.test(name) && monthRange(c));
+  return true;
 }
 
 // Is this column really just a row identifier or free text in disguise?
