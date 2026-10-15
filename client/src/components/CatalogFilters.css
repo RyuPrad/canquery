@@ -144,6 +144,7 @@
 .cq-results-count { font-family: var(--font-display); font-size: 1.15rem; font-weight: 650; }
 .cq-results-stale { opacity: 0.6; }
 .cq-sort { display: inline-flex; align-items: center; gap: 0.55rem; font-size: 0.82rem; font-weight: 600; }
+.cq-sort label { white-space: nowrap; }
 .cq-sort select { min-width: 11rem; font-size: 0.82rem; }
 .cq-results-chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
 .cq-results-chips .cq-pill { min-height: 32px; white-space: normal; text-align: left; }

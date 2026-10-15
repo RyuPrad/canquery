@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { fetchFeaturedPlaces, searchDatasets } from '../api/catalog.js';
 import useCatalogPage from '../hooks/useCatalogPage.js';
 import useFacetSnapshot from '../hooks/useFacetSnapshot.js';
+import useOptimisticSearch from '../hooks/useOptimisticSearch.js';
 import useSearchDraft from '../hooks/useSearchDraft.js';
 import { PAGE_SIZE } from '../utils/catalogPagination.js';
 import {
@@ -39,12 +40,16 @@ export default function DatasetsPage() {
   );
   const commitQuery = useCallback(
     (value) =>
-      setParams((current) => writeCatalogSearch(current, { ...readCatalogSearch(current), q: value }), {
-        replace: true
-      }),
+      setParams(
+        (current) => writeCatalogSearch(current, { ...readCatalogSearch(current), q: value }),
+        {
+          replace: true
+        }
+      ),
     [setParams]
   );
   const [query, setQuery] = useSearchDraft(search.q, commitQuery);
+  const [shown, applyShown] = useOptimisticSearch(search, apply);
   const filtered = hasCatalogCriteria(search) || search.sort !== 'relevance';
   const request = catalogApiParams(search, { lang, facets: true });
   const requestKey = JSON.stringify(request);
@@ -87,29 +92,36 @@ export default function DatasetsPage() {
 
   const searchedFor = search.q;
   useEffect(() => {
-    if (searchedFor) track('catalog_search', { query: searchedFor, language: lang, surface: 'catalogue' });
+    if (searchedFor)
+      track('catalog_search', { query: searchedFor, language: lang, surface: 'catalogue' });
   }, [searchedFor, lang]);
 
   // Filter controls apply the current draft too.
-  const current = { ...search, q: query };
+  const current = { ...shown, q: query };
   const change = (next, event) => {
     track('catalog_filter', { ...event, surface: 'catalogue' });
-    apply(next);
+    applyShown(next);
   };
   const toggle = (key, value) =>
     change(toggleCatalogValue(current, key, value), {
       filter: key,
       value,
-      action: search[key].includes(value) ? 'remove' : 'add'
+      action: shown[key].includes(value) ? 'remove' : 'add'
     });
-  const flag = (key) => change({ ...current, [key]: !search[key] }, { filter: key, value: !search[key] });
-  const choosePlace = (place) => change({ ...current, place, org: [], source: [] }, { filter: 'place', value: place });
+  const flag = (key) =>
+    change({ ...current, [key]: !shown[key] }, { filter: key, value: !shown[key] });
+  const choosePlace = (place) =>
+    change({ ...current, place, org: [], source: [] }, { filter: 'place', value: place });
   const reset = () => {
     setQuery('');
     change(EMPTY_CATALOG_SEARCH, { action: 'reset' });
   };
-  const chips = catalogChips(search, counts.facets, { t, lang, places: places.rows });
-  const empty = !collection.loading && !collection.error && !collection.notFound && collection.items.length === 0;
+  const chips = catalogChips(shown, counts.facets, { t, lang, places: places.rows });
+  const empty =
+    !collection.loading &&
+    !collection.error &&
+    !collection.notFound &&
+    collection.items.length === 0;
   const suggestions = collection.meta?.search?.suggestions || [];
 
   return (
@@ -119,16 +131,22 @@ export default function DatasetsPage() {
       </h1>
       <p className="text-base-content/65">{t('catalogue.description')}</p>
       <div className="flex flex-wrap gap-4">
-        <Link to="/" className="link">{t('common.back_search')}</Link>
-        <Link to="/organizations" className="link">{t('nav.organizations')}</Link>
-        <Link to="/places" className="link">{t('nav.places')}</Link>
+        <Link to="/" className="link">
+          {t('common.back_search')}
+        </Link>
+        <Link to="/organizations" className="link">
+          {t('nav.organizations')}
+        </Link>
+        <Link to="/places" className="link">
+          {t('nav.places')}
+        </Link>
       </div>
       <SearchBar value={query} onChange={setQuery} />
       <CatalogFilterLayout
-        activeCount={activeFilterCount(search)}
+        activeCount={activeFilterCount(shown)}
         sidebar={
           <CatalogFilters
-            search={search}
+            search={shown}
             facets={counts.facets}
             status={counts.status}
             stale={counts.stale}
@@ -148,12 +166,16 @@ export default function DatasetsPage() {
         <CatalogResultsHeader
           total={counts.total}
           stale={counts.stale}
-          sort={search.sort}
+          sort={shown.sort}
           hasQuery={Boolean(search.q)}
           onSort={(sort) => change({ ...current, sort }, { filter: 'sort', value: sort })}
           chips={chips}
           onRemove={(chip) =>
-            change(removeChip(current, chip), { filter: chip.key, value: chip.value, action: 'remove' })
+            change(removeChip(current, chip), {
+              filter: chip.key,
+              value: chip.value,
+              action: 'remove'
+            })
           }
         />
         {collection.loading ? (
@@ -174,7 +196,12 @@ export default function DatasetsPage() {
               <div className="flex flex-wrap justify-center items-center gap-2 pt-1">
                 <span>{t('discovery.suggest')}</span>
                 {suggestions.map((suggestion) => (
-                  <button type="button" className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>
+                  <button
+                    type="button"
+                    className="cq-pill"
+                    key={suggestion}
+                    onClick={() => setQuery(suggestion)}
+                  >
                     {suggestion}
                   </button>
                 ))}

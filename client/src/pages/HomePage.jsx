@@ -4,6 +4,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { searchDatasets, fetchStats, fetchFeaturedPlaces } from '../api/catalog.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useFacetSnapshot from '../hooks/useFacetSnapshot.js';
+import useOptimisticSearch from '../hooks/useOptimisticSearch.js';
 import useHomeFilterOptions from '../hooks/useHomeFilterOptions.js';
 import useSearchDraft from '../hooks/useSearchDraft.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -191,25 +192,28 @@ export default function HomePage() {
     [requestKey, filtering, retry]
   );
   const counts = useFacetSnapshot(filtering ? meta : null, loading);
-  const current = { ...searchState, q: query };
+  const [shown, applyShown] = useOptimisticSearch(searchState, (next) =>
+    setSearchParams(writeCatalogSearch(searchParams, next), { replace: true })
+  );
+  const current = { ...shown, q: query };
   const change = (next, event) => {
     track('catalog_filter', { ...event, surface: 'home' });
-    setSearchParams(writeCatalogSearch(searchParams, next), { replace: true });
+    applyShown(next);
   };
   const toggle = (key, value) =>
     change(toggleCatalogValue(current, key, value), {
       filter: key,
       value,
-      action: searchState[key].includes(value) ? 'remove' : 'add'
+      action: shown[key].includes(value) ? 'remove' : 'add'
     });
   const flag = (key) =>
-    change({ ...current, [key]: !searchState[key] }, { filter: key, value: !searchState[key] });
+    change({ ...current, [key]: !shown[key] }, { filter: key, value: !shown[key] });
   // The hero owns the place, so Reset keeps it.
   const reset = () => {
     setQuery('');
     change({ ...EMPTY_CATALOG_SEARCH, place }, { action: 'reset' });
   };
-  const chips = catalogChips(searchState, counts.facets, { t, lang, includePlace: false });
+  const chips = catalogChips(shown, counts.facets, { t, lang, includePlace: false });
 
   const reportedSearch = useRef(null);
   useEffect(() => {
@@ -333,10 +337,10 @@ export default function HomePage() {
           {filtering ? (
             <div className="mt-5">
               <CatalogFilterLayout
-                activeCount={activeFilterCount(searchState, { includePlace: false })}
+                activeCount={activeFilterCount(shown, { includePlace: false })}
                 sidebar={
                   <CatalogFilters
-                    search={searchState}
+                    search={shown}
                     facets={counts.facets}
                     status={counts.status}
                     stale={counts.stale}
@@ -350,7 +354,7 @@ export default function HomePage() {
                 <CatalogResultsHeader
                   total={counts.total}
                   stale={counts.stale}
-                  sort={search.sort}
+                  sort={shown.sort}
                   hasQuery={Boolean(searchQuery)}
                   onSort={(sort) => change({ ...current, sort }, { filter: 'sort', value: sort })}
                   chips={chips}
