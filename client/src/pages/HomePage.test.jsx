@@ -116,7 +116,7 @@ test('one explainable preview is enough to display the chart section', async () 
   expect(await screen.findByRole('heading', { name: 'A closer look at the data' })).toBeInTheDocument();
 });
 
-test('while filtering, sidebar counts replace the publisher and source selectors and can be retried', async () => {
+test('while filtering, the sidebar counts publishers and sources and can be retried', async () => {
   searchDatasets.mockImplementation(async () => ({ data: [row('oshawa')], pagination: { nextCursor: null },
     meta: facetMeta([{ value: 'old', label: { en: 'Old publisher' }, count: 1 }], [{ value: 'federal', label: { en: 'Federal portal' }, count: 1 }]) }));
   start('/?place=oshawa-on');
@@ -252,17 +252,67 @@ test('the All Canada directory link clears a remembered geographical filter', as
   expect(screen.getByRole('combobox', { name: 'Choose a place' })).toHaveValue('');
 });
 
-test('the publisher selector is labelled, translated and includes publishers after the first API page', async () => {
-  localStorage.setItem('cq-lang', 'fr');
-  fetchOrganizations.mockImplementation(async ({ cursor }) => ({ data: cursor ? [
-    { id: 'last', name: 'last', title: { en: 'Last publisher', fr: 'Dernier diffuseur' }, dataset_count: 3 }
-  ] : [{ id: 'first', name: 'first', title: { en: 'First publisher', fr: 'Premier diffuseur' }, dataset_count: 1 }],
-  pagination: { nextCursor: cursor ? null : '100' } }));
-  start('/');
-  expect(await screen.findByRole('option', { name: 'Dernier diffuseur (3)' })).toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'Toutes les organisations' })).toBeInTheDocument();
-  expect(screen.getByRole('option', { name: 'Premier diffuseur (1)' })).toBeInTheDocument();
-  expect(fetchOrganizations).toHaveBeenCalledWith(expect.objectContaining({ limit: 100, cursor: '100' }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+test('before a search, quick filters show whole-catalogue counts and open the filtered results', async () => {
+  searchDatasets.mockImplementation(async ({ level }) => ({ data: [row(level ? 'federal' : 'preview')],
+    pagination: { nextCursor: null }, meta: facetMeta() }));
+  start();
+  const quick = await screen.findByRole('group', { name: 'Filter by' });
+  const federal = within(quick).getByRole('button', { name: 'Federal' });
+  await waitFor(() => expect(federal).toHaveAccessibleDescription('2 datasets'));
+  expect(within(quick).getByRole('link', { name: 'All filters' })).toHaveAttribute('href', '/datasets');
+  expect(screen.queryByRole('combobox', { name: 'All organizations' })).toBeNull();
+  expect(screen.queryByRole('combobox', { name: 'Choose a source portal' })).toBeNull();
+  expect(fetchOrganizations).not.toHaveBeenCalled();
+  expect(fetchSources).not.toHaveBeenCalled();
+  fireEvent.click(federal);
+  await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/\?level=federal$/));
+  expect(await screen.findByText('Results for federal')).toBeInTheDocument();
+  expect(within(group('Government level')).getByRole('checkbox', { name: 'Federal' })).toBeChecked();
+  expect(within(quick).getByRole('button', { name: 'Federal' })).toHaveAttribute('aria-pressed', 'true');
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ level: ['federal'], facets: true, limit: 20 }));
+});
+
+test('while searching, the quick filters follow the search counts and the examples step aside', async () => {
+  searchDatasets.mockImplementation(async ({ q }) => ({ data: [row(q)], pagination: { nextCursor: null },
+    meta: q ? facetMeta() : { total: 64232, facets: { ...facetMeta().facets, level: [{ value: 'federal', count: 36090 }] } } }));
+  start();
+  const quick = await screen.findByRole('group', { name: 'Filter by' });
+  await waitFor(() => expect(within(quick).getByRole('button', { name: 'Federal' })).toHaveTextContent('36,090'));
+  expect(screen.getByText('Try:')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Browse open data by place' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'parks' } });
+  expect(await screen.findByText('Results for parks')).toBeInTheDocument();
+  await waitFor(() => expect(within(quick).getByRole('button', { name: 'Federal' })).toHaveAccessibleDescription('2 datasets'));
+  expect(within(quick).getByText('3 datasets', { selector: '.cq-quick-label' })).toBeInTheDocument();
+  expect(within(quick).getByRole('button', { name: 'Provincial and territorial' })).toBeDisabled();
+  expect(screen.queryByText('Try:')).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Browse open data by place' })).toBeNull();
+});
+
+test('All filters opens the filters on a narrow screen and moves focus there', async () => {
+  const media = vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query.includes('max-width'),
+    media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+  const scrollIntoView = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  try {
+    searchDatasets.mockImplementation(async ({ q }) => ({ data: [row(q)], pagination: { nextCursor: null }, meta: facetMeta() }));
+    start('/?q=parks');
+    expect(await screen.findByText('Results for parks')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Filters' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Filter by' })).getByRole('button', { name: 'All filters' }));
+    const panel = await screen.findByRole('region', { name: 'Filters' });
+    await waitFor(() => expect(panel).toHaveFocus());
+    expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+  } finally {
+    delete Element.prototype.scrollIntoView;
+    media.mockRestore();
+  }
+});
+
+test('the search placeholder says how many datasets can be searched', async () => {
+  fetchStats.mockResolvedValue({ data: { datasets: 64232, datastore_active_resources: 5822, ingested_resources: 333, last_synced_at: null } });
+  start();
+  expect(await screen.findByPlaceholderText('Search 64,232 datasets... housing, water, wildfire, census')).toBeInTheDocument();
 });
 
 test('an unfiltered visit offers six previews and a link to the full catalogue', async () => {
@@ -272,7 +322,7 @@ test('an unfiltered visit offers six previews and a link to the full catalogue',
   }));
   start();
   expect(await screen.findAllByRole('link', { name: /^Results for preview-/ })).toHaveLength(6);
-  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 6 }));
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 6, facets: true, lang: 'en' }));
   expect(screen.getByRole('link', { name: /Browse all datasets/ })).toHaveAttribute('href', '/datasets');
   expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
 });
@@ -312,7 +362,7 @@ test('clearing the last filter restores preview mode', async () => {
   expect(await screen.findByText('Results for all')).toBeInTheDocument();
   expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20, format: ['CSV'], facets: true }));
   fireEvent.click(within(group('Format')).getByRole('checkbox', { name: 'CSV' }));
-  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ format: undefined, facets: undefined, limit: 6 })));
+  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ format: undefined, facets: true, limit: 6 })));
   expect(await screen.findByRole('link', { name: /Browse all datasets/ })).toBeInTheDocument();
 });
 

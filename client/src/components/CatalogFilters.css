@@ -10,6 +10,16 @@
   .cq-catalog-layout { grid-template-columns: 16.5rem minmax(0, 1fr); gap: 2rem; }
 }
 .cq-catalog-main { min-width: 0; }
+/* "All filters" on the homepage scrolls here; keep it clear of the sticky nav. */
+.cq-catalog-layout { scroll-margin-top: 5rem; }
+.cq-catalog-aside:focus,
+.cq-catalog-panel:focus { outline: none; }
+.cq-catalog-aside:focus-visible,
+.cq-catalog-panel:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-primary) 60%, transparent);
+  outline-offset: 4px;
+  border-radius: var(--radius-box);
+}
 .cq-catalog-aside {
   position: sticky;
   top: 5rem;

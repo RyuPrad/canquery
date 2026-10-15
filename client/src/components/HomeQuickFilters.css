@@ -1,0 +1,115 @@
+/* Quick filters under the homepage search: the first sign that a search can
+   be narrowed, and live counts while it runs. */
+
+.cq-quick {
+  /* Holds the hidden count texts, so they scroll with the row on phones
+     instead of widening the page. */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 1rem;
+}
+.cq-quick-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 650;
+  white-space: nowrap;
+  color: color-mix(in oklab, var(--color-base-content) 82%, transparent);
+}
+.cq-quick-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cq-quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 34px;
+}
+.cq-quick-count {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in oklab, var(--color-base-content) 9%, transparent);
+  color: color-mix(in oklab, var(--color-base-content) 75%, transparent);
+  transition: opacity 0.2s ease;
+}
+.cq-pill-active .cq-quick-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.cq-quick-stale .cq-quick-count {
+  opacity: 0.45;
+}
+.cq-quick-chip:disabled,
+.cq-quick-chip:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: color-mix(in oklab, var(--color-base-content) 13%, transparent);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+}
+.cq-quick-chip:focus-visible,
+.cq-quick-all:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.cq-quick-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 34px;
+  padding: 0 0.35rem;
+  border: 0;
+  background: none;
+  font-size: 0.8rem;
+  font-weight: 650;
+  white-space: nowrap;
+  color: var(--cq-accent-red);
+  cursor: pointer;
+}
+.cq-quick-all:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-theme='canquery-light'] .cq-quick-count {
+  background: var(--color-base-200);
+}
+[data-theme='canquery-light'] .cq-pill-active .cq-quick-count {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Phones: one line that scrolls sideways instead of a tall block of chips. */
+@media (max-width: 639.98px) {
+  .cq-quick {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    margin-inline: -1rem;
+    padding: 0.15rem 2rem 0.35rem 1rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+  }
+  .cq-quick::-webkit-scrollbar {
+    display: none;
+  }
+  .cq-quick-list {
+    flex-wrap: nowrap;
+  }
+}
