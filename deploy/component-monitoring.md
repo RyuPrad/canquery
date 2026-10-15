@@ -35,8 +35,10 @@ Thresholds are explicit: active services; running-job heartbeat no older than
 90 seconds; eligible pending jobs no older than 30 minutes; fewer than three
 persisted capacity failures in the last hour; current source-job observations;
 no delayed (>15 minute) mail/billing backlog or accounting exceptions; and at
-least 43 GiB filesystem availability above the existing 35 GiB emergency floor.
-The 43 GiB value is the operating threshold, not 43 GiB additional headroom.
+least `storage_warning_gib` of filesystem availability (default 43 GiB),
+reported with the `storage_floor_gib` emergency floor (default 35 GiB). The
+warning is total available space, not additional headroom above the floor. An
+invalid pair, such as a floor above the warning, reports storage as unavailable.
 Capacity counts represent recorded job failures, not unpersisted admission
 refusals. Deferred jobs are excluded from eligible queue age. Existing failed
 map/resource history is retained and belongs to the maps component.
@@ -65,8 +67,8 @@ observations, bounds, invalid keys and database-only readiness.
 ## Optional capacity history
 
 This extension is opt-in. The existing 60-second timer,
-public status contract, 43 GiB total-available warning and 35 GiB emergency
-threshold remain unchanged. Other storage floors and budgets remain owned by
+public status contract and configured storage warning and emergency threshold
+remain unchanged. Other storage floors and budgets remain owned by
 application configuration. Collection runs no ingestion, synchronization, backup,
 eviction, PostgreSQL vacuum, or restore commands.
 

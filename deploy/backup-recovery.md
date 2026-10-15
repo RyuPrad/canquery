@@ -174,7 +174,7 @@ exist before the first run.
   "backup_dir": "/var/backups/canquery",
   "app_database": "canquery",
   "analytics_database": "canquery_analytics",
-  "min_free_gb": 35,
+  "min_free_gb": 5,
   "dump_script": "/opt/canquery-operations/releases/<commit>/canquery-backup.sh",
   "uploader": "/opt/canquery-operations/releases/<commit>/backup-upload.cjs",
   "node": "/usr/bin/node",
@@ -337,8 +337,9 @@ Configure the observer's `backup_status` to the exact status path and monitor
 `/api/v1/ops/components/backups` externally. The current observer degrades a failed
 attempt immediately, a running attempt older than two hours, or a verified remote
 backup older than 25 hours. Missing/malformed/stale observations also fail closed.
-Observe storage separately: its current operating threshold is 43 GiB free,
-including the 35 GiB emergency floor, not an additional 43 GiB reservation.
+Observe storage separately: the observer's `storage_warning_gib` is total free
+space that includes the emergency floor, not an additional reservation. Keep
+`min_free_gb` below it so a warning arrives before backups stop.
 
 Prove that an alert reaches the designated recipient with an isolated synthetic
 failed/missing/stale backup-status fixture through the installed monitoring path.

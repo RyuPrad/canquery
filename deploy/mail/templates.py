@@ -88,7 +88,7 @@ RequireSafeKeys yes
         'smtpd_client_event_limit_exceptions': '',
         'smtpd_timeout': '60s',
         'message_size_limit': '10485760',
-        'queue_minfree': str(35 * 1024**3),
+        'queue_minfree': str(5 * 1024**3),
         'cleanup_service_name': 'canquery-cleanup',
     }
     services = []

@@ -81,6 +81,28 @@ class ObservationTests(unittest.TestCase):
         self.free = 42 * 1024 ** 3
         self.assertFalse(self.collect()["storage"]["ok"])
 
+    def test_storage_thresholds_follow_configuration(self):
+        self.config.update(storage_warning_gib=15, storage_floor_gib=10)
+        self.free = 16 * 1024 ** 3
+        storage = self.collect()["storage"]
+        self.assertTrue(storage["ok"])
+        self.assertEqual(storage["checks"]["operating_margin_bytes"], 15 * 1024 ** 3)
+        self.assertEqual(storage["checks"]["emergency_floor_bytes"], 10 * 1024 ** 3)
+        self.free = 14 * 1024 ** 3
+        self.assertFalse(self.collect()["storage"]["ok"])
+
+    def test_invalid_storage_thresholds_fail_closed(self):
+        base = dict(self.config)
+        for change in ({"storage_warning_gib": 0}, {"storage_floor_gib": -1}, {"storage_warning_gib": True},
+                       {"storage_warning_gib": "15"}, {"storage_warning_gib": float("nan")},
+                       {"storage_warning_gib": 10, "storage_floor_gib": 15}):
+            with self.subTest(change=change):
+                self.config = {**base, **change}
+                result = self.collect()
+                self.assertEqual(result["storage"], observer.unavailable())
+                self.assertTrue(result["availability"]["ok"])
+        self.config = base
+
     def test_running_backup_has_two_hour_bound_without_claiming_new_recovery_point(self):
         self.backup.update(last_attempt_status="running", last_attempt_ok=False)
         self.assertTrue(self.collect()["backups"]["ok"])
