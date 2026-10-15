@@ -1,6 +1,7 @@
 const { searchExpression, literalPatterns } = require('../services/localSearch');
 const pool = require('./pool');
 const catalogReadCache = require('../services/catalogReadCache');
+const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match } = require('./catalogSqlFragments');
 
 function cachedRows(name, sql, values, db) {
     const read = async () => (await db.query(sql, values)).rows;
@@ -48,18 +49,7 @@ const PLACES_SELECT = `COALESCE((
     ) distinct_places
 ), '[]'::jsonb) AS places`;
 
-const PLACE_CTES = `WITH RECURSIVE selected_place AS (
-    SELECT p.id, p.parent_id, 0 AS depth
-    FROM places p
-    WHERE $5::text IS NOT NULL
-      AND (p.id = $5 OR p.slug = $5 OR EXISTS (
-          SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $5
-      ))
-    UNION ALL
-    SELECT parent.id, parent.parent_id, selected_place.depth + 1
-    FROM places parent
-    JOIN selected_place ON selected_place.parent_id = parent.id
-), place_matches AS (
+const PLACE_CTES = `WITH RECURSIVE ${selectedPlaceCte('$5')}, place_matches AS (
     SELECT DISTINCT ON (dp.dataset_id)
            dp.dataset_id, selected_place.depth,
            p.id AS matched_place_id, p.slug AS matched_place_slug,
@@ -73,10 +63,37 @@ const PLACE_CTES = `WITH RECURSIVE selected_place AS (
              CASE dp.relationship WHEN 'direct' THEN 0 ELSE 1 END
 )`;
 
-async function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, offset }, db = pool) {
+const RELEVANCE_ORDER = {
+    inner: `pm.depth ASC NULLS LAST, literal_rank DESC, search_rank DESC NULLS LAST,
+                 d.metadata_modified DESC NULLS LAST, d.id ASC`,
+    outer: `pm.depth ASC NULLS LAST,
+                 pm.literal_rank DESC,
+                 pm.search_rank DESC NULLS LAST,
+                 d.metadata_modified DESC NULLS LAST,
+                 d.id ASC`
+};
+
+// Allowlisted orders. Each ends in d.id so OFFSET pages never overlap.
+function datasetOrder(sort, lang) {
+    if (sort === 'updated') {
+        const order = 'd.metadata_modified DESC NULLS LAST, d.id ASC';
+        return { name: 'datasets:updated', select: '', inner: order, outer: order };
+    }
+    if (sort === 'title' || sort === 'title_desc') {
+        const [first, second] = lang === 'fr' ? ['fr', 'en'] : ['en', 'fr'];
+        const title = `coalesce(nullif(btrim(d.title_${first}), ''), nullif(btrim(d.title_${second}), ''), d.name)`;
+        const direction = sort === 'title' ? 'ASC' : 'DESC';
+        return { name: `datasets:${sort}:${first}`, select: `,\n               ${title} AS sort_title`,
+            inner: `${title} ${direction}, d.id ASC`, outer: `pm.sort_title ${direction}, d.id ASC` };
+    }
+    return { name: 'datasets', select: '', ...RELEVANCE_ORDER };
+}
+
+async function searchDatasets({ q, org, format, keyword, place, source, mappable, level, queryable, sort, lang, limit, offset }, db = pool) {
+    const order = datasetOrder(sort, lang);
     // Select the requested identities before evaluating resource/provenance
     // subqueries. Otherwise OFFSET enriches every skipped dataset as well.
-    return cachedRows('datasets', `${PLACE_CTES}, dataset_page AS MATERIALIZED (
+    return cachedRows(order.name, `${PLACE_CTES}, dataset_page AS MATERIALIZED (
         SELECT d.id AS dataset_id, pm.depth,
                pm.matched_place_id, pm.matched_place_slug,
                pm.matched_place_name_en, pm.matched_place_name_fr, pm.place_relationship,
@@ -88,24 +105,20 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
                CASE WHEN $1::text IS NULL THEN NULL
                     ELSE ts_rank(d.search_tsv, to_tsquery('english', $10) || to_tsquery('french', $10))
                END AS search_rank,
-               d.metadata_modified
+               d.metadata_modified${order.select}
         FROM datasets d
         LEFT JOIN organizations o ON o.id = d.org_id
         LEFT JOIN place_matches pm ON pm.dataset_id = d.id
-        WHERE ($1::text IS NULL OR d.search_tsv @@ (to_tsquery('english', $10) || to_tsquery('french', $10)))
-          AND ($2::text IS NULL OR o.name = $2)
-          AND ($3::text IS NULL OR EXISTS (
-               SELECT 1 FROM resources r2
-               WHERE r2.dataset_id = d.id AND r2.format = upper($3)))
-          AND ($4::text IS NULL OR $4 = ANY(d.keywords_en) OR $4 = ANY(d.keywords_fr))
+        WHERE ($1::text IS NULL OR ${match.search('$10')})
+          AND ($2::text[] IS NULL OR ${match.org('$2')})
+          AND ($3::text[] IS NULL OR ${match.format('$3')})
+          AND ($4::text[] IS NULL OR ${match.keyword('$4')})
           AND ($5::text IS NULL OR pm.dataset_id IS NOT NULL)
-          AND ($6::text IS NULL OR EXISTS (
-               SELECT 1 FROM dataset_sources ds2 WHERE ds2.dataset_id = d.id AND ds2.source_id = $6))
-          AND ($7::boolean IS NULL OR EXISTS (
-               SELECT 1 FROM resources r3 JOIN resource_maps rm3 ON rm3.resource_id = r3.id
-               WHERE r3.dataset_id = d.id))
-        ORDER BY pm.depth ASC NULLS LAST, literal_rank DESC, search_rank DESC NULLS LAST,
-                 d.metadata_modified DESC NULLS LAST, d.id ASC
+          AND ($6::text[] IS NULL OR ${match.source('$6')})
+          AND ($7::boolean IS NULL OR ${HAS_MAP})
+          AND ($12::text[] IS NULL OR ${match.level('$12')})
+          AND ($13::boolean IS NULL OR ${HAS_TABLE})
+        ORDER BY ${order.inner}
         LIMIT $8 OFFSET $9
     )
         SELECT d.id, d.name, d.title_en, d.title_fr, d.metadata_modified,
@@ -135,12 +148,9 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
         FROM dataset_page pm
         JOIN datasets d ON d.id = pm.dataset_id
         LEFT JOIN organizations o ON o.id = d.org_id
-        ORDER BY pm.depth ASC NULLS LAST,
-                 pm.literal_rank DESC,
-                 pm.search_rank DESC NULLS LAST,
-                 d.metadata_modified DESC NULLS LAST,
-                 d.id ASC
-    `, [q || null, org || null, format ? format.toUpperCase() : null, keyword || null, place || null, source || null, mappable || null, limit, offset, searchExpression(q) || null, literalPatterns(q)], db);
+        ORDER BY ${order.outer}
+    `, [q || null, listParam(org), listParam(format, upper), listParam(keyword), place || null, listParam(source), mappable || null,
+        limit, offset, searchExpression(q) || null, literalPatterns(q), listParam(level), queryable || null], db);
 }
 
 async function getDatasetByIdOrName(idOrName) {

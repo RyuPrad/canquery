@@ -1,4 +1,5 @@
 jest.mock('../db/pool', () => ({ query: jest.fn() }));
+jest.mock('../services/catalogFacets', () => ({ datasetFacets: jest.fn(async () => null) }));
 
 const pool = require('../db/pool');
 const queries = require('../db/catalogReadQueries');
@@ -22,6 +23,31 @@ test('HTML and JSON discovery share one read while keeping their presentation co
     expect(json.items[0].title.en).toBe('Road network');
     expect(html.body).toContain('/datasets/roads');
     expect(html.status).toBe(200);
+});
+
+test('the browser default request with language and counts still shares the server render read', async () => {
+    await Promise.all([
+        service.searchDatasets({ limit: 50, lang: 'fr', facets: 'true' }),
+        require('../controllers/spaController').resolvePage('/datasets')
+    ]);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+});
+
+test('orders and title languages have separate keys, while equivalent filter lists share one', async () => {
+    const args = { limit: 51, offset: 0 };
+    await queries.searchDatasets(args);
+    await queries.searchDatasets({ ...args, sort: 'relevance', lang: 'fr' });
+    await queries.searchDatasets({ ...args, format: 'CSV' });
+    await queries.searchDatasets({ ...args, format: ['csv'] });
+    await queries.searchDatasets({ ...args, format: ['XLSX', 'CSV', 'csv'] });
+    await queries.searchDatasets({ ...args, format: ['CSV', 'XLSX'] });
+    expect(pool.query).toHaveBeenCalledTimes(3);
+    for (const change of [{ sort: 'updated' }, { sort: 'title' }, { sort: 'title', lang: 'fr' }, { sort: 'title_desc' },
+        { level: ['federal'] }, { queryable: true }]) {
+        await queries.searchDatasets({ ...args, ...change });
+    }
+    await queries.searchDatasets({ ...args, sort: 'updated', lang: 'fr' });
+    expect(pool.query).toHaveBeenCalledTimes(9);
 });
 
 test('discovery reads expire at 60 seconds and do not retain failures', async () => {

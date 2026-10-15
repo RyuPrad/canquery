@@ -3,6 +3,8 @@ const { plainText, truncate } = require('./seoMeta');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { spellingSuggestions } = require('./localSearch');
 const catalogReadQueries = require('../db/catalogReadQueries');
+const { datasetFacets } = require('./catalogFacets');
+const { LEVELS, listParam, upper } = require('../db/catalogSqlFragments');
 const queryLogQueries = require('../db/queryLogQueries');
 const { packageList } = require('./ckanClient');
 const AppError = require('../utils/AppError');
@@ -130,15 +132,39 @@ const parseBooleanFilter = (value, name) => {
     throw new AppError('Invalid ' + name, 400);
 };
 
-const searchDatasets = async ({ q, org, format, keyword, place, source, mappable, limit, cursor }) => {
+const SORTS = new Set(['relevance', 'updated', 'title', 'title_desc']);
+
+// Lists are deduplicated and sorted so equivalent searches share cache
+// entries; every value is checked before any query runs.
+const normalizeDatasetSearch = ({ q, org, format, keyword, place, source, mappable, level, queryable, sort, lang }) => {
+    const levels = listParam(level);
+    if (levels && levels.some(value => !LEVELS.includes(value))) throw new AppError('Invalid level', 400);
+    const order = sort === undefined || sort === null || sort === '' ? 'relevance' : sort;
+    if (!SORTS.has(order)) throw new AppError('Invalid sort', 400);
+    return {
+        q: q || undefined,
+        org: listParam(org) || undefined,
+        format: listParam(format, upper) || undefined,
+        keyword: listParam(keyword) || undefined,
+        place: place || undefined,
+        source: listParam(source) || undefined,
+        mappable: parseBooleanFilter(mappable, 'mappable'),
+        level: levels ? LEVELS.filter(value => levels.includes(value)) : undefined,
+        queryable: parseBooleanFilter(queryable, 'queryable'),
+        sort: order,
+        lang: lang === 'fr' ? 'fr' : 'en'
+    };
+};
+
+const searchDatasets = async ({ facets, limit, cursor, ...criteria }) => {
     const lim = clampLimit(limit, 20, 100);
     const offset = parseCursor(cursor);
-    const rows = await catalogReadQueries.searchDatasets({
-        q, org, format, keyword, place, source,
-        mappable: parseBooleanFilter(mappable, 'mappable'),
-        limit: lim + 1,
-        offset
-    });
+    const filters = normalizeDatasetSearch(criteria);
+    const withFacets = parseBooleanFilter(facets, 'facets') === true;
+    const [rows, summary] = await Promise.all([
+        catalogReadQueries.searchDatasets({ ...filters, limit: lim + 1, offset }),
+        withFacets ? datasetFacets(filters) : null
+    ]);
     const hasMore = rows.length > lim;
     const page = rows.slice(0, lim);
     const items = page.map((r) => ({
@@ -159,7 +185,8 @@ const searchDatasets = async ({ q, org, format, keyword, place, source, mappable
         provenance: shapeProvenance(r.provenance_sources)
     }));
     return { items, nextCursor: hasMore ? String(offset + lim) : null,
-        suggestions: offset === 0 && items.length === 0 ? spellingSuggestions(q) : [] };
+        suggestions: offset === 0 && items.length === 0 ? spellingSuggestions(filters.q) : [],
+        ...(withFacets ? { total: summary ? summary.total : null, facets: summary ? summary.facets : null } : {}) };
 };
 
 const getDataset = async (idOrName) => {

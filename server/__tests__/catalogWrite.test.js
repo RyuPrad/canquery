@@ -1,4 +1,4 @@
-const { dedupeById, replaceResources, sweepMissingDatasets } = require('../db/catalogWriteQueries');
+const { dedupeById, replaceResources, sweepMissingDatasets, upsertDatasets } = require('../db/catalogWriteQueries');
 
 describe('dedupeById', () => {
     test('returns an empty array for empty / nullish input', () => {
@@ -115,5 +115,21 @@ describe('sweepMissingDatasets', () => {
         expect(db.query.mock.calls[2][0]).toContain('DELETE FROM dataset_places');
         expect(db.query.mock.calls[4][0]).toContain('DELETE FROM resources');
         expect(db.query.mock.calls[5][0]).toContain('DELETE FROM datasets');
+    });
+});
+
+describe('upsertDatasets', () => {
+    test('writes the declared jurisdiction, and null for records that have none', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const dataset = { id: 'a', name: 'a', titleEn: 'A', titleFr: null, notesEn: null, notesFr: null, orgId: null,
+            keywordsEn: [], keywordsFr: [], metadataModified: null, raw: {} };
+        await upsertDatasets(db, [{ ...dataset, jurisdiction: 'federal' }, { ...dataset, id: 'b', name: 'b' }]);
+        const [sql, values] = db.query.mock.calls[0];
+        expect(sql).toContain('metadata_modified, raw, jurisdiction)');
+        expect(sql).toContain('jurisdiction = EXCLUDED.jurisdiction');
+        expect(sql).toContain('$24)');
+        expect(values).toHaveLength(24);
+        expect(values[11]).toBe('federal');
+        expect(values[23]).toBeNull();
     });
 });
