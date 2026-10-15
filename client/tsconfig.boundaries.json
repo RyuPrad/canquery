@@ -15,6 +15,8 @@
     "src/utils/resourceSchema.js",
     "src/utils/resourceExplorerState.js",
     "src/utils/catalogSearchState.js",
+    "src/utils/rowPageCache.js",
+    "src/utils/resourceHints.js",
     "src/hooks/preparationState.js"
   ]
 }

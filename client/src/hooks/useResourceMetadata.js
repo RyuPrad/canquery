@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { fetchResource } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import { track } from '../utils/analytics.js';
+import { rememberResource } from '../utils/resourceHints.js';
 
 export default function useResourceMetadata(id) {
   const [resource, setResource] = useState(null);
@@ -15,6 +16,7 @@ export default function useResourceMetadata(id) {
     fetchResource(id, { signal: controller.signal })
       .then((env) => {
         if (cancelled) return;
+        rememberResource(env.data);
         setResource(env.data);
         setError(null);
         track('resource_open', {

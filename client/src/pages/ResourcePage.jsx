@@ -39,13 +39,7 @@ import {
 
 function ResourceExplorer({ id, navigationKey }) {
   const { lang, t } = useLang();
-  const {
-    resource,
-    error: resourceError,
-    notFound,
-    reload: onPrepared,
-    revision: reloadKey
-  } = useResourceMetadata(id);
+  const { resource, error: resourceError, notFound, reload: onPrepared } = useResourceMetadata(id);
   const {
     q,
     setQ,
@@ -77,9 +71,13 @@ function ResourceExplorer({ id, navigationKey }) {
   const [observedSchema, setObservedSchema] = useState(null);
   const reconciled = reconcileResourceFields(columnFilters, sort, fields);
   const appliedFields = reconcileResourceFields(debouncedFilters, sort, fields);
+  // The first recorded schema needs no extra pass: nothing but reconciliation
+  // can change before it is observed, so rows start with the metadata's commit.
   const schemaReady =
     fingerprint === null ||
-    (observedSchema === fingerprint && !reconciled.changed && !appliedFields.changed);
+    ((observedSchema === null || observedSchema === fingerprint) &&
+      !reconciled.changed &&
+      !appliedFields.changed);
   useEffect(() => {
     if (fingerprint === null) return;
     if (reconciled.changed) {
@@ -122,7 +120,6 @@ function ResourceExplorer({ id, navigationKey }) {
     debouncedFilters,
     sort,
     page,
-    reloadKey,
     preparationRequired,
     fileOnly,
     hasNonEq,

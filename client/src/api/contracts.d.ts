@@ -26,6 +26,18 @@ export interface ApiErrorBody {
   failure_reason?: string;
 }
 
+export interface RowPage {
+  fields: Field[];
+  records: Record<string, unknown>[];
+  total: number;
+  mode: string;
+}
+
+export interface ResourceHint {
+  queryMode: string | null;
+  snapshotId: string | null;
+}
+
 export type ResourceView = 'table' | 'chart' | 'map';
 export interface ResourceUrlState {
   q: string;
