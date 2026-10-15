@@ -221,7 +221,7 @@ describe('GET /api/v1/insights/featured', () => {
 
     it('reports null, blank and nonfinite dated metrics as gaps without converting them to zero', async () => {
         seed(timeProfile({ columns: [
-            { id: 'Year', type: 'INTEGER', distinct: 7, nulls: 0 },
+            { id: 'Year', type: 'INTEGER', distinct: 7, nulls: 0, min: 2020, max: 2026 },
             { id: 'temperature_departure', type: 'NUMERIC', distinct: 20, nulls: 10 }
         ] }), { total: 7, records: [
             { key: 2026, value: null }, { key: 2025, value: '  ' },
@@ -257,7 +257,7 @@ describe('GET /api/v1/insights/featured', () => {
     it('selects the newest 30 groups, then returns their points in chronological order', async () => {
         const latest = Array.from({ length: 30 }, (_value, index) => ({ key: 2026 - index, value: String(index + 1) }));
         seed(timeProfile({ columns: [
-            { id: 'Year', type: 'INTEGER', distinct: 50, nulls: 0 },
+            { id: 'Year', type: 'INTEGER', distinct: 50, nulls: 0, min: 1977, max: 2026 },
             { id: 'temperature_departure', type: 'NUMERIC', distinct: 60, nulls: 0 }
         ] }), { total: 50, records: latest });
         const [item] = await fetchFeatured();
@@ -313,7 +313,7 @@ describe('GET /api/v1/insights/featured', () => {
 
     it('does not invent units or meaning for an unknown numeric measure', async () => {
         seed(timeProfile({ columns: [
-            { id: 'Year', type: 'INTEGER', distinct: 3, nulls: 0 },
+            { id: 'Year', type: 'INTEGER', distinct: 3, nulls: 0, min: 2023, max: 2025 },
             { id: 'value', type: 'NUMERIC', distinct: 20, nulls: 0 }
         ] }), { total: 3, records: [
             { key: 2025, value: 60 }, { key: 2024, value: 30 }, { key: 2023, value: 10 }

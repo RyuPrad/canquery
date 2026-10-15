@@ -3,7 +3,7 @@ const { plainText, truncate } = require('./seoMeta');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { spellingSuggestions } = require('./localSearch');
 const catalogReadQueries = require('../db/catalogReadQueries');
-const { datasetFacets } = require('./catalogFacets');
+const { datasetFacets, startFacetWarming } = require('./catalogFacets');
 const { LEVELS, listParam, upper } = require('../db/catalogSqlFragments');
 const queryLogQueries = require('../db/queryLogQueries');
 const { packageList } = require('./ckanClient');
@@ -188,6 +188,9 @@ const searchDatasets = async ({ facets, limit, cursor, ...criteria }) => {
         suggestions: offset === 0 && items.length === 0 ? spellingSuggestions(filters.q) : [],
         ...(withFacets ? { total: summary ? summary.total : null, facets: summary ? summary.facets : null } : {}) };
 };
+
+// The homepage and /datasets open on the unfiltered counts in both languages.
+const startCatalogCountWarming = () => startFacetWarming(['en', 'fr'].map(lang => normalizeDatasetSearch({ lang })));
 
 const getDataset = async (idOrName) => {
     const row = await catalogReadQueries.getDatasetByIdOrName(idOrName);
@@ -534,6 +537,7 @@ const opsStatus = async () => {
 
 module.exports = {
     searchDatasets,
+    startCatalogCountWarming,
     getDataset,
     getResource,
     getOrganization,

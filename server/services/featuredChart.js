@@ -16,11 +16,17 @@ const nullFrac = (c, rc) => (rc > 0 ? (c.nulls || 0) / rc : 0);
 const normalizedName = c => String(c.id || '').replace(/([a-z])([A-Z])/g, '$1 $2').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[_-]+/g, ' ');
 const namedContext = c => /[a-z]{3}/i.test(normalizedName(c)) && !VAGUE_NAME_RE.test(normalizedName(c));
 
+const yearValues = c => c.min != null && c.max != null && Number(c.min) >= 1700 && Number(c.max) <= 2200;
+
 function isTemporal(c) {
     if (!namedContext(c)) return false;
     if (DATE_RE.test(c.type)) return true;
-    if (YEAR_NAME_RE.test(normalizedName(c))) return true;
-    return false;
+    if (!YEAR_NAME_RE.test(normalizedName(c))) return false;
+    // As in the resource charts, a numeric column is a time axis only when its
+    // values look like periods: names such as multi_year_capital_budget hold
+    // amounts. A preview also needs the period name, and its points can only
+    // be dated years, so month or quarter numbers are not a time axis here.
+    return NUM_RE.test(c.type) ? yearValues(c) : true;
 }
 
 function isIdentifier(c, rc) {

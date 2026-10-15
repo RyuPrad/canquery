@@ -55,6 +55,13 @@ function createFacetStore({ freshMs, staleMs, maxEntries, maxBytes }) {
             if (entry) entries.delete(key);
             return mayCompute ? compute(key, load) : null;
         },
+        // Unlike get(), waits for a replacement of counts that are no longer fresh.
+        async refresh(key, load, { mayCompute = true } = {}) {
+            const entry = entries.get(key);
+            if (entry && entry.freshUntil > Date.now()) return entry.value;
+            if (!mayCompute) return entry && entry.staleUntil > Date.now() ? entry.value : null;
+            return compute(key, load);
+        },
         clear() {
             entries.clear();
             inFlight.clear();
@@ -187,10 +194,10 @@ function failed(key, error) {
     warn(timedOut ? 'timeout' : 'error' + (error && error.code ? ' ' + error.code : ''));
 }
 
-// Never throws: counts are optional.
-async function datasetFacets(filters) {
-    const key = facetKey(filters);
-    const load = async () => {
+const coolingDown = key => (cooldowns.get(key) || 0) > Date.now();
+
+function loader(filters) {
+    return async () => {
         const outcome = await limiter.run(() => readDatasetFacets(filters));
         if (outcome.skipped) {
             warn('busy');
@@ -198,9 +205,14 @@ async function datasetFacets(filters) {
         }
         return shapeDatasetFacets(outcome.value, filters);
     };
+}
+
+// Never throws: counts are optional.
+async function datasetFacets(filters) {
+    const key = facetKey(filters);
     try {
-        return await facetStore.get(key, load, {
-            mayCompute: !((cooldowns.get(key) || 0) > Date.now()),
+        return await facetStore.get(key, loader(filters), {
+            mayCompute: !coolingDown(key),
             onRefreshError: (error) => failed(key, error)
         });
     } catch (error) {
@@ -209,4 +221,45 @@ async function datasetFacets(filters) {
     }
 }
 
-module.exports = { datasetFacets, shapeDatasetFacets, facetKey, createFacetLimiter, createFacetStore, facetStore };
+// Computes counts that are missing or no longer fresh and waits for them.
+// Like datasetFacets, it never throws.
+async function refreshDatasetFacets(filters) {
+    const key = facetKey(filters);
+    try {
+        return await facetStore.refresh(key, loader(filters), { mayCompute: !coolingDown(key) });
+    } catch (error) {
+        failed(key, error);
+        return null;
+    }
+}
+
+// The broadest counts take over a second, and the homepage asks for them on
+// every first visit. Compute them as soon as the API starts, then refresh them
+// before they expire so an idle hour never leaves a visitor waiting. One
+// search at a time, so visitors keep the second computation slot.
+const WARM_INTERVAL_MS = 20 * 60 * 1000;
+
+function startFacetWarming(searches, { intervalMs = WARM_INTERVAL_MS } = {}) {
+    let stopped = false;
+    let running = null;
+    const run = () => {
+        if (running || stopped) return;
+        // Shutdown waits for tracked work, so pools stay open for a running pass.
+        running = track((async () => {
+            for (const filters of searches) {
+                if (stopped) return;
+                await refreshDatasetFacets(filters);
+            }
+        })()).catch(() => warn('error')).finally(() => { running = null; });
+    };
+    run();
+    const timer = setInterval(run, intervalMs);
+    timer.unref?.();
+    return () => {
+        stopped = true;
+        clearInterval(timer);
+    };
+}
+
+module.exports = { datasetFacets, refreshDatasetFacets, startFacetWarming, shapeDatasetFacets, facetKey, createFacetLimiter,
+    createFacetStore, facetStore, WARM_INTERVAL_MS };

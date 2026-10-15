@@ -1,7 +1,8 @@
 jest.mock('../db/catalogFacetQueries', () => ({ readDatasetFacets: jest.fn() }));
 
 const { readDatasetFacets } = require('../db/catalogFacetQueries');
-const { datasetFacets, shapeDatasetFacets, facetKey, createFacetLimiter, facetStore } = require('../services/catalogFacets');
+const { datasetFacets, refreshDatasetFacets, startFacetWarming, shapeDatasetFacets, facetKey, createFacetLimiter,
+    facetStore, WARM_INTERVAL_MS } = require('../services/catalogFacets');
 
 const row = (facet, value, count, labelEn = null, labelFr = null) => ({ facet, value, count, label_en: labelEn, label_fr: labelFr });
 
@@ -137,5 +138,98 @@ describe('datasetFacets', () => {
         clock.mockReturnValue(61 * 60 * 1000);
         readDatasetFacets.mockResolvedValueOnce([row('total', null, 8)]);
         await expect(datasetFacets(filters)).resolves.toMatchObject({ total: 8 });
+    });
+});
+
+describe('refreshDatasetFacets', () => {
+    test('waits for missing or stale counts and leaves fresh counts alone', async () => {
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(0);
+        readDatasetFacets.mockResolvedValueOnce([row('total', null, 1)]);
+        const filters = { lang: 'en' };
+        await expect(refreshDatasetFacets(filters)).resolves.toMatchObject({ total: 1 });
+        await expect(refreshDatasetFacets(filters)).resolves.toMatchObject({ total: 1 });
+        expect(readDatasetFacets).toHaveBeenCalledTimes(1);
+        clock.mockReturnValue(5 * 60 * 1000);
+        readDatasetFacets.mockResolvedValueOnce([row('total', null, 2)]);
+        // A request would get the stale counts at once; a refresh waits for new ones.
+        await expect(refreshDatasetFacets(filters)).resolves.toMatchObject({ total: 2 });
+        await expect(datasetFacets(filters)).resolves.toMatchObject({ total: 2 });
+        expect(readDatasetFacets).toHaveBeenCalledTimes(2);
+    });
+
+    test('never throws and keeps the previous counts when a refresh times out', async () => {
+        // Later than the earlier tests, whose warnings and cooldowns persist in the module.
+        const start = 3 * 60 * 60 * 1000;
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(start);
+        readDatasetFacets.mockResolvedValueOnce([row('total', null, 3)]);
+        const filters = { lang: 'fr' };
+        await refreshDatasetFacets(filters);
+        clock.mockReturnValue(start + 10 * 60 * 1000);
+        readDatasetFacets.mockRejectedValueOnce(Object.assign(new Error('canceling statement'), { code: '57014' }));
+        await expect(refreshDatasetFacets(filters)).resolves.toBeNull();
+        expect(console.warn).toHaveBeenCalledWith('[catalog-facets] counts unavailable: timeout');
+        // The key is cooling down: the previous counts, and no new computation.
+        await expect(refreshDatasetFacets(filters)).resolves.toMatchObject({ total: 3 });
+        await expect(datasetFacets(filters)).resolves.toMatchObject({ total: 3 });
+        expect(readDatasetFacets).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('startFacetWarming', () => {
+    const settle = () => jest.advanceTimersByTimeAsync(0);
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    test('computes each search in turn as soon as it starts', async () => {
+        const gates = [];
+        readDatasetFacets.mockImplementation(filters => new Promise(resolve =>
+            gates.push(() => resolve([row('total', null, filters.lang === 'fr' ? 2 : 1)]))));
+        const stop = startFacetWarming([{ lang: 'en' }, { lang: 'fr' }]);
+        try {
+            await settle();
+            expect(readDatasetFacets.mock.calls.map(([filters]) => filters.lang)).toEqual(['en']);
+            gates[0]();
+            await settle();
+            expect(readDatasetFacets.mock.calls.map(([filters]) => filters.lang)).toEqual(['en', 'fr']);
+            gates[1]();
+            await settle();
+            await expect(datasetFacets({ lang: 'en' })).resolves.toMatchObject({ total: 1 });
+            await expect(datasetFacets({ lang: 'fr' })).resolves.toMatchObject({ total: 2 });
+            expect(readDatasetFacets).toHaveBeenCalledTimes(2);
+        } finally {
+            stop();
+        }
+    });
+
+    test('refreshes the counts before they expire, even when nobody asks, until stopped', async () => {
+        readDatasetFacets.mockImplementation(async () => [row('total', null, readDatasetFacets.mock.calls.length)]);
+        const stop = startFacetWarming([{ lang: 'en' }]);
+        await settle();
+        expect(readDatasetFacets).toHaveBeenCalledTimes(1);
+        for (let pass = 2; pass <= 4; pass++) {
+            await jest.advanceTimersByTimeAsync(WARM_INTERVAL_MS);
+            expect(readDatasetFacets).toHaveBeenCalledTimes(pass);
+        }
+        // Three passes later, over an hour after the first, the counts are cached and fresh.
+        await expect(datasetFacets({ lang: 'en' })).resolves.toMatchObject({ total: 4 });
+        expect(readDatasetFacets).toHaveBeenCalledTimes(4);
+        stop();
+        await jest.advanceTimersByTimeAsync(3 * WARM_INTERVAL_MS);
+        expect(readDatasetFacets).toHaveBeenCalledTimes(4);
+    });
+
+    test('does not start another pass while one is still running', async () => {
+        let release;
+        readDatasetFacets.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve([row('total', null, 1)]); }));
+        const stop = startFacetWarming([{ lang: 'en' }], { intervalMs: 1000 });
+        try {
+            await jest.advanceTimersByTimeAsync(5000);
+            expect(readDatasetFacets).toHaveBeenCalledTimes(1);
+            release();
+            await settle();
+            await expect(datasetFacets({ lang: 'en' })).resolves.toMatchObject({ total: 1 });
+        } finally {
+            stop();
+        }
     });
 });
