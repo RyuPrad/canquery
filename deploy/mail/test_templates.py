@@ -15,7 +15,7 @@ class SubmissionConfiguration(unittest.TestCase):
         self.assertIn('smtpd_relay_restrictions=permit_sasl_authenticated,reject', master)
         self.assertIn('reject_authenticated_sender_login_mismatch', master)
         self.assertIn('milter_default_action=tempfail', master)
-        self.assertIn('queue_minfree=37580963840', master)
+        self.assertIn('queue_minfree=5368709120', master)
         self.assertEqual(master.count('message_size_limit=10485760'), 3)
         self.assertEqual(data['senders'].splitlines(), ['support@example.com support@example.com', 'accounts@example.com accounts@example.com'])
         self.assertTrue(data['dovecot.conf'].startswith('protocols =\n'))

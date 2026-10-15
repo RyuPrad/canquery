@@ -6,6 +6,8 @@
   "deployment_environment": "/etc/canquery/deploy.env",
   "api_port": 3100,
   "storage_path": "/var/lib",
+  "storage_warning_gib": 43,
+  "storage_floor_gib": 35,
   "backup_status": "/var/lib/canquery-backup/status.json",
   "output": "/run/canquery/ops-status.json",
   "services": {

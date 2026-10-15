@@ -13,7 +13,7 @@ hashed with SHA512-CRYPT. Sender/login mappings prevent one credential from
 using the other's envelope sender. A dedicated OpenDKIM process signs the new
 domain only on submission, failing closed if signing is unavailable. Its key
 is owned by the signer with mode 0600. SMTP connection/message/recipient caps,
-10 MiB message size and a 35 GiB queue-space floor bound the new service.
+10 MiB message size and a 5 GiB queue-space floor bound the new service.
 
 Before installation, inspect actual units, Postfix configuration, firewall,
 DNS, disk space and package versions. Retain reviewed configuration snapshots

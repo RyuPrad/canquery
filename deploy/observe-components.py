@@ -211,6 +211,19 @@ def unavailable():
     return {"ok": False, "status": "unavailable", "checks": {}}
 
 
+def storage_thresholds(config):
+    # Installation settings in GiB. The defaults are the values earlier
+    # releases hard-coded; an invalid pair leaves storage unavailable.
+    warning = config.get("storage_warning_gib", 43)
+    floor = config.get("storage_floor_gib", 35)
+    for value in (warning, floor):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError("Invalid storage threshold")
+    if floor > warning:
+        raise ValueError("Storage floor is above its warning threshold")
+    return int(warning * 1024 ** 3), int(floor * 1024 ** 3)
+
+
 def numbers(values, names):
     result = {}
     for name in names:
@@ -331,10 +344,9 @@ def observe(config, run=command, fetch=json_http, now=None, statfs=os.statvfs, r
     except Exception:
         pass
     try:
+        operating, floor = storage_thresholds(config)
         filesystem = statfs(config.get("storage_path", "/var/lib"))
         free = filesystem.f_bavail * filesystem.f_frsize
-        operating = 43 * 1024 ** 3
-        floor = 35 * 1024 ** 3
         output["storage"] = healthy(free >= operating, {"free_bytes": free,
             "operating_margin_bytes": operating, "emergency_floor_bytes": floor})
     except Exception:
