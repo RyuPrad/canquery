@@ -137,6 +137,9 @@ mixed collection responses never claim one publisher's licence for every item.
 # search the mirrored catalogue (tsvector, EN+FR)
 curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV&limit=5'
 
+# repeated values match any; facets=1 adds meta.total and per-group counts
+curl 'http://localhost:3100/api/v1/datasets?format=CSV&format=XLSX&level=municipal&sort=title&facets=1&limit=5'
+
 # browse featured regions/cities (or search every SGC place with q)
 curl 'http://localhost:3100/api/v1/places?featured=true'
 curl 'http://localhost:3100/api/v1/places?q=Oshawa'

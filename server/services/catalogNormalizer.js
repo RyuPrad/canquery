@@ -73,6 +73,14 @@ function normalizeResource(resource, datasetId) {
     };
 }
 
+// Federal records declare their level of government; other values are not
+// recorded, and unknown records stay null.
+const JURISDICTIONS = new Set(['federal', 'provincial', 'municipal']);
+function normalizeJurisdiction(value) {
+    const jurisdiction = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    return JURISDICTIONS.has(jurisdiction) ? jurisdiction : null;
+}
+
 function normalizePackage(pkg) {
     const titleTranslated = pickTranslated(pkg.title_translated, pkg.title);
     const notesTranslated = pickTranslated(pkg.notes_translated, pkg.notes);
@@ -93,10 +101,11 @@ function normalizePackage(pkg) {
             keywordsEn: (pkg.keywords && pkg.keywords.en) || [],
             keywordsFr: (pkg.keywords && pkg.keywords.fr) || [],
             metadataModified: pkg.metadata_modified || null,
+            jurisdiction: normalizeJurisdiction(pkg.jurisdiction),
             raw
         },
         resources: (pkg.resources || []).map(r => normalizeResource(r, pkg.id))
     };
 }
 
-module.exports = { normalizePackage, normalizeOrganization, normalizeResource, pickTranslated };
+module.exports = { normalizePackage, normalizeOrganization, normalizeResource, normalizeJurisdiction, pickTranslated };

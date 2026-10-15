@@ -34,6 +34,12 @@ expect() {
 }
 expect /readyz 200
 expect /api/v1/datasets 200
+expect '/api/v1/datasets?facets=1&lang=fr&level=federal&sort=title&format=CSV&format=PDF&queryable=true' 200
+expect '/api/v1/datasets?level=national' 400
+if ! curl -fsS "$base/api/v1/datasets?facets=1" | grep -q '"facets":{'; then
+  echo 'The dataset search did not return facet counts.' >&2
+  exit 1
+fi
 expect /api/v1/openapi.json 200
 expect /docs 200
 expect /pricing 404

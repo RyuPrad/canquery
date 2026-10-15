@@ -66,7 +66,7 @@ async function upsertDatasets(db, datasetsRaw) {
         let paramIndex = 1;
         for (let j = 0; j < chunk.length; j++) {
             const ds = chunk[j];
-            placeholders.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10})`);
+            placeholders.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11})`);
             values.push(
                 ds.id,
                 ds.name,
@@ -78,12 +78,15 @@ async function upsertDatasets(db, datasetsRaw) {
                 ds.keywordsEn,
                 ds.keywordsFr,
                 ds.metadataModified,
-                JSON.stringify(ds.raw)
+                JSON.stringify(ds.raw),
+                // Only federal records declare it; other sources derive a
+                // level from their places when read.
+                ds.jurisdiction ?? null
             );
-            paramIndex += 11;
+            paramIndex += 12;
         }
         const sql = `
-            INSERT INTO datasets (id, name, title_en, title_fr, notes_en, notes_fr, org_id, keywords_en, keywords_fr, metadata_modified, raw)
+            INSERT INTO datasets (id, name, title_en, title_fr, notes_en, notes_fr, org_id, keywords_en, keywords_fr, metadata_modified, raw, jurisdiction)
             VALUES ${placeholders.join(', ')}
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
@@ -95,7 +98,8 @@ async function upsertDatasets(db, datasetsRaw) {
                 keywords_en = EXCLUDED.keywords_en,
                 keywords_fr = EXCLUDED.keywords_fr,
                 metadata_modified = EXCLUDED.metadata_modified,
-                raw = EXCLUDED.raw
+                raw = EXCLUDED.raw,
+                jurisdiction = EXCLUDED.jurisdiction
         `;
         await db.query(sql, values);
     }

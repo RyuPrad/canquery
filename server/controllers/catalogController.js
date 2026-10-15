@@ -12,22 +12,39 @@ const cleanStr = (v) => {
     return undefined;
 };
 
+// Repeated keys arrive as arrays. Each value keeps the scalar rules.
+const MAX_LIST_VALUES = 20;
+const cleanList = (value, name) => {
+    if (value === undefined) return undefined;
+    const values = Array.isArray(value) ? value : [value];
+    if (values.length > MAX_LIST_VALUES) throw new AppError('Too many ' + name + ' values', 400);
+    const cleaned = values.map(cleanStr).filter(item => item !== undefined);
+    return cleaned.length ? cleaned : undefined;
+};
+
 const listDatasets = async (req, res) => {
-    const { q, org, format, keyword, place, source, mappable, limit, cursor } = req.query;
+    const { q, org, format, keyword, place, source, mappable, level, queryable, sort, lang, facets, limit, cursor } = req.query;
     const result = await catalogService.searchDatasets({
         q: cleanStr(q),
-        org: cleanStr(org),
-        format: cleanStr(format),
-        keyword: cleanStr(keyword),
+        org: cleanList(org, 'org'),
+        format: cleanList(format, 'format'),
+        keyword: cleanList(keyword, 'keyword'),
         place: cleanStr(place),
-        source: cleanStr(source),
+        source: cleanList(source, 'source'),
+        level: cleanList(level, 'level'),
         mappable,
+        queryable,
+        sort,
+        lang,
+        facets,
         limit,
         cursor
     });
     res.set('Cache-Control', 'public, max-age=300');
     const sources = Array.from(new Set(result.items.flatMap(item => item.provenance.sources.map(source => source.id))));
-    res.json(envelope(result.items, { nextCursor: result.nextCursor, meta: { sources, search: { query: cleanStr(q) || '', suggestions: result.suggestions } } }));
+    const meta = { sources, search: { query: cleanStr(q) || '', suggestions: result.suggestions } };
+    if ('facets' in result) Object.assign(meta, { total: result.total, facets: result.facets });
+    res.json(envelope(result.items, { nextCursor: result.nextCursor, meta }));
 };
 
 const provenanceMeta = (value) => {

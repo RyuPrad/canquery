@@ -1,5 +1,5 @@
 import { afterEach, test, expect, vi } from 'vitest';
-import { fetchResource, queryResource, fetchOrganizations, recordResourceActivity, prepareResource } from './catalog.js';
+import { fetchResource, queryResource, fetchOrganizations, recordResourceActivity, prepareResource, searchDatasets } from './catalog.js';
 import { ApiProtocolError } from './client.js';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -25,4 +25,19 @@ test('scoped lists reject non-list data while current preparation and activity k
   await expect(prepareResource('r')).resolves.toMatchObject({ data: { already_loaded: true } });
   respond(null, {}, 204);
   await expect(recordResourceActivity('r')).resolves.toBeNull();
+});
+
+test('dataset searches accept optional counts and reject malformed ones', async () => {
+  respond([{ id: 'd' }]);
+  await expect(searchDatasets()).resolves.toMatchObject({ data: [{ id: 'd' }] });
+  respond([], { total: null, facets: null });
+  await expect(searchDatasets({ facets: true })).resolves.toMatchObject({ meta: { facets: null } });
+  respond([], { total: 2, facets: { format: [{ value: 'CSV', count: 2 }], organization: [{ value: 'o', label: { en: null, fr: 'É' }, count: 1 }] } });
+  await expect(searchDatasets({ facets: true })).resolves.toMatchObject({ meta: { total: 2 } });
+  for (const meta of [{ total: -1 }, { total: 1.5 }, { facets: [] }, { facets: { format: [{ value: 'CSV' }] } }, { facets: { format: [{ value: 1, count: 1 }] } }]) {
+    respond([], meta);
+    await expect(searchDatasets({ facets: true })).rejects.toBeInstanceOf(ApiProtocolError);
+  }
+  respond({ not: 'a list' });
+  await expect(searchDatasets()).rejects.toBeInstanceOf(ApiProtocolError);
 });

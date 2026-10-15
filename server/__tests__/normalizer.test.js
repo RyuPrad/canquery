@@ -1,4 +1,4 @@
-const { pickTranslated, normalizePackage } = require('../services/catalogNormalizer');
+const { pickTranslated, normalizePackage, normalizeJurisdiction } = require('../services/catalogNormalizer');
 
 describe('catalogNormalizer.pickTranslated', () => {
     it('prefers the translated values and trims them', () => {
@@ -40,5 +40,20 @@ describe('catalogNormalizer.normalizePackage', () => {
         expect(n.dataset.titleEn).toBe('Water quality');
         expect(n.dataset.titleFr).toBeNull();
         expect(n.dataset.notesEn).not.toBe('null');
+    });
+});
+
+describe('catalogNormalizer.normalizeJurisdiction', () => {
+    it('keeps the three declared levels of government and nothing else', () => {
+        expect(normalizeJurisdiction(' Provincial ')).toBe('provincial');
+        expect(normalizeJurisdiction('federal')).toBe('federal');
+        expect(normalizeJurisdiction('municipal')).toBe('municipal');
+        for (const value of [undefined, null, '', 'regional', 42, ['federal']]) expect(normalizeJurisdiction(value)).toBeNull();
+    });
+
+    it('records the declared jurisdiction on the normalized dataset', () => {
+        const pkg = { id: 'd2', name: 'roads', title: 'Roads', jurisdiction: 'provincial', resources: [] };
+        expect(normalizePackage(pkg).dataset.jurisdiction).toBe('provincial');
+        expect(normalizePackage({ ...pkg, jurisdiction: undefined }).dataset.jurisdiction).toBeNull();
     });
 });

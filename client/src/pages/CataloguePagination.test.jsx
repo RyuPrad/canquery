@@ -5,7 +5,7 @@ import DatasetsPage from './DatasetsPage.jsx';
 import OrganizationsPage from './OrganizationsPage.jsx';
 import { LangProvider } from '../i18n.jsx';
 
-vi.mock('../api/catalog.js', () => ({ searchDatasets: vi.fn(), fetchOrganizations: vi.fn() }));
+vi.mock('../api/catalog.js', () => ({ searchDatasets: vi.fn(), fetchOrganizations: vi.fn(), fetchFeaturedPlaces: vi.fn() }));
 import { searchDatasets, fetchOrganizations } from '../api/catalog.js';
 
 const row = n => ({ id: 'd' + n, name: 'dataset-' + n, title: { en: 'Dataset ' + n, fr: 'Données ' + n },
@@ -37,7 +37,7 @@ test('page links, direct URLs and Back select the same catalogue slice', async (
   fireEvent.click(next);
   expect(await screen.findByText('Dataset 51')).toBeInTheDocument();
   expect(screen.queryByText('Dataset 1')).not.toBeInTheDocument();
-  expect(searchDatasets).toHaveBeenLastCalledWith({ cursor: '50', limit: 50 });
+  expect(searchDatasets).toHaveBeenLastCalledWith({ cursor: '50', limit: 50, lang: 'en', facets: true });
   expect(screen.getByTestId('location')).toHaveTextContent('/datasets?page=2');
   fireEvent.click(screen.getByRole('button', { name: 'Back' }));
   expect(await screen.findByText('Dataset 1')).toBeInTheDocument();
@@ -68,7 +68,7 @@ test('a late previous-page response cannot overwrite the selected page', async (
   let finishOld;
   searchDatasets.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
   start(<DatasetsPage />, '/datasets?page=2');
-  await waitFor(() => expect(searchDatasets).toHaveBeenCalledWith({ cursor: '50', limit: 50 }));
+  await waitFor(() => expect(searchDatasets).toHaveBeenCalledWith({ cursor: '50', limit: 50, lang: 'en', facets: true }));
   fireEvent.click(screen.getByRole('link', { name: 'Previous' }));
   expect(await screen.findByText('Dataset 1')).toBeInTheDocument();
   await act(async () => finishOld({ data: [row(51)], pagination: { nextCursor: null } }));

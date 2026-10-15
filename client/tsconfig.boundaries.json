@@ -14,6 +14,7 @@
     "src/api/client.js",
     "src/utils/resourceSchema.js",
     "src/utils/resourceExplorerState.js",
+    "src/utils/catalogSearchState.js",
     "src/hooks/preparationState.js"
   ]
 }

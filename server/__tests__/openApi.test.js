@@ -9,12 +9,14 @@ jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.r
 jest.mock('../services/preparationService', () => ({ prepareResource: jest.fn() }));
 jest.mock('../services/pmtilesMapService', () => ({ getTile: jest.fn() }));
 jest.mock('../db/ingestQueries', () => ({ getJobById: jest.fn(), enqueueJob: jest.fn() }));
+jest.mock('../services/catalogFacets', () => ({ datasetFacets: jest.fn() }));
 
 const fs = require('node:fs');
 const path = require('node:path');
 const request = require('supertest');
 const { buildOpenApi } = require('../services/openApi');
 const queries = require('../db/catalogReadQueries');
+const facets = require('../services/catalogFacets');
 const ckan = require('../services/ckanClient');
 const store = require('../db/storeQueries');
 const preparation = require('../services/preparationService');
@@ -156,6 +158,14 @@ describe('representative controller responses conform to the contract', () => {
         expect(list.status).toBe(200);
         expect(list.body.pagination.nextCursor).toBe('1');
         expectResponse('/datasets', 'get', list);
+        facets.datasetFacets.mockResolvedValue({ total: 2, facets: { level: [{ value: 'federal', count: 2 }], access: [{ value: 'queryable', count: 2 }, { value: 'mappable', count: 0 }],
+            organization: [{ value: 'org', label: { en: 'Org', fr: null }, count: 2 }], source: [], format: [{ value: 'CSV', count: 1 }], keyword: [{ value: 'roads', count: 1 }] } });
+        const counted = await request(app).get('/api/v1/datasets?limit=1&facets=1&level=federal&format=CSV&format=PDF');
+        expect(counted.status).toBe(200);
+        expect(counted.body.meta.total).toBe(2);
+        expectResponse('/datasets', 'get', counted);
+        facets.datasetFacets.mockResolvedValue(null);
+        expectResponse('/datasets', 'get', await request(app).get('/api/v1/datasets?limit=1&facets=1'));
         queries.getResourceById.mockResolvedValue(resourceRow('metadata'));
         const metadata = await request(app).get('/api/v1/resources/metadata');
         expect(metadata.status).toBe(200);

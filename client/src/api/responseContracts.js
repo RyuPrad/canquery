@@ -13,6 +13,15 @@ export const queryResponse = ({ data, meta }) => record(data) && Array.isArray(d
 
 export const listResponse = ({ data }) => Array.isArray(data) && data.every(record);
 
+const count = value => Number.isSafeInteger(value) && value >= 0;
+const facetValue = value => record(value) && typeof value.value === 'string' && count(value.count) &&
+  (value.label === undefined || record(value.label));
+// Counts are optional: older responses omit them and an overloaded API sends null.
+export const datasetListResponse = ({ data, meta }) => listResponse({ data }) &&
+  (meta === undefined || ((meta.total === undefined || meta.total === null || count(meta.total)) &&
+    (meta.facets === undefined || meta.facets === null || (record(meta.facets) &&
+      Object.values(meta.facets).every(group => Array.isArray(group) && group.every(facetValue))))));
+
 export const profileResponse = ({ data }) => record(data) && Array.isArray(data.columns) &&
   data.columns.every(field) && Number.isSafeInteger(data.row_count) && data.row_count >= 0;
 

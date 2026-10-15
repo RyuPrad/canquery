@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 vi.mock('./client.js', () => ({ getJSON: vi.fn(), postJSON: vi.fn() }));
 
 import { getJSON } from './client.js';
-import { fetchFeaturedPlaces } from './catalog.js';
+import { datasetSearchPath, fetchFeaturedPlaces, searchDatasets } from './catalog.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,5 +45,16 @@ describe('catalog API helpers', () => {
 
     await expect(fetchFeaturedPlaces()).rejects.toThrow('repeated cursor');
     expect(getJSON).toHaveBeenCalledTimes(2);
+  });
+
+  test('dataset searches send lists as repeated keys in a stable order and validate the response', async () => {
+    expect(datasetSearchPath({ cursor: '50', limit: 50, format: ['CSV', 'PDF'], q: 'parks', mappable: false, place: '', facets: true, lang: 'fr' }))
+      .toBe('/web-api/v1/datasets?q=parks&format=CSV&format=PDF&lang=fr&facets=true&limit=50&cursor=50');
+    expect(datasetSearchPath()).toBe('/web-api/v1/datasets');
+    getJSON.mockResolvedValue({ data: [] });
+    const signal = new AbortController().signal;
+    await searchDatasets({ org: ['a', 'b'], limit: 20 }, { signal });
+    expect(getJSON).toHaveBeenCalledWith('/web-api/v1/datasets?org=a&org=b&limit=20', undefined,
+      expect.objectContaining({ signal, validate: expect.any(Function) }));
   });
 });

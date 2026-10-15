@@ -12,6 +12,8 @@ jest.mock('../db/catalogReadQueries', () => ({
     listRecentlyIngested: jest.fn()
 }));
 
+jest.mock('../services/catalogFacets', () => ({ datasetFacets: jest.fn() }));
+
 jest.mock('../services/ckanClient', () => ({
     packageList: jest.fn(),
     packageSearch: jest.fn(),
@@ -22,6 +24,7 @@ jest.mock('../services/ckanClient', () => ({
 
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');
+const facets = require('../services/catalogFacets');
 const ckan = require('../services/ckanClient');
 const app = require('../app');
 
@@ -67,15 +70,70 @@ describe('Catalog API', () => {
         await request(app).get('/api/v1/datasets?q=water&org=statcan&format=csv&keyword=health&limit=500');
         expect(queries.searchDatasets).toHaveBeenCalledWith({
             q: 'water',
-            org: 'statcan',
-            format: 'csv',
-            keyword: 'health',
+            org: ['statcan'],
+            format: ['CSV'],
+            keyword: ['health'],
             place: undefined,
             source: undefined,
             mappable: null,
+            level: undefined,
+            queryable: null,
+            sort: 'relevance',
+            lang: 'en',
             limit: 101,
             offset: 0
         });
+        expect(facets.datasetFacets).not.toHaveBeenCalled();
+    });
+
+    it('repeated filters match any value and are normalized before querying', async () => {
+        queries.searchDatasets.mockResolvedValue([]);
+        const res = await request(app).get('/api/v1/datasets?format=xlsx&format=CSV&format=csv&org=b&org=a&keyword=k&keyword=k'
+            + '&source=s2&source=s1&level=municipal&level=federal&queryable=1&mappable=true&sort=title&lang=fr');
+        expect(res.status).toBe(200);
+        expect(queries.searchDatasets).toHaveBeenCalledWith(expect.objectContaining({
+            format: ['CSV', 'XLSX'], org: ['a', 'b'], keyword: ['k'], source: ['s1', 's2'],
+            level: ['federal', 'municipal'], queryable: true, mappable: true, sort: 'title', lang: 'fr'
+        }));
+        expect(res.body.meta).not.toHaveProperty('total');
+        expect(res.body.meta).not.toHaveProperty('facets');
+    });
+
+    it.each([
+        ['format=' + Array.from({ length: 21 }, (_, i) => 'F' + i).join('&format='), 'Too many format values'],
+        ['org=' + 'x'.repeat(201), 'Query parameter too long'],
+        ['level=national', 'Invalid level'],
+        ['sort=newest', 'Invalid sort'],
+        ['queryable=false', 'Invalid queryable'],
+        ['facets=yes', 'Invalid facets']
+    ])('rejects %s', async (query, error) => {
+        const res = await request(app).get('/api/v1/datasets?' + query);
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe(error);
+        expect(queries.searchDatasets).not.toHaveBeenCalled();
+    });
+
+    it('facets=1 adds the total and counts without changing meta.search', async () => {
+        queries.searchDatasets.mockResolvedValue([makeSearchRow(1)]);
+        const counts = { level: [{ value: 'federal', count: 3 }], access: [{ value: 'queryable', count: 1 }, { value: 'mappable', count: 0 }],
+            organization: [], source: [], format: [{ value: 'CSV', count: 2 }], keyword: [] };
+        facets.datasetFacets.mockResolvedValue({ total: 3, facets: counts });
+        const res = await request(app).get('/web-api/v1/datasets?facets=1&format=CSV&lang=fr');
+        expect(res.status).toBe(200);
+        expect(facets.datasetFacets).toHaveBeenCalledWith(expect.objectContaining({ format: ['CSV'], lang: 'fr', sort: 'relevance' }));
+        expect(res.body.meta.total).toBe(3);
+        expect(res.body.meta.facets).toEqual(counts);
+        expect(res.body.meta.search).toEqual({ query: '', suggestions: [] });
+    });
+
+    it('unavailable counts still return the page', async () => {
+        queries.searchDatasets.mockResolvedValue([makeSearchRow(1)]);
+        facets.datasetFacets.mockResolvedValue(null);
+        const res = await request(app).get('/api/v1/datasets?facets=true');
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.meta.total).toBeNull();
+        expect(res.body.meta.facets).toBeNull();
     });
 
     it('returns nextCursor when there are more rows', async () => {

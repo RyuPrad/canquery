@@ -69,3 +69,32 @@ export type PreparationEvent =
       retryAt: number | null;
       reason: unknown;
     };
+
+export type CatalogLevel = 'federal' | 'provincial' | 'municipal';
+export type CatalogSort = 'relevance' | 'updated' | 'title' | 'title_desc';
+export type CatalogListKey = 'org' | 'format' | 'keyword' | 'source' | 'level';
+export interface CatalogSearchState {
+  q: string;
+  org: string[];
+  format: string[];
+  keyword: string[];
+  source: string[];
+  level: string[];
+  place: string;
+  mappable: boolean;
+  queryable: boolean;
+  sort: CatalogSort;
+}
+export interface CatalogFacetValue {
+  value: string;
+  count: number;
+  label?: { en: string | null; fr: string | null };
+}
+export type CatalogFacetGroup =
+  | 'level'
+  | 'access'
+  | 'organization'
+  | 'source'
+  | 'format'
+  | 'keyword';
+export type CatalogFacets = Partial<Record<CatalogFacetGroup, CatalogFacetValue[]>>;

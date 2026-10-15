@@ -11,7 +11,9 @@ export default function useCatalogPage(fetchPage, deps, filtered = false) {
   const [selection, setSelection] = useState({ key: null, page: 1 });
   const page = filtered ? (selection.key === filterKey ? selection.page : 1) : pageNumber(params);
   const [state, setState] = useState({ key: null, items: [], loading: true, error: null, meta: null, hasMore: false });
-  const requestKey = JSON.stringify([filterKey, page]);
+  // Retry repeats the current page without resetting it.
+  const [attempt, setAttempt] = useState(0);
+  const requestKey = JSON.stringify([filterKey, page, attempt]);
 
   useEffect(() => {
     if (!filtered && params.getAll('page').length === 1 && params.get('page') === '1') {
@@ -45,5 +47,6 @@ export default function useCatalogPage(fetchPage, deps, filtered = false) {
   return { items: current.items, loading: current.loading, error: current.error,
     meta: current.meta, hasMore: current.hasMore, page, path: pathname,
     notFound: page === null || (!current.loading && !current.error && page > 1 && current.items.length === 0),
-    onPage: filtered ? number => setSelection({ key: filterKey, page: number }) : undefined };
+    onPage: filtered ? number => setSelection({ key: filterKey, page: number }) : undefined,
+    reload: () => setAttempt(value => value + 1) };
 }

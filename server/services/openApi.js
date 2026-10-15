@@ -1,5 +1,6 @@
 const { extension } = require('../extensions');
 const { componentNames } = require('./componentNames');
+const { LEVELS } = require('../db/catalogSqlFragments');
 // Documentation only. Keep these shapes aligned with the public controllers;
 // this module neither queries data nor exposes private runtime configuration.
 const ref = name => ({ $ref: '#/components/schemas/' + name });
@@ -41,7 +42,10 @@ const schemas = {
         limits: object({ max_page_rows: integer, max_offset: integer, export_max_rows: integer }),
         query_mode: { type: 'string', enum: ['datastore', 'ingested'] }, aggregation: ref('Aggregation'), map: ref('ViewportMetadata'),
         search: object({ query: string, suggestions: array(string) }),
+        total: { type: ['integer', 'null'], minimum: 0 }, facets: nullable(ref('Facets')),
         period: nullable(object({ year: integer, month: { type: 'integer', minimum: 1, maximum: 12 } })) }, ['source', 'license', 'upstream']),
+    FacetValue: object({ value: string, label: ref('LocalizedText'), count: integer }, ['value', 'count']),
+    Facets: object(Object.fromEntries(['level', 'access', 'organization', 'source', 'format', 'keyword'].map(name => [name, array(ref('FacetValue'))]))),
     Error: errorSchema(COMMUNITY_ERROR_CODES),
     PlaceIdentity: object({ id: string, slug: string, kind: { type: 'string', enum: kinds }, name: ref('LocalizedText'),
         relationship: { type: 'string', enum: ['direct', 'coverage'] }, includes_descendants: { type: 'boolean' } }),
@@ -191,6 +195,8 @@ function parameter(name, description, fr, schema = string, extra = {}) {
 }
 const search = parameter('q', 'Catalogue search text, trimmed; at most 200 characters.', 'Texte de recherche, espaces extérieurs retirés; 200 caractères maximum.', { type: 'string', maxLength: 200 }, { example: 'permits' });
 const filter = (name, en, fr) => parameter(name, en, fr, { type: 'string', maxLength: 200 });
+const list = (name, en, fr, items = { type: 'string', maxLength: 200 }) => parameter(name, en, fr + ' Répétable.', { type: 'array', items, maxItems: 20 });
+const flag = (name, en, fr) => parameter(name, en + ' Use true or 1; omit to disable.', fr + ' Utilisez true ou 1; omettez pour désactiver.', { type: 'string', enum: ['true', '1'] });
 const cursor = parameter('cursor', 'Nonnegative offset. Pass pagination.nextCursor unchanged; omit for the first page.', 'Décalage positif ou nul. Réutilisez pagination.nextCursor; omettez-le à la première page.', { type: 'integer', minimum: 0, default: 0 }, { example: 20 });
 const limit = (def, max) => parameter('limit', `Page size; values above ${max} are clamped to ${max}.`, `Taille de page; les valeurs supérieures à ${max} sont ramenées à ${max}.`, { type: 'integer', minimum: 1, maximum: max, default: def });
 const place = filter('place', 'Canonical place ID or slug; includes configured inherited coverage.', 'Identifiant ou slug canonique du lieu; inclut la couverture héritée configurée.');
@@ -239,9 +245,16 @@ function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     }
     const catalogueDescription = 'Discover admitted catalogue records. Availability of metadata does not guarantee a working file, table or map. Catalogue reads never request preparation. Follow pagination.nextCursor until null.';
     const catalogueFrench = 'Découvrez les fiches admises. Des métadonnées présentes ne garantissent pas un fichier, tableau ou carte disponible. Aucune préparation automatique. Suivez pagination.nextCursor jusqu’à null.';
-    add('/datasets', 'get', 'listDatasets', 'Discovery', 'Search datasets', 'Rechercher des jeux de données', catalogueDescription, catalogueFrench, [search, filter('org', 'Publisher name or identity.', 'Nom ou identifiant de l’éditeur.'), filter('format', 'Recorded resource format.', 'Format de ressource enregistré.'), filter('keyword', 'Recorded dataset keyword.', 'Mot-clé du jeu de données.'), place,
-            filter('source', 'Catalogue source ID.', 'Identifiant de source du catalogue.'), parameter('mappable', 'Only datasets with maps. Use true or 1; omit to disable. false is invalid.', 'Jeux avec cartes seulement. Utilisez true ou 1; omettez pour désactiver. false est non valide.', { type: 'string', enum: ['true', '1'] }), limit(20, 100), cursor],
-        envelope(array(ref('DatasetSummary'))), sample([{ ...synthetic.dataset, description: { en: 'Illustrative records.', fr: 'Données illustratives.' }, resource_count: 1, queryable_count: 1, mappable_count: 0, organization: null, places: [], provenance }], { search: { query: 'permits', suggestions: [] }, sources: ['example-source'] }, '20'), [400]);
+    const datasetsDescription = catalogueDescription + ' Repeated values of one filter match any of them; different filters must all match. With facets, each group is counted without its own filter; counts are null when unavailable.';
+    const datasetsFrench = catalogueFrench + ' Les valeurs répétées d’un filtre en acceptent une seule; des filtres différents doivent tous correspondre. Avec facets, chaque groupe est compté sans son propre filtre; null si indisponible.';
+    add('/datasets', 'get', 'listDatasets', 'Discovery', 'Search datasets', 'Rechercher des jeux de données', datasetsDescription, datasetsFrench, [search, list('org', 'Publisher name or identity; repeatable.', 'Nom ou identifiant de l’éditeur.'), list('format', 'Recorded resource format; repeatable.', 'Format de ressource enregistré.'), list('keyword', 'Recorded dataset keyword; repeatable.', 'Mot-clé du jeu de données.'), place,
+            list('source', 'Catalogue source ID; repeatable.', 'Identifiant de source du catalogue.'), list('level', 'Level of government; provincial includes territorial and municipal includes regional. Repeatable.', 'Ordre de gouvernement; provincial inclut territorial et municipal inclut régional.', { type: 'string', enum: LEVELS }),
+            parameter('mappable', 'Only datasets with maps. Use true or 1; omit to disable. false is invalid.', 'Jeux avec cartes seulement. Utilisez true ou 1; omettez pour désactiver. false est non valide.', { type: 'string', enum: ['true', '1'] }),
+            flag('queryable', 'Only datasets with a live table or a ready prepared copy.', 'Jeux avec un tableau en direct ou une copie préparée prête seulement.'),
+            parameter('sort', 'relevance keeps search ranking; title order follows lang.', 'relevance conserve le classement; l’ordre des titres suit lang.', { type: 'string', enum: ['relevance', 'updated', 'title', 'title_desc'], default: 'relevance' }), language,
+            flag('facets', 'Add meta.total and meta.facets.', 'Ajoute meta.total et meta.facets.'), limit(20, 100), cursor],
+        envelope(array(ref('DatasetSummary'))), sample([{ ...synthetic.dataset, description: { en: 'Illustrative records.', fr: 'Données illustratives.' }, resource_count: 1, queryable_count: 1, mappable_count: 0, organization: null, places: [], provenance }], { search: { query: 'permits', suggestions: [] }, sources: ['example-source'],
+            total: 1, facets: { level: [{ value: 'municipal', count: 1 }], access: [{ value: 'queryable', count: 1 }, { value: 'mappable', count: 0 }], organization: [], source: [{ value: 'example-source', label: synthetic.source.name, count: 1 }], format: [{ value: 'CSV', count: 1 }], keyword: [] } }, '20'), [400]);
     add('/datasets/{idOrName}', 'get', 'getDataset', 'Discovery', 'Get a dataset', 'Obtenir un jeu de données', 'Resolve a canonical dataset ID or published name/slug. Includes resources, capabilities and source-specific licence/provenance.', 'Résout un identifiant canonique ou un nom/slug publié. Inclut les ressources, capacités, licences et provenance.', [pathParameter('idOrName', 'Canonical dataset ID or published name/slug.', 'Identifiant canonique ou nom/slug publié.')], envelope(ref('Dataset')), sample({ ...synthetic.dataset, resources: [resource], provenance }), [404]);
     add('/organizations', 'get', 'listOrganizations', 'Discovery', 'List publishers', 'Lister les éditeurs', 'Literal bilingual publisher search with optional source/place scope. Uses catalogue pagination.', 'Recherche littérale bilingue des éditeurs, filtrable par source ou lieu. Pagination du catalogue.', [filter('q', 'Literal bilingual publisher search.', 'Recherche littérale bilingue des éditeurs.'), filter('source', 'Catalogue source ID.', 'Identifiant de source.'), place, limit(50, 100), cursor], envelope(array(ref('Organization'))), sample([{ id: 'example-org', name: 'example-publisher', title: synthetic.source.name, dataset_count: 1, place: null }]), [400]);
     add('/organizations/{name}', 'get', 'getOrganization', 'Discovery', 'Get a publisher', 'Obtenir un éditeur', 'Publisher identity, catalogue and capability counts, and place context.', 'Identité de l’éditeur, dénombrements du catalogue et des capacités, et lieu associé.', [pathParameter('name', 'Publisher name or identity, at most 200 characters.', 'Nom ou identifiant de l’éditeur, 200 caractères maximum.', { type: 'string', maxLength: 200 })], envelope(ref('Organization')), sample({ id: 'example-org', name: 'example-publisher', title: synthetic.source.name, dataset_count: 1, queryable_dataset_count: 1, mappable_dataset_count: 0, metadata_modified: null, place: null }), [400, 404]);
