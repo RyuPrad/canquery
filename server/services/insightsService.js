@@ -4,6 +4,7 @@ const { getResourceById } = require('../db/catalogReadQueries');
 const { profileStoreTable, aggregateStoreTable } = require('../db/storeQueries');
 const { pickChartSpec } = require('./featuredChart');
 const { createCache } = require('../utils/cache');
+const { startWarming } = require('../utils/warming');
 
 const toNumberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
 
@@ -35,7 +36,8 @@ const topDownloads = async (lang = 'en') => {
 // Reject ambiguous or uninformative candidates rather than inventing context.
 // The whole payload is cached, so per-dataset profile/aggregate runs rarely.
 
-const featuredCache = createCache({ name: 'insights-featured', ttlMs: 10 * 60 * 1000, negativeTtlMs: 60 * 1000 });
+const FEATURED_TTL_MS = 10 * 60 * 1000;
+const featuredCache = createCache({ name: 'insights-featured', ttlMs: FEATURED_TTL_MS, negativeTtlMs: 60 * 1000 });
 // Tables are immutable between publications. Retain the language-independent
 // work across response-cache refreshes; a new table/version/schema gets a new
 // key. Final labels and candidate titles are still built for each language.
@@ -201,6 +203,28 @@ async function computeFeatured(lang) {
     return out;
 }
 
-const featured = async (lang = 'en') => featuredCache.get('featured:' + lang, () => computeFeatured(lang));
+const featuredKey = lang => 'featured:' + lang;
+const featured = async (lang = 'en') => featuredCache.get(featuredKey(lang), () => computeFeatured(lang));
 
-module.exports = { topDownloads, featured, buildFeaturedPreview };
+// Rebuilding the previews from cold profiles every candidate, which takes
+// over ten seconds. The API builds them as soon as it starts and refreshes them
+// before they expire, so no visitor waits for that work: a refresh keeps
+// serving the previous previews until the new ones are ready, and the
+// language-independent snapshot work is shared across both passes.
+const FEATURED_WARM_INTERVAL_MS = 8 * 60 * 1000;
+
+// Never throws: the previews are optional for the warming loop.
+async function refreshFeatured(lang = 'en') {
+    try {
+        return await featuredCache.refresh(featuredKey(lang), () => computeFeatured(lang));
+    } catch {
+        console.warn('[insights-featured] refresh failed');
+        return null;
+    }
+}
+
+function startFeaturedWarming({ intervalMs = FEATURED_WARM_INTERVAL_MS } = {}) {
+    return startWarming('insights-featured', ['en', 'fr'].map(lang => () => refreshFeatured(lang)), { intervalMs });
+}
+
+module.exports = { topDownloads, featured, refreshFeatured, startFeaturedWarming, buildFeaturedPreview, FEATURED_WARM_INTERVAL_MS };

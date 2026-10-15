@@ -84,3 +84,32 @@ describe('createCache', () => {
         expect(cache.stats()).toEqual(expect.objectContaining({ in_flight: 0, size: 2 }));
     });
 });
+
+describe('createCache refresh', () => {
+    it('recomputes a fresh entry while reads keep the previous value, sharing in-flight work', async () => {
+        const cache = createCache({ name: 'refresh', ttlMs: 60000, negativeTtlMs: 1000 });
+        await cache.get('k', async () => 1);
+        let release;
+        const refreshed = cache.refresh('k', () => new Promise(resolve => { release = resolve; }));
+        await expect(cache.get('k', async () => 'unused')).resolves.toBe(1);
+        expect(cache.refresh('k', async () => 'other')).toBe(refreshed);
+        release(2);
+        await expect(refreshed).resolves.toBe(2);
+        await expect(cache.get('k', async () => 'unused')).resolves.toBe(2);
+        expect(cache.stats()).toMatchObject({ refreshes: 1, in_flight_hits: 1, misses: 1 });
+    });
+
+    it('a cold read joins a refresh in flight, and a failed refresh keeps the previous value', async () => {
+        const cache = createCache({ name: 'refresh-cold', ttlMs: 60000, negativeTtlMs: 1000 });
+        let release;
+        const refreshed = cache.refresh('k', () => new Promise(resolve => { release = resolve; }));
+        const read = cache.get('k', async () => 'unused');
+        await new Promise(resolve => setImmediate(resolve));
+        release('first');
+        await expect(read).resolves.toBe('first');
+        await expect(refreshed).resolves.toBe('first');
+        await expect(cache.refresh('k', async () => { throw new Error('boom'); })).rejects.toThrow('boom');
+        await expect(cache.get('k', async () => 'unused')).resolves.toBe('first');
+        expect(cache.stats().size).toBe(1);
+    });
+});
