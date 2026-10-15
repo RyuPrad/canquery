@@ -29,18 +29,22 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-// JSON-LD lives inside a <script> element, so the serialized JSON must not be
-// able to break out of it. Escaping < > & to their \u form keeps the payload
-// valid JSON while making "</script>" and "<!--" impossible to form.
-function jsonLdScript(obj) {
+// JSON-LD and the resource page's embedded initial data live inside <script>
+// elements, so the serialized JSON must not be able to break out of them.
+// Escaping < > & to their \u form keeps the payload valid JSON while making
+// "</script>" and "<!--" impossible to form. Data blocks (any non-JavaScript
+// type) are inert: browsers neither execute nor fetch them.
+function jsonScript(obj, { type = 'application/ld+json', id } = {}) {
     const json = JSON.stringify(obj)
         .replace(/</g, '\\u003c')
         .replace(/>/g, '\\u003e')
         .replace(/&/g, '\\u0026')
         .replace(/\u2028/g, '\\u2028')
         .replace(/\u2029/g, '\\u2029');
-    return '<script type="application/ld+json">' + json + '</script>';
+    return '<script type="' + escapeHtml(type) + '"' + (id ? ' id="' + escapeHtml(id) + '"' : '') + '>' + json + '</script>';
 }
+
+const jsonLdScript = obj => jsonScript(obj);
 
 // English-default site: prefer the EN value, fall back to FR when EN is blank.
 function pick(en, fr) {
@@ -731,6 +735,7 @@ module.exports = {
     DEFAULT_TITLE,
     DEFAULT_DESC,
     escapeHtml,
+    jsonScript,
     jsonLdScript,
     plainText,
     truncate,

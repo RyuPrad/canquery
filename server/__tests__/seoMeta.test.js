@@ -56,6 +56,17 @@ describe('seoMeta - JSON-LD embedding safety', () => {
     it('preserves ordinary spaces', () => {
         expect(seo.jsonLdScript({ x: 'hello world' })).toContain('hello world');
     });
+
+    it('emits data blocks with an escaped type and id while JSON-LD output is unchanged', () => {
+        expect(seo.jsonLdScript({ x: 1 })).toBe('<script type="application/ld+json">{"x":1}</script>');
+        const block = seo.jsonScript({ rows: ['</script><!--'] }, { type: 'application/json', id: 'cq-initial' });
+        expect(block.startsWith('<script type="application/json" id="cq-initial">')).toBe(true);
+        expect(block.endsWith('</script>')).toBe(true);
+        const inner = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+        expect(inner).not.toContain('</script>');
+        expect(JSON.parse(inner)).toEqual({ rows: ['</script><!--'] });
+        expect(seo.jsonScript({}, { type: 'x"><script>', id: 'a"b' })).toBe('<script type="x&quot;&gt;&lt;script&gt;" id="a&quot;b">{}</script>');
+    });
 });
 
 describe('seoMeta - dataset meta + JSON-LD', () => {

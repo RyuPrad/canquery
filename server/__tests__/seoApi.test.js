@@ -30,6 +30,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const catalogRead = require('../db/catalogReadQueries');
+const store = require('../db/storeQueries');
+const queryLog = require('../db/queryLogQueries');
 const app = require('../app');
 const { serveSpa, resolvePage, resolveMeta, injectAnalytics } = require('../controllers/spaController');
 
@@ -490,5 +492,146 @@ describe('production SPA response semantics', () => {
         const res = await request(spa).get(route);
         expect(res.status).toBe(200);
         expect(res.text).not.toContain('name="robots" content="noindex');
+    });
+});
+
+describe('resource page initial data', () => {
+    let distDir;
+    let spa;
+    const ready = {
+        id: 'r1', name_en: 'Permits', format: 'CSV', url: 'https://example.test/permits.csv',
+        dataset_id: 'd1', dataset_name: 'permits', dataset_title_en: 'Building permits',
+        ingest_status: 'ready', table_name: 'r_abc', ingested_at: '2026-09-01T00:00:00Z',
+        ingested_columns: [{ id: 'name', type: 'TEXT' }], ingested_row_count: 120,
+        last_accessed_at: '2026-10-01T00:00:00Z', places: [], provenance_sources: []
+    };
+    const readInitial = text => {
+        const match = text.match(/<script type="application\/json" id="cq-initial">(.*?)<\/script>/s);
+        return match ? JSON.parse(match[1]) : null;
+    };
+    const navigate = { 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate' };
+
+    beforeAll(() => {
+        distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-initial-'));
+        fs.writeFileSync(path.join(distDir, 'index.html'),
+            '<!doctype html><html><head><!-- seo:start --><title>x</title><!-- seo:end --></head><body><div id="root"></div></body></html>');
+        spa = express();
+        spa.get(/.*/, serveSpa(distDir));
+    });
+    afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+    beforeEach(() => {
+        catalogRead.getResourceById.mockResolvedValue(ready);
+        store.queryStoreTable.mockResolvedValue({ records: [{ _id: 1, name: 'Ottawa' }], total: 120 });
+        store.touchLastAccessed.mockResolvedValue(true);
+        queryLog.logQueryHit.mockResolvedValue(undefined);
+    });
+
+    it('embeds the metadata and the first page for a browser navigation and records its popularity', async () => {
+        const res = await request(spa).get('/resources/r1').set(navigate);
+        expect(res.status).toBe(200);
+        expect(res.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
+        expect(res.text).toContain('data-cq-seo-snapshot="true"');
+        expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/resources/r1"');
+        const payload = readInitial(res.text);
+        expect(payload).toMatchObject({ version: 1, path: '/resources/r1', page: 0 });
+        expect(payload.resource.data.id).toBe('r1');
+        expect(payload.resource.data.query_mode).toBe('ingested');
+        expect(payload.resource.data.ingestion.row_count).toBe(120);
+        expect(payload.resource.meta.source).toBe('canquery');
+        expect(payload.rows.data.fields[0]).toEqual({ id: '_id', type: 'int' });
+        expect(payload.rows.data.records).toEqual([{ _id: 1, name: 'Ottawa' }]);
+        expect(payload.rows.data.total).toBe(120);
+        expect(payload.rows.meta.query_mode).toBe('ingested');
+        expect(payload.rows.meta.snapshot.id).toBe(payload.resource.data.ingestion.snapshot_id);
+        expect(payload.rows.meta.retrieved_at).toBeTruthy();
+        expect(payload.rows.meta.limits.max_page_rows).toBe(100);
+        expect(store.queryStoreTable).toHaveBeenCalledWith(expect.objectContaining({ tableName: 'r_abc', limit: 50, offset: 0 }));
+        expect(store.touchLastAccessed).not.toHaveBeenCalled();
+        expect(queryLog.logQueryHit).toHaveBeenCalledWith('r1', 'ingested');
+        expect(catalogRead.getResourceById).toHaveBeenCalledTimes(2);
+    });
+
+    it('embeds the data for a plain document request without recording popularity', async () => {
+        const res = await request(spa).get('/resources/r1');
+        expect(readInitial(res.text).rows.data.total).toBe(120);
+        expect(queryLog.logQueryHit).not.toHaveBeenCalled();
+        expect(store.touchLastAccessed).not.toHaveBeenCalled();
+    });
+
+    it('skips the data block for in-app HTML fetches and HEAD requests', async () => {
+        const fetched = await request(spa).get('/resources/r1').set({ 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors' });
+        expect(fetched.status).toBe(200);
+        expect(fetched.text).not.toContain('cq-initial');
+        const head = await request(spa).head('/resources/r1');
+        expect(head.status).toBe(200);
+        expect(store.queryStoreTable).not.toHaveBeenCalled();
+        expect(catalogRead.getResourceById).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+        ['?page=2', 100, 2],
+        ['?page=999', 10000, 200]
+    ])('answers the requested page %s within the offset ceiling', async (search, offset, page) => {
+        const res = await request(spa).get('/resources/r1' + search).set(navigate);
+        const payload = readInitial(res.text);
+        expect(payload.path).toBe('/resources/r1' + search);
+        expect(payload.page).toBe(page);
+        expect(store.queryStoreTable).toHaveBeenCalledWith(expect.objectContaining({ offset, limit: 50 }));
+    });
+
+    it.each(['?view=chart', '?q=ottawa', '?cf=%7B%22name%22%3A%22a%22%7D', '?sort=name%20desc', '?view=map'])(
+        'embeds only the metadata for %s', async search => {
+            const res = await request(spa).get('/resources/r1' + search).set(navigate);
+            const payload = readInitial(res.text);
+            expect(payload.resource.data.id).toBe('r1');
+            expect(payload.rows).toBeNull();
+            expect(payload.page).toBeNull();
+            expect(store.queryStoreTable).not.toHaveBeenCalled();
+            expect(queryLog.logQueryHit).not.toHaveBeenCalled();
+        });
+
+    it.each([
+        ['datastore', { ingest_status: null, table_name: null, datastore_active: true }],
+        ['file-only', { ingest_status: null, table_name: null, format: 'PDF', url: 'https://example.test/guide.pdf' }]
+    ])('embeds only the metadata for a %s resource', async (mode, overrides) => {
+        catalogRead.getResourceById.mockResolvedValue({ ...ready, ...overrides });
+        const res = await request(spa).get('/resources/r1').set(navigate);
+        const payload = readInitial(res.text);
+        expect(payload.resource.data.query_mode).toBe(mode);
+        expect(payload.rows).toBeNull();
+        expect(store.queryStoreTable).not.toHaveBeenCalled();
+    });
+
+    it('escapes cell values so the data block can never close its script element', async () => {
+        store.queryStoreTable.mockResolvedValue({ records: [{ _id: 1, name: '</script><!-- <b>&amp;' }], total: 1 });
+        const res = await request(spa).get('/resources/r1').set(navigate);
+        const block = res.text.slice(res.text.indexOf('id="cq-initial">'));
+        expect(block.indexOf('</script>')).toBe(block.indexOf('</script>\n</body>'));
+        expect(block).toContain('\\u003c/script\\u003e\\u003c!--');
+        expect(readInitial(res.text).rows.data.records[0].name).toBe('</script><!-- <b>&amp;');
+    });
+
+    it('serves the page with metadata only when the first page read fails or is oversized', async () => {
+        store.queryStoreTable.mockRejectedValue(new Error('store unavailable'));
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const failed = await request(spa).get('/resources/r1').set(navigate);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toContain('store unavailable');
+        warn.mockRestore();
+        expect(failed.status).toBe(200);
+        expect(readInitial(failed.text).resource.data.id).toBe('r1');
+        expect(readInitial(failed.text).rows).toBeNull();
+
+        store.queryStoreTable.mockResolvedValue({ records: Array.from({ length: 50 }, (_, i) => ({ _id: i, name: 'x'.repeat(10 * 1024) })), total: 50 });
+        const wide = await request(spa).get('/resources/r1').set(navigate);
+        expect(readInitial(wide.text).rows).toBeNull();
+        expect(readInitial(wide.text).resource.data.ingestion.row_count).toBe(120);
+    });
+
+    it('adds no data block to other pages', async () => {
+        const res = await request(spa).get('/about').set(navigate);
+        expect(res.status).toBe(200);
+        expect(res.text).not.toContain('cq-initial');
+        expect(catalogRead.getResourceById).not.toHaveBeenCalled();
     });
 });
