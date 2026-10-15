@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { createRef, useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import CatalogFilters from './CatalogFilters.jsx';
@@ -134,5 +135,43 @@ describe('CatalogFilterLayout', () => {
     fireEvent.keyDown(inside, { key: 'Escape' });
     expect(screen.queryByRole('button', { name: 'Inside filters' })).toBeNull();
     expect(toggle).toHaveFocus();
+  });
+
+  test('a page can open the narrow filters itself and gets the panel to scroll to and focus', () => {
+    narrow(true);
+    const region = createRef();
+    function Page() {
+      const [open, setOpen] = useState(false);
+      return (
+        <LangProvider><MemoryRouter>
+          <button onClick={() => setOpen(true)}>Open from page</button>
+          <output data-testid="open">{String(open)}</output>
+          <CatalogFilterLayout open={open} onOpenChange={setOpen} regionRef={region} sidebar={<button>Inside filters</button>}>
+            <p>Results</p>
+          </CatalogFilterLayout>
+        </MemoryRouter></LangProvider>
+      );
+    }
+    render(<Page />);
+    expect(screen.queryByRole('region', { name: 'Filters' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open from page' }));
+    expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute('aria-expanded', 'true');
+    expect(region.current).toBe(screen.getByRole('region', { name: 'Filters' }));
+    expect(region.current).toHaveAttribute('tabindex', '-1');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Inside filters' }), { key: 'Escape' });
+    expect(screen.getByTestId('open')).toHaveTextContent('false');
+    expect(screen.queryByRole('region', { name: 'Filters' })).toBeNull();
+  });
+
+  test('on wide screens the focus target is the sidebar itself', () => {
+    narrow(false);
+    const region = createRef();
+    render(
+      <LangProvider><MemoryRouter>
+        <CatalogFilterLayout regionRef={region} sidebar={<button>Inside filters</button>}><p>Results</p></CatalogFilterLayout>
+      </MemoryRouter></LangProvider>
+    );
+    expect(region.current).toBe(screen.getByRole('complementary', { name: 'Filters' }));
+    expect(region.current).toHaveAttribute('tabindex', '-1');
   });
 });

@@ -7,22 +7,42 @@ import './CatalogFilters.css';
 
 // Wide screens keep the filters beside the results. Narrow screens show them
 // behind one disclosure above the results, like the documentation menu.
-export default function CatalogFilterLayout({ sidebar, activeCount = 0, children }) {
+// A page may control the disclosure (open with a stable onOpenChange, such as
+// a state setter) and pass regionRef to scroll to and focus the filters.
+export default function CatalogFilterLayout({
+  sidebar,
+  activeCount = 0,
+  children,
+  open: openProp,
+  onOpenChange,
+  regionRef
+}) {
   const { t } = useLang();
   const location = useLocation();
   const narrow = useMediaQuery('(max-width: 1023.98px)');
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = (next) => {
+    setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const panelId = useId();
   const triggerRef = useRef(null);
 
   useEffect(() => {
-    setOpen(false);
-  }, [location.pathname]);
+    setOwnOpen(false);
+    onOpenChange?.(false);
+  }, [location.pathname, onOpenChange]);
 
   if (!narrow) {
     return (
       <div className="cq-catalog-layout">
-        <aside className="cq-catalog-aside" aria-label={t('filters.title')}>
+        <aside
+          ref={regionRef}
+          tabIndex={regionRef ? -1 : undefined}
+          className="cq-catalog-aside"
+          aria-label={t('filters.title')}
+        >
           {sidebar}
         </aside>
         <div className="cq-catalog-main">{children}</div>
@@ -42,13 +62,15 @@ export default function CatalogFilterLayout({ sidebar, activeCount = 0, children
           className="cq-filter-toggle"
           aria-expanded={open}
           aria-controls={panelId}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
         >
           <FilterIcon size={15} className="cq-fg-red" />
           {label}
         </button>
         {open && (
           <section
+            ref={regionRef}
+            tabIndex={regionRef ? -1 : undefined}
             id={panelId}
             className="cq-catalog-panel"
             aria-label={t('filters.title')}

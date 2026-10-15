@@ -5,7 +5,6 @@ import { searchDatasets, fetchStats, fetchFeaturedPlaces } from '../api/catalog.
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
 import useFacetSnapshot from '../hooks/useFacetSnapshot.js';
 import useOptimisticSearch from '../hooks/useOptimisticSearch.js';
-import useHomeFilterOptions from '../hooks/useHomeFilterOptions.js';
 import useSearchDraft from '../hooks/useSearchDraft.js';
 import useCountUp from '../hooks/useCountUp.js';
 import { useLang } from '../i18n.jsx';
@@ -22,6 +21,7 @@ import PlaceSelect from '../components/PlaceSelect.jsx';
 import CatalogFilters from '../components/CatalogFilters.jsx';
 import CatalogFilterLayout from '../components/CatalogFilterLayout.jsx';
 import CatalogResultsHeader from '../components/CatalogResultsHeader.jsx';
+import HomeQuickFilters from '../components/HomeQuickFilters.jsx';
 import { catalogChips, removeChip } from '../components/catalogChips.js';
 import {
   EMPTY_CATALOG_SEARCH,
@@ -32,9 +32,8 @@ import {
   toggleCatalogValue,
   writeCatalogSearch
 } from '../utils/catalogSearchState.js';
-import { MapleLeaf, UnlockIcon, DatabaseIcon, ZapIcon, MapIcon } from '../components/Icons.jsx';
+import { MapleLeaf, UnlockIcon, DatabaseIcon, ZapIcon } from '../components/Icons.jsx';
 
-const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
 const EXAMPLES = {
   en: ['parks', 'playgrounds', 'building permits', 'water quality', 'census'],
   fr: ['parcs', 'aires de jeux', 'permis de construction', 'qualité de l’eau', 'recensement']
@@ -157,12 +156,6 @@ export default function HomePage() {
   }, []);
 
   const filtering = hasCatalogCriteria(searchState);
-  const { organizations: organizationOptions, sources: sourceOptions } = useHomeFilterOptions(
-    place,
-    sourceKey,
-    !filtering
-  );
-  const orgs = organizationOptions.data;
 
   useEffect(() => {
     let cancelled = false;
@@ -176,10 +169,9 @@ export default function HomePage() {
     };
   }, []);
 
-  const sources = sourceOptions.data;
-
-  // Counts come with the first page of filtered results only.
-  const request = catalogApiParams(searchState, { lang, facets: filtering });
+  // Counts come with the first page: whole-catalogue counts for the quick
+  // filters before a search, then the search's own counts.
+  const request = catalogApiParams(searchState, { lang, facets: true });
   const requestKey = JSON.stringify(request);
   const { items, meta, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>
@@ -191,29 +183,50 @@ export default function HomePage() {
       }),
     [requestKey, filtering, retry]
   );
-  const counts = useFacetSnapshot(filtering ? meta : null, loading);
+  const counts = useFacetSnapshot(meta, loading);
   const [shown, applyShown] = useOptimisticSearch(searchState, (next) =>
     setSearchParams(writeCatalogSearch(searchParams, next), { replace: true })
   );
   const current = { ...shown, q: query };
   const change = (next, event) => {
-    track('catalog_filter', { ...event, surface: 'home' });
+    track('catalog_filter', { surface: 'home', ...event });
     applyShown(next);
   };
-  const toggle = (key, value) =>
+  const toggle = (key, value, surface = 'home') =>
     change(toggleCatalogValue(current, key, value), {
       filter: key,
       value,
-      action: shown[key].includes(value) ? 'remove' : 'add'
+      action: shown[key].includes(value) ? 'remove' : 'add',
+      surface
     });
-  const flag = (key) =>
-    change({ ...current, [key]: !shown[key] }, { filter: key, value: !shown[key] });
+  const flag = (key, surface = 'home') =>
+    change({ ...current, [key]: !shown[key] }, { filter: key, value: !shown[key], surface });
   // The hero owns the place, so Reset keeps it.
   const reset = () => {
     setQuery('');
     change({ ...EMPTY_CATALOG_SEARCH, place }, { action: 'reset' });
   };
   const chips = catalogChips(shown, counts.facets, { t, lang, includePlace: false });
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersJump, setFiltersJump] = useState(0);
+  const filtersRegion = useRef(null);
+  useEffect(() => {
+    const region = filtersRegion.current;
+    if (!filtersJump || !region) return;
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    (region.closest('.cq-catalog-layout') || region).scrollIntoView?.({
+      block: 'start',
+      behavior: still ? 'auto' : 'smooth'
+    });
+    region.focus({ preventScroll: true });
+  }, [filtersJump]);
+  const showAllFilters = () => {
+    track('catalog_filter', { action: 'all_filters', surface: 'home_quick', filtering });
+    if (!filtering) return;
+    setFiltersOpen(true);
+    setFiltersJump((value) => value + 1);
+  };
 
   const reportedSearch = useRef(null);
   useEffect(() => {
@@ -235,6 +248,12 @@ export default function HomePage() {
   }, [loading, error, searchQuery, place, lang, items.length, meta]);
 
   const synced = stats?.last_synced_at ? formatRelativeTime(stats.last_synced_at, lang) : null;
+  const placeholder = Number.isSafeInteger(stats?.datasets)
+    ? t('home.search_placeholder_count').replace(
+        '{count}',
+        stats.datasets.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')
+      )
+    : undefined;
 
   const resultsList = (
     <div className="cq-home-datasets mt-5" aria-busy={loading}>
@@ -294,32 +313,47 @@ export default function HomePage() {
           </p>
 
           <div className="w-full mx-auto mt-7 grid sm:grid-cols-[minmax(0,1fr)_17rem] gap-2.5">
-            <SearchBar value={query} onChange={setQuery} />
+            <SearchBar value={query} onChange={setQuery} placeholder={placeholder} />
             <PlaceSelect value={place} onChange={changePlace} places={places} />
           </div>
 
-          <Link
-            to="/places"
-            className="inline-flex mt-3 text-xs link link-hover text-base-content/45"
-          >
-            {t('places.browse')}
-          </Link>
+          <HomeQuickFilters
+            search={shown}
+            facets={counts.facets}
+            total={counts.total}
+            stale={counts.stale}
+            filtering={filtering}
+            onToggle={(key, value) => toggle(key, value, 'home_quick')}
+            onFlag={(key) => flag(key, 'home_quick')}
+            onAllFilters={showAllFilters}
+          />
 
-          <div className="flex flex-wrap gap-2 items-center justify-center mt-4">
-            <span className="text-xs text-base-content/35">{t('home.try')}</span>
-            {EXAMPLES[lang].map((ex) => (
-              <button
-                key={ex}
-                className="cq-pill !text-xs"
-                onClick={() => {
-                  track('catalog_search', { query: ex, source: 'example' });
-                  setQuery(ex);
-                }}
+          {!filtering && (
+            <>
+              <Link
+                to="/places"
+                className="inline-flex mt-3 text-xs link link-hover text-base-content/45"
               >
-                {ex}
-              </button>
-            ))}
-          </div>
+                {t('places.browse')}
+              </Link>
+
+              <div className="flex flex-wrap gap-2 items-center justify-center mt-3">
+                <span className="text-xs text-base-content/35">{t('home.try')}</span>
+                {EXAMPLES[lang].map((ex) => (
+                  <button
+                    key={ex}
+                    className="cq-pill !text-xs"
+                    onClick={() => {
+                      track('catalog_search', { query: ex, source: 'example' });
+                      setQuery(ex);
+                    }}
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
         <section className="cq-home-section" aria-labelledby="home-catalogue-title">
@@ -335,9 +369,12 @@ export default function HomePage() {
             )}
           </div>
           {filtering ? (
-            <div className="mt-5">
+            <div className="mt-5 cq-fade">
               <CatalogFilterLayout
                 activeCount={activeFilterCount(shown, { includePlace: false })}
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+                regionRef={filtersRegion}
                 sidebar={
                   <CatalogFilters
                     search={shown}
@@ -385,113 +422,6 @@ export default function HomePage() {
             </div>
           ) : (
             <>
-              <div className="cq-home-filters flex flex-wrap gap-2 items-center mt-5">
-                <button
-                  className={'cq-pill' + (format.length === 0 ? ' cq-pill-active' : '')}
-                  aria-pressed={format.length === 0}
-                  onClick={() => {
-                    track('catalog_filter', { filter: 'format', value: '' });
-                    update({ format: [] });
-                  }}
-                >
-                  {t('home.all_formats')}
-                </button>
-                {FORMATS.map((f) => (
-                  <button
-                    key={f}
-                    className={'cq-pill' + (format.includes(f) ? ' cq-pill-active' : '')}
-                    aria-pressed={format.includes(f)}
-                    onClick={() => {
-                      track('catalog_filter', { filter: 'format', value: f });
-                      update({ format: [f] });
-                    }}
-                  >
-                    {f}
-                  </button>
-                ))}
-                <button
-                  className={
-                    'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')
-                  }
-                  onClick={() => {
-                    track('catalog_filter', { filter: 'mappable', value: !mappable });
-                    update({ mappable: !mappable });
-                  }}
-                  aria-pressed={mappable}
-                >
-                  <MapIcon size={12} />
-                  {t('places.has_map')}
-                </button>
-                <select
-                  className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
-                  value={sourceKey}
-                  onChange={(event) => {
-                    track('catalog_filter', { filter: 'source', value: event.target.value });
-                    update({ source: event.target.value ? [event.target.value] : [], org: [] });
-                  }}
-                  aria-label={t('source.choose')}
-                  aria-busy={sourceOptions.status === 'loading'}
-                  aria-describedby={
-                    sourceOptions.status === 'error' ? 'source-options-error' : undefined
-                  }
-                >
-                  <option value="">{t('source.all')}</option>
-                  {sourceKey && !sources.some((item) => item.id === sourceKey) && (
-                    <option value={sourceKey} disabled>
-                      {sourceKey}
-                    </option>
-                  )}
-                  {sources.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name?.[lang] || item.name?.en || item.id}
-                    </option>
-                  ))}
-                </select>
-                {sourceOptions.status === 'error' && (
-                  <span id="source-options-error" role="status" className="text-sm">
-                    {t('source.load_error')}{' '}
-                    <button className="link" type="button" onClick={sourceOptions.retry}>
-                      {t('common.retry')}
-                    </button>
-                  </span>
-                )}
-                <select
-                  className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
-                  value={orgKey}
-                  onChange={(e) => {
-                    track('catalog_filter', { filter: 'organization', value: e.target.value });
-                    update({ org: e.target.value ? [e.target.value] : [] });
-                  }}
-                  aria-label={t('home.all_organizations')}
-                  aria-busy={organizationOptions.status === 'loading'}
-                  aria-describedby={
-                    organizationOptions.status === 'error'
-                      ? 'organization-options-error'
-                      : undefined
-                  }
-                >
-                  <option value="">{t('home.all_organizations')}</option>
-                  {orgKey && !orgs.some((item) => item.name === orgKey) && (
-                    <option value={orgKey} disabled>
-                      {orgKey}
-                    </option>
-                  )}
-                  {orgs.map((o) => (
-                    <option key={o.name} value={o.name}>
-                      {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
-                    </option>
-                  ))}
-                </select>
-                {organizationOptions.status === 'error' && (
-                  <span id="organization-options-error" role="status" className="text-sm">
-                    {t('home.organizations_error')}{' '}
-                    <button className="link" type="button" onClick={organizationOptions.retry}>
-                      {t('common.retry')}
-                    </button>
-                  </span>
-                )}
-              </div>
-
               {resultsList}
               {!filtering && !loading && !error && items.length > 0 && (
                 <div className="mt-5">
