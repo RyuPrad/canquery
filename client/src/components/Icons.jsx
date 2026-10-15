@@ -339,6 +339,14 @@ export function PauseIcon(props) {
   );
 }
 
+export function FilterIcon(props) {
+  return (
+    <I {...props}>
+      <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />
+    </I>
+  );
+}
+
 export function XIcon(props) {
   return (
     <I {...props}>

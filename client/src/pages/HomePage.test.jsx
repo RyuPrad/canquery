@@ -55,6 +55,18 @@ beforeEach(() => {
   fetchPlaces.mockResolvedValue({ data: [], pagination: { nextCursor: null } });
 });
 
+const facetMeta = (organizations = [], sources = [], extra = {}) => ({
+  total: 3,
+  facets: {
+    level: [{ value: 'federal', count: 2 }, { value: 'municipal', count: 1 }],
+    access: [{ value: 'queryable', count: 1 }, { value: 'mappable', count: 0 }],
+    organization: organizations, source: sources,
+    format: [{ value: 'CSV', count: 3 }, { value: 'PDF', count: 1 }], keyword: [{ value: 'roads', count: 2 }],
+    ...extra
+  }
+});
+const group = name => screen.getByRole('group', { name });
+
 const contextualPreview = () => ({
   dataset_id: 'chart-dataset', title: { en: 'Grants by status' }, kind: 'donut',
   points: [{ key: 'Approved', label: 'Approved', value: 3 }, { key: 'Pending', label: 'Pending', value: 1 }],
@@ -104,34 +116,43 @@ test('one explainable preview is enough to display the chart section', async () 
   expect(await screen.findByRole('heading', { name: 'A closer look at the data' })).toBeInTheDocument();
 });
 
-test('changing place hides old publisher and source options through failure and retry', async () => {
+test('while filtering, sidebar counts replace the publisher and source selectors and can be retried', async () => {
+  searchDatasets.mockImplementation(async () => ({ data: [row('oshawa')], pagination: { nextCursor: null },
+    meta: facetMeta([{ value: 'old', label: { en: 'Old publisher' }, count: 1 }], [{ value: 'federal', label: { en: 'Federal portal' }, count: 1 }]) }));
   start('/?place=oshawa-on');
-  await screen.findByRole('option', { name: 'Old publisher (1)' });
-  fetchOrganizations.mockRejectedValueOnce(new Error('offline'));
-  fetchSources.mockRejectedValueOnce(new Error('offline'));
+  expect(await screen.findByRole('checkbox', { name: 'Old publisher' })).toBeInTheDocument();
+  expect(within(group('Publisher')).getByRole('checkbox', { name: 'Old publisher' })).not.toBeChecked();
+  expect(within(group('Source portal')).getByRole('checkbox', { name: 'Federal portal' })).toBeInTheDocument();
+  await screen.findByRole('option', { name: 'Toronto (2)' });
+  expect(screen.getByText('3 datasets', { selector: '[role=status]' })).toHaveAttribute('aria-live', 'polite');
+  expect(screen.queryByRole('combobox', { name: 'All organizations' })).toBeNull();
+  expect(fetchOrganizations).not.toHaveBeenCalled();
+  expect(fetchSources).not.toHaveBeenCalled();
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ place: 'oshawa-on', facets: true, lang: 'en', limit: 20 }));
+  searchDatasets.mockImplementation(async () => ({ data: [row('toronto')], pagination: { nextCursor: null }, meta: { total: null, facets: null } }));
   fireEvent.change(screen.getByRole('combobox', { name: 'Choose a place' }), { target: { value: 'toronto-on' } });
-  expect(screen.queryByRole('option', { name: 'Old publisher (1)' })).toBeNull();
-  expect(screen.queryByRole('option', { name: 'Federal' })).toBeNull();
-  const publisherError = await screen.findByText('Publishers could not be loaded for these filters.');
-  const sourceError = await screen.findByText('Source portals could not be loaded for this place.');
-  fetchOrganizations.mockResolvedValue({ data: [{ name: 'toronto', title: { en: 'Toronto publisher' }, dataset_count: 4 }] });
-  fetchSources.mockResolvedValue({ data: [{ id: 'toronto-source', name: { en: 'Toronto source' } }] });
-  fireEvent.click(within(publisherError).getByRole('button', { name: 'Retry' }));
-  fireEvent.click(within(sourceError).getByRole('button', { name: 'Retry' }));
-  await screen.findByRole('option', { name: 'Toronto publisher (4)' });
-  await screen.findByRole('option', { name: 'Toronto source' });
-  expect(screen.queryByRole('option', { name: 'Old publisher (1)' })).toBeNull();
+  expect(await screen.findByText('Counts are temporarily unavailable.')).toBeInTheDocument();
+  searchDatasets.mockImplementation(async () => ({ data: [row('toronto')], pagination: { nextCursor: null },
+    meta: facetMeta([{ value: 'toronto', label: { en: 'Toronto publisher' }, count: 4 }]) }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByRole('checkbox', { name: 'Toronto publisher' })).toBeInTheDocument();
+  expect(screen.queryByText('Counts are temporarily unavailable.')).toBeNull();
 });
 
-test('an obsolete publisher scope cannot replace newer options or their error state', async () => {
+test('an obsolete count response cannot replace newer counts', async () => {
   let resolveOld;
-  fetchOrganizations.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+  searchDatasets.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+  searchDatasets.mockImplementation(async () => ({ data: [row('toronto')], pagination: { nextCursor: null },
+    meta: facetMeta([{ value: 'new', label: { en: 'New publisher' }, count: 2 }]) }));
   start('/?place=oshawa-on');
-  await waitFor(() => expect(fetchOrganizations).toHaveBeenCalled());
+  await waitFor(() => expect(searchDatasets).toHaveBeenCalled());
+  await screen.findByRole('option', { name: 'Toronto (2)' });
   fireEvent.change(screen.getByRole('combobox', { name: 'Choose a place' }), { target: { value: 'toronto-on' } });
-  await screen.findByRole('option', { name: 'New publisher (2)' });
-  await act(async () => resolveOld({ data: [{ name: 'obsolete', title: { en: 'Obsolete' }, dataset_count: 1 }] }));
-  expect(screen.queryByRole('option', { name: 'Obsolete (1)' })).toBeNull();
+  expect(await screen.findByRole('checkbox', { name: 'New publisher' })).toBeInTheDocument();
+  await act(async () => resolveOld({ data: [row('obsolete')], pagination: { nextCursor: null },
+    meta: facetMeta([{ value: 'obsolete', label: { en: 'Obsolete' }, count: 1 }]) }));
+  expect(screen.queryByRole('checkbox', { name: 'Obsolete' })).toBeNull();
+  expect(screen.queryByText('Results for obsolete')).toBeNull();
 });
 
 test('same-route searches and Back/Forward update every filter and the displayed results', async () => {
@@ -141,15 +162,18 @@ test('same-route searches and Back/Forward update every filter and the displayed
   expect(await screen.findByText('Results for trees')).toBeInTheDocument();
   expect(screen.getByRole('searchbox')).toHaveValue('trees');
   expect(screen.getByRole('combobox', { name: 'Choose a place' })).toHaveValue('toronto-on');
-  expect(screen.getByRole('combobox', { name: 'Choose a source portal' })).toHaveValue('city');
-  expect(screen.getByRole('combobox', { name: 'All organizations' })).toHaveValue('new');
-  expect(screen.getByRole('button', { name: 'XLSX' })).toHaveClass('cq-pill-active');
-  expect(screen.getByRole('button', { name: 'Has a map' })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(group('Source portal')).getByRole('checkbox', { name: 'city' })).toBeChecked();
+  expect(within(group('Publisher')).getByRole('checkbox', { name: 'new' })).toBeChecked();
+  expect(within(group('Format')).getByRole('checkbox', { name: 'XLSX' })).toBeChecked();
+  expect(within(group('Format')).getByRole('checkbox', { name: 'CSV' })).not.toBeChecked();
+  expect(within(group('Data access')).getByRole('checkbox', { name: 'Has a map' })).toBeChecked();
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'trees', format: ['XLSX'], org: ['new'], source: ['city'], mappable: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Back' }));
   expect(await screen.findByText('Results for parks')).toBeInTheDocument();
   expect(screen.getByRole('searchbox')).toHaveValue('parks');
   expect(screen.getByRole('combobox', { name: 'Choose a place' })).toHaveValue('oshawa-on');
-  expect(screen.getByRole('button', { name: 'CSV' })).toHaveClass('cq-pill-active');
+  expect(within(group('Format')).getByRole('checkbox', { name: 'CSV' })).toBeChecked();
+  expect(within(group('Keywords')).getByRole('checkbox', { name: 'roads' })).toBeChecked();
   fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
   expect(await screen.findByText('Results for trees')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Clear URL' }));
@@ -157,6 +181,7 @@ test('same-route searches and Back/Forward update every filter and the displayed
   expect(screen.getByRole('searchbox')).toHaveValue('');
   expect(screen.getByRole('combobox', { name: 'Choose a place' })).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Has a map' })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.queryByRole('heading', { name: 'Filters' })).toBeNull();
 });
 
 test('an unfinished search draft cannot overwrite a newly navigated search URL', async () => {
@@ -179,9 +204,34 @@ test('typing is debounced and a filter change keeps the current search draft', a
   expect(await screen.findByText('Results for water')).toBeInTheDocument();
   expect(screen.getByTestId('location').textContent).toContain('utm_source=guide');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'roads' } });
-  fireEvent.click(screen.getByRole('button', { name: 'CSV' }));
+  fireEvent.click(within(group('Format')).getByRole('checkbox', { name: 'CSV' }));
   expect(await screen.findByText('Results for roads')).toBeInTheDocument();
-  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'roads', format: 'CSV' }));
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'roads', format: ['CSV'] }));
+  expect(screen.getByTestId('location').textContent).toContain('utm_source=guide');
+});
+
+test('Reset clears the search, filters and order but keeps the place chosen in the hero', async () => {
+  start('/?q=parks&format=CSV&level=federal&sort=title&place=oshawa-on');
+  expect(await screen.findByText('Results for parks')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove filter: Federal' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Reset search' }));
+  await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/\?place=oshawa-on$/));
+  expect(screen.getByRole('searchbox')).toHaveValue('');
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ place: 'oshawa-on', q: undefined, format: undefined, sort: undefined }));
+});
+
+test('order and removable chips update the search', async () => {
+  searchDatasets.mockImplementation(async ({ q }) => ({ data: [row(q)], pagination: { nextCursor: null },
+    meta: facetMeta([{ value: 'old', label: { en: 'Old publisher' }, count: 1 }]) }));
+  start('/?q=parks&org=old');
+  expect(await screen.findByText('Results for parks')).toBeInTheDocument();
+  const order = screen.getByRole('combobox', { name: 'Order by' });
+  expect(within(order).getAllByRole('option').map(option => option.textContent)).toEqual(['Best match', 'Recently updated', 'Title A–Z', 'Title Z–A']);
+  fireEvent.change(order, { target: { value: 'title' } });
+  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'title', lang: 'en', org: ['old'] })));
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove filter: Old publisher' }));
+  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ org: undefined, sort: 'title' })));
+  expect(screen.getByTestId('location').textContent).toBe('/?q=parks&sort=title');
 });
 
 test('a remembered place is shareable on arrival but does not override later All Canada navigation', async () => {
@@ -208,7 +258,7 @@ test('the publisher selector is labelled, translated and includes publishers aft
     { id: 'last', name: 'last', title: { en: 'Last publisher', fr: 'Dernier diffuseur' }, dataset_count: 3 }
   ] : [{ id: 'first', name: 'first', title: { en: 'First publisher', fr: 'Premier diffuseur' }, dataset_count: 1 }],
   pagination: { nextCursor: cursor ? null : '100' } }));
-  start('/?q=parks');
+  start('/');
   expect(await screen.findByRole('option', { name: 'Dernier diffuseur (3)' })).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: 'Toutes les organisations' })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Premier diffuseur (1)' })).toBeInTheDocument();
@@ -260,9 +310,9 @@ test('Load more and Back/Forward switch cleanly between previews and search resu
 test('clearing the last filter restores preview mode', async () => {
   start('/?format=CSV');
   expect(await screen.findByText('Results for all')).toBeInTheDocument();
-  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20 }));
-  fireEvent.click(screen.getByRole('button', { name: 'All formats' }));
-  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ format: undefined, limit: 6 })));
+  expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20, format: ['CSV'], facets: true }));
+  fireEvent.click(within(group('Format')).getByRole('checkbox', { name: 'CSV' }));
+  await waitFor(() => expect(searchDatasets).toHaveBeenLastCalledWith(expect.objectContaining({ format: undefined, facets: undefined, limit: 6 })));
   expect(await screen.findByRole('link', { name: /Browse all datasets/ })).toBeInTheDocument();
 });
 

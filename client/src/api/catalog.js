@@ -1,8 +1,24 @@
 import { getJSON, postJSON } from './client.js';
-import { resourceResponse, queryResponse, listResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
+import { resourceResponse, queryResponse, listResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
 
-export function searchDatasets({ q, org, format, keyword, place, source, mappable, limit, cursor } = {}) {
-  return getJSON('/web-api/v1/datasets', { q, org, format, keyword, place, source, mappable, limit, cursor });
+const DATASET_PARAMS = ['q', 'org', 'format', 'keyword', 'place', 'source', 'level', 'mappable', 'queryable', 'sort', 'lang', 'facets', 'limit', 'cursor'];
+
+// Lists become repeated keys (format=CSV&format=PDF), which the API matches
+// as "any of". The fixed order keeps equivalent requests byte-identical.
+export function datasetSearchPath(params = {}) {
+  const search = new URLSearchParams();
+  for (const key of DATASET_PARAMS) {
+    const value = params[key];
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined && item !== null && item !== '' && item !== false) search.append(key, String(item));
+    }
+  }
+  const query = search.toString();
+  return '/web-api/v1/datasets' + (query ? '?' + query : '');
+}
+
+export function searchDatasets(params = {}, options = {}) {
+  return getJSON(datasetSearchPath(params), undefined, { ...options, validate: datasetListResponse });
 }
 
 export function fetchDataset(idOrName) {

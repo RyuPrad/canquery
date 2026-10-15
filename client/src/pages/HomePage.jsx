@@ -1,17 +1,12 @@
 import LocalGuides from '../components/LocalGuides.jsx';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import {
-  searchDatasets,
-  fetchOrganizations,
-  fetchStats,
-  fetchFeaturedPlaces,
-  fetchSources
-} from '../api/catalog.js';
-import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import { searchDatasets, fetchStats, fetchFeaturedPlaces } from '../api/catalog.js';
 import usePaginatedCollection from '../hooks/usePaginatedCollection.js';
+import useFacetSnapshot from '../hooks/useFacetSnapshot.js';
+import useHomeFilterOptions from '../hooks/useHomeFilterOptions.js';
+import useSearchDraft from '../hooks/useSearchDraft.js';
 import useCountUp from '../hooks/useCountUp.js';
-import useScopedOptions from '../hooks/useScopedOptions.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import MochiPromotion from '../components/MochiPromotion.jsx';
@@ -23,14 +18,20 @@ import { formatRelativeTime } from '../utils/time.js';
 import { readPlace, writePlace } from '../utils/placeStore.js';
 import { track } from '../utils/analytics.js';
 import PlaceSelect from '../components/PlaceSelect.jsx';
+import CatalogFilters from '../components/CatalogFilters.jsx';
+import CatalogFilterLayout from '../components/CatalogFilterLayout.jsx';
+import CatalogResultsHeader from '../components/CatalogResultsHeader.jsx';
+import { catalogChips, removeChip } from '../components/catalogChips.js';
 import {
-  MapleLeaf,
-  UnlockIcon,
-  DatabaseIcon,
-  ZapIcon,
-  XIcon,
-  MapIcon
-} from '../components/Icons.jsx';
+  EMPTY_CATALOG_SEARCH,
+  activeFilterCount,
+  catalogApiParams,
+  hasCatalogCriteria,
+  readCatalogSearch,
+  toggleCatalogValue,
+  writeCatalogSearch
+} from '../utils/catalogSearchState.js';
+import { MapleLeaf, UnlockIcon, DatabaseIcon, ZapIcon, MapIcon } from '../components/Icons.jsx';
 
 const FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
 const EXAMPLES = {
@@ -83,48 +84,35 @@ export default function HomePage() {
     key: location.key,
     place: searchParams.has('place') ? '' : readPlace()
   }));
-  const searchQuery = searchParams.get('q') || '';
-  const [draft, setDraft] = useState({ key: location.key, value: searchQuery });
-  const query = draft.key === location.key ? draft.value : searchQuery;
-  const setQuery = (value) => setDraft({ key: location.key, value });
-  const org = searchParams.get('org') || '';
-  const format = searchParams.get('format') || '';
-  const place = searchParams.get('place') || (location.key === arrival.key ? arrival.place : '');
-  const source = searchParams.get('source') || '';
-  const mappable = ['true', '1'].includes(searchParams.get('mappable'));
-  const keyword = searchParams.get('keyword') || '';
+  const search = readCatalogSearch(searchParams);
+  const searchQuery = search.q;
+  const commitQuery = useCallback(
+    (value) =>
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          if (value) next.set('q', value);
+          else next.delete('q');
+          return next;
+        },
+        { replace: true }
+      ),
+    [setSearchParams]
+  );
+  const [query, setQuery] = useSearchDraft(searchQuery, commitQuery);
+  const { org, format, source, keyword, mappable } = search;
+  const place = search.place || (location.key === arrival.key ? arrival.place : '');
+  const searchState = { ...search, place };
   const [stats, setStats] = useState(null);
   const [places, setPlaces] = useState([]);
+  const [retry, setRetry] = useState(0);
 
-  const debouncedDraft = useDebouncedValue(query, 250);
-
-  const updateSearch = (changes) => {
-    const next = new URLSearchParams(searchParams);
-    if (query) next.set('q', query);
-    else next.delete('q');
-    if (place) next.set('place', place);
-    for (const [key, value] of Object.entries(changes)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
-    }
-    setSearchParams(next, { replace: true });
+  // Filter controls apply the current draft and the remembered place too.
+  const update = (changes) => {
+    setSearchParams(writeCatalogSearch(searchParams, { ...searchState, q: query, ...changes }), {
+      replace: true
+    });
   };
-
-  // The URL owns the applied filters. A draft belongs to one navigation, so
-  // its pending debounce cannot overwrite a different search opened via Back,
-  // Forward or an in-app link. Filter controls apply the current draft too.
-  useEffect(() => {
-    if (
-      draft.key !== location.key ||
-      debouncedDraft !== draft.value ||
-      debouncedDraft === searchQuery
-    )
-      return;
-    const next = new URLSearchParams(searchParams);
-    if (debouncedDraft) next.set('q', debouncedDraft);
-    else next.delete('q');
-    setSearchParams(next, { replace: true });
-  }, [debouncedDraft, draft, location.key, searchQuery, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (location.key !== arrival.key || searchParams.has('place') || !arrival.place) return;
@@ -133,29 +121,28 @@ export default function HomePage() {
     setSearchParams(next, { replace: true });
   }, [arrival, location.key, searchParams, setSearchParams]);
 
+  const orgKey = org.join('|');
+  const formatKey = format.join('|');
+  const sourceKey = source.join('|');
+  const keywordKey = keyword.join('|');
   useEffect(() => {
     if (!searchQuery) return;
     track('catalog_search', {
       query: searchQuery,
-      organization: org,
-      format,
+      organization: orgKey,
+      format: formatKey,
       place,
-      source,
-      keyword,
+      source: sourceKey,
+      keyword: keywordKey,
       mappable,
       language: lang
     });
-  }, [searchQuery, org, format, place, source, keyword, mappable, lang]);
+  }, [searchQuery, orgKey, formatKey, place, sourceKey, keywordKey, mappable, lang]);
 
   const changePlace = (next) => {
     track('catalog_filter', { filter: 'place', value: next });
-    updateSearch({ place: next, org: '', source: '' });
+    update({ place: next, org: [], source: [] });
     writePlace(next);
-  };
-
-  const clearKeyword = () => {
-    track('catalog_filter', { filter: 'keyword', value: '', action: 'clear' });
-    updateSearch({ keyword: '' });
   };
 
   useEffect(() => {
@@ -168,28 +155,12 @@ export default function HomePage() {
     };
   }, []);
 
-  const loadOrganizations = useCallback(
-    async (signal) => {
-      const rows = [];
-      const seenCursors = new Set();
-      let cursor;
-      do {
-        const env = await fetchOrganizations(
-          { place: place || undefined, source: source || undefined, limit: 100, cursor },
-          { signal }
-        );
-        if (signal.aborted) return [];
-        rows.push(...(env.data || []));
-        cursor = env.pagination?.nextCursor || null;
-        if (cursor && seenCursors.has(cursor))
-          throw new Error('Organization pagination returned a repeated cursor');
-        if (cursor) seenCursors.add(cursor);
-      } while (cursor);
-      return rows;
-    },
-    [place, source]
+  const filtering = hasCatalogCriteria(searchState);
+  const { organizations: organizationOptions, sources: sourceOptions } = useHomeFilterOptions(
+    place,
+    sourceKey,
+    !filtering
   );
-  const organizationOptions = useScopedOptions(JSON.stringify([place, source]), loadOrganizations);
   const orgs = organizationOptions.data;
 
   useEffect(() => {
@@ -204,33 +175,41 @@ export default function HomePage() {
     };
   }, []);
 
-  const loadSources = useCallback(
-    async (signal) => {
-      const env = await fetchSources({ place: place || undefined }, { signal });
-      return env.data || [];
-    },
-    [place]
-  );
-  const sourceOptions = useScopedOptions(place, loadSources);
   const sources = sourceOptions.data;
 
-  const filtering = Boolean(searchQuery || org || format || keyword || place || source || mappable);
-
+  // Counts come with the first page of filtered results only.
+  const request = catalogApiParams(searchState, { lang, facets: filtering });
+  const requestKey = JSON.stringify(request);
   const { items, meta, loading, loadingMore, error, hasMore, loadMore } = usePaginatedCollection(
     (cursor) =>
       searchDatasets({
-        q: searchQuery || undefined,
-        org: org || undefined,
-        format: format || undefined,
-        keyword: keyword || undefined,
-        place: place || undefined,
-        source: source || undefined,
-        mappable: mappable || undefined,
+        ...request,
+        facets: cursor ? undefined : request.facets,
         limit: filtering ? 20 : 6,
         cursor
       }),
-    [searchQuery, org, format, keyword, place, source, mappable]
+    [requestKey, filtering, retry]
   );
+  const counts = useFacetSnapshot(filtering ? meta : null, loading);
+  const current = { ...searchState, q: query };
+  const change = (next, event) => {
+    track('catalog_filter', { ...event, surface: 'home' });
+    setSearchParams(writeCatalogSearch(searchParams, next), { replace: true });
+  };
+  const toggle = (key, value) =>
+    change(toggleCatalogValue(current, key, value), {
+      filter: key,
+      value,
+      action: searchState[key].includes(value) ? 'remove' : 'add'
+    });
+  const flag = (key) =>
+    change({ ...current, [key]: !searchState[key] }, { filter: key, value: !searchState[key] });
+  // The hero owns the place, so Reset keeps it.
+  const reset = () => {
+    setQuery('');
+    change({ ...EMPTY_CATALOG_SEARCH, place }, { action: 'reset' });
+  };
+  const chips = catalogChips(searchState, counts.facets, { t, lang, includePlace: false });
 
   const reportedSearch = useRef(null);
   useEffect(() => {
@@ -252,6 +231,39 @@ export default function HomePage() {
   }, [loading, error, searchQuery, place, lang, items.length, meta]);
 
   const synced = stats?.last_synced_at ? formatRelativeTime(stats.last_synced_at, lang) : null;
+
+  const resultsList = (
+    <div className="cq-home-datasets mt-5" aria-busy={loading}>
+      {loading && (
+        <div className="space-y-3" aria-label={t('home.searching')}>
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="cq-skel h-[74px]" />
+          ))}
+        </div>
+      )}
+      {error && <div className="alert alert-error">{error.message}</div>}
+      {items.length === 0 && !loading && !error && (
+        <div className="text-center py-16 space-y-2 cq-fade">
+          <MapleLeaf size={34} className="mx-auto text-base-content/15" />
+          <p className="text-base-content/60">{t('home.no_results')}</p>
+          <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>
+          {meta?.search?.suggestions?.length > 0 && (
+            <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
+              <span>{t('discovery.suggest')}</span>
+              {meta.search.suggestions.map((suggestion) => (
+                <button className="cq-pill" key={suggestion} onClick={() => setQuery(suggestion)}>
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {items.map((d) => (
+        <DatasetRow key={d.id} dataset={d} variant="flat" />
+      ))}
+    </div>
+  );
 
   return (
     <div className="relative">
@@ -303,16 +315,6 @@ export default function HomePage() {
                 {ex}
               </button>
             ))}
-            {keyword && (
-              <button
-                className="cq-pill cq-pill-active !text-xs inline-flex items-center gap-1.5"
-                onClick={clearKeyword}
-                title={t('home.keyword_clear')}
-              >
-                {t('home.keyword_label')} {keyword}
-                <XIcon size={11} />
-              </button>
-            )}
           </div>
         </section>
 
@@ -328,166 +330,176 @@ export default function HomePage() {
               <p className="text-sm text-base-content/70 mt-2">{t('home.explore_description')}</p>
             )}
           </div>
-          <div className="cq-home-filters flex flex-wrap gap-2 items-center mt-5">
-            <button
-              className={'cq-pill' + (format === '' ? ' cq-pill-active' : '')}
-              aria-pressed={format === ''}
-              onClick={() => {
-                track('catalog_filter', { filter: 'format', value: '' });
-                updateSearch({ format: '' });
-              }}
-            >
-              {t('home.all_formats')}
-            </button>
-            {FORMATS.map((f) => (
-              <button
-                key={f}
-                className={'cq-pill' + (format === f ? ' cq-pill-active' : '')}
-                aria-pressed={format === f}
-                onClick={() => {
-                  track('catalog_filter', { filter: 'format', value: f });
-                  updateSearch({ format: f });
-                }}
+          {filtering ? (
+            <div className="mt-5">
+              <CatalogFilterLayout
+                activeCount={activeFilterCount(searchState, { includePlace: false })}
+                sidebar={
+                  <CatalogFilters
+                    search={searchState}
+                    facets={counts.facets}
+                    status={counts.status}
+                    stale={counts.stale}
+                    onToggle={toggle}
+                    onFlag={flag}
+                    onReset={reset}
+                    onRetry={() => setRetry((value) => value + 1)}
+                  />
+                }
               >
-                {f}
-              </button>
-            ))}
-            <button
-              className={
-                'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')
-              }
-              onClick={() => {
-                track('catalog_filter', { filter: 'mappable', value: !mappable });
-                updateSearch({ mappable: mappable ? '' : 'true' });
-              }}
-              aria-pressed={mappable}
-            >
-              <MapIcon size={12} />
-              {t('places.has_map')}
-            </button>
-            <select
-              className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
-              value={source}
-              onChange={(event) => {
-                track('catalog_filter', { filter: 'source', value: event.target.value });
-                updateSearch({ source: event.target.value, org: '' });
-              }}
-              aria-label={t('source.choose')}
-              aria-busy={sourceOptions.status === 'loading'}
-              aria-describedby={
-                sourceOptions.status === 'error' ? 'source-options-error' : undefined
-              }
-            >
-              <option value="">{t('source.all')}</option>
-              {source && !sources.some((item) => item.id === source) && (
-                <option value={source} disabled>
-                  {source}
-                </option>
-              )}
-              {sources.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name?.[lang] || item.name?.en || item.id}
-                </option>
-              ))}
-            </select>
-            {sourceOptions.status === 'error' && (
-              <span id="source-options-error" role="status" className="text-sm">
-                {t('source.load_error')}{' '}
-                <button className="link" type="button" onClick={sourceOptions.retry}>
-                  {t('common.retry')}
-                </button>
-              </span>
-            )}
-            <select
-              className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
-              value={org}
-              onChange={(e) => {
-                track('catalog_filter', { filter: 'organization', value: e.target.value });
-                updateSearch({ org: e.target.value });
-              }}
-              aria-label={t('home.all_organizations')}
-              aria-busy={organizationOptions.status === 'loading'}
-              aria-describedby={
-                organizationOptions.status === 'error' ? 'organization-options-error' : undefined
-              }
-            >
-              <option value="">{t('home.all_organizations')}</option>
-              {org && !orgs.some((item) => item.name === org) && (
-                <option value={org} disabled>
-                  {org}
-                </option>
-              )}
-              {orgs.map((o) => (
-                <option key={o.name} value={o.name}>
-                  {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
-                </option>
-              ))}
-            </select>
-            {organizationOptions.status === 'error' && (
-              <span id="organization-options-error" role="status" className="text-sm">
-                {t('home.organizations_error')}{' '}
-                <button className="link" type="button" onClick={organizationOptions.retry}>
-                  {t('common.retry')}
-                </button>
-              </span>
-            )}
-          </div>
-
-          <div className="cq-home-datasets mt-5" aria-busy={loading}>
-            {loading && (
-              <div className="space-y-3" aria-label={t('home.searching')}>
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="cq-skel h-[74px]" />
-                ))}
-              </div>
-            )}
-            {error && <div className="alert alert-error">{error.message}</div>}
-            {items.length === 0 && !loading && !error && (
-              <div className="text-center py-16 space-y-2 cq-fade">
-                <MapleLeaf size={34} className="mx-auto text-base-content/15" />
-                <p className="text-base-content/60">{t('home.no_results')}</p>
-                <p className="text-sm text-base-content/35">{t('home.no_results_hint')}</p>
-                {meta?.search?.suggestions?.length > 0 && (
-                  <div className="flex flex-wrap justify-center items-center gap-2 mt-3">
-                    <span>{t('discovery.suggest')}</span>
-                    {meta.search.suggestions.map((suggestion) => (
-                      <button
-                        className="cq-pill"
-                        key={suggestion}
-                        onClick={() => setQuery(suggestion)}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
+                <CatalogResultsHeader
+                  total={counts.total}
+                  stale={counts.stale}
+                  sort={search.sort}
+                  hasQuery={Boolean(searchQuery)}
+                  onSort={(sort) => change({ ...current, sort }, { filter: 'sort', value: sort })}
+                  chips={chips}
+                  onRemove={(chip) =>
+                    change(removeChip(current, chip), {
+                      filter: chip.key,
+                      value: chip.value,
+                      action: 'remove'
+                    })
+                  }
+                />
+                {resultsList}
+                {hasMore && (
+                  <div className="text-center mt-6">
+                    <button
+                      className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
+                      onClick={() => {
+                        track('catalog_filter', { action: 'load_more' });
+                        loadMore();
+                      }}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? t('home.loading') : t('home.load_more')}
+                    </button>
                   </div>
                 )}
+              </CatalogFilterLayout>
+            </div>
+          ) : (
+            <>
+              <div className="cq-home-filters flex flex-wrap gap-2 items-center mt-5">
+                <button
+                  className={'cq-pill' + (format.length === 0 ? ' cq-pill-active' : '')}
+                  aria-pressed={format.length === 0}
+                  onClick={() => {
+                    track('catalog_filter', { filter: 'format', value: '' });
+                    update({ format: [] });
+                  }}
+                >
+                  {t('home.all_formats')}
+                </button>
+                {FORMATS.map((f) => (
+                  <button
+                    key={f}
+                    className={'cq-pill' + (format.includes(f) ? ' cq-pill-active' : '')}
+                    aria-pressed={format.includes(f)}
+                    onClick={() => {
+                      track('catalog_filter', { filter: 'format', value: f });
+                      update({ format: [f] });
+                    }}
+                  >
+                    {f}
+                  </button>
+                ))}
+                <button
+                  className={
+                    'cq-pill inline-flex items-center gap-1.5' + (mappable ? ' cq-pill-active' : '')
+                  }
+                  onClick={() => {
+                    track('catalog_filter', { filter: 'mappable', value: !mappable });
+                    update({ mappable: !mappable });
+                  }}
+                  aria-pressed={mappable}
+                >
+                  <MapIcon size={12} />
+                  {t('places.has_map')}
+                </button>
+                <select
+                  className="select select-sm w-full sm:w-56 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
+                  value={sourceKey}
+                  onChange={(event) => {
+                    track('catalog_filter', { filter: 'source', value: event.target.value });
+                    update({ source: event.target.value ? [event.target.value] : [], org: [] });
+                  }}
+                  aria-label={t('source.choose')}
+                  aria-busy={sourceOptions.status === 'loading'}
+                  aria-describedby={
+                    sourceOptions.status === 'error' ? 'source-options-error' : undefined
+                  }
+                >
+                  <option value="">{t('source.all')}</option>
+                  {sourceKey && !sources.some((item) => item.id === sourceKey) && (
+                    <option value={sourceKey} disabled>
+                      {sourceKey}
+                    </option>
+                  )}
+                  {sources.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name?.[lang] || item.name?.en || item.id}
+                    </option>
+                  ))}
+                </select>
+                {sourceOptions.status === 'error' && (
+                  <span id="source-options-error" role="status" className="text-sm">
+                    {t('source.load_error')}{' '}
+                    <button className="link" type="button" onClick={sourceOptions.retry}>
+                      {t('common.retry')}
+                    </button>
+                  </span>
+                )}
+                <select
+                  className="select select-sm w-full sm:w-64 bg-base-200 border-base-content/10 rounded-lg text-[0.82rem]"
+                  value={orgKey}
+                  onChange={(e) => {
+                    track('catalog_filter', { filter: 'organization', value: e.target.value });
+                    update({ org: e.target.value ? [e.target.value] : [] });
+                  }}
+                  aria-label={t('home.all_organizations')}
+                  aria-busy={organizationOptions.status === 'loading'}
+                  aria-describedby={
+                    organizationOptions.status === 'error'
+                      ? 'organization-options-error'
+                      : undefined
+                  }
+                >
+                  <option value="">{t('home.all_organizations')}</option>
+                  {orgKey && !orgs.some((item) => item.name === orgKey) && (
+                    <option value={orgKey} disabled>
+                      {orgKey}
+                    </option>
+                  )}
+                  {orgs.map((o) => (
+                    <option key={o.name} value={o.name}>
+                      {o.title?.[lang] || o.title?.en || o.title?.fr || o.name} ({o.dataset_count})
+                    </option>
+                  ))}
+                </select>
+                {organizationOptions.status === 'error' && (
+                  <span id="organization-options-error" role="status" className="text-sm">
+                    {t('home.organizations_error')}{' '}
+                    <button className="link" type="button" onClick={organizationOptions.retry}>
+                      {t('common.retry')}
+                    </button>
+                  </span>
+                )}
               </div>
-            )}
-            {items.map((d) => (
-              <DatasetRow key={d.id} dataset={d} variant="flat" />
-            ))}
-          </div>
 
-          {filtering && hasMore && (
-            <div className="text-center mt-6">
-              <button
-                className="btn btn-outline btn-sm rounded-full px-7 border-base-content/20"
-                onClick={() => {
-                  track('catalog_filter', { action: 'load_more' });
-                  loadMore();
-                }}
-                disabled={loadingMore}
-              >
-                {loadingMore ? t('home.loading') : t('home.load_more')}
-              </button>
-            </div>
-          )}
-          {!filtering && !loading && !error && items.length > 0 && (
-            <div className="mt-5">
-              <Link to="/datasets" className="btn btn-outline rounded-xl border-base-content/20">
-                {t('home.browse_all')} →
-              </Link>
-            </div>
+              {resultsList}
+              {!filtering && !loading && !error && items.length > 0 && (
+                <div className="mt-5">
+                  <Link
+                    to="/datasets"
+                    className="btn btn-outline rounded-xl border-base-content/20"
+                  >
+                    {t('home.browse_all')} →
+                  </Link>
+                </div>
+              )}
+            </>
           )}
         </section>
 
@@ -539,7 +551,7 @@ export default function HomePage() {
           </section>
         )}
 
-        {!searchQuery && !org && !format && !source && !keyword && (
+        {!searchQuery && !org.length && !format.length && !source.length && !keyword.length && (
           <LocalGuides place={place} limit={3} variant="compact" />
         )}
         {!filtering && <MochiPromotion variant="slim" />}
