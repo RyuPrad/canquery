@@ -465,3 +465,49 @@ describe('pure featured preview builder', () => {
         expect(snapshots.withSnapshot).not.toHaveBeenCalled();
     });
 });
+
+describe('startFeaturedWarming', () => {
+    const flush = async () => {
+        for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    };
+
+    it('builds both languages as soon as it starts, sharing the snapshot work, so the first request is served from cache', async () => {
+        seed();
+        const stop = service.startFeaturedWarming({ intervalMs: 60 * 60 * 1000 });
+        try {
+            await flush();
+            expect(topq.listIngestedTop.mock.calls.map(([, lang]) => lang)).toEqual(['en', 'fr']);
+            expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
+            const res = await request(app).get('/api/v1/insights/featured?lang=fr');
+            expect(res.status).toBe(200);
+            expect(res.body.data.map(item => item.dataset_id)).toEqual(['d1']);
+            expect(topq.listIngestedTop).toHaveBeenCalledTimes(2);
+        } finally {
+            stop();
+        }
+    });
+
+    it('refreshFeatured replaces the cached previews while requests keep the previous ones', async () => {
+        seed();
+        expect(await service.featured('en')).toHaveLength(1);
+        let release;
+        topq.listIngestedTop.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+        const refreshed = service.refreshFeatured('en');
+        await flush();
+        expect(await service.featured('en')).toHaveLength(1);
+        release([candidate(), candidate({ dataset_id: 'd2', resource_id: 'r2', title_en: 'Loans', title_fr: 'Prêts' })]);
+        expect(await refreshed).toHaveLength(2);
+        expect(await service.featured('en')).toHaveLength(2);
+        expect(topq.listIngestedTop).toHaveBeenCalledTimes(2);
+    });
+
+    it('a failed refresh keeps the previous previews and never throws', async () => {
+        seed();
+        await service.featured('en');
+        topq.listIngestedTop.mockRejectedValueOnce(new Error('db down'));
+        jest.spyOn(console, 'warn').mockImplementation(() => {});
+        await expect(service.refreshFeatured('en')).resolves.toBeNull();
+        expect(console.warn).toHaveBeenCalledWith('[insights-featured] refresh failed');
+        expect(await service.featured('en')).toHaveLength(1);
+    });
+});

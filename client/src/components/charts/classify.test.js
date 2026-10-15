@@ -173,3 +173,32 @@ test('few-valued amounts are measures rather than categories', () => {
   expect(c.dimensions.map((d) => d.id)).toEqual(['rating']);
   expect(c.measures.map((m) => m.id)).toContain('changes_to_2023_2026_capital_plan_from_2025_capital_budget');
 });
+
+describe('time axes need a period name as well as period-like values', () => {
+  test('an amount whose values fall between 1700 and 2200 is a measure, not a time axis', () => {
+    const c = classifyColumns({
+      row_count: 300,
+      columns: [
+        { id: 'amount', type: 'NUMERIC', distinct: 120, nulls: 0, min: 1800, max: 2100, avg: 1950 },
+        { id: 'region', type: 'TEXT', distinct: 5, nulls: 0 },
+      ],
+    });
+    expect(c.dates).toEqual([]);
+    expect(c.measures.map((m) => m.id)).toEqual(['amount']);
+    expect(buildInsights(c).some((i) => i.kind === 'timeseries')).toBe(false);
+  });
+
+  test('year and quarter columns named in camel case or with accents remain time axes', () => {
+    const c = classifyColumns({
+      row_count: 300,
+      columns: [
+        { id: 'FiscalYear', type: 'INTEGER', distinct: 12, nulls: 0, min: 2015, max: 2026 },
+        { id: 'Année', type: 'INTEGER', distinct: 30, nulls: 0, min: 1990, max: 2020 },
+        { id: 'Trimestre', type: 'INTEGER', distinct: 4, nulls: 0, min: 1, max: 4 },
+        { id: 'Montant', type: 'NUMERIC', distinct: 200, nulls: 0, min: 1700, max: 2200 },
+      ],
+    });
+    expect(c.dates.map((d) => d.id)).toEqual(expect.arrayContaining(['FiscalYear', 'Année', 'Trimestre']));
+    expect(c.dates.map((d) => d.id)).not.toContain('Montant');
+  });
+});

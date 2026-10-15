@@ -31,6 +31,7 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
         expired: 0,
         evictions: 0,
         uncached_misses: 0,
+        refreshes: 0,         // recomputed ahead of expiry
         in_flight: 0,
         size: 0,
         last_cleared: null
@@ -46,6 +47,33 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
         }
         store.set(key, entry);
         stats.size = store.size;
+    };
+
+    // One shared computation per key. Slow upstream calls can otherwise make
+    // the stampede-protection map itself an unbounded high-cardinality cache.
+    // Once full, run the work without retaining another key/promise or result.
+    const compute = (key, fn) => {
+        if (inFlight.size >= maxInFlight) {
+            stats.uncached_misses++;
+            return Promise.resolve().then(fn);
+        }
+        const requestGeneration = generation;
+        const promise = Promise.resolve()
+            .then(fn)
+            .then(result => {
+                if (generation === requestGeneration && cacheable(result)) {
+                    const ttl = result == null ? negativeTtlMs : ttlMs;
+                    setEntry(key, { data: result, expiresAt: Date.now() + ttl });
+                }
+                return result;
+            })
+            .finally(() => {
+                if (inFlight.get(key) === promise) inFlight.delete(key);
+                stats.in_flight = inFlight.size;
+            });
+        inFlight.set(key, promise);
+        stats.in_flight = inFlight.size;
+        return promise;
     };
 
     return {
@@ -82,30 +110,19 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
                 return pending;
             }
             stats.misses++;
-            // Slow upstream calls can otherwise make the stampede-protection
-            // map itself an unbounded high-cardinality cache. Once full, run
-            // the miss without retaining another key/promise or result.
-            if (inFlight.size >= maxInFlight) {
-                stats.uncached_misses++;
-                return Promise.resolve().then(fn);
+            return compute(key, fn);
+        },
+        // Recomputes the entry even while a fresh one exists, sharing any
+        // computation already in flight. Reads keep the previous value until
+        // the new one is stored; a failure leaves the previous value in place.
+        refresh(key, fn) {
+            const pending = inFlight.get(key);
+            if (pending) {
+                stats.in_flight_hits++;
+                return pending;
             }
-            const requestGeneration = generation;
-            const promise = Promise.resolve()
-                .then(fn)
-                .then(result => {
-                    if (generation === requestGeneration && cacheable(result)) {
-                        const ttl = result == null ? negativeTtlMs : ttlMs;
-                        setEntry(key, { data: result, expiresAt: Date.now() + ttl });
-                    }
-                    return result;
-                })
-                .finally(() => {
-                    if (inFlight.get(key) === promise) inFlight.delete(key);
-                    stats.in_flight = inFlight.size;
-                });
-            inFlight.set(key, promise);
-            stats.in_flight = inFlight.size;
-            return promise;
+            stats.refreshes++;
+            return compute(key, fn);
         },
         clear() {
             generation++;

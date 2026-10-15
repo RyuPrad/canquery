@@ -1,4 +1,5 @@
 const { track } = require('../utils/runtimeWork');
+const { startWarming } = require('../utils/warming');
 const { searchExpression } = require('./localSearch');
 const { readDatasetFacets } = require('../db/catalogFacetQueries');
 const { LEVELS } = require('../db/catalogSqlFragments');
@@ -240,25 +241,7 @@ async function refreshDatasetFacets(filters) {
 const WARM_INTERVAL_MS = 20 * 60 * 1000;
 
 function startFacetWarming(searches, { intervalMs = WARM_INTERVAL_MS } = {}) {
-    let stopped = false;
-    let running = null;
-    const run = () => {
-        if (running || stopped) return;
-        // Shutdown waits for tracked work, so pools stay open for a running pass.
-        running = track((async () => {
-            for (const filters of searches) {
-                if (stopped) return;
-                await refreshDatasetFacets(filters);
-            }
-        })()).catch(() => warn('error')).finally(() => { running = null; });
-    };
-    run();
-    const timer = setInterval(run, intervalMs);
-    timer.unref?.();
-    return () => {
-        stopped = true;
-        clearInterval(timer);
-    };
+    return startWarming('catalog-facets', searches.map(filters => () => refreshDatasetFacets(filters)), { intervalMs });
 }
 
 module.exports = { datasetFacets, refreshDatasetFacets, startFacetWarming, shapeDatasetFacets, facetKey, createFacetLimiter,
