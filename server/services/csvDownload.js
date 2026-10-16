@@ -384,7 +384,8 @@ async function downloadToTempFile(url, {
     lookupImpl,
     requestImpl,
     maxRedirects,
-    signal
+    signal,
+    onProgress
 } = {}) {
     signal?.throwIfAborted();
     const stallMs = Number(stallTimeoutMs) > 0 ? Number(stallTimeoutMs) : 60000;
@@ -458,6 +459,7 @@ async function downloadToTempFile(url, {
         throw err;
     }
     const contentLength = Number(responseHeader(res, 'content-length'));
+    const knownLength = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : null;
     if (Number.isFinite(contentLength) && contentLength > maxFileBytes) {
         disarm();
         controller.abort();
@@ -484,10 +486,13 @@ async function downloadToTempFile(url, {
                 throw err;
             }
             await writer.write(Buffer.from(value));
+            // Advisory: the caller throttles its own writes and never throws.
+            if (onProgress) onProgress(bytes, knownLength);
         }
         disarm();
         await writer.end();
         signal?.throwIfAborted();
+        if (onProgress) onProgress(bytes, knownLength ?? bytes);
         return { filePath, bytes };
     } catch (err) {
         disarm();

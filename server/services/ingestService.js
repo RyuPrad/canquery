@@ -57,6 +57,21 @@ async function getJob(id) {
     return shapeJob(job);
 }
 
+const PROGRESS_PHASES = new Set(['downloading', 'loading', 'finishing']);
+const progressNumber = value => (value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value));
+// The worker's advisory progress; absent until the first report and for jobs
+// created before progress was recorded.
+function shapeProgress(progress) {
+    if (!progress || typeof progress !== 'object' || !PROGRESS_PHASES.has(progress.phase)) return null;
+    return {
+        phase: progress.phase,
+        bytes: progressNumber(progress.bytes),
+        content_length: progressNumber(progress.content_length),
+        rows: progressNumber(progress.rows),
+        updated_at: typeof progress.updated_at === 'string' ? progress.updated_at : null
+    };
+}
+
 function shapeJob(job) {
     return {
         id: job.id == null ? null : Number(job.id),
@@ -74,6 +89,7 @@ function shapeJob(job) {
         // Age computed in Postgres (now() - created_at) so the client timer is
         // immune to clock skew between the DB, the API and the browser.
         age_seconds: job.age_seconds != null ? Number(job.age_seconds) : null,
+        progress: job.status === 'running' ? shapeProgress(job.progress) : null,
         ...(job.already_loaded && {
             already_loaded: true,
             row_count: job.row_count == null ? null : Number(job.row_count)

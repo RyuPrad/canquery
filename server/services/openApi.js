@@ -98,9 +98,12 @@ const schemas = {
     PreparationJob: object({ id: { type: ['integer', 'null'], minimum: 1 }, resource_id: string,
         status: { type: 'string', enum: ['pending', 'running', 'done'] }, already_loaded: { type: 'boolean' },
         row_count: numberOrNull, created_at: date, serving_cached: { type: 'boolean' }, prepared_at: date }, ['id', 'resource_id', 'status']),
+    JobProgress: object({ phase: { type: 'string', enum: ['downloading', 'loading', 'finishing'] }, bytes: numberOrNull, content_length: numberOrNull,
+        rows: numberOrNull, updated_at: date }, ['phase']),
     Job: object({ id: { type: ['integer', 'null'], minimum: 1 }, resource_id: string, status: { type: 'string', enum: ['pending', 'running', 'done', 'failed'] },
         attempts: integer, retry_at: date, failure_reason: { type: ['string', 'null'], enum: failureReasons }, error: textOrNull,
-        created_at: date, claimed_at: date, finished_at: date, age_seconds: numberOrNull, already_loaded: { type: 'boolean' }, row_count: numberOrNull },
+        created_at: date, claimed_at: date, finished_at: date, age_seconds: numberOrNull, already_loaded: { type: 'boolean' }, row_count: numberOrNull,
+        progress: { description: 'Advisory worker progress while running: bytes downloaded against the file length, then rows loaded, then finishing. Null until the first report and for jobs that are not running.', 'x-description-fr': 'Progression indicative pendant l’exécution : octets téléchargés par rapport à la taille du fichier, puis lignes chargées, puis finalisation. Null avant le premier rapport et hors exécution.', anyOf: [ref('JobProgress'), { type: 'null' }] } },
     ['id', 'resource_id', 'status', 'attempts', 'retry_at', 'failure_reason', 'error', 'created_at', 'claimed_at', 'finished_at', 'age_seconds']),
     FeatureCollection: object({ type: { type: 'string', const: 'FeatureCollection' }, features: array(object({ type: { type: 'string', const: 'Feature' },
         id: { type: ['string', 'number'] }, geometry: nullable(object({ type: string, coordinates: array({}), geometries: array({ type: 'object' }) })),
@@ -226,7 +229,7 @@ const synthetic = {
 const provenance = { sources: [synthetic.source], primary_license: null };
 const resource = { id: 'example-resource', dataset_id: 'example-dataset', name: { en: 'Example CSV', fr: 'CSV exemple' }, format: 'CSV', url: 'https://example.org/example.csv', size_bytes: null, datastore_active: true, language: 'en', last_modified: '2026-01-01T00:00:00.000Z', query_mode: 'datastore', preparation: synthetic.preparation, map: null, ingestion: null, dataset: synthetic.dataset, places: [], provenance };
 const rowExample = sample({ fields: [{ id: '_id', type: 'int' }, { id: 'STREET_NAME', type: 'text' }], records: [{ _id: 1, STREET_NAME: 'EXAMPLE' }], total: 1 }, { query_mode: 'datastore', provenance, sources: ['example-source'], upstream: 'example.org' });
-const jobExample = { id: 123, resource_id: 'example-resource', status: 'pending', attempts: 0, retry_at: null, failure_reason: null, error: null, created_at: '2026-01-01T00:00:00.000Z', claimed_at: null, finished_at: null, age_seconds: 0 };
+const jobExample = { id: 123, resource_id: 'example-resource', status: 'pending', attempts: 0, retry_at: null, failure_reason: null, error: null, created_at: '2026-01-01T00:00:00.000Z', claimed_at: null, finished_at: null, age_seconds: 0, progress: null };
 
 function buildOpenApi({ env = process.env, now = Date.now() } = {}) {
     const hosted = extension().openApi({ env, now });

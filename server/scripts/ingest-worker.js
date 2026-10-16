@@ -25,12 +25,14 @@ const { isIngestableFile } = require('../services/resourceCapabilities');
 const { cleanRetiredTables } = require('../services/retiredIngestTables');
 const { withStoreBudgetLock } = require('../services/evictService');
 const { preparationFailure } = require('../services/preparationFailure');
+const { createProgressReporter } = require('../services/ingestProgress');
 const {
     acquireWorkerLock,
     releaseWorkerLock,
     recoverOrphanedJobs,
     claimJob,
     heartbeatJob,
+    progressJob,
     finishJob,
     finishPublishedJob,
     requeueJob
@@ -137,7 +139,10 @@ async function processJob(job, workerId) {
             throw error;
         }
         console.log('[job ' + job.id + '] ingesting ' + job.resource_id + ' (attempt ' + job.attempts + ')');
-        const result = await ingestResource(resource, { ...caps, deadline }, { jobId: job.id, workerId });
+        // Progress for the page waiting on this job: advisory, throttled, and
+        // never allowed to fail the preparation.
+        const reporter = createProgressReporter(progress => progressJob(pool, job.id, workerId, progress));
+        const result = await ingestResource(resource, { ...caps, deadline, onProgress: reporter.report }, { jobId: job.id, workerId });
         rowsLoaded = result.rowCount;
         bytesLoaded = result.byteSize;
         const finished = await finishJob(pool, job.id, workerId, job.resource_id, 'done', null);

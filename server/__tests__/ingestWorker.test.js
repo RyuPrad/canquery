@@ -15,6 +15,7 @@ jest.mock('../db/ingestWorkerQueries', () => ({
     recoverOrphanedJobs: jest.fn(),
     claimJob: jest.fn(),
     heartbeatJob: jest.fn().mockResolvedValue(true),
+    progressJob: jest.fn().mockResolvedValue(true),
     finishJob: jest.fn().mockResolvedValue(true),
     finishPublishedJob: jest.fn().mockResolvedValue(false),
     requeueJob: jest.fn()
