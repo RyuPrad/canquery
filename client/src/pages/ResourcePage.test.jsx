@@ -666,6 +666,75 @@ describe('ResourcePage embedded initial data', () => {
   });
 });
 
+describe('ResourcePage table frame and page box', () => {
+  const prepared = () => ({ data: { ...resourceEnvelope('a').data,
+    ingestion: { ingested_at: '2026-09-01', snapshot_id: SNAPSHOT_1, row_count: 200, fields: [{ id: 'name', type: 'TEXT' }] } } });
+
+  beforeEach(() => {
+    queryResource.mockImplementation((id, { offset = 0 } = {}) => Promise.resolve(pageEnvelope(id, offset)));
+  });
+
+  test('the recorded columns, row count and pager show while the first page loads', async () => {
+    fetchResource.mockResolvedValue(prepared());
+    let finish;
+    queryResource.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Resource a', level: 1 });
+    expect(screen.getByRole('status', { name: 'Loading the data...' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('columnheader', { name: 'nameTEXT' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /^name · / })).toBeInTheDocument();
+    expect(document.querySelectorAll('.cq-skel-cell').length).toBeGreaterThan(0);
+    expect(screen.getByText('200 rows')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 / 4')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    await act(async () => finish(pageEnvelope('a', 0)));
+    expect(await screen.findByText('row-a-0')).toBeInTheDocument();
+    expect(document.querySelectorAll('.cq-skel-cell')).toHaveLength(0);
+    expect(screen.queryByRole('status', { name: 'Loading the data...' })).toBeNull();
+  });
+
+  test('a search keeps the generic count hidden until its page answers', async () => {
+    fetchResource.mockResolvedValue(prepared());
+    queryResource.mockImplementation(() => new Promise(() => {}));
+    render(<MemoryRouter initialEntries={['/resources/a?q=ottawa']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Resource a', level: 1 });
+    await waitFor(() => expect(queryResource).toHaveBeenCalled());
+    expect(screen.getByRole('columnheader', { name: 'nameTEXT' })).toBeInTheDocument();
+    expect(screen.queryByText('200 rows')).toBeNull();
+    expect(screen.queryByText(/Page 1/)).toBeNull();
+  });
+
+  test('the page box jumps to a page, clamps to the last page and serves a seen page again at once', async () => {
+    fetchResource.mockResolvedValue(prepared());
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a-0');
+    const box = screen.getByRole('spinbutton', { name: 'Go to page' });
+    expect(screen.getByRole('button', { name: 'Go' })).toBeDisabled();
+    fireEvent.change(box, { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(await screen.findByText('row-a-100')).toBeInTheDocument();
+    expect(screen.getByText('Page 3 / 4')).toBeInTheDocument();
+    expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ offset: 100, snapshot: SNAPSHOT_1 }), expect.any(Object));
+    expect(box).toHaveValue(null);
+    fireEvent.change(box, { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(await screen.findByText('row-a-150')).toBeInTheDocument();
+    expect(screen.getByText('Page 4 / 4')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+    fireEvent.change(box, { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(screen.getByText('row-a-100')).toBeInTheDocument();
+    expect(queryResource).toHaveBeenCalledTimes(3);
+  });
+});
+
 test('a keepalive detecting expiry refreshes metadata and prepares once', async () => {
   const { NotIngestedError } = await import('../api/client.js');
   recordResourceActivity.mockRejectedValueOnce(new NotIngestedError('expired', 409));

@@ -1152,6 +1152,14 @@ a.cq-card:hover,
   background-size: 200% 100%;
   animation: cq-shimmer 1.4s linear infinite;
 }
+/* Placeholder cell while a table's first rows load behind its known columns. */
+.cq-skel-cell {
+  display: block;
+  height: 0.85em;
+  width: 60%;
+  min-width: 2.5rem;
+  border-radius: 3px;
+}
 
 @keyframes cq-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(213, 43, 30, 0.45); }

@@ -38,6 +38,74 @@ import {
   BuildingIcon
 } from '../components/Icons.jsx';
 
+// Previous/Next plus a page box. A typed page is clamped to the last page the
+// server can serve; an unseen page keeps the current rows while it loads.
+function Pager({ resourceId, page, total, onPage }) {
+  const { t } = useLang();
+  const [draft, setDraft] = useState('');
+  const totalPages = Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(total / PAGE_SIZE)));
+  const jump = (event) => {
+    event.preventDefault();
+    const requested = Number.parseInt(draft, 10);
+    if (!Number.isFinite(requested)) return;
+    const target = Math.min(Math.max(requested, 1), totalPages) - 1;
+    setDraft('');
+    if (target === page) return;
+    track('resource_page', { resource_id: resourceId, page: target + 1, direction: 'jump' });
+    onPage(target);
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
+      <button
+        className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
+        disabled={page === 0}
+        onClick={() => {
+          track('resource_page', { resource_id: resourceId, page: page, direction: 'previous' });
+          onPage(page - 1);
+        }}
+        aria-label={t('resource.prev')}
+      >
+        <ArrowLeftIcon size={14} />
+      </button>
+      <span className="text-sm text-base-content/60 font-mono tabular-nums">
+        {t('resource.page')} {page + 1} / {totalPages}
+      </span>
+      <button
+        className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
+        disabled={page >= MAX_PAGE_INDEX || (page + 1) * PAGE_SIZE >= total}
+        onClick={() => {
+          track('resource_page', { resource_id: resourceId, page: page + 2, direction: 'next' });
+          onPage(page + 1);
+        }}
+        aria-label={t('resource.next')}
+      >
+        <ArrowRightIcon size={14} />
+      </button>
+      <form className="flex items-center gap-1.5" onSubmit={jump} noValidate>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={totalPages}
+          step={1}
+          className="input input-sm w-20 rounded-lg border-base-content/20 text-center font-mono tabular-nums"
+          aria-label={t('resource.go_to_page')}
+          placeholder={t('resource.go_to_page')}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button
+          type="submit"
+          className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
+          disabled={!draft}
+        >
+          {t('resource.go')}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function ResourceExplorer({ id, navigationKey }) {
   const { lang, t } = useLang();
   const location = useLocation();
@@ -256,9 +324,15 @@ function ResourceExplorer({ id, navigationKey }) {
     rowError: Boolean(dataError)
   });
 
-  const totalPages = data
-    ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(data.total / PAGE_SIZE)))
-    : 1;
+  // The recorded schema and row count draw the table frame, count and pager
+  // before the first page arrives; a page response then owns the total.
+  const frameFields = fields ? [{ id: '_id', type: 'int' }, ...fields] : null;
+  const unfiltered = !debouncedQ && Object.keys(exportFilters).length === 0;
+  const knownTotal = data
+    ? data.total
+    : view === 'table' && unfiltered
+      ? (resource.ingestion?.row_count ?? null)
+      : null;
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6 space-y-4">
@@ -417,9 +491,9 @@ function ResourceExplorer({ id, navigationKey }) {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          {view === 'table' && data && (
+          {view === 'table' && knownTotal != null && (
             <span className="cq-chip cq-chip-mono ml-auto">
-              {data.total.toLocaleString()} {t('resource.rows')}
+              {knownTotal.toLocaleString()} {t('resource.rows')}
             </span>
           )}
           {view === 'table' && data && !filtersNeedPreparation && (
@@ -491,10 +565,33 @@ function ResourceExplorer({ id, navigationKey }) {
           <LoadingSpinner label={t('map.loading')} />
         )
       ) : display === 'filter-preparation' ? null : display === 'loading' ? (
-        <div className="space-y-3">
-          <div className="cq-skel h-10 w-64" />
-          <div className="cq-skel h-[420px]" />
-        </div>
+        frameFields ? (
+          <div
+            role="status"
+            aria-busy="true"
+            aria-label={t('resource.loading_data')}
+            className="space-y-3"
+          >
+            <span className="sr-only">{t('resource.loading_data')}</span>
+            <DataTable
+              fields={frameFields}
+              records={null}
+              placeholderRows={10}
+              sort={sort}
+              onSortChange={changeSort}
+              columnFilters={columnFilters}
+              onColumnFilterChange={changeColumnFilter}
+            />
+            {knownTotal > PAGE_SIZE && (
+              <Pager resourceId={id} page={page} total={knownTotal} onPage={setPage} />
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="cq-skel h-10 w-64" />
+            <div className="cq-skel h-[420px]" />
+          </div>
+        )
       ) : display === 'download' ? (
         <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
           <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
@@ -550,33 +647,7 @@ function ResourceExplorer({ id, navigationKey }) {
             />
           </div>
           {data.total > PAGE_SIZE && (
-            <div className="flex items-center justify-center gap-3 mt-4">
-              <button
-                className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
-                disabled={page === 0}
-                onClick={() => {
-                  track('resource_page', { resource_id: id, page: page, direction: 'previous' });
-                  setPage(page - 1);
-                }}
-                aria-label={t('resource.prev')}
-              >
-                <ArrowLeftIcon size={14} />
-              </button>
-              <span className="text-sm text-base-content/60 font-mono tabular-nums">
-                {t('resource.page')} {page + 1} / {totalPages}
-              </span>
-              <button
-                className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
-                disabled={page >= MAX_PAGE_INDEX || (page + 1) * PAGE_SIZE >= data.total}
-                onClick={() => {
-                  track('resource_page', { resource_id: id, page: page + 2, direction: 'next' });
-                  setPage(page + 1);
-                }}
-                aria-label={t('resource.next')}
-              >
-                <ArrowRightIcon size={14} />
-              </button>
-            </div>
+            <Pager resourceId={id} page={page} total={data.total} onPage={setPage} />
           )}
         </>
       ) : (

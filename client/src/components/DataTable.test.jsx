@@ -40,6 +40,24 @@ describe('table keyboard controls', () => {
     expect(input.onSortChange).toHaveBeenCalledWith('City desc desc');
   });
 
+  test('placeholder rows draw the known columns while the first page loads, and an empty page still says so', () => {
+    const input = props({ records: null, placeholderRows: 3 });
+    const view = render(<DataTable {...input} />);
+    expect(screen.getAllByRole('row')).toHaveLength(2 + 3);
+    expect(screen.getAllByRole('cell')).toHaveLength(3 * 2);
+    expect(document.querySelectorAll('.cq-skel-cell')).toHaveLength(6);
+    expect(document.querySelector('.cq-table-wrap')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('columnheader', { name: /City name/ })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /City name/ })).toBeInTheDocument();
+    expect(screen.queryByText('No rows match your filters.')).toBeNull();
+    view.rerender(<DataTable {...input} records={[]} />);
+    expect(screen.getByText('No rows match your filters.')).toBeInTheDocument();
+    expect(document.querySelector('.cq-table-wrap')).not.toHaveAttribute('aria-busy');
+    view.rerender(<DataTable {...input} records={[{ _id: 1, 'City name': 'Ottawa' }]} />);
+    expect(document.querySelectorAll('.cq-skel-cell')).toHaveLength(0);
+    expect(screen.getByRole('cell', { name: 'Ottawa' })).toBeInTheDocument();
+  });
+
   test('editing header controls does not read unchanged rows, while replacement rows and schemas render', () => {
     const readCell = vi.fn(() => 'Ottawa');
     const record = { _id: 1, get 'City name'() { return readCell(); } };
