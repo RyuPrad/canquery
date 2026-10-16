@@ -38,6 +38,14 @@ export interface ResourceHint {
   snapshotId: string | null;
 }
 
+export interface InitialData {
+  version: number;
+  path: string;
+  page: number | null;
+  resource: ApiEnvelope<Record<string, any>>;
+  rows: ApiEnvelope<Record<string, any>> | null;
+}
+
 export type ResourceView = 'table' | 'chart' | 'map';
 export interface ResourceUrlState {
   q: string;

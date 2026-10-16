@@ -12,6 +12,7 @@ import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
 import { schemaFingerprint, reconcileResourceFields } from '../utils/resourceSchema.js';
+import { takeInitialData, consumeInitialData } from '../utils/initialData.js';
 import { track } from '../utils/analytics.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
@@ -39,7 +40,18 @@ import {
 
 function ResourceExplorer({ id, navigationKey }) {
   const { lang, t } = useLang();
-  const { resource, error: resourceError, notFound, reload: onPrepared } = useResourceMetadata(id);
+  const location = useLocation();
+  // A direct visit's HTML carries this page's metadata and first rows.
+  const [initial] = useState(() => takeInitialData({ id, location }));
+  useEffect(() => {
+    consumeInitialData();
+  }, []);
+  const {
+    resource,
+    error: resourceError,
+    notFound,
+    reload: onPrepared
+  } = useResourceMetadata(id, { initial: initial?.resource ?? null });
   const {
     q,
     setQ,
@@ -107,6 +119,23 @@ function ResourceExplorer({ id, navigationKey }) {
     onPrepared();
     return true;
   }, [resource, onPrepared]);
+  // The embedded rows are only trusted for the page the URL asked for and the
+  // snapshot the embedded metadata reports.
+  const initialRows =
+    initial?.rows &&
+    initial.page === page &&
+    initial.rows.meta?.snapshot?.id === initial.resource.data.ingestion?.snapshot_id
+      ? {
+          page: initial.page,
+          snapshotId: initial.rows.meta.snapshot?.id ?? null,
+          data: {
+            fields: initial.rows.data.fields,
+            records: initial.rows.data.records,
+            total: initial.rows.data.total,
+            mode: initial.rows.meta.query_mode
+          }
+        }
+      : null;
   const {
     data,
     error: dataError,
@@ -125,7 +154,8 @@ function ResourceExplorer({ id, navigationKey }) {
     hasNonEq,
     schemaReady,
     setFilterUpgrade,
-    onUnavailable: reloadAfterExpiry
+    onUnavailable: reloadAfterExpiry,
+    initialRows
   });
   const onUnavailable = useCallback(() => {
     if (reloadAfterExpiry()) invalidate();

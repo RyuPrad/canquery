@@ -1,5 +1,6 @@
 import { getJSON, postJSON } from './client.js';
 import { resourceResponse, queryResponse, listResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
+import { normalizeResource } from './resourceEnvelope.js';
 
 const DATASET_PARAMS = ['q', 'org', 'format', 'keyword', 'place', 'source', 'level', 'mappable', 'queryable', 'sort', 'lang', 'facets', 'limit', 'cursor'];
 
@@ -27,7 +28,7 @@ export function fetchDataset(idOrName) {
 
 export async function fetchResource(id, options) {
   const result = await getJSON('/web-api/v1/resources/' + encodeURIComponent(id), undefined, { ...options, validate: resourceResponse });
-  if (result.data?.map?.tiles) result.data.map.tiles = result.data.map.tiles.replace('/api/v1/', '/web-api/v1/');
+  normalizeResource(result.data);
   return result;
 }
 

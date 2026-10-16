@@ -1,4 +1,4 @@
-import { describe, beforeEach, vi, expect, test } from 'vitest';
+import { describe, beforeEach, afterEach, vi, expect, test } from 'vitest';
 import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import ResourcePage from './ResourcePage.jsx';
@@ -582,6 +582,87 @@ describe('ResourcePage row cache', () => {
     </MemoryRouter>);
     await pause(300);
     expect(queryResource).not.toHaveBeenCalled();
+  });
+});
+
+describe('ResourcePage embedded initial data', () => {
+  const embed = ({ path = '/resources/a', page = 0, resource = prepared().data, rows = pageEnvelope('a', 0), version = 1 } = {}) => {
+    const element = document.createElement('script');
+    element.type = 'application/json';
+    element.id = 'cq-initial';
+    element.textContent = JSON.stringify({ version, path, page, resource: { data: resource, pagination: { nextCursor: null }, meta: {} }, rows })
+      .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+    document.body.appendChild(element);
+  };
+  const prepared = () => ({ data: { ...resourceEnvelope('a').data,
+    ingestion: { ingested_at: '2026-09-01', snapshot_id: SNAPSHOT_1, row_count: 200, fields: [{ id: 'name', type: 'TEXT' }] } } });
+
+  beforeEach(() => {
+    queryResource.mockImplementation((id, { offset = 0 } = {}) => Promise.resolve(pageEnvelope(id, offset)));
+  });
+  afterEach(() => {
+    document.getElementById('cq-initial')?.remove();
+  });
+
+  test('a direct visit draws the embedded page at once and makes no request for it', async () => {
+    embed({ rows: { ...pageEnvelope('a', 0), data: { ...pageEnvelope('a', 0).data, records: [{ _id: 1, name: 'row-inline' }] } } });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(screen.getByText('row-inline')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Resource a', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('200 rows')).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading the data...' })).toBeNull();
+    expect(document.getElementById('cq-initial')).toBeNull();
+    await waitFor(() => expect(recordResourceActivity).toHaveBeenCalledWith('a', expect.any(Object)));
+    expect(fetchResource).not.toHaveBeenCalled();
+    expect(queryResource).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await screen.findByText('row-a-50');
+    expect(queryResource).toHaveBeenCalledTimes(1);
+    expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ offset: 50, snapshot: SNAPSHOT_1 }), expect.any(Object));
+  });
+
+  test('a block for another URL, page or snapshot is ignored and the usual requests run', async () => {
+    embed({ path: '/resources/a?page=3', page: 3 });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('row-a-0')).toBeInTheDocument();
+    expect(fetchResource).toHaveBeenCalledTimes(1);
+    expect(queryResource).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('cq-initial')).toBeNull();
+  });
+
+  test('embedded metadata without rows still saves the metadata request', async () => {
+    embed({ path: '/resources/a?view=chart', page: null, rows: null });
+    render(<MemoryRouter initialEntries={['/resources/a?view=chart']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByTestId('chart')).toHaveAttribute('data-mode', 'ingested');
+    expect(fetchResource).not.toHaveBeenCalled();
+    expect(queryResource).not.toHaveBeenCalled();
+    embed({ path: '/resources/a?page=1', page: null, rows: null });
+    render(<MemoryRouter initialEntries={['/resources/a?page=1']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('row-a-50')).toBeInTheDocument();
+    expect(fetchResource).not.toHaveBeenCalled();
+    expect(queryResource).toHaveBeenCalledTimes(1);
+  });
+
+  test('a later metadata refresh fetches as usual', async () => {
+    embed();
+    recordResourceActivity.mockRejectedValueOnce(new NotIngestedError('expired', 409));
+    fetchResource.mockResolvedValue({ data: { ...prepared().data, ingestion: { ...prepared().data.ingestion, snapshot_id: SNAPSHOT_2 } } });
+    queryResource.mockImplementation((id, { offset = 0 } = {}) => Promise.resolve({ ...pageEnvelope(id, offset), meta: { query_mode: 'ingested', snapshot: { id: SNAPSHOT_2 } } }));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(screen.getByText('row-a-0')).toBeInTheDocument();
+    await waitFor(() => expect(fetchResource).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(queryResource).toHaveBeenCalledWith('a', expect.objectContaining({ offset: 0, snapshot: SNAPSHOT_2 }), expect.any(Object)));
+    expect(await screen.findByText('row-a-0')).toBeInTheDocument();
   });
 });
 
