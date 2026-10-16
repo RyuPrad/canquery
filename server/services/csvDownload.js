@@ -161,7 +161,7 @@ function withAbort(promise, signal) {
     });
 }
 
-function requestPinned(url, target, { signal, userAgent, requestImpl } = {}) {
+function requestPinned(url, target, { signal, userAgent, requestImpl, headers } = {}) {
     const requester = requestImpl || (url.protocol === 'https:' ? https.request : http.request);
     return new Promise((resolve, reject) => {
         const lookup = (hostname, options, callback) => {
@@ -181,7 +181,8 @@ function requestPinned(url, target, { signal, userAgent, requestImpl } = {}) {
             headers: {
                 Accept: '*/*',
                 'Accept-Encoding': 'identity',
-                'User-Agent': userAgent || 'canquery/1.0'
+                'User-Agent': userAgent || 'canquery/1.0',
+                ...(headers || {})
             }
         }, resolve);
         req.once('error', reject);
@@ -218,7 +219,8 @@ async function openValidatedResponse(initialUrl, {
     userAgent,
     lookupImpl,
     requestImpl,
-    maxRedirects = MAX_REDIRECTS
+    maxRedirects = MAX_REDIRECTS,
+    headers
 } = {}) {
     let url = validateDownloadUrl(initialUrl);
     for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
@@ -227,7 +229,7 @@ async function openValidatedResponse(initialUrl, {
         let response;
         try {
             const target = await withAbort(resolvePublicTarget(url.hostname, lookupImpl), signal);
-            response = await requestPinned(url, target, { signal, userAgent, requestImpl });
+            response = await requestPinned(url, target, { signal, userAgent, requestImpl, headers });
         } catch (cause) {
             throw transportError(cause);
         }
@@ -257,7 +259,8 @@ async function openValidatedResponse(initialUrl, {
 async function openInjectedResponse(initialUrl, fetchImpl, {
     signal,
     userAgent,
-    maxRedirects = MAX_REDIRECTS
+    maxRedirects = MAX_REDIRECTS,
+    headers
 } = {}) {
     let url = validateDownloadUrl(initialUrl);
     for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
@@ -269,7 +272,8 @@ async function openInjectedResponse(initialUrl, fetchImpl, {
                 headers: {
                     Accept: '*/*',
                     'Accept-Encoding': 'identity',
-                    'User-Agent': userAgent || 'canquery/1.0'
+                    'User-Agent': userAgent || 'canquery/1.0',
+                    ...(headers || {})
                 }
             });
         } catch (cause) {
@@ -518,6 +522,76 @@ async function downloadToTempFile(url, {
     }
 }
 
+// Reads only the start of a file: up to `maxBytes` of its body, asked for with
+// a Range header so a cooperating host sends no more and cut off at the cap
+// otherwise. The preview a visitor sees while a copy is being prepared comes
+// from this; nothing is written to disk. `complete` reports whether the whole
+// file fitted, so a caller knows the last record may be cut.
+async function downloadHead(url, {
+    maxBytes = 256 * 1024,
+    timeoutMs = 8000,
+    fetchImpl,
+    userAgent,
+    lookupImpl,
+    requestImpl,
+    maxRedirects,
+    signal
+} = {}) {
+    signal?.throwIfAborted();
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+        controller.abort(downloadError('download head read exceeded ' + timeoutMs + 'ms', 'DOWNLOAD_RESPONSE_STALL'));
+    }, timeoutMs);
+    const headSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const headers = { Range: 'bytes=0-' + (maxBytes - 1) };
+    const injectedFetch = Boolean(fetchImpl);
+    let res;
+    try {
+        const opened = injectedFetch
+            ? await openInjectedResponse(url, fetchImpl, { signal: headSignal, userAgent, maxRedirects, headers })
+            : await openValidatedResponse(url, { signal: headSignal, userAgent, lookupImpl, requestImpl, maxRedirects, headers });
+        res = opened.response;
+        const status = Number(injectedFetch ? res.status : res.statusCode);
+        const responseBody = injectedFetch ? res.body : res;
+        if ((status !== 200 && status !== 206) || !responseBody) {
+            const err = downloadError('download failed: HTTP ' + status, 'DOWNLOAD_HTTP');
+            err.httpStatus = status;
+            err.retryAfterMs = retryAfterMs(responseHeader(res, 'retry-after'));
+            throw err;
+        }
+        const contentRange = /^bytes \d+-\d+\/(\d+|\*)$/i.exec(String(responseHeader(res, 'content-range') || '').trim());
+        const declared = responseHeader(res, 'content-length');
+        const declaredLength = declared == null || String(declared).trim() === '' ? NaN : Number(declared);
+        const total = contentRange
+            ? (contentRange[1] === '*' ? null : Number(contentRange[1]))
+            : status === 200 && Number.isFinite(declaredLength) && declaredLength >= 0 ? declaredLength : null;
+        const body = injectedFetch ? responseBody : decodedResponseBody(res);
+        const chunks = [];
+        let bytes = 0;
+        let capped = false;
+        for await (const value of chunksFromBody(body, headSignal)) {
+            const chunk = Buffer.from(value);
+            if (bytes + chunk.length >= maxBytes) {
+                chunks.push(chunk.subarray(0, maxBytes - bytes));
+                bytes = maxBytes;
+                capped = true;
+                break;
+            }
+            chunks.push(chunk);
+            bytes += chunk.length;
+        }
+        const complete = !capped && (status === 206 ? total !== null && total <= bytes : total === null || total <= bytes);
+        return { bytes: Buffer.concat(chunks, bytes), complete, contentLength: total, status };
+    } catch (err) {
+        if (signal?.aborted) throw signal.reason;
+        if (controller.signal.aborted) throw controller.signal.reason;
+        throw err;
+    } finally {
+        clearTimeout(timer);
+        if (res) destroyResponse(res);
+    }
+}
+
 async function sniffCsvMeta(filePath) {
     const fd = await fs.promises.open(filePath, 'r');
     try {
@@ -525,6 +599,17 @@ async function sniffCsvMeta(filePath) {
         const { bytesRead } = await fd.read(buf, 0, buf.length, 0);
         const slice = buf.subarray(0, bytesRead);
         const complete = (await fd.stat()).size <= bytesRead;
+        return sniffCsvMetaFromBytes(slice, complete);
+    } finally {
+        await fd.close();
+    }
+}
+
+// Delimiter and encoding of a CSV from its first bytes. `complete` says the
+// bytes are the whole file, so an incomplete trailing character is an error
+// rather than a cut.
+function sniffCsvMetaFromBytes(slice, complete) {
+    {
         let encoding = 'utf8';
         if (slice[0] === 0xff && slice[1] === 0xfe) encoding = 'utf16le';
         else if (slice[0] === 0xfe && slice[1] === 0xff) encoding = 'utf16be';
@@ -557,8 +642,6 @@ async function sniffCsvMeta(filePath) {
             if (counts[candidate] > counts[delimiter]) delimiter = candidate;
         }
         return { delimiter, encoding };
-    } finally {
-        await fd.close();
     }
 }
 
@@ -577,7 +660,9 @@ function assertCsvContent(bytes, text) {
 
 module.exports = {
     downloadToTempFile,
+    downloadHead,
     sniffCsvMeta,
+    sniffCsvMetaFromBytes,
     makeSafeWriter,
     validateDownloadUrl,
     isPublicAddress,

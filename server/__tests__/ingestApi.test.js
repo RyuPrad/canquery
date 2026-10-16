@@ -10,6 +10,7 @@ jest.mock('../middleware/rateLimits', () => ({
     generalLimiter: (req, res, next) => next(),
     ingestLimiter: (req, res, next) => next(),
     profileLimiter: (req, res, next) => next(),
+    previewLimiter: (req, res, next) => next(),
     exportLimiter: (req, res, next) => next(),
     mapLimiter: (req, res, next) => next(),
     tileLimiter: (req, res, next) => next(),

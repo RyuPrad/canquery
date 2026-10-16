@@ -1,5 +1,6 @@
 const catchAsync = require('../utils/catchAsync');
 const queryService = require('../services/queryService');
+const csvPreview = require('../services/csvPreview');
 const { envelope } = require('../utils/envelope');
 const { queryProvenanceMeta: provenanceMeta, queryEnvelope } = require('../services/resourceEnvelopes');
 
@@ -77,6 +78,19 @@ async function profileResource(req, res) {
     ));
 }
 
+// The first rows of a file CanQuery can prepare but has not prepared yet,
+// read from the start of the publisher's file. Nothing is stored or renewed.
+async function previewResource(req, res) {
+    const result = await csvPreview.previewResource(req.params.id);
+    res.set('Cache-Control', 'no-cache');
+    res.json(envelope(
+        { fields: result.fields, records: result.records, truncated: result.truncated, sampled_rows: result.sampled_rows,
+            bytes_read: result.bytes_read, content_length: result.content_length },
+        { meta: { query_mode: 'preview', retrieved_at: result.retrieved_at, publisher_modified_at: result.publisher_modified_at,
+            ...provenanceMeta(result.provenance) } }
+    ));
+}
+
 async function exportResourceCsv(req, res) {
     const { q, filters, sort, group_by, agg, agg_column, bucket, snapshot } = req.query;
     return queryService.queryResourceForExport(req.params.id, { q, filters, sort, group_by, agg, agg_column, bucket, snapshot },
@@ -116,4 +130,4 @@ const recordResourceActivity = pin(async (req, res) => {
     await queryService.recordResourceActivity(req.params.id);
     res.status(204).end();
 });
-module.exports = { queryResource: pin(queryResource), profileResource: pin(profileResource), exportResourceCsv: pin(exportResourceCsv), recordResourceActivity };
+module.exports = { queryResource: pin(queryResource), profileResource: pin(profileResource), previewResource: pin(previewResource), exportResourceCsv: pin(exportResourceCsv), recordResourceActivity };
