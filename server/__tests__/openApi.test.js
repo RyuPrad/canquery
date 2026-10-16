@@ -140,6 +140,10 @@ describe('OpenAPI structure and published route coverage', () => {
         expect(responseFor('/ops', 'get', 503).content['application/json'].schema.properties.data).toEqual({ $ref: '#/components/schemas/Operations' });
         expect(responseFor('/resources/{id}/map', 'get', 413)).toBeDefined();
         expect(responseFor('/resources/{id}/query', 'get', 502)).toBeDefined();
+        expect(spec.paths['/resources/{id}/preview'].get.operationId).toBe('previewResource');
+        expect(responseFor('/resources/{id}/preview', 'get', 200).content['application/json'].schema.properties.data).toEqual({ $ref: '#/components/schemas/Preview' });
+        for (const code of [404, 409, 422, 502]) expect(responseFor('/resources/{id}/preview', 'get', code)).toBeDefined();
+        expect(spec.components.schemas.Preview.required).toEqual(['fields', 'records', 'truncated']);
     });
 
     test('uses effective configurable bounds and preserves the hard export cap', () => {

@@ -87,6 +87,8 @@ async function ingestResourceLocked(resource, caps, tableName, job, deadline) {
         'ingest temporary filesystem'
     );
 
+    const report = typeof caps.onProgress === 'function' ? caps.onProgress : () => {};
+    let contentLength = null;
     const { filePath, bytes } = await downloadToTempFile(toAbsoluteUrl(resource.url), {
         maxFileBytes: downloadCap,
         fetchImpl: caps.fetchImpl,
@@ -94,8 +96,13 @@ async function ingestResourceLocked(resource, caps, tableName, job, deadline) {
         stallTimeoutMs: caps.stallTimeoutMs,
         lookupImpl: caps.lookupImpl,
         requestImpl: caps.requestImpl,
-        signal
+        signal,
+        onProgress: (received, length) => {
+            contentLength = length;
+            report({ phase: 'downloading', bytes: received, content_length: length });
+        }
     });
+    report({ phase: 'loading', bytes, content_length: contentLength ?? bytes, rows: 0 });
 
     const tempPaths = [filePath];
     try {
@@ -169,8 +176,10 @@ async function ingestResourceLocked(resource, caps, tableName, job, deadline) {
                 encoding,
                 maxRows: caps.maxRows,
                 maxCols: caps.maxCols,
-                signal
+                signal,
+                onRows: rows => report({ phase: 'loading', bytes, content_length: contentLength ?? bytes, rows })
             });
+            report({ phase: 'finishing', bytes, content_length: contentLength ?? bytes, rows: rowCount });
             const sizeResult = await client.query(
                 'SELECT pg_total_relation_size($1) AS size',
                 ['store.' + tableName]

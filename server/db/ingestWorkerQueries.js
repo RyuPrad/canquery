@@ -32,7 +32,8 @@ async function recoverOrphanedJobs(db) {
             claimed_at = NULL,
             finished_at = NULL,
             worker_id = NULL,
-            heartbeat_at = NULL
+            heartbeat_at = NULL,
+            progress = NULL
         WHERE status = 'running'
     `);
 }
@@ -45,6 +46,7 @@ async function claimJob(db, workerId) {
             finished_at = NULL,
             worker_id = $1,
             heartbeat_at = now(),
+            progress = NULL,
             attempts = attempts + 1
         WHERE id = (
             SELECT id
@@ -66,6 +68,17 @@ async function heartbeatJob(db, id, workerId) {
         SET heartbeat_at = now()
         WHERE id = $1 AND status = 'running' AND worker_id = $2
     `, [id, workerId]);
+    return result.rowCount === 1;
+}
+
+// Live progress for the page waiting on this job; it also counts as a heartbeat.
+async function progressJob(db, id, workerId, progress) {
+    const result = await db.query(`
+        UPDATE ingest_jobs
+        SET progress = $3::jsonb,
+            heartbeat_at = now()
+        WHERE id = $1 AND status = 'running' AND worker_id = $2
+    `, [id, workerId, JSON.stringify(progress)]);
     return result.rowCount === 1;
 }
 
@@ -123,6 +136,7 @@ async function requeueJob(db, id, workerId, error, delaySeconds = 0) {
             finished_at = NULL,
             worker_id = NULL,
             heartbeat_at = NULL,
+            progress = NULL,
             next_attempt_at = now() + $4 * interval '1 second'
         WHERE id = $1 AND status = 'running' AND worker_id = $2 AND published_at IS NULL
     `, [id, workerId, error, delaySeconds]);
@@ -136,6 +150,7 @@ module.exports = {
     recoverOrphanedJobs,
     claimJob,
     heartbeatJob,
+    progressJob,
     finishJob,
     finishPublishedJob,
     requeueJob

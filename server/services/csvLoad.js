@@ -77,7 +77,7 @@ async function readSample(filePath, { delimiter, encoding, signal }) {
     });
 }
 
-async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols, signal }) {
+async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols, signal, onRows }) {
     signal?.throwIfAborted();
     const { headers, rows, skipRecords } = await readSample(filePath, { delimiter, encoding, signal });
     if (!headers || headers.length === 0) throw Object.assign(new Error('empty CSV'), { code: 'CSV_EMPTY' });
@@ -107,6 +107,7 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
                 return cb();
             }
             rowCount += 1;
+            if (onRows && rowCount % 5000 === 0) onRows(rowCount);
             if (rowCount > maxRows) {
                 const err = new Error('row count exceeds cap ' + maxRows);
                 err.code = 'CAP_ROWS';
@@ -141,6 +142,8 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
         client.query(copyFrom(copySql)),
         { signal }
     );
+
+    if (onRows) onRows(rowCount);
 
     const typedColumns = columns.filter(col => col.type !== 'TEXT');
     if (typedColumns.length) {

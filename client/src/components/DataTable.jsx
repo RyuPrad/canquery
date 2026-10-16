@@ -48,6 +48,8 @@ const TableBody = memo(function TableBody({ fields, records, placeholderRows }) 
   </tbody>;
 });
 
+// `previewMode` draws the first rows read from a file before its preparation:
+// plain headers with their inferred types, no sort buttons and no filter row.
 function DataTable({
   fields,
   records,
@@ -56,6 +58,7 @@ function DataTable({
   columnFilters,
   onColumnFilterChange,
   placeholderRows = 0,
+  previewMode = false,
 }) {
   const { t } = useLang();
   const sortValue = sort?.trim();
@@ -84,6 +87,16 @@ function DataTable({
         <thead>
           <tr>
             {fields.map((field) => {
+              if (previewMode) {
+                return (
+                  <th key={field.id} scope="col">
+                    <span className="inline-flex items-center gap-1.5 text-left">
+                      {field.id}
+                      <span className={typeChipClass(field.type)}>{field.type}</span>
+                    </span>
+                  </th>
+                );
+              }
               const dir = getSortDirection(field.id);
               return (
                 <th key={field.id} scope="col" aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}>
@@ -100,7 +113,7 @@ function DataTable({
               );
             })}
           </tr>
-          <tr>
+          {!previewMode && <tr>
             {fields.map((field) => (
               <th key={field.id}>
                 {field.id === '_id' ? (
@@ -117,7 +130,7 @@ function DataTable({
                 )}
               </th>
             ))}
-          </tr>
+          </tr>}
         </thead>
         <TableBody fields={fields} records={records} placeholderRows={placeholderRows} />
       </table>

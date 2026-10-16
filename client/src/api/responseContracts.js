@@ -11,6 +11,11 @@ export const queryResponse = ({ data, meta }) => record(data) && Array.isArray(d
   Number.isSafeInteger(data.total) && data.total >= 0 &&
   record(meta) && ['ingested', 'datastore'].includes(meta.query_mode);
 
+// The first rows of a file read before its preparation: text values only.
+export const previewResponse = ({ data, meta }) => record(data) && Array.isArray(data.fields) &&
+  data.fields.every(field) && Array.isArray(data.records) && data.records.every(record) &&
+  typeof data.truncated === 'boolean' && record(meta) && meta.query_mode === 'preview';
+
 export const listResponse = ({ data }) => Array.isArray(data) && data.every(record);
 
 const count = value => Number.isSafeInteger(value) && value >= 0;

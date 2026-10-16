@@ -8,6 +8,7 @@ const {
     recoverOrphanedJobs,
     claimJob,
     heartbeatJob,
+    progressJob,
     finishJob,
     finishPublishedJob,
     requeueJob
@@ -138,5 +139,27 @@ describe('ingest worker leases', () => {
         expect(read[1]).toEqual([7, 'resource-1']);
         expect(settlePreparationOn).toHaveBeenCalledWith(client, 7);
         expect(client.query).toHaveBeenLastCalledWith('COMMIT');
+    });
+});
+
+describe('ingest job progress', () => {
+    test('records advisory progress only on the running job the worker owns, as a heartbeat', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rowCount: 1 }) };
+        const progress = { phase: 'downloading', bytes: 1024, content_length: 4096, updated_at: '2026-10-16T00:00:00.000Z' };
+        await expect(progressJob(db, 41, 'worker-a', progress)).resolves.toBe(true);
+        const [sql, params] = db.query.mock.calls[0];
+        expect(sql).toMatch(/SET progress = \$3::jsonb,\s+heartbeat_at = now\(\)/);
+        expect(sql).toMatch(/WHERE id = \$1 AND status = 'running' AND worker_id = \$2/);
+        expect(params).toEqual([41, 'worker-a', JSON.stringify(progress)]);
+        db.query.mockResolvedValue({ rowCount: 0 });
+        await expect(progressJob(db, 41, 'worker-b', progress)).resolves.toBe(false);
+    });
+
+    test('a fresh claim, a requeue and restart recovery clear the previous progress', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }) };
+        await claimJob(db, 'worker-a');
+        await requeueJob(db, 41, 'worker-a', 'retry', 5);
+        await recoverOrphanedJobs(db);
+        for (const [sql] of db.query.mock.calls) expect(sql).toMatch(/progress = NULL/);
     });
 });

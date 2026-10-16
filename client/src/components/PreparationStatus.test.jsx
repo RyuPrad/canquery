@@ -24,3 +24,30 @@ test('unknown reasons use the generic message without disclosing their value', (
   expect(screen.getByRole('status')).not.toHaveTextContent('private.host');
   expect(screen.getByRole('button')).toBeEnabled();
 });
+
+describe('preparation progress', () => {
+  const running = { phase: 'running', supported: true, enabled: true, failureReason: null, retryAt: null, retry: vi.fn(), working: true };
+  test('shows the download against the file length, then rows, then finishing', () => {
+    const view = render(<PreparationStatus preparation={running} elapsed="0:12" progress={{ phase: 'downloading', bytes: 52428800, content_length: 111600495 }} />);
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', String(52428800 / 111600495));
+    expect(screen.getByText('Downloading 52.4 MB of 111.6 MB')).toBeInTheDocument();
+    view.rerender(<PreparationStatus preparation={running} elapsed="0:20" progress={{ phase: 'downloading', bytes: 2048, content_length: null }} />);
+    expect(screen.getByText('Downloaded 2.0 KB')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('value');
+    view.rerender(<PreparationStatus preparation={running} elapsed="0:40" progress={{ phase: 'loading', rows: 250000 }} />);
+    expect(screen.getByText('Loading rows: 250,000')).toBeInTheDocument();
+    view.rerender(<PreparationStatus preparation={running} elapsed="0:55" progress={{ phase: 'finishing', rows: 645327 }} />);
+    expect(screen.getByText('Finishing the table…')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '1');
+    view.rerender(<PreparationStatus preparation={running} elapsed="0:55" progress={{ phase: 'other' }} />);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+  test('is bilingual and hidden once the job is not working', () => {
+    localStorage.setItem('cq-lang', 'fr');
+    render(<LangProvider><PreparationStatus preparation={running} elapsed="0:12" progress={{ phase: 'downloading', bytes: 52428800, content_length: 111600495 }} /></LangProvider>);
+    expect(screen.getByText('Téléchargement : 52,4 Mo sur 111,6 Mo')).toBeInTheDocument();
+    cleanup();
+    render(<PreparationStatus preparation={{ ...running, phase: 'failed', working: false }} progress={{ phase: 'loading', rows: 5 }} />);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+});

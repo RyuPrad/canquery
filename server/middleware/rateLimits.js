@@ -12,6 +12,7 @@ const profileLimiter = rateLimit({ skip: req => Boolean(req.commercial), windowM
 const exportLimiter = rateLimit({ skip: req => Boolean(req.commercial), windowMs: 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many export requests, try again later' } });
 const mapLimiter = rateLimit({ skip: req => Boolean(req.commercial), windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many map requests, try again later' } });
 const tileLimiter = rateLimit({ skip: req => Boolean(req.commercial), windowMs: 60 * 1000, limit: 240, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many map tile requests, try again later' } });
+const previewLimiter = rateLimit({ skip: req => Boolean(req.commercial), windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many preview requests, try again later' } });
 const aggregateRateLimiter = rateLimit({ skip: req => Boolean(req.commercial), windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many aggregation requests, try again later' } });
 
 // Ordinary table pagination remains under the general API limit. Only requests
@@ -26,6 +27,6 @@ function aggregationLimiter(req, res, next) {
 }
 
 module.exports = {
-    generalLimiter, ingestLimiter, profileLimiter,
+    generalLimiter, ingestLimiter, profileLimiter, previewLimiter,
     exportLimiter, mapLimiter, tileLimiter, aggregationLimiter
 };

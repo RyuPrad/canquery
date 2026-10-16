@@ -10,6 +10,7 @@ jest.mock('../middleware/rateLimits', () => ({
     generalLimiter: (req, res, next) => next(),
     ingestLimiter: (req, res, next) => next(),
     profileLimiter: (req, res, next) => next(),
+    previewLimiter: (req, res, next) => next(),
     exportLimiter: (req, res, next) => next(),
     mapLimiter: (req, res, next) => next(),
     tileLimiter: (req, res, next) => next(),
@@ -246,5 +247,22 @@ describe('automatic preparation API', () => {
         expect((await resolvePage('/resources/csv-1')).status).toBe(200);
         expect(prepareResource).not.toHaveBeenCalled();
         expect(ingestQueries.enqueueJob).not.toHaveBeenCalled();
+    });
+});
+
+describe('job progress in the API', () => {
+    test('a running job exposes the worker\'s advisory progress; other states and malformed values are null', async () => {
+        const base = { id: 9, resource_id: 'csv-1', status: 'running', attempts: 1, error: null, failure_code: null, retry_at: null,
+            claimed_at: '2026-10-16T00:00:00.000Z', finished_at: null, created_at: '2026-10-16T00:00:00.000Z', age_seconds: 12 };
+        ingestQueries.getJobById.mockResolvedValue({ ...base, progress: { phase: 'loading', bytes: '111600495', content_length: 111600495, rows: 250000, updated_at: '2026-10-16T00:00:30.000Z' } });
+        const running = await request(app).get('/api/v1/jobs/9');
+        expect(running.status).toBe(200);
+        expect(running.body.data.progress).toEqual({ phase: 'loading', bytes: 111600495, content_length: 111600495, rows: 250000, updated_at: '2026-10-16T00:00:30.000Z' });
+        ingestQueries.getJobById.mockResolvedValue({ ...base, progress: { phase: 'teleporting' } });
+        expect((await request(app).get('/api/v1/jobs/9')).body.data.progress).toBeNull();
+        ingestQueries.getJobById.mockResolvedValue({ ...base, status: 'done', finished_at: '2026-10-16T00:01:00.000Z', progress: { phase: 'finishing', rows: 645327 } });
+        expect((await request(app).get('/api/v1/jobs/9')).body.data.progress).toBeNull();
+        ingestQueries.getJobById.mockResolvedValue({ ...base });
+        expect((await request(app).get('/api/v1/jobs/9')).body.data.progress).toBeNull();
     });
 });

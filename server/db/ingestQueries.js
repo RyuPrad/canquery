@@ -87,7 +87,7 @@ async function getJobById(id) {
     const client = await pool.connect();
     try {
         const result = await client.query(
-            `SELECT id, resource_id, status, attempts, error, failure_code, retry_at, claimed_at, finished_at, created_at, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds FROM ingest_jobs WHERE id = $1`,
+            `SELECT id, resource_id, status, attempts, error, failure_code, retry_at, claimed_at, finished_at, created_at, progress, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds FROM ingest_jobs WHERE id = $1`,
             [id]
         );
         return result.rows[0] || null;
