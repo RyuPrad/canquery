@@ -714,6 +714,8 @@ describe('ResourcePage table frame and page box', () => {
     expect(screen.getByText('Page 1 / 4')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    // The frame is on screen before the rows effect has even started its request.
+    await waitFor(() => expect(queryResource).toHaveBeenCalledTimes(1));
     await act(async () => finish(pageEnvelope('a', 0)));
     expect(await screen.findByText('row-a-0')).toBeInTheDocument();
     expect(document.querySelectorAll('.cq-skel-cell')).toHaveLength(0);
