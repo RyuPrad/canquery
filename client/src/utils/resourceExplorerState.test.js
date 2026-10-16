@@ -24,3 +24,13 @@ test('ready charts and maps do not inherit unrelated table failure state', () =>
   expect(resourceViewState({ ...state, view: 'map' })).toBe('map');
   expect(resourceViewState({ ...state, view: 'table' })).toBe('preparation');
 });
+
+test('the first rows read from a file stand in for the table only while a table view is prepared', () => {
+  const state = { hasMap: false, filtersNeedPreparation: false, hasData: false, dataLoading: false,
+    preparationRequired: true, downloadOnly: false, rowUnavailable: false, rowError: false };
+  expect(resourceViewState({ ...state, view: 'table' })).toBe('preparation');
+  expect(resourceViewState({ ...state, view: 'table', hasPreview: true })).toBe('preparation-preview');
+  expect(resourceViewState({ ...state, view: 'chart', hasPreview: true })).toBe('preparation');
+  expect(resourceViewState({ ...state, view: 'table', hasPreview: true, downloadOnly: true })).toBe('download');
+  expect(resourceViewState({ ...state, view: 'table', hasPreview: true, preparationRequired: false, rowUnavailable: true })).toBe('preparation-preview');
+});

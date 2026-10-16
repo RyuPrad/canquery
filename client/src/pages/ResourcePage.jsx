@@ -4,6 +4,7 @@ import { NotIngestedError, FileOnlyError, apiUrl } from '../api/client.js';
 import useResourceUrl from '../hooks/useResourceUrl.js';
 import useResourceMetadata from '../hooks/useResourceMetadata.js';
 import useResourceRows from '../hooks/useResourceRows.js';
+import useResourcePreview from '../hooks/useResourcePreview.js';
 import { PAGE_SIZE, MAX_PAGE_INDEX, resourceViewState } from '../utils/resourceExplorerState.js';
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
 import useResourceActivity from '../hooks/useResourceActivity.js';
@@ -37,6 +38,9 @@ import {
   MapIcon,
   BuildingIcon
 } from '../components/Icons.jsx';
+
+const noop = () => {};
+const EMPTY_FILTERS = Object.freeze({});
 
 // Previous/Next plus a page box. A typed page is clamped to the last page the
 // server can serve; an unseen page keeps the current rows while it loads.
@@ -237,6 +241,15 @@ function ResourceExplorer({ id, navigationKey }) {
     onReady: onPrepared
   });
   const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
+  const jobProgress = preparation.job?.progress || null;
+  // While a CSV is prepared for the first time, its first rows stand in for the table.
+  const { preview } = useResourcePreview({
+    id,
+    enabled:
+      view === 'table' &&
+      resource?.query_mode === 'ingestable' &&
+      String(resource.format || '').toUpperCase() === 'CSV'
+  });
   useEffect(() => {
     if (resource && view === 'map' && !resource.map) setView('table');
   }, [resource, view, setView]);
@@ -321,7 +334,8 @@ function ResourceExplorer({ id, navigationKey }) {
     preparationRequired,
     downloadOnly,
     rowUnavailable: dataError instanceof NotIngestedError,
-    rowError: Boolean(dataError)
+    rowError: Boolean(dataError),
+    hasPreview: Boolean(preview)
   });
 
   // The recorded schema and row count draw the table frame, count and pager
@@ -443,6 +457,7 @@ function ResourceExplorer({ id, navigationKey }) {
           <PreparationStatus
             preparation={preparation}
             elapsed={formatDuration(loadElapsed)}
+            progress={jobProgress}
             compact
           />
         )}
@@ -464,6 +479,7 @@ function ResourceExplorer({ id, navigationKey }) {
             <PreparationStatus
               preparation={preparation}
               elapsed={formatDuration(loadElapsed)}
+              progress={jobProgress}
               compact
             />
           )}
@@ -611,8 +627,42 @@ function ResourceExplorer({ id, navigationKey }) {
             </a>
           )}
         </div>
+      ) : display === 'preparation-preview' ? (
+        <div className="space-y-3">
+          <PreparationStatus
+            preparation={preparation}
+            elapsed={formatDuration(loadElapsed)}
+            progress={jobProgress}
+            compact
+          />
+          <div className="cq-card p-3 text-sm flex flex-wrap items-center gap-2" role="note">
+            <span className="cq-chip cq-chip-mono">{t('preview.chip')}</span>
+            <span>{t('preview.banner')}</span>
+            <span className="text-base-content/60">
+              {preview.truncated
+                ? t('preview.partial').replace(
+                    '{rows}',
+                    preview.records.length.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')
+                  )
+                : t('preview.whole')}
+            </span>
+          </div>
+          <DataTable
+            fields={preview.fields}
+            records={preview.records}
+            previewMode
+            sort={null}
+            onSortChange={noop}
+            columnFilters={EMPTY_FILTERS}
+            onColumnFilterChange={noop}
+          />
+        </div>
       ) : display === 'preparation' ? (
-        <PreparationStatus preparation={preparation} elapsed={formatDuration(loadElapsed)} />
+        <PreparationStatus
+          preparation={preparation}
+          elapsed={formatDuration(loadElapsed)}
+          progress={jobProgress}
+        />
       ) : display === 'chart' ? (
         <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
           {schemaReady ? (

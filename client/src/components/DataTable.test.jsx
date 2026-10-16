@@ -58,6 +58,16 @@ describe('table keyboard controls', () => {
     expect(screen.getByRole('cell', { name: 'Ottawa' })).toBeInTheDocument();
   });
 
+  test('preview mode draws plain typed headers without sort buttons or filter inputs', () => {
+    const input = props({ previewMode: true, records: [{ _id: 1, 'City name': 'Ottawa' }] });
+    render(<DataTable {...input} />);
+    expect(screen.getByRole('columnheader', { name: 'City nameTEXT' })).not.toHaveAttribute('aria-sort');
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getAllByRole('row')).toHaveLength(2);
+    expect(screen.getByRole('cell', { name: 'Ottawa' })).toBeInTheDocument();
+  });
+
   test('editing header controls does not read unchanged rows, while replacement rows and schemas render', () => {
     const readCell = vi.fn(() => 'Ottawa');
     const record = { _id: 1, get 'City name'() { return readCell(); } };

@@ -8,6 +8,7 @@ vi.mock('../api/catalog.js', () => ({
   fetchBlog: vi.fn(() => Promise.resolve({ data: [] })),
   fetchResource: vi.fn(),
   queryResource: vi.fn(),
+  fetchResourcePreview: vi.fn(),
   prepareResource: vi.fn(),
   recordResourceActivity: vi.fn(() => Promise.resolve()),
   fetchJob: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock('../components/MapPanel.jsx', () => ({
 vi.mock('../components/ChartPanel.jsx', () => ({
   default: ({ resourceId, fields, queryMode }) => <div data-testid="chart" data-fields={JSON.stringify(fields)} data-mode={queryMode}>chart-{resourceId}</div>,
 }));
-import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity } from '../api/catalog.js';
+import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity, fetchResourcePreview } from '../api/catalog.js';
 import { ApiError, NotIngestedError } from '../api/client.js';
 import * as rowPageCache from '../utils/rowPageCache.js';
 import { clearResourceHints, rememberResource } from '../utils/resourceHints.js';
@@ -74,6 +75,7 @@ beforeEach(() => {
   // Prefetching is exercised explicitly; elsewhere it would make call counts timing-dependent.
   rowPageCache.pausePrefetch(60 * 1000);
   clearResourceHints();
+  fetchResourcePreview.mockRejectedValue(new Error('no preview in this test'));
   fetchResource.mockImplementation((id) => Promise.resolve(resourceEnvelope(id)));
   queryResource.mockImplementation((id) => Promise.resolve({
     data: {
@@ -758,6 +760,70 @@ describe('ResourcePage table frame and page box', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Go' }));
     expect(screen.getByText('row-a-100')).toBeInTheDocument();
     expect(queryResource).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('ResourcePage preview while a file is prepared', () => {
+  const unprepared = () => ({ data: { ...resourceEnvelope('a').data, query_mode: 'ingestable',
+    preparation: { supported: true, enabled: true, freshness: 'unprepared' } } });
+  const prepared = () => ({ data: { ...resourceEnvelope('a').data, preparation: { supported: true, enabled: true, freshness: 'current' },
+    ingestion: { ingested_at: '2026-10-16', snapshot_id: SNAPSHOT_1, row_count: 200, fields: [{ id: 'name', type: 'TEXT' }] } } });
+  beforeEach(() => {
+    queryResource.mockImplementation((id, { offset = 0 } = {}) => Promise.resolve(pageEnvelope(id, offset)));
+  });
+  const previewEnvelope = () => ({
+    data: { fields: [{ id: 'Year', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }],
+      records: [{ Year: '2024', City: 'preview-ottawa' }, { Year: '2025', City: 'preview-hull' }], truncated: true, sampled_rows: 2, bytes_read: 262144, content_length: 111600495 },
+    meta: { query_mode: 'preview' },
+  });
+
+  test('shows the first rows and the download progress while the file is prepared, then the real table', async () => {
+    fetchResource.mockResolvedValueOnce(unprepared()).mockResolvedValue(prepared());
+    fetchResourcePreview.mockResolvedValue(previewEnvelope());
+    prepareResource.mockResolvedValue({ data: { id: 777, status: 'pending' } });
+    let finish;
+    fetchJob.mockResolvedValueOnce({ data: { id: 777, status: 'running', progress: { phase: 'downloading', bytes: 52428800, content_length: 111600495, rows: null, updated_at: '2026-10-16T00:00:00.000Z' } } })
+      .mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('preview-ottawa')).toBeInTheDocument();
+    expect(screen.getByText('Preview')).toBeInTheDocument();
+    expect(screen.getByText('Showing the first 2 rows of the file.')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'YearINTEGER' })).not.toHaveAttribute('aria-sort');
+    expect(screen.queryByRole('textbox', { name: /Year/ })).toBeNull();
+    expect(await screen.findByText('Downloading 52.4 MB of 111.6 MB')).toBeInTheDocument();
+    expect(screen.getByText('Preparing your table and charts…')).toBeInTheDocument();
+    expect(fetchResourcePreview).toHaveBeenCalledWith('a', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(queryResource).not.toHaveBeenCalled();
+    await waitFor(() => expect(finish).toBeTruthy(), { timeout: 4000 });
+    await act(async () => finish({ data: { id: 777, status: 'done' } }));
+    expect(await screen.findByText('row-a-0')).toBeInTheDocument();
+    expect(screen.queryByText('preview-ottawa')).toBeNull();
+    expect(screen.queryByText('Preview')).toBeNull();
+    expect(fetchResourcePreview).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failed preview keeps the plain preparation card, and other formats never ask for one', async () => {
+    fetchResource.mockResolvedValue(unprepared());
+    fetchResourcePreview.mockRejectedValue(new Error('upstream'));
+    prepareResource.mockResolvedValue({ data: { id: 778, status: 'pending' } });
+    fetchJob.mockImplementation(() => new Promise(() => {}));
+    const first = render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('Preparing this file automatically…')).toBeInTheDocument();
+    await waitFor(() => expect(fetchResourcePreview).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Preview')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    first.unmount();
+    fetchResourcePreview.mockClear();
+    fetchResource.mockResolvedValue({ data: { ...unprepared().data, format: 'XLSX', url: 'https://example.test/a.xlsx' } });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('Preparing this file automatically…')).toBeInTheDocument();
+    expect(fetchResourcePreview).not.toHaveBeenCalled();
   });
 });
 

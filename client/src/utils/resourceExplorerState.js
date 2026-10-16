@@ -42,7 +42,7 @@ export function writeResourceUrl(params, { q, columnFilters, sort, page, view })
 
 // This is a presentation projection, not the preparation state machine. A
 // stale serving snapshot and a running refresh can coexist independently.
-/** @param {{view: import('../api/contracts').ResourceView, hasMap: boolean, filtersNeedPreparation: boolean, hasData: boolean, dataLoading: boolean, preparationRequired: boolean, downloadOnly: boolean, rowUnavailable: boolean, rowError: boolean}} state */
+/** @param {{view: import('../api/contracts').ResourceView, hasMap: boolean, filtersNeedPreparation: boolean, hasData: boolean, dataLoading: boolean, preparationRequired: boolean, downloadOnly: boolean, rowUnavailable: boolean, rowError: boolean, hasPreview?: boolean}} state */
 export function resourceViewState({
   view,
   hasMap,
@@ -52,13 +52,17 @@ export function resourceViewState({
   preparationRequired,
   downloadOnly,
   rowUnavailable,
-  rowError
+  rowError,
+  hasPreview = false
 }) {
   if (view === 'map') return hasMap ? 'map' : 'map-loading';
   if (view === 'table' && filtersNeedPreparation && !hasData) return 'filter-preparation';
   if (view === 'table' && dataLoading && !hasData && !preparationRequired) return 'loading';
   if (downloadOnly) return 'download';
-  if (preparationRequired || (view === 'table' && rowUnavailable)) return 'preparation';
+  // The first rows read from the file stand in for the table while it is prepared.
+  if (preparationRequired || (view === 'table' && rowUnavailable)) {
+    return view === 'table' && hasPreview ? 'preparation-preview' : 'preparation';
+  }
   if (view === 'chart') return 'chart';
   if (rowError) return 'error';
   return hasData ? 'table' : 'loading';
