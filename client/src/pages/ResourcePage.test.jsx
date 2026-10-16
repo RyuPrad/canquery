@@ -447,6 +447,30 @@ describe('ResourcePage row cache', () => {
     queryResource.mockImplementation((id, { offset = 0 } = {}) => Promise.resolve(pageEnvelope(id, offset)));
   });
 
+  test('an unseen page keeps the page on screen visible, not the last fetched one, while it loads', async () => {
+    let finish;
+    queryResource.mockImplementation((id, { offset = 0 } = {}) => offset === 150
+      ? new Promise(resolve => { finish = resolve; })
+      : Promise.resolve(pageEnvelope(id, offset)));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a-0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await screen.findByText('row-a-50');
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByText('row-a-0')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Go to page' }), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ offset: 150 }), expect.any(Object)));
+    expect(screen.getByText('row-a-0')).toBeInTheDocument();
+    expect(screen.queryByText('row-a-50')).toBeNull();
+    expect(screen.getByText('Page 4 / 4')).toBeInTheDocument();
+    await act(async () => finish(pageEnvelope('a', 150)));
+    expect(await screen.findByText('row-a-150')).toBeInTheDocument();
+    expect(queryResource).toHaveBeenCalledTimes(3);
+  });
+
   test('returning to a seen page or to the Table shows it without another request', async () => {
     render(<MemoryRouter initialEntries={['/resources/a']}>
       <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>

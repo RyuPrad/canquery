@@ -251,7 +251,11 @@ export default function useResourceRows({
   }, [hit, resource, view, unfiltered, page, id, debouncedQ, filters, sort, snapshotId, queryPage]);
 
   useEffect(() => {
-    if (!hit || tracked.current.has(key)) return;
+    if (!hit) return;
+    // The page on screen is what stays visible, dimmed, while an unseen page
+    // loads, whether it came from a request or from the cache.
+    setState((current) => (current.data === hit ? current : { data: hit, error: null }));
+    if (tracked.current.has(key)) return;
     tracked.current.add(key);
     track('resource_query', {
       resource_id: id,
