@@ -214,9 +214,10 @@ const getDataset = async (idOrName) => {
     };
 };
 
-const getResource = async (id) => {
-    const row = await catalogReadQueries.getResourceById(id);
-    if (!row) throw new AppError('Resource not found', 404);
+// Public resource detail for a catalogue row. The resource page's HTML shell
+// reuses it for the row it has already read, so a direct visit needs no second
+// lookup before its initial data is embedded.
+const resourceDetail = (row) => {
     const shaped = shapeResource(row);
     shaped.presentation = resourcePresentation(row);
     shaped.dataset = {
@@ -236,6 +237,12 @@ const getResource = async (id) => {
         shaped.ingestion.last_accessed_at = row.last_accessed_at;
     }
     return shaped;
+};
+
+const getResource = async (id) => {
+    const row = await catalogReadQueries.getResourceById(id);
+    if (!row) throw new AppError('Resource not found', 404);
+    return resourceDetail(row);
 };
 
 const getOrganization = async (name) => {
@@ -540,6 +547,7 @@ module.exports = {
     startCatalogCountWarming,
     getDataset,
     getResource,
+    resourceDetail,
     getOrganization,
     listOrganizations,
     listSources,

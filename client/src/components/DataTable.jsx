@@ -12,11 +12,22 @@ function typeChipClass(type) {
 
 // Draft search/filter changes update their controls immediately without
 // rebuilding up to 6,000 unchanged cells before the debounced query returns.
-const TableBody = memo(function TableBody({ fields, records }) {
+// `records === null` draws placeholder rows: the recorded columns are known
+// before the first page arrives, so the table frame shows at once.
+const TableBody = memo(function TableBody({ fields, records, placeholderRows }) {
   const { t } = useLang();
   const columns = useMemo(() => fields.map(field => ({
     id: field.id, className: isNumType(field.type) ? 'cq-td-num' : '',
   })), [fields]);
+  if (records === null) {
+    return <tbody>
+      {Array.from({ length: placeholderRows }, (_, index) => <tr key={index}>
+        {columns.map(field => <td key={field.id} className={field.className}>
+          <span className="cq-skel cq-skel-cell" aria-hidden="true" />
+        </td>)}
+      </tr>)}
+    </tbody>;
+  }
   return <tbody>
     {records.length === 0 ? <tr>
       <td colSpan={fields.length}>
@@ -44,6 +55,7 @@ function DataTable({
   onSortChange,
   columnFilters,
   onColumnFilterChange,
+  placeholderRows = 0,
 }) {
   const { t } = useLang();
   const sortValue = sort?.trim();
@@ -67,7 +79,7 @@ function DataTable({
   };
 
   return (
-    <div className="cq-table-wrap">
+    <div className="cq-table-wrap" aria-busy={records === null ? 'true' : undefined}>
       <table className="cq-table">
         <thead>
           <tr>
@@ -107,7 +119,7 @@ function DataTable({
             ))}
           </tr>
         </thead>
-        <TableBody fields={fields} records={records} />
+        <TableBody fields={fields} records={records} placeholderRows={placeholderRows} />
       </table>
     </div>
   );

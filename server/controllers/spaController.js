@@ -4,6 +4,7 @@ const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
+const { resourceInitialData } = require('../services/resourceInitialData');
 const { hostedRoutes, hostedRoute } = require('../extensions');
 const catalogRead = require('../db/catalogReadQueries');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
@@ -28,6 +29,24 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
         ? '<meta name="canquery-analytics-site" content="' + websiteId + '" />'
         : '';
     return template.replace(ANALYTICS_MARKER, () => tag);
+}
+
+// The resource page's initial data (metadata plus the first rows) is embedded
+// only for a document navigation: the client's RouteHead fetch of a route's
+// HTML (Sec-Fetch-Dest: empty), HEAD requests and scripted reads never use it.
+// A browser navigation also records the popularity hit the page's first row
+// query recorded before; a crawler's fetch sends no Fetch Metadata headers.
+const INITIAL_DATA_ID = 'cq-initial';
+function wantsInitialData(req) {
+    const destination = req.get('sec-fetch-dest');
+    return req.method === 'GET' && (!destination || destination === 'document');
+}
+const isNavigation = req => req.get('sec-fetch-mode') === 'navigate';
+
+function injectInitialData(html, payload) {
+    if (!payload) return html;
+    const tag = seoMeta.jsonScript(payload, { type: 'application/json', id: INITIAL_DATA_ID });
+    return html.includes('</body>') ? html.replace('</body>', () => tag + '\n</body>') : html + tag;
 }
 
 const STATIC_PATHS = Object.freeze({
@@ -105,7 +124,8 @@ async function resolvePage(requestTarget, deps = catalogRead) {
             status: 200,
             canonicalPath,
             meta: seoMeta.resourceMeta(resource),
-            body: seoSnapshot.resourceSnapshot(resource)
+            body: seoSnapshot.resourceSnapshot(resource),
+            row: resource
         };
     }
     if (route.type === 'place') {
@@ -204,10 +224,20 @@ function serveSpa(distDir) {
             res.set('Cache-Control', 'public, max-age=3600');
             return res.redirect(301, page.canonicalPath + suffix);
         }
+        let initial = null;
+        if (page.status === 200 && page.row && wantsInitialData(req)) {
+            try {
+                initial = await resourceInitialData(page.row,
+                    { path: req.originalUrl, params: query, signal: req.signal, log: isNavigation(req) });
+            } catch (err) {
+                console.warn('Initial resource data skipped:', err.message);
+            }
+        }
         let html = seoMeta.renderHtml(template, page.meta, page.body);
         const privatePage = isPrivatePage(req.path);
         html = injectAnalytics(html,privatePage ? '' : process.env.ANALYTICS_WEBSITE_ID);
         html = injectRouteAssets(html, req.originalUrl, distDir);
+        html = injectInitialData(html, initial);
         res.set('Content-Type', 'text/html; charset=utf-8');
         // HTML is revalidated each load so a new deploy (and its hashed asset
         // refs) propagates immediately; the hashed assets themselves cache for a year.
@@ -219,4 +249,4 @@ function serveSpa(distDir) {
     };
 }
 
-module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAnalytics };
+module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAnalytics, injectInitialData, INITIAL_DATA_ID };

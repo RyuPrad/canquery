@@ -3,6 +3,7 @@ import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { fetchDataset } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import { track } from '../utils/analytics.js';
+import { rememberResource } from '../utils/resourceHints.js';
 import CatalogPagination from '../components/CatalogPagination.jsx';
 import { PAGE_SIZE, pageNumber } from '../utils/catalogPagination.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
@@ -64,6 +65,8 @@ function DatasetExplorer({ idOrName }) {
     fetchDataset(idOrName)
       .then(env => {
         if (!cancelled) {
+          // Prepared resources opened from this list start their rows at once.
+          for (const resource of env.data.resources || []) rememberResource(resource);
           setDataset(env.data);
           if (!openedRef.current) {
             openedRef.current = true;
