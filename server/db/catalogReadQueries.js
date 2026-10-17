@@ -156,7 +156,7 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
 async function getDatasetByIdOrName(idOrName) {
     const result = await pool.query(`
         SELECT d.id, d.name, d.title_en, d.title_fr, d.notes_en, d.notes_fr, d.org_id,
-               d.keywords_en, d.keywords_fr, d.metadata_modified,
+               d.keywords_en, d.keywords_fr, d.metadata_modified, d.jurisdiction,
                o.name AS org_name, o.title_en AS org_title_en, o.title_fr AS org_title_fr,
                ${PROVENANCE_SELECT},
                ${PLACES_SELECT}
@@ -251,7 +251,9 @@ async function getOrganizationByName(name, db = pool) {
                     WHERE r.dataset_id = d.id
                 )) AS mappable_dataset_count,
                (SELECT max(d.metadata_modified) FROM datasets d
-                WHERE d.org_id = o.id) AS metadata_modified
+                WHERE d.org_id = o.id) AS metadata_modified,
+               EXISTS (SELECT 1 FROM datasets d
+                WHERE d.org_id = o.id AND d.jurisdiction IS NOT NULL) AS government
         FROM organizations o
         LEFT JOIN places p ON p.id = o.place_id
         WHERE o.name = $1

@@ -44,3 +44,19 @@ related creator/type/licence warnings. Retain dated private examples, validation
 receipts and a release annotation. Google recrawling determines when the report
 changes; deployment or validation acceptance does not establish indexing or a
 traffic improvement. Keep existing frozen SEO cohorts unchanged.
+
+## Non-federal records (October 2026)
+
+The Dataset schema no longer invents federal facts for records that did not come
+from the federal portal. A record's `jurisdiction` column (set at sync time for
+every `open-canada` record) decides the fallbacks: only a `federal` record falls
+back to the Open Government Licence – Canada and a "Government of Canada"
+publisher when its own source recorded none, and only a record present on
+open.canada.ca (any non-null jurisdiction, or an `open-canada` provenance row)
+falls back to its open.canada.ca landing page as `sameAs`. A municipal or
+regional record states the licence, landing page and publisher its source
+recorded, or omits the property. Organization pages describe a publisher as a
+`GovernmentOrganization` only when it is bound to a place or mirrors
+federal-portal records; other publishers are an `Organization`. Later pages of a
+dataset's resource list (`?page=N`) carry a `CollectionPage` that refers to the
+canonical dataset page instead of repeating the full Dataset item.

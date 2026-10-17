@@ -73,11 +73,14 @@ function missingPage(path) {
         body: seoSnapshot.errorSnapshot('Page not found', 'This catalogue page does not exist.') };
 }
 
+// Later pages get their own title and description ("(page N)") so they never
+// duplicate page one's snippet; the CollectionPage follows the canonical URL.
 function paginatedPage(path, meta, rows, page, render) {
     const pagination = pageSlice(rows, page, path);
     if (page > 1 && !pagination.items.length) return missingPage(pagePath(path, page));
     const canonical = seoMeta.SITE_URL + pagePath(path, page);
-    const jsonLd = meta.jsonLd?.map(item => item['@type'] === 'CollectionPage' ? {
+    const paged = seoMeta.pagedMeta(meta, page);
+    const jsonLd = paged.jsonLd?.map(item => item['@type'] === 'CollectionPage' ? {
         ...item, url: canonical,
         mainEntity: { ...item.mainEntity,
             itemListElement: item.mainEntity.itemListElement.map(entry => ({
@@ -85,7 +88,7 @@ function paginatedPage(path, meta, rows, page, render) {
             })) }
     } : item);
     return { status: 200, canonicalPath: path, paginated: true,
-        meta: { ...meta, canonical, ...(jsonLd ? { jsonLd } : {}) },
+        meta: { ...paged, canonical, ...(jsonLd ? { jsonLd } : {}) },
         body: render(pagination) };
 }
 
@@ -108,7 +111,8 @@ async function resolvePage(requestTarget, deps = catalogRead) {
         };
         const resources = await deps.listResourcesForDataset(dataset.id);
         const canonicalPath = '/datasets/' + encodeURIComponent(dataset.name || dataset.id);
-        return paginatedPage(canonicalPath, seoMeta.datasetMeta(dataset, resources),
+        const meta = seoMeta.datasetMeta(dataset, resources, { page, pageItems: resources.slice(offset, offset + PAGE_SIZE) });
+        return paginatedPage(canonicalPath, meta,
             resources.slice(offset, offset + PAGE_SIZE + 1), page,
             pagination => seoSnapshot.datasetSnapshot(dataset, resources, pagination));
     }

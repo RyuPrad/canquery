@@ -102,6 +102,7 @@ test('date-only files retain subject, period, language and format without mergin
     expect(fr.title.fr).toContain('Outil de délais — 2020-04-01 to 2020-06-30 (français, CSV)');
     const meta = resourceMeta({ ...row, dataset_title_en: 'A lengthy publisher dataset title '.repeat(10) });
     expect(meta.title.length).toBeLessThanOrEqual(80);
-    expect(meta.title).toContain('2020-04-01 to 2020-06-30 (English, CSV)');
+    expect(meta.title).toContain('2020-04-01 to 2020-06-30 (English, CSV table)');
+    expect(meta.title).not.toContain('…');
     expect(resourceMeta(row).canonical).not.toBe(resourceMeta({ ...row, id: 'r-fr' }).canonical);
 });
