@@ -25,6 +25,7 @@ import ResourceBadge from '../components/ResourceBadge.jsx';
 import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
+import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -431,6 +432,17 @@ function ResourceExplorer({ id, navigationKey }) {
             </p>
           )}
           <CatalogOverview presentation={resource.presentation} />
+          {resource.dataset?.id && (
+            <DatasetAlertSlot
+              datasetId={resource.dataset.id}
+              datasetTitle={
+                resource.dataset.title?.[lang] ||
+                resource.dataset.title?.en ||
+                resource.dataset.name
+              }
+              variant="resource"
+            />
+          )}
         </div>
       )}
 

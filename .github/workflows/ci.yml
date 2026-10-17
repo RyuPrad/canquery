@@ -160,7 +160,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Refuse private-only paths
         run: |
-          leaked=$(git ls-files -- server/enterprise client/src/enterprise ENTERPRISE.md LICENSE-ENTERPRISE .github/workflows/enterprise.yml)
+          leaked=$(git ls-files -- server/enterprise client/src/enterprise enterprise-analytics ENTERPRISE.md LICENSE-ENTERPRISE .github/workflows/enterprise.yml)
           if [ -n "$leaked" ]; then
             echo "::error::Hosted-service paths must not be committed to the public repository."
             printf '%s\n' "$leaked"

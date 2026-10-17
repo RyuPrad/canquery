@@ -4,6 +4,7 @@ import { fetchBlog, fetchBlogArticle } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import { NotFoundError } from '../api/client.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import { track } from '../utils/analytics.js';
 import { relatedGuides } from '../utils/relatedGuides.js';
 
@@ -86,6 +87,7 @@ export default function BlogPage({ language = 'en' }) {
           {t('discovery.' + (article.view === 'map' ? 'map' : article.view === 'download' ? 'download' : 'table'))} →
         </Link>
         <p><Link className="link text-sm" to={article.dataset}>{t('blog.dataset')}</Link></p>
+        {article.datasetId && <DatasetAlertSlot datasetId={article.datasetId} variant="guide" />}
         {article.place && <p><Link className="link text-sm" to={'/places/' + article.place}>{t('blog.more')} {article.placeName}</Link></p>}
         <p><Link className="link text-sm" to={article.place ? '/?place=' + encodeURIComponent(article.place) : '/'}>{t('blog.search_more')}</Link></p>
       </aside>

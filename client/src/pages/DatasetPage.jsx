@@ -11,6 +11,7 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
+import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -254,6 +255,12 @@ function DatasetExplorer({ idOrName }) {
       </div>
 
       <Provenance provenance={dataset.provenance} />
+
+      <DatasetAlertSlot
+        datasetId={dataset.id}
+        datasetTitle={dataset.presentation?.title?.[contentLang] || pick(dataset.title)}
+        variant="dataset"
+      />
 
       <h2 className="text-lg font-semibold font-display pt-6 flex items-center gap-2.5">
         {t('dataset.resources')}
