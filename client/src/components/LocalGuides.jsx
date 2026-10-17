@@ -30,7 +30,13 @@ export default function LocalGuides({ place, dataset, limit, variant }) {
         </a>
         <h3 className={'font-semibold ' + (compact ? 'mt-3 text-sm leading-snug break-words' : 'mt-4')}><Link className="hover:underline" to={article.path}>{article.title}</Link></h3>
         <p className={'text-sm text-base-content/60 mt-2 leading-relaxed' + (compact ? ' line-clamp-2 mb-4' : '')}>{article.description}</p>
-        <Link className={'link text-sm inline-block ' + (compact ? 'mt-auto self-start' : 'mt-4')} to={article.path}>{t('blog.read')} →</Link>
+        <div className={'flex flex-wrap items-baseline gap-x-4 gap-y-1 ' + (compact ? 'mt-auto' : 'mt-4')}>
+          <Link className="link text-sm inline-block" to={article.path}>{t('blog.read')} →</Link>
+          {article.translations?.[lang === 'fr' ? 'en' : 'fr'] && (
+            <Link className="text-xs text-base-content/55 hover:underline" to={article.translations[lang === 'fr' ? 'en' : 'fr']}
+              hrefLang={lang === 'fr' ? 'en' : 'fr'}>{lang === 'fr' ? 'Read in English' : 'Lire en français'}</Link>
+          )}
+        </div>
       </article>)}
     </div>
   </section>;

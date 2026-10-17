@@ -320,8 +320,8 @@ async function listOrganizations({ q, source, place, limit, offset }, db = pool)
     `, [source || null, place || null, limit, offset, q || null], db);
 }
 
-async function listSources({ place } = {}) {
-    const result = await pool.query(`WITH RECURSIVE selected_place AS (
+async function listSources({ place } = {}, db = pool) {
+    return cachedRows('sources', `WITH RECURSIVE selected_place AS (
         SELECT p.id, p.parent_id, 0 AS depth FROM places p
         WHERE $1::text IS NOT NULL AND (p.id = $1 OR p.slug = $1 OR EXISTS (
             SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $1
@@ -357,15 +357,33 @@ async function listSources({ place } = {}) {
         WHERE cs.enabled
           AND ($1::text IS NULL OR coalesce(sc.authoritative_dataset_count, 0) > 0)
         ORDER BY authoritative_dataset_count DESC, dataset_count DESC, cs.name_en
-    `, [place || null]);
-    return result.rows;
+    `, [place || null], db);
 }
 
-async function listPlaces({ q, kind, parent, featured, limit, offset }, db = pool) {
-    return cachedRows('places', `WITH RECURSIVE candidate_places AS MATERIALIZED (
-        SELECT p.*
+// The directory lists every place with open data: a place with its own
+// dataset rows, or a featured place whose datasets come from a broader area.
+// `within` restricts the list to the descendants of one place (a province's
+// hub lists the places inside it). Rows carry their province or territory
+// (the hierarchy is municipality -> region -> province -> country) and are
+// ordered by it, so the directory groups by province across pages.
+const KIND_ORDER = `CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
+                     WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END`;
+
+async function listPlaces({ q, kind, parent, featured, within = null, limit, offset }, db = pool) {
+    return cachedRows('places', `WITH RECURSIVE within_places AS (
+        SELECT p.id FROM places p
+        WHERE $7::text IS NOT NULL AND (p.id = $7 OR p.slug = $7)
+        UNION ALL
+        SELECT child.id FROM places child JOIN within_places w ON child.parent_id = w.id
+    ), candidate_places AS MATERIALIZED (
+        SELECT p.*, province.slug AS province_slug, province.name_en AS province_name_en, province.name_fr AS province_name_fr
         FROM places p
         LEFT JOIN places parent_place ON parent_place.id = p.parent_id
+        LEFT JOIN places grand_place ON grand_place.id = parent_place.parent_id
+        LEFT JOIN places province ON province.id = CASE
+            WHEN p.kind IN ('province', 'territory') THEN p.id
+            WHEN parent_place.kind IN ('province', 'territory') THEN parent_place.id
+            WHEN grand_place.kind IN ('province', 'territory') THEN grand_place.id END
         WHERE p.enabled
           AND ($1::text IS NULL OR p.name_en ILIKE '%' || $1 || '%' OR p.name_fr ILIKE '%' || $1 || '%' OR p.slug ILIKE '%' || $1 || '%' OR EXISTS (
               SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug ILIKE '%' || $1 || '%'
@@ -373,12 +391,11 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }, db = poo
           AND ($2::text IS NULL OR p.kind = $2)
           AND ($3::text IS NULL OR p.parent_id = $3 OR parent_place.slug = $3)
           AND ($4::boolean IS NULL OR p.featured = $4)
-          AND ($1::text IS NOT NULL OR $4::boolean IS TRUE OR EXISTS (
+          AND ($7::text IS NULL OR (p.id IN (SELECT id FROM within_places) AND p.id <> $7 AND p.slug <> $7))
+          AND ($1::text IS NOT NULL OR $4::boolean IS TRUE OR p.featured OR EXISTS (
               SELECT 1 FROM dataset_places dp WHERE dp.place_id = p.id
           ))
-        ORDER BY CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
-                     WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END,
-                 p.name_en, p.id
+        ORDER BY province.name_en NULLS FIRST, ${KIND_ORDER}, p.name_en, p.id
         LIMIT $5 OFFSET $6
     ), ancestry AS (
         SELECT p.id AS selected_id, p.id AS ancestor_id, 0 AS depth
@@ -415,6 +432,7 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }, db = poo
                p.parent_id, p.latitude, p.longitude, p.default_zoom, p.featured,
                parent_place.slug AS parent_slug,
                parent_place.name_en AS parent_name_en, parent_place.name_fr AS parent_name_fr,
+               p.province_slug, p.province_name_en, p.province_name_fr,
                coalesce(dc.dataset_count, 0)::int AS dataset_count,
                coalesce(ddc.direct_dataset_count, 0)::int AS direct_dataset_count,
                coalesce(mc.mappable_resource_count, 0)::int AS mappable_resource_count
@@ -423,10 +441,8 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }, db = poo
         LEFT JOIN dataset_counts dc ON dc.selected_id = p.id
         LEFT JOIN direct_counts ddc ON ddc.selected_id = p.id
         LEFT JOIN map_counts mc ON mc.selected_id = p.id
-        ORDER BY CASE p.kind WHEN 'region' THEN 0 WHEN 'municipality' THEN 1
-                     WHEN 'province' THEN 2 WHEN 'territory' THEN 2 ELSE 3 END,
-                 p.name_en, p.id
-    `, [q || null, kind || null, parent || null, featured ?? null, limit, offset], db);
+        ORDER BY p.province_name_en NULLS FIRST, ${KIND_ORDER}, p.name_en, p.id
+    `, [q || null, kind || null, parent || null, featured ?? null, limit, offset, within || null], db);
 }
 
 async function getPlaceByIdOrSlug(idOrSlug) {
@@ -464,12 +480,18 @@ async function getPlaceByIdOrSlug(idOrSlug) {
              count(*) FILTER (WHERE EXISTS (
                  SELECT 1 FROM resources r JOIN resource_maps rm ON rm.resource_id = r.id
                  WHERE r.dataset_id = relevant.dataset_id
-             ))::int AS mappable_dataset_count
+             ))::int AS mappable_dataset_count,
+             (SELECT max(d.metadata_modified) FROM datasets d
+              WHERE d.id IN (SELECT dataset_id FROM relevant)) AS last_modified
       FROM relevant`, [place.id]);
-    const children = place.kind === 'region' ? await listPlaces({
-        q: null, kind: 'municipality', parent: place.id,
-        featured: true, limit: 100, offset: 0
-    }) : [];
+    // A province or territory lists every place inside it that has open
+    // data; a region lists its municipalities (featured or with their own
+    // datasets); a municipality has no children of its own.
+    const children = ['province', 'territory'].includes(place.kind)
+        ? await listPlaces({ q: null, kind: null, parent: null, featured: null, within: place.id, limit: 100, offset: 0 })
+        : place.kind === 'region'
+            ? await listPlaces({ q: null, kind: 'municipality', parent: place.id, featured: null, limit: 100, offset: 0 })
+            : [];
     return { ...place, ancestors: ancestorsResult.rows, children, ...countResult.rows[0] };
 }
 

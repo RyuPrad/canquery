@@ -614,6 +614,27 @@ describe('seoMeta - title compaction, paging and place names', () => {
             .toBe('Empty, Ontario open data - CanQuery');
     });
 
+    it('describes a place hub by government level and access when the counts are known', () => {
+        const ancestors = [{ id: 'ca', kind: 'country', name_en: 'Canada' }, { id: 'on', kind: 'province', name_en: 'Ontario' }];
+        const facets = { total: 200, facets: { level: [{ value: 'municipal', count: 20 }, { value: 'provincial', count: 180 }],
+            access: [{ value: 'queryable', count: 40 }, { value: 'mappable', count: 150 }], organization: [], source: [], format: [], keyword: [] } };
+        const meta = seo.placeMeta({ id: 'p', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa', type_en: 'City',
+            dataset_count: 200, mappable_dataset_count: 150, ancestors }, [], { facets });
+        // The long closing sentence makes 166 characters here, so the shorter one is used.
+        expect(meta.description).toBe('200 open datasets for Oshawa, Ontario: 20 municipal and 180 provincial; 150 with maps, 40 with live tables. ' +
+            'Publishers, portals and guides on CanQuery.');
+        expect(meta.title).toBe('Oshawa, Ontario open data: 200 datasets and 150 maps - CanQuery');
+        const short = seo.placeMeta({ id: 'p', slug: 'ajax-on', kind: 'municipality', name_en: 'Ajax', dataset_count: 20, mappable_dataset_count: 9, ancestors }, [],
+            { facets: { total: 20, facets: { level: [{ value: 'municipal', count: 20 }], access: [] } } });
+        expect(short.description).toBe('20 open datasets for Ajax, Ontario: 20 municipal; 9 with maps. Publishers, portals, popular tables and guides on CanQuery.');
+        expect(seo.facetCount(facets, 'access', 'queryable')).toBe(40);
+        expect(seo.facetCount(facets, 'level', 'federal')).toBe(0);
+        expect(seo.facetCount(null, 'level', 'federal')).toBe(0);
+        const noLevels = seo.placeMeta({ id: 'p', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa', type_en: 'City',
+            dataset_count: 200, mappable_dataset_count: 150, ancestors }, [], { facets: { total: 200, facets: { level: [], access: [] } } });
+        expect(noLevels.description).toContain('(City): 150 with interactive maps.');
+    });
+
     it('describes the About page without repeating the site name', () => {
         expect(seo.staticMeta('about').title).toBe('About - CanQuery');
     });

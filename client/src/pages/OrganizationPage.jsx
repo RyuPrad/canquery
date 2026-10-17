@@ -7,6 +7,7 @@ import useCatalogPage from '../hooks/useCatalogPage.js';
 import CatalogPagination from '../components/CatalogPagination.jsx';
 import { PAGE_SIZE } from '../utils/catalogPagination.js';
 import { track } from '../utils/analytics.js';
+import { fill } from '../utils/text.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
@@ -77,6 +78,12 @@ function OrganizationExplorer({ name }) {
 
   const title = organization.title?.[lang] || organization.title?.en || organization.title?.fr || organization.name;
   const locale = lang === 'fr' ? 'fr-CA' : 'en-CA';
+  const placeName = organization.place ? (organization.place.name?.[lang] || organization.place.name?.en || organization.place.slug) : '';
+  const intro = [
+    fill(t('orgs.intro'), { name: title, count: organization.dataset_count.toLocaleString(locale) }),
+    organization.queryable_dataset_count ? fill(t('orgs.intro_tables'), { count: organization.queryable_dataset_count.toLocaleString(locale) }) : '',
+    organization.mappable_dataset_count ? fill(t('orgs.intro_maps'), { count: organization.mappable_dataset_count.toLocaleString(locale) }) : ''
+  ].filter(Boolean);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
@@ -94,6 +101,9 @@ function OrganizationExplorer({ name }) {
         <div className="relative">
           <span className="cq-chip"><BuildingIcon size={12} />{t('orgs.publisher')}</span>
           <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3">{title}</h1>
+          <p className="text-base-content/65 mt-3 leading-relaxed max-w-3xl">
+            {intro[0]}{intro.length > 1 ? (lang === 'fr' ? ' : ' : ': ') + intro.slice(1).join(lang === 'fr' ? ' et ' : ' and ') : ''}.
+          </p>
           <div className="flex flex-wrap gap-2 mt-4">
             <span className="cq-chip cq-chip-mono">{organization.dataset_count.toLocaleString(locale)} {t('orgs.datasets')}</span>
             <span className="cq-chip cq-chip-red"><TableIcon size={11} />{organization.queryable_dataset_count.toLocaleString(locale)} {t('orgs.queryable')}</span>
@@ -102,10 +112,14 @@ function OrganizationExplorer({ name }) {
           {organization.place && (
             <Link
               to={'/places/' + organization.place.slug}
-              className="inline-flex items-center gap-1.5 text-sm text-base-content/60 hover:text-base-content mt-4"
+              className="inline-flex items-center gap-1.5 text-sm font-medium link mt-4"
+              data-analytics-event="place_open"
+              data-analytics-place-id={organization.place.id}
+              data-analytics-place-slug={organization.place.slug}
+              data-analytics-source="organization_hub"
             >
               <MapPinIcon size={13} />
-              {organization.place.name?.[lang] || organization.place.name?.en || organization.place.slug}
+              {fill(t('orgs.part_of'), { name: placeName })}
             </Link>
           )}
         </div>
@@ -125,7 +139,8 @@ function OrganizationExplorer({ name }) {
         </button>
       </div>
 
-      <section className="space-y-3 mt-6" aria-label={t('orgs.dataset_list')}>
+      <section className="space-y-3 mt-6">
+        <h2 className="font-display font-semibold text-xl">{t('orgs.dataset_list')}</h2>
         {loading ? [...Array(5)].map((_, index) => <div className="cq-skel h-[82px]" key={index} />) :
           searchError ? <div className="alert alert-error">{searchError.message}</div> :
             items.length === 0 ? <div className="text-center py-14 text-base-content/50">{t('orgs.no_datasets')}</div> :

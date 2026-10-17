@@ -3,8 +3,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import PlacesPage from './PlacesPage.jsx';
 
-vi.mock('../api/catalog.js', () => ({ fetchFeaturedPlaces: vi.fn(), fetchPlaces: vi.fn() }));
-import { fetchFeaturedPlaces, fetchPlaces } from '../api/catalog.js';
+vi.mock('../api/catalog.js', () => ({ fetchAllPlaces: vi.fn(), fetchFeaturedPlaces: vi.fn(), fetchPlaces: vi.fn() }));
+import { fetchAllPlaces, fetchFeaturedPlaces, fetchPlaces } from '../api/catalog.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -113,6 +113,24 @@ beforeEach(() => {
   ] };
   fetchFeaturedPlaces.mockResolvedValue(response);
   fetchPlaces.mockResolvedValue(response);
+  // The full directory repeats the featured places and adds the rest, each with its province.
+  fetchAllPlaces.mockResolvedValue({ data: [
+    ...response.data.map(place => ({ ...place, province: { slug: 'ontario', name: { en: 'Ontario', fr: 'Ontario' } } })),
+    {
+      id: 'sgc-csd-3518013', slug: 'oshawa-on', kind: 'municipality', name: { en: 'Oshawa', fr: 'Oshawa' },
+      type: { en: 'City' }, dataset_count: 42, direct_dataset_count: 40, mappable_resource_count: 12,
+      province: { slug: 'ontario', name: { en: 'Ontario', fr: 'Ontario' } }
+    },
+    {
+      id: 'sgc-csd-4711066', slug: 'saskatoon-sk', kind: 'municipality', name: { en: 'Saskatoon', fr: 'Saskatoon' },
+      type: { en: 'City' }, dataset_count: 300, direct_dataset_count: 300, mappable_resource_count: 90,
+      province: { slug: 'saskatchewan', name: { en: 'Saskatchewan', fr: 'Saskatchewan' } }
+    },
+    {
+      id: 'ca', slug: 'canada', kind: 'country', name: { en: 'Canada', fr: 'Canada' },
+      type: { en: 'Country' }, dataset_count: 64000, direct_dataset_count: 64000, mappable_resource_count: 900
+    }
+  ] });
 });
 
 describe('PlacesPage', () => {
@@ -141,6 +159,15 @@ describe('PlacesPage', () => {
     expect(screen.getAllByText('Broader-area coverage')).toHaveLength(2);
     await waitFor(() => expect(fetchPlaces).toHaveBeenCalledWith(expect.objectContaining({ featured: true, limit: 50, cursor: '0' })));
     expect(fetchFeaturedPlaces).not.toHaveBeenCalled();
+
+    // Every other place with open data, grouped by province; featured places are not repeated.
+    expect(await screen.findByRole('heading', { name: 'More places with open data' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ontario' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Saskatchewan' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Canada' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Oshawa · 42 datasets' })).toHaveAttribute('href', '/places/oshawa-on');
+    expect(screen.getByRole('link', { name: 'Saskatoon · 300 datasets' })).toHaveAttribute('href', '/places/saskatoon-sk');
+    expect(screen.getAllByRole('link', { name: /Toronto/ })).toHaveLength(1);
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Find a city, region or province...' }), {
       target: { value: 'Toronto' }

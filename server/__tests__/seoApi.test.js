@@ -22,6 +22,7 @@ jest.mock('../db/catalogReadQueries', () => ({
     listRecentlyIngested: jest.fn(),
     getJobHealth: jest.fn(),
 }));
+jest.mock('../services/catalogFacets', () => ({ datasetFacets: jest.fn(), refreshDatasetFacets: jest.fn(), startFacetWarming: jest.fn() }));
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), aggregateStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
@@ -309,6 +310,37 @@ describe('resolveMeta routing', () => {
         expect(meta.canonical).toBe('https://canquery.com/resources/r1');
         const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
         expect(breadcrumb.itemListElement[1].item).toBe('https://canquery.com/datasets/dataset-slug');
+    });
+
+    it('renders a place as a hub from injected reads and lists every place in the directory', async () => {
+        const deps = {
+            getPlaceByIdOrSlug: jest.fn().mockResolvedValue({ id: 'p1', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa', type_en: 'City',
+                parent_id: 'sgc-cd-3518', dataset_count: 200, mappable_dataset_count: 150, ancestors: [{ id: 'on', slug: 'ontario', kind: 'province', name_en: 'Ontario' }], children: [] }),
+            searchDatasets: jest.fn().mockResolvedValue([{ id: 'd1', name: 'parks', title_en: 'Parks', mappable_count: 1, preview_map_id: 'm1' }]),
+            datasetFacets: jest.fn().mockResolvedValue({ total: 200, facets: { level: [{ value: 'municipal', count: 200 }], access: [{ value: 'queryable', count: 40 }],
+                organization: [{ value: 'city-of-oshawa', count: 200 }], source: [], format: [], keyword: [] } }),
+            listOrganizations: jest.fn().mockResolvedValue([{ name: 'city-of-oshawa', title_en: 'City of Oshawa', dataset_count: 200 }]),
+            listSources: jest.fn().mockResolvedValue([{ id: 'oshawa-hub', name_en: 'Oshawa Open Data', homepage_url: 'https://data.oshawa.ca/', dataset_count: 200 }]),
+            listPopularResources: jest.fn().mockResolvedValue([]),
+            listRecentlyIngested: jest.fn().mockResolvedValue([]),
+            listPlaces: jest.fn().mockResolvedValue([{ id: 'a', slug: 'ajax-on', name_en: 'Ajax', dataset_count: 430 }])
+        };
+        const page = await resolvePage('/places/oshawa-on', deps);
+        expect(page.status).toBe(200);
+        expect(page.meta.title).toBe('Oshawa, Ontario open data: 200 datasets and 150 maps - CanQuery');
+        expect(page.meta.description).toBe('200 open datasets for Oshawa, Ontario: 200 municipal; 150 with maps, 40 with live tables. ' +
+            'Publishers, portals, popular tables and guides on CanQuery.');
+        for (const marker of ['<h2>Publishers</h2>', 'href="/organizations/city-of-oshawa"', '<h2>Official portals</h2>', 'href="https://data.oshawa.ca/"',
+            '<h2>Datasets with maps</h2>', 'href="/resources/m1?view=map"', '<h2>Datasets</h2>', 'href="/datasets/parks"', '<h2>Nearby places</h2>',
+            'href="/places/ontario"', 'href="/places/ajax-on"']) {
+            expect(page.body).toContain(marker);
+        }
+        expect(deps.listPlaces).toHaveBeenCalledWith(expect.objectContaining({ parent: 'sgc-cd-3518', featured: true }));
+
+        catalogRead.listPlaces.mockResolvedValue([{ id: 'ca', slug: 'canada', name_en: 'Canada', kind: 'country', dataset_count: 1 }]);
+        const directory = await resolvePage('/places');
+        expect(catalogRead.listPlaces).toHaveBeenCalledWith({ q: null, kind: null, parent: null, featured: null, limit: 51, offset: 0 });
+        expect(directory.body).toContain('<h2>Canada</h2>');
     });
 
     it('resolves a place page from its stable slug', async () => {

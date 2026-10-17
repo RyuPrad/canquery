@@ -70,7 +70,9 @@ function createFacetStore({ freshMs, staleMs, maxEntries, maxBytes }) {
     };
 }
 
-const facetStore = createFacetStore({ freshMs: FRESH_MS, staleMs: STALE_MS, maxEntries: 64, maxBytes: 256 * 1024 });
+// Room for the warmed homepage counts plus the place hubs a crawl visits
+// between two warming cycles, so place keys never evict the homepage's.
+const facetStore = createFacetStore({ freshMs: FRESH_MS, staleMs: STALE_MS, maxEntries: 192, maxBytes: 256 * 1024 });
 
 // At most `concurrency` computations run at once per process; a short queue
 // absorbs bursts and everything beyond it is answered without counts.

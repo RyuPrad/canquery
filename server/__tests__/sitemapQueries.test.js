@@ -91,3 +91,55 @@ describe('organization sitemap queries', () => {
         expect(pool.query.mock.calls[1][0]).toContain('p.featured, p.enabled');
     });
 });
+
+describe('place directory queries', () => {
+    const catalogReadCache = require('../services/catalogReadCache');
+    beforeEach(() => {
+        pool.query.mockReset();
+        catalogReadCache.clear();
+    });
+
+    it('lists every place with open data, carries its province and orders by it, with an optional ancestor scope', async () => {
+        pool.query.mockResolvedValue({ rows: [] });
+        await queries.listPlaces({ q: null, kind: null, parent: null, featured: null, limit: 51, offset: 0 });
+        const [sql, params] = pool.query.mock.calls[0];
+        expect(sql).toContain('province.slug AS province_slug, province.name_en AS province_name_en, province.name_fr AS province_name_fr');
+        expect(sql).toContain("WHEN p.kind IN ('province', 'territory') THEN p.id");
+        expect(sql).toContain("WHEN grand_place.kind IN ('province', 'territory') THEN grand_place.id");
+        expect(sql).toContain('ORDER BY province.name_en NULLS FIRST');
+        expect(sql).toContain('ORDER BY p.province_name_en NULLS FIRST');
+        expect(sql).toContain('$4::boolean IS TRUE OR p.featured OR EXISTS');
+        expect(sql).toContain('p.id IN (SELECT id FROM within_places)');
+        expect(params).toEqual([null, null, null, null, 51, 0, null]);
+        await queries.listPlaces({ q: null, kind: null, parent: null, featured: null, within: 'ontario', limit: 100, offset: 0 });
+        expect(pool.query.mock.calls[1][1]).toEqual([null, null, null, null, 100, 0, 'ontario']);
+    });
+
+    it('lists the places inside a province, a region’s municipalities, and none for a municipality', async () => {
+        const detail = kind => [{ rows: [{ id: 'p', slug: 'p', kind, parent_id: 'parent' }] }, { rows: [] },
+            { rows: [{ dataset_count: 3, direct_dataset_count: 1, mappable_dataset_count: 2, last_modified: '2026-10-01T00:00:00Z' }] }, { rows: [] }];
+        for (const row of detail('province')) pool.query.mockResolvedValueOnce(row);
+        const province = await queries.getPlaceByIdOrSlug('ontario');
+        expect(province.last_modified).toBe('2026-10-01T00:00:00Z');
+        expect(pool.query.mock.calls[2][0]).toContain('AS last_modified');
+        expect(pool.query.mock.calls[3][1]).toEqual([null, null, null, null, 100, 0, 'p']);
+        pool.query.mockClear();
+        catalogReadCache.clear();
+        for (const row of detail('region')) pool.query.mockResolvedValueOnce(row);
+        await queries.getPlaceByIdOrSlug('durham-on');
+        expect(pool.query.mock.calls[3][1]).toEqual([null, 'municipality', 'p', null, 100, 0, null]);
+        pool.query.mockReset();
+        for (const row of detail('municipality').slice(0, 3)) pool.query.mockResolvedValueOnce(row);
+        const city = await queries.getPlaceByIdOrSlug('oshawa-on');
+        expect(city.children).toEqual([]);
+        expect(pool.query).toHaveBeenCalledTimes(3);
+    });
+
+    it('caches the source portals of a place like the other directory reads', async () => {
+        pool.query.mockResolvedValue({ rows: [{ id: 'oshawa-hub' }] });
+        await expect(queries.listSources({ place: 'oshawa-on' })).resolves.toEqual([{ id: 'oshawa-hub' }]);
+        await queries.listSources({ place: 'oshawa-on' });
+        expect(pool.query).toHaveBeenCalledTimes(1);
+        expect(pool.query.mock.calls[0][1]).toEqual(['oshawa-on']);
+    });
+});

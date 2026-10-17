@@ -332,6 +332,10 @@ const shapePlaceRow = (row) => ({
         longitude: Number(row.longitude),
         zoom: row.default_zoom == null ? null : Number(row.default_zoom)
     },
+    province: row.province_slug ? {
+        slug: row.province_slug,
+        name: { en: row.province_name_en, fr: row.province_name_fr }
+    } : null,
     dataset_count: Number(row.dataset_count) || 0,
     direct_dataset_count: Number(row.direct_dataset_count) || 0,
     mappable_resource_count: Number(row.mappable_resource_count) || 0
@@ -544,6 +548,7 @@ const opsStatus = async () => {
 
 module.exports = {
     searchDatasets,
+    normalizeDatasetSearch,
     startCatalogCountWarming,
     getDataset,
     getResource,
