@@ -21,6 +21,14 @@ class SubmissionConfiguration(unittest.TestCase):
         self.assertTrue(data['dovecot.conf'].startswith('protocols =\n'))
         self.assertIn('Mode s', data['opendkim.conf'])
 
+    def test_one_click_unsubscribe_headers_are_signed(self):
+        # RFC 8058: the DKIM signature must cover both List-Unsubscribe headers.
+        data = render('example.com', 'mail.example.com', '192.0.2.10', 'cq202610')
+        lines = [line for line in data['opendkim.conf'].splitlines() if line.startswith('SignHeaders ')]
+        self.assertEqual(len(lines), 1)
+        signed = lines[0].split(' ', 1)[1].split(',')
+        self.assertLessEqual({'From', 'To', 'Subject', 'Date', 'List-Unsubscribe', 'List-Unsubscribe-Post'}, set(signed))
+
     def test_config_injection_and_wrong_domain_are_rejected(self):
         for host in ('mail.example.com\nssl=no', 'mail.other.com'):
             with self.assertRaises(ValueError):
