@@ -70,17 +70,23 @@ const crawlFile = handler => async (req, res, next) => {
 };
 
 // GET /robots.txt - allow everything, point at the sitemap index. We do NOT
-// block /api reads: Googlebot fetches them while rendering the SPA, and the
-// per-page <head> injection and API X-Robots-Tag headers distinguish search
-// landing pages. Only the resource writes that start or renew table preparation
-// are disallowed, so rendering crawlers do not prepare files nobody reads.
+// block the API reads a page renders from: Googlebot fetches them while
+// rendering the SPA, and the per-page <head> injection and API X-Robots-Tag
+// headers distinguish search landing pages. The resource writes that start or
+// renew table preparation are disallowed, so rendering crawlers do not prepare
+// files nobody reads, and so are the render extras below.
 const PREPARATION_WRITES = ['/web-api/v1', '/api/v1'].flatMap(base =>
     ['prepare', 'ingest', 'activity'].map(action => 'Disallow: ' + base + '/resources/*/' + action));
+// Requests a rendering crawler makes that carry no page content: the analytics
+// beacon and the footer's GitHub star count, which falls back to a plain link.
+// Search Console's crawl stats showed them among Googlebot's JSON fetches.
+const RENDER_EXTRAS = ['/api/send', '/web-api/v1/repo', '/api/v1/repo'].map(path => 'Disallow: ' + path);
 const robots = (req, res) => {
     res.type('text/plain');
     res.set('Cache-Control', 'public, max-age=86400');
     // Specific rules precede Allow for crawlers that apply the first matching line.
-    res.send('User-agent: *\n' + PREPARATION_WRITES.join('\n') + '\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
+    res.send('User-agent: *\n' + [...PREPARATION_WRITES, ...RENDER_EXTRAS].join('\n') +
+        '\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 
 // GET /sitemap.xml - the index: hub pages, places, organizations, guides and

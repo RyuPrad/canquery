@@ -122,7 +122,11 @@ function compactTitle(value, max) {
         cut = cut.slice(0, cut.length - trailing[0].length).replace(/[\s,;:(–—-]+$/, '');
     }
     const minimum = Math.max(12, Math.min(24, Math.floor(max * 0.75)));
-    return cut.length >= minimum && cut.length <= max ? cut : truncate(collapsed, max);
+    if (cut.length >= minimum && cut.length <= max) return cut;
+    // A file name ("Survey_Point_Counts_2003_EN_FR.csv") has no spaces to cut
+    // at; its underscores and hyphens separate the words instead.
+    const fileCut = collapsed.slice(0, max + 1).replace(/[_-]+[^\s_-]*$/, '').replace(/[\s_.,;:(–—-]+$/, '');
+    return fileCut.length >= minimum && fileCut.length <= max ? fileCut : truncate(collapsed, max);
 }
 
 // Prefer the first candidate that fits a search-result title, then the first
@@ -233,6 +237,48 @@ function resourceTitleBase(resource, max = null, lang = 'en') {
     return (max ? compactTitle(base, Math.max(12, max - suffix.length)) : base) + suffix;
 }
 
+// A dataset title to lead a resource title: whole, or its leading clause
+// before a natural separator; '' when only a mid-phrase fragment would fit.
+function datasetLead(title, max) {
+    const text = collapseAcronyms(collapse(title), max);
+    if (text.length <= max) return text;
+    let best = '';
+    for (const match of text.matchAll(TITLE_SEPARATOR_RE)) {
+        const head = text.slice(0, match.index).trim();
+        if (head.length >= 12 && head.length <= max && head.length > best.length) best = head;
+    }
+    return best;
+}
+
+const fold = value => collapse(value).toLowerCase();
+const DATASET_YEAR_RE = /\b(?:19|20)\d{2}(?:[-–/](?:\d{4}|\d{2}))?\b/;
+
+// File names such as "Data dictionary", "Parks" or "Charitable programs" recur
+// across hundreds of datasets and would give each of their pages the same
+// <title>. A name that its dataset's title does not already cover is led by
+// that title ("Building Permits — Data dictionary"), or followed by the
+// dataset's year when both cannot fit; a short phrase that is still shared
+// gets the publisher.
+function distinctResourceSubject(resource, subject, room) {
+    const name = collapse(pick(resource.name_en, resource.name_fr));
+    const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
+    const publisher = pick(resource.org_title_en, resource.org_title_fr);
+    let text = collapse(subject);
+    if (datasetTitle && name && fold(subject) === fold(name) &&
+        !fold(name).includes(fold(datasetTitle)) && !fold(datasetTitle).includes(fold(name))) {
+        const tail = ' — ' + name;
+        const lead = datasetLead(datasetTitle, room - tail.length);
+        const year = (datasetTitle.match(DATASET_YEAR_RE) || [''])[0];
+        if (lead && !fold(name).includes(fold(lead))) text = lead + tail;
+        else if (year && !name.includes(year)) text = name + ' — ' + year;
+    }
+    if (publisher && text === collapse(subject) && text.length < 25 && !fold(text).includes(fold(publisher)) &&
+        text.length + 3 + collapse(publisher).length <= room) {
+        text += ' — ' + collapse(publisher);
+    }
+    return compactTitle(text, room);
+}
+
 // The <title> of a resource page: the subject plus a qualifier that says what
 // the file is on CanQuery, such as "(French, XLSX table)", "(CSV live table
 // and map)" or "(English, PDF)". The qualifier never follows a cut-off subject.
@@ -252,7 +298,7 @@ function resourceTitle(resource) {
         const period = ' — ' + (qualifier || name);
         base = compactTitle(datasetTitle, Math.max(12, TITLE_HARD - suffix.length - period.length)) + period;
     } else {
-        base = compactTitle(subject, Math.max(12, TITLE_HARD - suffix.length));
+        base = distinctResourceSubject(resource, subject, Math.max(12, TITLE_HARD - suffix.length));
     }
     return base + suffix + TITLE_SUFFIX;
 }
@@ -433,6 +479,17 @@ function absoluteHttpUrl(value) {
     }
 }
 
+// A DataDownload's format: the recorded one, else the file extension. A link
+// with neither is a web page (often another catalogue's landing page), not a
+// download, and is left out of the distribution list.
+function downloadFormat(resource, contentUrl) {
+    const recorded = plainText(resource.format);
+    if (recorded) return recorded;
+    const file = new URL(contentUrl).pathname.split('/').pop();
+    const extension = /\.([a-z0-9]{2,7})$/i.exec(file);
+    return extension && !/^(html?|aspx?|php|jsp)$/i.test(extension[1]) ? extension[1].toUpperCase() : '';
+}
+
 const humanFileSize = facts.humanFileSize;
 
 // The long-form text for the Dataset schema: the publisher's notes, with
@@ -517,9 +574,9 @@ function buildDatasetJsonLd(dataset, resources) {
         if (distribution.length >= 25) break;
         const contentUrl = absoluteHttpUrl(resource && resource.url);
         if (!contentUrl) continue;
-        const dl = { '@type': 'DataDownload', contentUrl };
-        const fmt = plainText(resource.format);
-        if (fmt) dl.encodingFormat = fmt;
+        const fmt = downloadFormat(resource, contentUrl);
+        if (!fmt) continue;
+        const dl = { '@type': 'DataDownload', contentUrl, encodingFormat: fmt };
         const resourceName = pick(resource.name_en, resource.name_fr);
         if (resourceName) dl.name = resourceName;
         const size = humanFileSize(resource.size_bytes);
