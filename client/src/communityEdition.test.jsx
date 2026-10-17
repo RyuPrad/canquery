@@ -25,8 +25,8 @@ test('navigation and footer link only to core pages', async () => {
   for (const path of ['/pricing', '/account', '/terms', '/signup']) expect(container.querySelector(`a[href="${path}"]`)).toBeNull();
 });
 
-test('the string table has no account or pricing strings', () => {
+test('the string table has no account, pricing or alert strings', () => {
   for (const lang of ['en', 'fr']) {
-    expect(Object.keys(STRINGS[lang]).filter(key => /^(account|pricing)\./.test(key))).toEqual([]);
+    expect(Object.keys(STRINGS[lang]).filter(key => /^(account|pricing|alerts)\./.test(key))).toEqual([]);
   }
 });
