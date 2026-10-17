@@ -249,11 +249,11 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         expect(seo.resourceMeta({ ...base, name_en: 'Dataset' }).title)
             .toBe('Water Quality (CSV table) - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'Measurements CSV' }).title)
-            .toBe('Measurements CSV (table) - CanQuery');
+            .toBe('Water Quality — Measurements CSV (table) - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'English' }).title)
             .toBe('Water Quality (CSV table) - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'Report', format: 'PDF' }).title)
-            .toBe('Report (PDF) - CanQuery');
+            .toBe('Water Quality — Report (PDF) - CanQuery');
     });
 
     it('keeps download-only pages out of the index and table or map pages in it', () => {
@@ -268,11 +268,52 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
 
     it('names the table or map a resource becomes on CanQuery in its title', () => {
         expect(seo.resourceMeta({ ...base, ingest_status: 'ready', language: 'en' }).title)
-            .toBe('Measurements (English, CSV live table) - CanQuery');
+            .toBe('Water Quality — Measurements (English, CSV live table) - CanQuery');
         expect(seo.resourceMeta({ ...base, datastore_active: true, map_provider: 'arcgis' }).title)
-            .toBe('Measurements (CSV live table and map) - CanQuery');
+            .toBe('Water Quality — Measurements (CSV live table and map) - CanQuery');
         expect(seo.resourceMeta({ ...base, format: 'GeoJSON', map_provider: 'canquery' }).title)
-            .toBe('Measurements (GEOJSON map) - CanQuery');
+            .toBe('Water Quality — Measurements (GEOJSON map) - CanQuery');
+    });
+
+    it('gives files that share a name across datasets distinct titles', () => {
+        const dictionary = { ...base, name_en: 'Data dictionary', datastore_active: true };
+        const permits = seo.resourceMeta({ ...dictionary, dataset_title_en: 'Building Permits' }).title;
+        const trees = seo.resourceMeta({ ...dictionary, dataset_title_en: 'Street Trees' }).title;
+        expect(permits).toBe('Building Permits — Data dictionary (CSV live table) - CanQuery');
+        expect(trees).toBe('Street Trees — Data dictionary (CSV live table) - CanQuery');
+        // A name that already carries its dataset's title is not repeated.
+        expect(seo.resourceMeta({ ...base, name_en: 'Water Quality 2023 readings' }).title)
+            .toBe('Water Quality 2023 readings (CSV table) - CanQuery');
+    });
+
+    it('adds the publisher to a short shared title and the dataset year when the dataset title cannot fit', () => {
+        expect(seo.resourceMeta({ ...base, name_en: 'Parks', dataset_title_en: 'Parks', org_title_en: 'City of Oshawa' }).title)
+            .toBe('Parks — City of Oshawa (CSV table) - CanQuery');
+        expect(seo.resourceMeta({ ...base, name_en: 'CSV', dataset_title_en: 'Zoning', org_title_en: 'City of Regina' }).title)
+            .toBe('Zoning — City of Regina (CSV table) - CanQuery');
+        const officers = seo.resourceMeta({ ...base, name_en: 'Charities businesses directors/officers',
+            dataset_title_en: '2024 List of charities', datastore_active: true }).title;
+        expect(officers).toBe('Charities businesses directors/officers — 2024 (CSV live table) - CanQuery');
+        const long = seo.resourceMeta({ ...base, name_en: 'Measurements', dataset_title_en: 'Supercalifragilisticexpialidocious'.repeat(3) }).title;
+        expect(long).toBe('Measurements (CSV table) - CanQuery');
+        expect(long).not.toContain('…');
+    });
+
+    it('leads with a whole dataset title or its first clause, never a fragment of it', () => {
+        const tables = { ...base, name_en: 'Data tables', datastore_active: true };
+        expect(seo.resourceMeta({ ...tables, dataset_title_en: 'Report on Federal Tax Expenditures - Concepts, Estimates and Evaluations 2024' }).title)
+            .toBe('Report on Federal Tax Expenditures — Data tables (CSV live table) - CanQuery');
+        expect(seo.resourceMeta({ ...base, name_en: 'Enrolment counts', datastore_active: true,
+            dataset_title_en: 'French as a Second Language enrolment by province and grade level' }).title)
+            .toBe('Enrolment counts (CSV live table) - CanQuery');
+        // A dataset title that already covers the file name is not repeated before it.
+        expect(seo.resourceMeta({ ...base, name_en: 'Electricity Generation', dataset_title_en: 'Electricity generation by source' }).title)
+            .toBe('Electricity Generation (CSV table) - CanQuery');
+    });
+
+    it('cuts file-name style titles at their underscores instead of mid-word', () => {
+        expect(seo.compactTitle('Arctic_PRISM_Surveys_Tier1_Birds_Data_Donnees_Oiseaux.csv', 40)).toBe('Arctic_PRISM_Surveys_Tier1_Birds_Data');
+        expect(seo.compactTitle('motor-vehicle-serious-injuries-by-road-user-type', 45)).toBe('motor-vehicle-serious-injuries-by-road-user');
     });
 
     it('bounds long resource titles and descriptions', () => {
@@ -521,6 +562,21 @@ describe('seoMeta - content hygiene and organization pages', () => {
         expect(ld.distribution[0]).toEqual(expect.objectContaining({
             contentUrl: 'https://example.test/roads.csv', contentSize: '2 KB'
         }));
+    });
+
+    it('gives every distribution a format and leaves out links to web pages', () => {
+        const ld = seo.buildDatasetJsonLd({
+            id: 'd1', name: 'roads', title_en: 'Roads', notes_en: 'A sufficiently descriptive public road dataset for testing.'
+        }, [
+            { url: 'https://example.test/data/roads.geojson', format: '' },
+            { url: 'https://open.canada.ca/data/en/dataset/8fb91584-0bdf-4fc0-a1c6-dcbd9ca30fb9', format: null },
+            { url: 'https://example.test/roads/overview.html' },
+            { url: 'https://example.test/roads.csv', format: 'CSV' }
+        ]);
+        expect(ld.distribution.map(item => [item.contentUrl, item.encodingFormat])).toEqual([
+            ['https://example.test/data/roads.geojson', 'GEOJSON'],
+            ['https://example.test/roads.csv', 'CSV']
+        ]);
     });
 
     it('builds bounded organization metadata and CollectionPage schema', () => {

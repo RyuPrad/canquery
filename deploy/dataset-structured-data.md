@@ -60,3 +60,9 @@ recorded, or omits the property. Organization pages describe a publisher as a
 federal-portal records; other publishers are an `Organization`. Later pages of a
 dataset's resource list (`?page=N`) carry a `CollectionPage` that refers to the
 canonical dataset page instead of repeating the full Dataset item.
+
+Every `DataDownload` in a Dataset's `distribution` carries an `encodingFormat`:
+the recorded format, or the file extension when the record has none. A link
+with neither (typically another catalogue's landing page) is left out, which
+clears Search Console's "Missing field encodingFormat (in distribution)"
+warning.

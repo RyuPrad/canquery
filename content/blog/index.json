@@ -24,7 +24,7 @@
       },
       "fr": {
         "slug": "permis-construction-toronto",
-        "title": "Comment consulter les permis de construction actifs à Toronto",
+        "title": "Consulter les permis de construction actifs à Toronto",
         "description": "Recherchez les demandes et permis de construction de Toronto par rue et apprenez à lire les données officielles dans CanQuery.",
         "placeName": "Toronto",
         "topicName": "Permis de construction"
@@ -284,7 +284,7 @@
       },
       "fr": {
         "slug": "volumes-circulation-calgary",
-        "title": "Volumes de circulation à Calgary : débits quotidiens par tronçon",
+        "title": "Circulation à Calgary : débits quotidiens par tronçon",
         "description": "Lisez les volumes moyens des jours de semaine de Calgary sur une carte ou dans un tableau, comprenez le débit bidirectionnel et comparez les années.",
         "topicName": "Volumes de circulation",
         "placeName": "Calgary"
@@ -317,7 +317,7 @@
       },
       "fr": {
         "slug": "carte-zones-inondables-calgary",
-        "title": "Cartes des zones inondables de Calgary : les zones réglementaires",
+        "title": "Zones inondables de Calgary : cartes réglementaires",
         "description": "Vérifiez si une propriété de Calgary est dans le chenal d’inondation, la frange inondable ou une zone d’écoulement, et distinguez la carte réglementaire.",
         "topicName": "Zones inondables",
         "placeName": "Calgary"

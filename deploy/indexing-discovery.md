@@ -87,3 +87,23 @@ Console "Excluded by noindex" count grows by design; "Discovered – currently
 not indexed" should fall as the submitted set shrinks from about 329,000 to
 about 115,000 URLs. Do not validate the noindex exclusions, and compare the
 indexed count only against the new submitted total.
+
+## Console review fixes (October 2026)
+
+Search Console reported 954 resource pages as duplicates of other resource
+pages and 34% of the 58,593 indexable resource pages shared their `<title>`
+with another page ("Data dictionary (English, French, CSV table)" alone on 220
+pages). A resource `<title>` now leads with its dataset's title when the file
+name does not carry it ("Building Permits — Data dictionary (CSV live table)"),
+using the whole dataset title or its first clause, never a fragment; when both
+cannot fit it adds the dataset's year, and a short name still shared across
+publishers ("Parks") gets the publisher. File-name style titles are cut at
+their underscores or hyphens instead of ending in a mid-word ellipsis. The page
+`<h1>`, breadcrumbs and API presentation titles are unchanged. On production
+rows this lowers the share of indexable resource pages with a shared title from
+34.4% to 29.3% and the titles ending in "…" from 1,133 to 217.
+
+Crawl stats showed 73% of Googlebot's requests were JSON fetched while
+rendering pages. `robots.txt` now also disallows the analytics beacon
+(`/api/send`) and the footer's GitHub star count (`/web-api/v1/repo`,
+`/api/v1/repo`); the reads a page renders from stay crawlable.
