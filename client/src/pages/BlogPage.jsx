@@ -5,12 +5,14 @@ import { useLang } from '../i18n.jsx';
 import { NotFoundError } from '../api/client.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { track } from '../utils/analytics.js';
+import { relatedGuides } from '../utils/relatedGuides.js';
 
 export default function BlogPage({ language = 'en' }) {
   const { slug } = useParams();
   const { pathname } = useLocation();
   const { t, setLang, setBlogTranslations } = useLang();
   const [content, setContent] = useState(null);
+  const [related, setRelated] = useState([]);
   const [error, setError] = useState(null);
   const indexPath = language === 'fr' ? '/fr/blog' : '/blog';
 
@@ -24,12 +26,15 @@ export default function BlogPage({ language = 'en' }) {
       if (cancelled) return;
       setContent({ pathname, data: env.data });
       setBlogTranslations({ pathname, paths: slug ? env.data.translations : { en: '/blog', fr: '/fr/blog' } });
+      if (slug) {
+        fetchBlog({ lang: language }).then(all => { if (!cancelled) setRelated(relatedGuides(all.data || [], env.data)); }).catch(() => {});
+      }
     }).catch(err => {
       if (cancelled) return;
       setError({ pathname, cause: err });
       setBlogTranslations({ pathname, paths: { en: '/blog', fr: '/fr/blog' } });
     });
-    return () => { cancelled = true; setBlogTranslations(null); };
+    return () => { cancelled = true; setRelated([]); setBlogTranslations(null); };
   }, [slug, language, pathname, setBlogTranslations]);
 
   if (error?.pathname === pathname) return <div className="max-w-3xl mx-auto px-4 py-12">
@@ -82,8 +87,17 @@ export default function BlogPage({ language = 'en' }) {
         </Link>
         <p><Link className="link text-sm" to={article.dataset}>{t('blog.dataset')}</Link></p>
         {article.place && <p><Link className="link text-sm" to={'/places/' + article.place}>{t('blog.more')} {article.placeName}</Link></p>}
-        <p><Link className="link text-sm" to="/">{t('blog.search_more')}</Link></p>
+        <p><Link className="link text-sm" to={article.place ? '/?place=' + encodeURIComponent(article.place) : '/'}>{t('blog.search_more')}</Link></p>
       </aside>
+      {related.length > 0 && <section className="mt-10" aria-label={t('blog.related')}>
+        <h2 className="font-display text-xl font-semibold">{t('blog.related')}</h2>
+        <ul className="mt-4 space-y-3">
+          {related.map(item => <li key={item.id}>
+            <Link className="link" to={item.path}>{item.title}</Link>
+            {item.placeName && <span className="text-base-content/60"> · {item.placeName}</span>}
+          </li>)}
+        </ul>
+      </section>}
     </article>
   </div>;
 }

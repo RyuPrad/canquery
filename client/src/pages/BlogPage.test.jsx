@@ -67,9 +67,9 @@ test.each([
   start(path);
   expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
   const link = screen.getByRole('link', { name: cta });
-  expect(link).toHaveAttribute('href', '/');
+  expect(link).toHaveAttribute('href', '/?place=oshawa-on');
   const guideLinks = Array.from(link.closest('aside').querySelectorAll('a')).map(anchor => anchor.getAttribute('href'));
-  expect(guideLinks).toEqual(['/resources/park-map?view=map', '/datasets/parks', '/places/oshawa-on', '/']);
+  expect(guideLinks).toEqual(['/resources/park-map?view=map', '/datasets/parks', '/places/oshawa-on', '/?place=oshawa-on']);
   fireEvent.click(link);
   expect(await screen.findByRole('heading', { name: 'Canadian open data search' })).toBeInTheDocument();
 });
@@ -99,4 +99,18 @@ test('language switching remains available after an article fails to load', asyn
   expect(french).toBeEnabled();
   fireEvent.click(french);
   expect(await screen.findByRole('heading', { name: 'Guides des données' })).toBeInTheDocument();
+});
+
+test('lists related guides for the same place or topic and scopes the search link to the place', async () => {
+  const guides = [article('en'),
+    { ...article('en'), id: 'oshawa-permits', title: 'Oshawa permits guide', path: '/blog/oshawa-permits', topic: 'permits', published: '2026-09-10' },
+    { ...article('en'), id: 'toronto-parks', title: 'Toronto parks guide', path: '/blog/toronto-parks', place: 'toronto-on', placeName: 'Toronto', published: '2026-09-11' },
+    { ...article('en'), id: 'toronto-transit', title: 'Toronto transit guide', path: '/blog/toronto-transit', place: 'toronto-on', placeName: 'Toronto', topic: 'transit' }];
+  fetchBlog.mockResolvedValue({ data: guides });
+  start('/blog/parks');
+  expect(await screen.findByRole('heading', { name: 'City parks guide' })).toBeInTheDocument();
+  const related = await screen.findByRole('region', { name: 'Related guides' });
+  const links = Array.from(related.querySelectorAll('a')).map(link => link.textContent);
+  expect(links).toEqual(['Oshawa permits guide', 'Toronto parks guide']);
+  expect(screen.getByRole('link', { name: 'Search more Canadian open data' })).toHaveAttribute('href', '/?place=oshawa-on');
 });

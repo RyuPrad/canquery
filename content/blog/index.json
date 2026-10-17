@@ -191,5 +191,294 @@
       }
     },
     "place": "uxbridge-on"
+  },
+  {
+    "id": "toronto-business-licences",
+    "status": "published",
+    "place": "toronto-on",
+    "topic": "business-licences",
+    "query": {
+      "en": "business licences",
+      "fr": "permis d’entreprise"
+    },
+    "view": "table",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/toronto-open-data-municipal-licensing-and-standards-business-licences-and-permits",
+    "datasetId": "ckan-toronto-open-data-dataset-57b2285f-4f80-45fb-ae3e-41a02c3a137f",
+    "explore": "/resources/ckan-toronto-open-data-resource-169e90ba-3ae0-43dd-8b2f-919e87002f50",
+    "editions": {
+      "en": {
+        "slug": "toronto-business-licences",
+        "title": "How to look up Toronto business licences and permits",
+        "description": "Search the City of Toronto’s live table of business licences by name, street, category or ward, read a licence record and follow the source.",
+        "topicName": "Business licences",
+        "placeName": "Toronto"
+      },
+      "fr": {
+        "slug": "permis-entreprise-toronto",
+        "title": "Comment consulter les permis d’entreprise de Toronto",
+        "description": "Recherchez la table en direct des permis d’entreprise de Toronto par nom, rue, catégorie ou quartier, lisez un dossier et suivez la source.",
+        "topicName": "Permis d’entreprise",
+        "placeName": "Toronto"
+      }
+    }
+  },
+  {
+    "id": "calgary-building-permits-map",
+    "status": "published",
+    "place": "calgary-ab",
+    "topic": "building-permits",
+    "query": {
+      "en": "building permits",
+      "fr": "permis de construction"
+    },
+    "view": "map",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/calgary-open-data-c2es-76ed",
+    "datasetId": "socrata-calgary-open-data-dataset-c2es-76ed",
+    "explore": "/resources/socrata-calgary-open-data-resource-c2es-76ed?view=map",
+    "editions": {
+      "en": {
+        "slug": "calgary-building-permits-map",
+        "title": "Find Calgary building permits on a map",
+        "description": "Explore Calgary’s building permit applications on an interactive map, read status and dates, and filter the table by street or permit type.",
+        "topicName": "Building permits",
+        "placeName": "Calgary"
+      },
+      "fr": {
+        "slug": "carte-permis-construction-calgary",
+        "title": "Trouver les permis de construction de Calgary sur une carte",
+        "description": "Explorez les demandes de permis de construction de Calgary sur une carte interactive, lisez l’état et les dates, et filtrez le tableau par rue ou type.",
+        "topicName": "Permis de construction",
+        "placeName": "Calgary"
+      }
+    }
+  },
+  {
+    "id": "calgary-traffic-volumes",
+    "status": "published",
+    "place": "calgary-ab",
+    "topic": "traffic-volumes",
+    "query": {
+      "en": "traffic volumes",
+      "fr": "volumes de circulation"
+    },
+    "view": "map",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/calgary-open-data-bjag-w7zi",
+    "datasetId": "socrata-calgary-open-data-dataset-bjag-w7zi",
+    "explore": "/resources/socrata-calgary-open-data-resource-bjag-w7zi?view=map",
+    "editions": {
+      "en": {
+        "slug": "calgary-traffic-volumes",
+        "title": "Calgary traffic volumes: daily counts by road segment",
+        "description": "Read Calgary’s average weekday traffic volumes on a map or in a table, understand a two-way ADWT count and compare survey years.",
+        "topicName": "Traffic volumes",
+        "placeName": "Calgary"
+      },
+      "fr": {
+        "slug": "volumes-circulation-calgary",
+        "title": "Volumes de circulation à Calgary : débits quotidiens par tronçon",
+        "description": "Lisez les volumes moyens des jours de semaine de Calgary sur une carte ou dans un tableau, comprenez le débit bidirectionnel et comparez les années.",
+        "topicName": "Volumes de circulation",
+        "placeName": "Calgary"
+      }
+    }
+  },
+  {
+    "id": "calgary-flood-map",
+    "status": "published",
+    "place": "calgary-ab",
+    "topic": "flood-maps",
+    "query": {
+      "en": "flood map",
+      "fr": "carte des zones inondables"
+    },
+    "view": "map",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/calgary-open-data-tp6q-x2v7",
+    "datasetId": "socrata-calgary-open-data-dataset-tp6q-x2v7",
+    "explore": "/resources/socrata-calgary-open-data-resource-tp6q-x2v7?view=map",
+    "editions": {
+      "en": {
+        "slug": "calgary-flood-map",
+        "title": "Calgary flood maps: the regulatory flood hazard zones",
+        "description": "Check whether a Calgary property sits in the floodway, flood fringe or overland flow zone, and tell the regulatory map from the modelled maps.",
+        "topicName": "Flood maps",
+        "placeName": "Calgary"
+      },
+      "fr": {
+        "slug": "carte-zones-inondables-calgary",
+        "title": "Cartes des zones inondables de Calgary : les zones réglementaires",
+        "description": "Vérifiez si une propriété de Calgary est dans le chenal d’inondation, la frange inondable ou une zone d’écoulement, et distinguez la carte réglementaire.",
+        "topicName": "Zones inondables",
+        "placeName": "Calgary"
+      }
+    }
+  },
+  {
+    "id": "calgary-ward-map",
+    "status": "published",
+    "place": "calgary-ab",
+    "topic": "ward-boundaries",
+    "query": {
+      "en": "ward boundaries",
+      "fr": "limites des quartiers"
+    },
+    "view": "map",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/calgary-open-data-bxgr-t8xb",
+    "datasetId": "socrata-calgary-open-data-dataset-bxgr-t8xb",
+    "explore": "/resources/socrata-calgary-open-data-resource-bxgr-t8xb?view=map",
+    "editions": {
+      "en": {
+        "slug": "calgary-ward-map",
+        "title": "Calgary ward map and boundaries",
+        "description": "Find which of Calgary’s 14 wards an address belongs to, compare wards with the attached civic census totals and choose the right boundary set.",
+        "topicName": "Ward boundaries",
+        "placeName": "Calgary"
+      },
+      "fr": {
+        "slug": "carte-quartiers-calgary",
+        "title": "Carte et limites des quartiers électoraux de Calgary",
+        "description": "Trouvez le quartier électoral d’une adresse parmi les 14 de Calgary, comparez les quartiers avec le recensement municipal et choisissez le bon découpage.",
+        "topicName": "Limites des quartiers",
+        "placeName": "Calgary"
+      }
+    }
+  },
+  {
+    "id": "regina-zoning-bylaw",
+    "status": "published",
+    "place": "regina-sk",
+    "topic": "zoning",
+    "query": {
+      "en": "zoning",
+      "fr": "zonage"
+    },
+    "view": "table",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/regina-hub-bylaw-no-2019-19-the-regina-zoning-bylaw-2019",
+    "datasetId": "ckan-regina-hub-dataset-1301e6ce-651a-4ffd-b88d-f915be06e6ed",
+    "explore": "/resources/ckan-regina-hub-resource-f6daf9d3-5da9-410e-99cd-a2a5371526f9",
+    "editions": {
+      "en": {
+        "slug": "regina-zoning-bylaw",
+        "title": "Regina zoning bylaw and land-use zones",
+        "description": "Look up a Regina zone code in the City’s live table, open the right chapter of Zoning Bylaw 2019-19 and know what the published zoning can confirm.",
+        "topicName": "Zoning",
+        "placeName": "Regina"
+      },
+      "fr": {
+        "slug": "reglement-zonage-regina",
+        "title": "Règlement de zonage de Regina et zones d’utilisation du sol",
+        "description": "Trouvez un code de zone de Regina dans la table en direct de la Ville, ouvrez le bon chapitre du règlement 2019-19 et sachez ce que le zonage publié confirme.",
+        "topicName": "Zonage",
+        "placeName": "Regina"
+      }
+    }
+  },
+  {
+    "id": "cra-list-of-charities",
+    "status": "published",
+    "topic": "charities",
+    "query": {
+      "en": "registered charities",
+      "fr": "organismes de bienfaisance enregistrés"
+    },
+    "view": "table",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/80c00cdb-1358-415c-bb8b-0de7f12675b8",
+    "datasetId": "80c00cdb-1358-415c-bb8b-0de7f12675b8",
+    "explore": "/resources/694fdc72-eae4-4ee0-83eb-832ab7b230e3",
+    "editions": {
+      "en": {
+        "slug": "cra-list-of-charities",
+        "title": "Look up registered charities in the CRA list of charities",
+        "description": "Search the Canada Revenue Agency’s 2024 list of registered charities by name or city, join its 19 tables on the business number and know what it confirms.",
+        "topicName": "Registered charities"
+      },
+      "fr": {
+        "slug": "liste-organismes-bienfaisance-arc",
+        "title": "Consulter la liste des organismes de bienfaisance de l’ARC",
+        "description": "Recherchez la liste 2024 des organismes de bienfaisance de l’ARC par nom ou ville, joignez ses 19 tables par numéro d’entreprise et sachez ce qu’elle confirme.",
+        "topicName": "Organismes de bienfaisance"
+      }
+    }
+  },
+  {
+    "id": "federal-election-results-by-riding",
+    "status": "published",
+    "topic": "federal-elections",
+    "query": {
+      "en": "federal election results",
+      "fr": "résultats élections fédérales"
+    },
+    "view": "table",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/065439a9-c194-4259-9c95-245a852be4a1",
+    "datasetId": "065439a9-c194-4259-9c95-245a852be4a1",
+    "explore": "/resources/d9ff2144-4591-4ef5-b313-be5012eca3be",
+    "editions": {
+      "en": {
+        "slug": "federal-election-results-by-riding",
+        "title": "Federal election results by riding: official voting results",
+        "description": "Find the elected candidate, turnout and every candidate’s votes for a riding in Elections Canada’s official results of the 44th general election.",
+        "topicName": "Federal election results"
+      },
+      "fr": {
+        "slug": "resultats-elections-federales-circonscription",
+        "title": "Résultats des élections fédérales par circonscription",
+        "description": "Trouvez la personne élue, la participation et les votes de chaque candidat d’une circonscription dans les résultats officiels d’Élections Canada (44e élection).",
+        "topicName": "Résultats d’élections fédérales"
+      }
+    }
+  },
+  {
+    "id": "federal-corporations-search",
+    "status": "published",
+    "topic": "federal-corporations",
+    "query": {
+      "en": "federal corporations",
+      "fr": "sociétés de régime fédéral"
+    },
+    "view": "table",
+    "published": "2026-10-17",
+    "updated": "2026-10-17",
+    "verified": "2026-10-17",
+    "dataset": "/datasets/0032ce54-c5dd-4b66-99a0-320a7b5e99f2",
+    "datasetId": "0032ce54-c5dd-4b66-99a0-320a7b5e99f2",
+    "explore": "/resources/7b6dd154-aa04-46ce-8880-ce4a5fa0a680",
+    "editions": {
+      "en": {
+        "slug": "federal-corporations-search",
+        "title": "Search Corporations Canada’s federal corporations data",
+        "description": "Check whether a company is a federal corporation, read its status and filing dates in the active business corporations table and list a city’s corporations.",
+        "topicName": "Federal corporations"
+      },
+      "fr": {
+        "slug": "recherche-societes-regime-federal",
+        "title": "Rechercher dans les données des sociétés de régime fédéral",
+        "description": "Vérifiez si une entreprise est une société de régime fédéral, lisez son statut et ses dépôts dans la table des sociétés actives et listez celles d’une ville.",
+        "topicName": "Sociétés de régime fédéral",
+        "explore": "/resources/a1cbafa3-df2b-44c9-8488-833b31b76e01"
+      }
+    }
   }
 ]

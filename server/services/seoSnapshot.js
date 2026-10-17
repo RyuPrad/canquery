@@ -1,5 +1,9 @@
 const seo = require('./seoMeta');
 const { listArticles } = require('./blogContent');
+
+// Guides about a dataset in both languages; the French edition is labelled.
+const datasetGuides = dataset => ['en', 'fr'].flatMap(lang => listArticles({ lang, dataset })
+    .map(article => ({ path: article.path, label: article.title, detail: lang === 'fr' ? '(français)' : '' })));
 const { classifyResource } = require('./resourceCapabilities');
 const catalogFacts = require('./catalogFacts');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
@@ -190,7 +194,7 @@ function datasetSnapshot(dataset, resources, pagination) {
         summary: presentation.summary.en,
         overviewHtml: overviewSnapshot(presentation, true),
         sources: sourceLinks(dataset),
-        guides: dataset.id || dataset.name ? listArticles({ dataset: dataset.id || dataset.name }).map(article => ({ path: article.path, label: article.title })) : [],
+        guides: dataset.id || dataset.name ? datasetGuides(dataset.id || dataset.name) : [],
         facts: [
             organization ? {
                 label: 'Publisher',
@@ -242,7 +246,7 @@ function resourceSnapshot(resource) {
         overviewHtml: (presentation.context.en ? '<p>' + text(presentation.context.en) + '</p>' : '') +
             originalFileLink(resource) + overviewSnapshot(presentation),
         sources: sourceLinks(resource),
-        guides: resource.dataset_id || resource.dataset_name ? listArticles({ dataset: resource.dataset_id || resource.dataset_name }).map(article => ({ path: article.path, label: article.title })) : [],
+        guides: resource.dataset_id || resource.dataset_name ? datasetGuides(resource.dataset_id || resource.dataset_name) : [],
         facts: [
             { label: 'Format', value: resource.format || 'File' },
             { label: 'Access', value: catalogFacts.accessLabel(capability, { mapped: info.mapped }) },

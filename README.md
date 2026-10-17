@@ -53,9 +53,13 @@ catalogue with verified open-data terms is currently admissible.
 
 ## Local resident guides
 
-The bilingual [local guides](https://canquery.com/blog) connect practical city
+The bilingual [data guides](https://canquery.com/blog) connect practical
 questions to verified maps and tables: Oshawa park boundaries, Toronto active
-building permits, and Montréal parks and public spaces. French editions have
+building permits and business licences, Montréal parks and public spaces,
+Uxbridge ward boundaries, Calgary building permits, traffic volumes, flood zones
+and ward boundaries, Regina zoning, and national tables such as LMIA employer
+lists, the CRA list of charities, federal election results by riding and
+Corporations Canada's federal corporations. French editions have
 separate URLs under `/fr/blog` and reciprocal language links. Articles include
 source attribution, coverage limits, and independently labelled publication,
 article-update, and link-verification dates.
