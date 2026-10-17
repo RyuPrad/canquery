@@ -1,5 +1,6 @@
 const { listArticles, getArticle } = require('./blogContent');
 const { SITE_URL, escapeHtml: esc, truncate } = require('./seoMeta');
+const { sectionNav } = require('./seoSnapshot');
 
 const LABELS = {
     en: { title: 'Data guides', intro: 'Find the right Canadian dataset, read its fields, and use its tables, maps or downloads.',
@@ -50,7 +51,7 @@ function resolveBlogPage(pathname) {
     const alternate = lang === 'fr' ? 'en' : 'fr';
     const languageLink = '<a href="' + translations[alternate] + '" hreflang="' + alternate +
         '" class="link">' + (alternate === 'fr' ? 'Lire en français' : 'Read in English') + '</a>';
-    let body = '<main data-cq-blog class="max-w-3xl mx-auto px-4 py-10">';
+    let body = '<main data-cq-blog class="max-w-3xl mx-auto px-4 py-10">' + sectionNav();
     if (article) {
         body += '<nav aria-label="' + (lang === 'fr' ? 'Fil d’Ariane' : 'Breadcrumbs') + '"><a class="link" href="' + indexPath + '">' + labels.title + '</a></nav>' +
             '<article><p class="cq-chip !whitespace-normal mt-6">' + esc([article.placeName, article.topicName].filter(Boolean).join(' · ')) + '</p>' +

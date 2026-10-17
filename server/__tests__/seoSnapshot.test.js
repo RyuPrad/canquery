@@ -139,6 +139,38 @@ describe('server-rendered crawl snapshots', () => {
         expect(dataset).toContain('<span>Original download only</span>');
     });
 
+    it('offers a download-only file from the dataset page, with its URL validated', () => {
+        const dataset = { id: 'd', name: 'reports', title_en: 'Reports' };
+        const html = snapshot.datasetSnapshot(dataset, [
+            { id: 'r1', name_en: 'Annual report', format: 'PDF', url: 'https://example.test/report.pdf?a=1&b=2' },
+            { id: 'r2', name_en: 'Table', format: 'CSV', url: 'https://example.test/table.csv' },
+            { id: 'r3', name_en: 'Bad', format: 'PDF', url: 'javascript:alert(1)' },
+            { id: 'r4', name_en: 'Secret', format: 'PDF', url: 'https://user:secret@example.test/file.pdf' }
+        ]);
+        expect(html).toContain('<a href="/resources/r1">Annual report (PDF)</a> <span>PDF</span> · <a href="https://example.test/report.pdf?a=1&amp;b=2">Download PDF</a>');
+        expect(html).toContain('<a href="/resources/r2">Table (CSV)</a> <span>CSV</span></li>');
+        expect(html).not.toContain('javascript:');
+        expect(html).not.toContain('user:secret');
+        expect((html.match(/Download PDF/g) || [])).toHaveLength(1);
+    });
+
+    it('opens every snapshot with one section nav and lists the Top 100 beyond the usual link bound', () => {
+        const nav = snapshot.sectionNav();
+        expect(nav).toContain('<nav aria-label="CanQuery sections"');
+        expect(nav.match(/<li>/g)).toHaveLength(8);
+        expect(nav).toContain('<a href="/fr/blog">Guides des données</a>');
+        expect(snapshot.staticSnapshot('about').match(/<nav aria-label="CanQuery sections"/g)).toHaveLength(1);
+        const items = Array.from({ length: 13 }, (_, i) => ({ rank: i + 1, dataset_id: 'd' + i, dataset_name: i ? 'name-' + i : null,
+            title_en: 'Title ' + i, downloads: 1000 - i }));
+        const html = snapshot.staticSnapshot('insights', items);
+        expect(html).toContain('<h2>Top 100 downloaded datasets</h2>');
+        expect((html.match(/href="\/datasets\//g) || [])).toHaveLength(13);
+        expect(html).toContain('<a href="/datasets/d0">#1 · Title 0</a> <span>1,000 downloads</span>');
+        expect(html).toContain('<a href="/datasets/name-12">#13 · Title 12</a>');
+        expect(html).toContain('<h2>Related open data</h2><ul><li><a href="/">Search all datasets</a>');
+        expect(snapshot.staticSnapshot('insights', [])).toContain('<h2>Explore CanQuery</h2>');
+    });
+
     it('names later pages in the heading only', () => {
         const dataset = { id: 'd', name: 'x', title_en: 'Roads' };
         const resources = Array.from({ length: 60 }, (_, i) => ({ id: 'r' + i, name_en: 'File ' + i, format: 'CSV' }));

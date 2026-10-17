@@ -19,6 +19,7 @@ const PROFILE = { row_count: 420, columns: [
 const mkItem = (rank, over = {}) => ({
   rank,
   dataset_id: 'd' + rank,
+  dataset_name: 'dataset-' + rank,
   title: { en: 'Dataset ' + rank },
   department: 'Dept ' + rank,
   downloads: 1000 - rank,
@@ -40,6 +41,18 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><InsightsPage /></MemoryRouter>);
 
 describe('InsightsPage top-100', () => {
+  test('links every ranked dataset by its canonical slug, falling back to the id', async () => {
+    fetchTopDownloads.mockResolvedValue({ data: [mkItem(1), mkItem(2, { dataset_name: null }), mkItem(3), mkItem(4)],
+      meta: { period: { year: 2026, month: 5 } } });
+    renderPage();
+    await screen.findByText('Dataset 4');
+    const hrefs = screen.getAllByRole('link').map(link => link.getAttribute('href'));
+    expect(hrefs).toContain('/datasets/dataset-1?highlight=r1');
+    expect(hrefs).toContain('/datasets/d2?highlight=r2');
+    expect(hrefs).toContain('/datasets/dataset-4?highlight=r4');
+    expect(hrefs.some(href => href.startsWith('/datasets/d1'))).toBe(false);
+  });
+
   test('shows the leaderboard heading and the snapshot period', async () => {
     fetchTopDownloads.mockResolvedValue({ data: [mkItem(1)], meta: { period: { year: 2026, month: 5 } } });
     renderPage();

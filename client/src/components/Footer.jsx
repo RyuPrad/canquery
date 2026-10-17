@@ -77,7 +77,7 @@ function StarCount() {
 }
 
 export default function Footer() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   return (
     <footer className="mt-20 border-t border-base-content/8 bg-base-200/40">
       <div className="max-w-7xl mx-auto px-4 py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -147,7 +147,7 @@ export default function Footer() {
               </Link>
             </li>
             <li>
-              <Link to="/" className="text-base-content/65 hover:text-base-content transition-colors">
+              <Link to="/datasets" className="text-base-content/65 hover:text-base-content transition-colors">
                 {t('nav.datasets')}
               </Link>
             </li>
@@ -157,12 +157,20 @@ export default function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/insights" className="text-base-content/65 hover:text-base-content transition-colors">
+                {t('nav.insights')}
+              </Link>
+            </li>
+            <li>
               <Link to="/docs" className="text-base-content/65 hover:text-base-content transition-colors">
                 {t('nav.docs')}
               </Link>
             </li>
             <li>
-              <Link to={lang === 'fr' ? '/fr/blog' : '/blog'} className="text-base-content/65 hover:text-base-content transition-colors">{t('blog.title')}</Link>
+              <Link to="/blog" hrefLang="en" className="text-base-content/65 hover:text-base-content transition-colors">Data guides</Link>
+            </li>
+            <li>
+              <Link to="/fr/blog" hrefLang="fr" className="text-base-content/65 hover:text-base-content transition-colors">Guides des données</Link>
             </li>
             <li>
               <Link to="/privacy" className="text-base-content/65 hover:text-base-content transition-colors">

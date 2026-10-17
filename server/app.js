@@ -117,6 +117,13 @@ app.get('/api/v1/openapi.json', (_req, res) => {
     res.set('Cache-Control', 'no-store').json(require('./services/openApi').buildOpenApi());
 });
 
+// The SPA template is not a page of its own: the static handler below would
+// otherwise serve /index.html as a duplicate of the homepage.
+app.get(['/index.html', '/index.htm'], (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.redirect(301, '/');
+});
+
 // Crawl-facing files (robots.txt + sitemaps) live at the site root and read
 // from Postgres; mounted before the SPA so they win over the static catch-all.
 app.use(seoRouter);

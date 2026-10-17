@@ -31,15 +31,16 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         if (db) { await db.query('ROLLBACK'); db.release(); }
         if (pool) await pool.end();
     });
-    test('includes metadata-only datasets and all five resource capabilities, excluding orphan resources', async () => {
+    test('includes metadata-only datasets and the data-bearing resources, excluding download-only and orphan resources', async () => {
         expect(await queries.countSitemapDatasets(db)).toBe(datasetCount + 101);
-        expect(await queries.countSitemapResources(db)).toBe(resourceCount + 5);
+        // The PDF (resource0) is download-only; the preparable, DataStore, prepared and mapped CSVs qualify.
+        expect(await queries.countSitemapResources(db)).toBe(resourceCount + 4);
         const datasets = await queries.listDatasetSitemap({ limit: 25000, offset: 0 }, db);
         expect(datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(101);
         const resources = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         expect(resources.filter(row => row.id.startsWith(prefix)).map(row => row.id)).toEqual(
-            [0, 1, 2, 3, 4].map(n => id('resource' + n)));
-        expect(resources.find(row => row.id === id('resource0')).metadata_modified.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+            [1, 2, 3, 4].map(n => id('resource' + n)));
+        expect(resources.find(row => row.id === id('resource1')).lastmod.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     });
     test('pages through tied dataset dates without losing or repeating records', async () => {
         const search = offset => queries.searchDatasets({ org: prefix, q: null, limit: 50, offset }, db);

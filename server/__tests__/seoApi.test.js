@@ -14,6 +14,8 @@ jest.mock('../db/catalogReadQueries', () => ({
     listResourceSitemap: jest.fn(),
     listPlaceSitemap: jest.fn(),
     listOrganizationSitemap: jest.fn(),
+    getCatalogLastModified: jest.fn(),
+    listTopDownloadLinks: jest.fn(),
     getPlaceByIdOrSlug: jest.fn(),
     pingDb: jest.fn(),
     getLastSyncTime: jest.fn(),
@@ -34,12 +36,30 @@ const store = require('../db/storeQueries');
 const queryLog = require('../db/queryLogQueries');
 const app = require('../app');
 const { serveSpa, resolvePage, resolveMeta, injectAnalytics } = require('../controllers/spaController');
+const { resetSitemapCache } = require('../controllers/sitemapController');
+const catalogReadCache = require('../services/catalogReadCache');
+const { listArticles } = require('../services/blogContent');
 
 beforeEach(() => {
     jest.resetAllMocks();
+    resetSitemapCache();
+    catalogReadCache.clear();
     catalogRead.searchDatasets.mockResolvedValue([]);
     catalogRead.listOrganizations.mockResolvedValue([]);
     catalogRead.listPlaces.mockResolvedValue([]);
+});
+
+const newestGuideUpdate = () => ['en', 'fr'].flatMap(lang => listArticles({ lang })).map(article => article.updated).sort().at(-1);
+
+describe('template path', () => {
+    it('redirects the raw SPA template to the homepage', async () => {
+        for (const path of ['/index.html', '/index.htm']) {
+            const res = await request(app).get(path);
+            expect(res.status).toBe(301);
+            expect(res.headers.location).toBe('/');
+            expect(res.headers['cache-control']).toBe('public, max-age=3600');
+        }
+    });
 });
 
 describe('robots.txt', () => {
@@ -63,41 +83,83 @@ describe('robots.txt', () => {
 });
 
 describe('sitemap index', () => {
-    it('lists one chunk per 25k quality-gated datasets and resources', async () => {
+    it('lists one chunk per 25k datasets and data-bearing resources, dated by the newest change each file can hold', async () => {
         catalogRead.countSitemapDatasets.mockResolvedValue(30000);
         catalogRead.countSitemapResources.mockResolvedValue(26000);
+        catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
         const res = await request(app).get('/sitemap.xml');
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/xml/);
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-pages.xml</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-places.xml</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-organizations.xml</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-places.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-organizations.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-blog.xml</loc><lastmod>' + newestGuideUpdate() + '</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-2.xml</loc>');
         expect(res.text).not.toContain('sitemap-datasets-3.xml');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-1.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-1.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-2.xml</loc>');
         expect(res.text).not.toContain('sitemap-resources-3.xml');
+        // The hub file is as new as the newest of the catalogue and the guides.
+        const pagesDate = [new Date('2026-10-01T00:00:00Z'), new Date(newestGuideUpdate())].sort((a, b) => b - a)[0];
+        const expected = pagesDate.toISOString() === '2026-10-01T00:00:00.000Z' ? '2026-10-01T00:00:00.000Z' : newestGuideUpdate();
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-pages.xml</loc><lastmod>' + expected + '</lastmod>');
     });
 
-    it('always emits a dataset chunk but omits empty resource chunks', async () => {
+    it('always emits a dataset chunk but omits empty resource chunks, and omits lastmod when unknown', async () => {
         catalogRead.countSitemapDatasets.mockResolvedValue(0);
         catalogRead.countSitemapResources.mockResolvedValue(0);
+        catalogRead.getCatalogLastModified.mockResolvedValue(null);
         const res = await request(app).get('/sitemap.xml');
-        expect(res.text).toContain('sitemap-datasets-1.xml');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc></sitemap>');
         expect(res.text).not.toContain('sitemap-resources-1.xml');
+    });
+
+    it('reads the counts and the change date once per hour instead of on every request', async () => {
+        catalogRead.countSitemapDatasets.mockResolvedValue(10);
+        catalogRead.countSitemapResources.mockResolvedValue(10);
+        catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
+        await request(app).get('/sitemap.xml');
+        await request(app).get('/sitemap.xml');
+        await request(app).get('/sitemap-pages.xml');
+        expect(catalogRead.countSitemapResources).toHaveBeenCalledTimes(1);
+        expect(catalogRead.countSitemapDatasets).toHaveBeenCalledTimes(1);
+        expect(catalogRead.getCatalogLastModified).toHaveBeenCalledTimes(1);
+    });
+
+    it('tells crawlers to retry when the catalogue cannot be read, without leaking the error', async () => {
+        catalogRead.countSitemapDatasets.mockResolvedValue(10);
+        catalogRead.countSitemapResources.mockRejectedValue(new Error('private database detail'));
+        catalogRead.listPlaceSitemap.mockRejectedValue(new Error('private database detail'));
+        const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            for (const path of ['/sitemap.xml', '/sitemap-places.xml']) {
+                const res = await request(app).get(path);
+                expect(res.status).toBe(503);
+                expect(res.headers['retry-after']).toBe('60');
+                expect(res.headers['cache-control']).toBe('no-store');
+                expect(res.headers['content-type']).toMatch(/text\/plain/);
+                expect(res.text).not.toContain('private database detail');
+            }
+        } finally {
+            log.mockRestore();
+        }
     });
 });
 
 describe('pages sitemap', () => {
-    it('includes the home and section hubs', async () => {
+    it('includes the home and section hubs, dating the catalogue hubs only', async () => {
+        catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
         const res = await request(app).get('/sitemap-pages.xml');
         expect(res.status).toBe(200);
-        expect(res.text).toContain('<loc>https://canquery.com/</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/insights</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/</loc>\n    <lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/datasets</loc>\n    <lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/places</loc>\n    <lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/insights</loc>\n    <lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toMatch(/<loc>https:\/\/canquery\.com\/docs<\/loc>\n\s+<changefreq>/);
+        expect(res.text).toMatch(/<loc>https:\/\/canquery\.com\/about<\/loc>\n\s+<changefreq>/);
         expect(res.text).toContain('<loc>https://canquery.com/privacy</loc>');
         expect(res.text).toContain('<loc>https://canquery.com/faq</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/about</loc>');
         expect(res.text).not.toMatch(/\/account|\/signup|\/api\/v1/);
     });
 });
@@ -149,10 +211,10 @@ describe('dataset sitemap chunk', () => {
 });
 
 describe('resource sitemap chunk', () => {
-    it('emits canonical resource urls with parent-dataset lastmod values', async () => {
+    it('emits canonical resource urls with the file or dataset change date', async () => {
         catalogRead.listResourceSitemap.mockResolvedValue([
-            { id: 'r1', metadata_modified: '2026-08-27T12:00:00Z' },
-            { id: 'r/2', metadata_modified: null }
+            { id: 'r1', lastmod: '2026-08-27T12:00:00Z' },
+            { id: 'r/2', lastmod: null }
         ]);
         const res = await request(app).get('/sitemap-resources-1.xml');
         expect(res.status).toBe(200);
@@ -165,7 +227,7 @@ describe('resource sitemap chunk', () => {
 
     it('computes chunk offsets and 404s beyond the current resource set', async () => {
         catalogRead.listResourceSitemap
-            .mockResolvedValueOnce([{ id: 'r9', metadata_modified: null }])
+            .mockResolvedValueOnce([{ id: 'r9', lastmod: null }])
             .mockResolvedValueOnce([]);
         await request(app).get('/sitemap-resources-3.xml');
         expect(catalogRead.listResourceSitemap).toHaveBeenNthCalledWith(1, {
@@ -315,6 +377,66 @@ describe('resolvePage crawl responses', () => {
             'On CanQuery you can explore its interactive map and follow the original downloads.</p>');
         expect(page.body).toContain('/resources/r1');
         expect(page.body).toContain('/organizations/city-works');
+    });
+
+    it('opens every snapshot with one section nav that reaches both guide indexes', async () => {
+        const unavailable = new Proxy({}, { get() { throw new Error('Catalogue must not be accessed'); } });
+        const about = await resolvePage('/about', unavailable);
+        expect(about.body.match(/<nav aria-label="CanQuery sections"/g)).toHaveLength(1);
+        for (const path of ['/datasets', '/places', '/organizations', '/insights', '/blog', '/fr/blog', '/docs', '/about']) {
+            expect(about.body).toContain('<li><a href="' + path + '">');
+        }
+        expect(about.body.indexOf('<nav aria-label="CanQuery sections"')).toBeLessThan(about.body.indexOf('<h1>'));
+        const deps = {
+            getDatasetByIdOrName: jest.fn().mockResolvedValue({ id: 'd1', name: 'roads', title_en: 'Roads' }),
+            listResourcesForDataset: jest.fn().mockResolvedValue([])
+        };
+        const dataset = await resolvePage('/datasets/roads', deps);
+        expect(dataset.body.match(/<nav aria-label="CanQuery sections"/g)).toHaveLength(1);
+        const guide = await resolvePage('/fr/blog');
+        expect(guide.body.match(/<nav aria-label="CanQuery sections"/g)).toHaveLength(1);
+    });
+
+    it('keeps download-only resource pages out of the index while tables and maps stay in', async () => {
+        const base = { id: 'r1', name_en: 'Report', dataset_id: 'd1', dataset_name: 'limits', dataset_title_en: 'Limits',
+            url: 'https://example.test/report.pdf', places: [] };
+        const resolve = resource => resolvePage('/resources/r1', { getResourceById: jest.fn().mockResolvedValue(resource) });
+        const pdf = await resolve({ ...base, format: 'PDF' });
+        expect(pdf.status).toBe(200);
+        expect(pdf.meta.noindex).toBe(true);
+        expect(pdf.meta.canonical).toBe('https://canquery.com/resources/r1');
+        expect(pdf.body).toContain('href="https://example.test/report.pdf"');
+        expect((await resolve({ ...base, format: 'CSV' })).meta.noindex).toBeUndefined();
+        expect((await resolve({ ...base, format: 'PDF', map_provider: 'arcgis' })).meta.noindex).toBeUndefined();
+        expect((await resolve({ ...base, format: 'PDF', datastore_active: true })).meta.noindex).toBeUndefined();
+    });
+
+    it('lists the Top 100 datasets on /insights before JavaScript, and keeps the static copy when they cannot be read', async () => {
+        const links = jest.fn().mockResolvedValue([
+            { rank: 1, dataset_id: 'd1', dataset_name: 'roads', title_en: 'Roads', title_fr: 'Routes', downloads: 5042 },
+            { rank: 2, dataset_id: 'd2', dataset_name: null, title_en: null, title_fr: 'Routes du Nord', downloads: 7 }
+        ]);
+        const page = await resolvePage('/insights', { listTopDownloadLinks: links });
+        expect(page.status).toBe(200);
+        expect(page.body).toContain('<h2>Top 100 downloaded datasets</h2>');
+        expect(page.body).toContain('<a href="/datasets/roads">#1 · Roads</a> <span>5,042 downloads</span>');
+        expect(page.body).toContain('<a href="/datasets/d2">#2 · Routes du Nord</a> <span>7 downloads</span>');
+        expect(page.body).toContain('<h2>Related open data</h2><ul><li><a href="/">Search all datasets</a>');
+        expect(page.meta.title).toContain('Top 100');
+
+        catalogReadCache.clear();
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const failed = await resolvePage('/insights', { listTopDownloadLinks: jest.fn().mockRejectedValue(new Error('db')) });
+            expect(failed.status).toBe(200);
+            expect(failed.body).toContain('<h2>Explore CanQuery</h2>');
+            expect(failed.body).not.toContain('Top 100 downloaded datasets</h2>');
+        } finally {
+            warn.mockRestore();
+        }
+        const without = await resolvePage('/insights', {});
+        expect(without.status).toBe(200);
+        expect(without.body).toContain('<h1>Top downloaded Canadian datasets</h1>');
     });
 
     it('gives later resource pages their own snippet and a CollectionPage instead of a second Dataset', async () => {

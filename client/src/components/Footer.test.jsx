@@ -22,6 +22,26 @@ function envelopeRepo(stars) {
   };
 }
 
+describe('Footer navigation', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(envelopeRepo(null))));
+  });
+
+  test('links the catalogue hubs by their canonical paths and both guide indexes', () => {
+    render(<MemoryRouter><Footer /></MemoryRouter>);
+    const links = screen.getAllByRole('link');
+    const href = text => links.find((a) => a.textContent.trim() === text)?.getAttribute('href');
+    expect(href('Datasets')).toBe('/datasets');
+    expect(href('Insights')).toBe('/insights');
+    expect(href('Places')).toBe('/places');
+    expect(href('Data guides')).toBe('/blog');
+    expect(href('Guides des données')).toBe('/fr/blog');
+    expect(links.find((a) => a.textContent.trim() === 'Data guides').getAttribute('hreflang')).toBe('en');
+    expect(links.find((a) => a.textContent.trim() === 'Guides des données').getAttribute('hreflang')).toBe('fr');
+    expect(links.some((a) => a.getAttribute('href') === '/' && a.textContent.trim() === 'Datasets')).toBe(false);
+  });
+});
+
 describe('Footer GitHub star badge', () => {
   beforeEach(() => {
     vi.stubGlobal(

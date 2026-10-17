@@ -15,6 +15,8 @@ const topDownloads = async (lang = 'en') => {
     const items = rows.map((r) => ({
         rank: r.rank,
         dataset_id: r.dataset_id,
+        // The canonical slug, so links land on /datasets/<name> without a redirect.
+        dataset_name: r.dataset_name || null,
         title: { en: r.title_en, fr: r.title_fr },
         department: r.department,
         ministere: r.ministere,

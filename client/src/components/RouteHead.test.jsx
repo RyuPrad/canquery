@@ -123,6 +123,18 @@ test('aborts obsolete navigation and ignores a late response even when transport
   expect(document.title).toBe('Resource');
 });
 
+test('copies a robots directive from a 200 response and drops it on the next navigation', async () => {
+  fetch.mockImplementation(async path => response(path, path.startsWith('/resources') ? 'Download only' : 'Roads', 200,
+    path.startsWith('/resources') ? '<meta name="robots" content="noindex, follow">' : ''));
+  start();
+  fireEvent.click(screen.getByText('Resource'));
+  await waitFor(() => expect(document.title).toBe('Download only'));
+  expect(document.querySelector('meta[name=robots]').content).toBe('noindex, follow');
+  fireEvent.click(screen.getByText('Dataset'));
+  await waitFor(() => expect(document.title).toBe('Roads'));
+  expect(document.querySelector('meta[name=robots]')).toBeNull();
+});
+
 test.each([404, 503])('uses the server noindex response for status %i', async status => {
   fetch.mockResolvedValue(response('/datasets/roads', 'Unavailable', status, '<meta name="robots" content="noindex">'));
   start();
