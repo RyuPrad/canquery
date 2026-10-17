@@ -243,7 +243,7 @@ describe('resolveMeta routing', () => {
             listResourcesForDataset: jest.fn(),
         };
         const meta = await resolveMeta('/resources/r1', deps);
-        expect(meta.title).toBe('DS (CSV) - CanQuery');
+        expect(meta.title).toBe('DS (CSV table) - CanQuery');
         expect(meta.canonical).toBe('https://canquery.com/resources/r1');
         const breadcrumb = meta.jsonLd.find(item => item['@type'] === 'BreadcrumbList');
         expect(breadcrumb.itemListElement[1].item).toBe('https://canquery.com/datasets/dataset-slug');
@@ -311,8 +311,37 @@ describe('resolvePage crawl responses', () => {
         expect(page.status).toBe(200);
         expect(page.canonicalPath).toBe('/datasets/roads');
         expect(page.body).toContain('<h1>Road network</h1>');
+        expect(page.body).toContain('<p data-cq-lead="true">Road network is an open dataset from City Works with 1 file (GEOJSON). ' +
+            'On CanQuery you can explore its interactive map and follow the original downloads.</p>');
         expect(page.body).toContain('/resources/r1');
         expect(page.body).toContain('/organizations/city-works');
+    });
+
+    it('gives later resource pages their own snippet and a CollectionPage instead of a second Dataset', async () => {
+        const resources = Array.from({ length: 60 }, (_, i) => ({
+            id: 'r' + i, name_en: 'File ' + i, format: 'CSV', url: 'https://example.test/' + i + '.csv'
+        }));
+        const deps = {
+            getDatasetByIdOrName: jest.fn().mockResolvedValue({ id: 'd1', name: 'roads', title_en: 'Road network', notes_en: 'Public roads.', org_title_en: 'City Works' }),
+            listResourcesForDataset: jest.fn().mockResolvedValue(resources)
+        };
+        const first = await resolvePage('/datasets/roads', deps);
+        expect(first.meta.title).toBe('Road network (City Works): 60 tables (CSV) - CanQuery');
+        expect(first.meta.jsonLd.map(item => item['@type'])).toEqual(['Dataset', 'BreadcrumbList']);
+        const second = await resolvePage('/datasets/roads?page=2', deps);
+        expect(second.status).toBe(200);
+        expect(second.meta.title).toBe('Road network (City Works): 60 tables (CSV) (page 2) - CanQuery');
+        expect(second.meta.description.endsWith(' (page 2)')).toBe(true);
+        expect(second.meta.canonical).toBe('https://canquery.com/datasets/roads?page=2');
+        expect(second.meta.jsonLd.map(item => item['@type'])).toEqual(['CollectionPage', 'BreadcrumbList']);
+        const collection = second.meta.jsonLd[0];
+        expect(collection.url).toBe('https://canquery.com/datasets/roads?page=2');
+        expect(collection.isPartOf).toBe('https://canquery.com/datasets/roads');
+        expect(collection.mainEntity.numberOfItems).toBe(60);
+        expect(collection.mainEntity.itemListElement).toHaveLength(10);
+        expect(collection.mainEntity.itemListElement[0]).toMatchObject({ position: 51, url: 'https://canquery.com/resources/r50' });
+        expect(second.body).toContain('<h1>Road network (page 2)</h1>');
+        expect(second.body).toContain('href="/resources/r50"');
     });
 
     it('resolves organization pages with datasets and CollectionPage metadata', async () => {

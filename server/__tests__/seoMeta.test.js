@@ -9,8 +9,9 @@ test('keeps the recorded file language, format and map action in long resource s
     const resource = { id: 'r', name_en: 'Long official employer list name '.repeat(20),
         format: 'XLSX', language: ['fr'], ingest_status: 'ready', map_provider: 'arcgis' };
     const meta = seo.resourceMeta(resource);
-    expect(meta.title).toContain('(French, XLSX) - CanQuery');
+    expect(meta.title).toContain('(French, XLSX live table and map) - CanQuery');
     expect(meta.title.length).toBeLessThanOrEqual(80);
+    expect(meta.title).not.toContain('…');
     expect(meta.description).toMatch(/^Explore the interactive map\./);
     expect(meta.description).toContain('French XLSX table');
     expect(meta.description.length).toBeLessThanOrEqual(160);
@@ -82,18 +83,44 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         keywords_en: ['water', 'lakes', 'water'],
         keywords_fr: ['eau'],
         metadata_modified: '2026-01-02T10:00:00Z',
+        jurisdiction: 'federal',
     };
     const resources = [
         { id: 'r1', url: '/data/x/download/a.csv', format: 'CSV', name_en: '2025 data', name_fr: null },
         { id: 'r2', url: 'https://example.com/b.xlsx', format: 'XLSX', name_en: null, name_fr: null },
     ];
 
-    it('builds an English-default title and slug canonical', () => {
+    it('builds a title that states what CanQuery adds, and a slug canonical', () => {
         const meta = seo.datasetMeta(dataset, resources);
-        expect(meta.title).toBe('Water Quality - CanQuery');
+        expect(meta.title).toBe('Water Quality (Environment Canada): 2 tables (CSV, XLSX) - CanQuery');
         expect(meta.canonical).toBe('https://canquery.com/datasets/water-quality');
-        expect(meta.description).toContain('Lake and river measurements.');
-        expect(meta.description.length).toBeGreaterThanOrEqual(50);
+        expect(meta.description).toBe('Water Quality: 2 files (CSV, XLSX) from Environment Canada, updated Jan 2026. ' +
+            'Open as a table, filter, chart and export up to 10,000 rows as CSV on CanQuery.');
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+    });
+
+    it('keeps the publisher out of longer titles and leads with the capability phrase', () => {
+        const long = { ...dataset, title_en: 'Water quality of lakes and rivers in Canada' };
+        // The formats are kept only while the title still fits a search result.
+        expect(seo.datasetMeta(long, resources).title).toBe('Water quality of lakes and rivers in Canada: 2 tables - CanQuery');
+        expect(seo.datasetMeta({ ...long, title_en: 'Water quality of lakes in Canada' }, resources).title)
+            .toBe('Water quality of lakes in Canada: 2 tables (CSV, XLSX) - CanQuery');
+        const live = resources.map(resource => ({ ...resource, datastore_active: true }));
+        expect(seo.datasetMeta(long, [live[0], { ...resources[1], format: 'PDF' }]).title)
+            .toBe('Water quality of lakes and rivers in Canada: live table and 2 files - CanQuery');
+        expect(seo.datasetMeta(long, [{ id: 'r', url: 'https://example.com/a.pdf', format: 'PDF' }]).title)
+            .toBe('Water quality of lakes and rivers in Canada: PDF file - CanQuery');
+    });
+
+    it('spells a long federal title with its acronyms instead of a hard-coded override', () => {
+        const meta = seo.datasetMeta({
+            ...dataset, id: '90fed587-1364-4f33-a9ee-208181dc0b97', name: '90fed587-1364-4f33-a9ee-208181dc0b97',
+            title_en: 'Temporary Foreign Worker Program (TFWP): Positive Labour Market Impact Assessment (LMIA) Employers List',
+            org_title_en: 'Employment and Social Development Canada'
+        }, Array.from({ length: 48 }, (_, i) => ({ id: 'r' + i, format: i % 2 ? 'CSV' : 'XLSX', url: 'https://example.test/' + i })));
+        expect(meta.title).toBe('TFWP: Positive LMIA Employers List: 48 tables (CSV, XLSX) - CanQuery');
+        expect(meta.description).toContain('48 files from Employment and Social Development Canada, updated Jan 2026.');
+        expect(meta.jsonLd[0].name).toContain('Temporary Foreign Worker Program (TFWP)');
     });
 
     it('emits a schema.org Dataset with licence, keywords and absolute distributions', () => {
@@ -115,7 +142,21 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
 
     it('falls back to the French title when English is missing', () => {
         const meta = seo.datasetMeta({ ...dataset, title_en: null }, []);
-        expect(meta.title).toBe('Qualite de l eau - CanQuery');
+        expect(meta.title).toBe('Qualite de l eau (Environment Canada) - CanQuery');
+        expect(seo.datasetMeta({ ...dataset, title_en: null, org_title_en: null }, []).title).toBe('Qualite de l eau - CanQuery');
+    });
+
+    it('states no federal licence, landing page or publisher for a record from another portal', () => {
+        const municipal = { ...dataset, jurisdiction: null, provenance_sources: [] };
+        const ld = seo.buildDatasetJsonLd(municipal, resources);
+        expect(ld.license).toBeUndefined();
+        expect(ld.sameAs).toBeUndefined();
+        expect(ld.publisher).toBeUndefined();
+        expect(ld.creator).toEqual({ '@type': 'Organization', name: 'Environment Canada' });
+        const provincial = seo.buildDatasetJsonLd({ ...municipal, jurisdiction: 'provincial' }, resources);
+        expect(provincial.sameAs).toBe('https://open.canada.ca/data/en/dataset/d1');
+        expect(provincial.license).toBeUndefined();
+        expect(provincial.publisher).toBeUndefined();
     });
 
     it('uses the authoritative municipal source for licence, publisher and sameAs', () => {
@@ -206,11 +247,22 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
 
     it('falls back from generic resource names and appends a missing format once', () => {
         expect(seo.resourceMeta({ ...base, name_en: 'Dataset' }).title)
-            .toBe('Water Quality (CSV) - CanQuery');
+            .toBe('Water Quality (CSV table) - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'Measurements CSV' }).title)
-            .toBe('Measurements CSV - CanQuery');
+            .toBe('Measurements CSV (table) - CanQuery');
         expect(seo.resourceMeta({ ...base, name_en: 'English' }).title)
-            .toBe('Water Quality (CSV) - CanQuery');
+            .toBe('Water Quality (CSV table) - CanQuery');
+        expect(seo.resourceMeta({ ...base, name_en: 'Report', format: 'PDF' }).title)
+            .toBe('Report (PDF) - CanQuery');
+    });
+
+    it('names the table or map a resource becomes on CanQuery in its title', () => {
+        expect(seo.resourceMeta({ ...base, ingest_status: 'ready', language: 'en' }).title)
+            .toBe('Measurements (English, CSV live table) - CanQuery');
+        expect(seo.resourceMeta({ ...base, datastore_active: true, map_provider: 'arcgis' }).title)
+            .toBe('Measurements (CSV live table and map) - CanQuery');
+        expect(seo.resourceMeta({ ...base, format: 'GeoJSON', map_provider: 'canquery' }).title)
+            .toBe('Measurements (GEOJSON map) - CanQuery');
     });
 
     it('bounds long resource titles and descriptions', () => {
@@ -225,13 +277,30 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
     });
 
     test.each([
-        [{ ...base, ingest_status: 'ready' }, /query, filter, chart and export.*live CSV table/i],
-        [{ ...base, datastore_active: true }, /query, filter, chart and export.*live CSV table/i],
-        [base, /Explore this CSV resource.*automatically prepared table/i],
-        [{ ...base, format: 'PDF', map_provider: 'arcgis' }, /interactive map.*original PDF file/i],
-        [{ ...base, format: 'PDF' }, /metadata.*original PDF file/i]
+        [{ ...base, ingest_status: 'ready', ingested_row_count: 1200, ingested_columns: [{ id: 'a' }, { id: 'b' }] },
+            'Measurements: live CSV table with 1,200 rows and 2 fields. Filter, chart and export up to 10,000 rows as CSV.'],
+        [{ ...base, datastore_active: true }, 'Measurements: live CSV table. Filter, chart and export up to 10,000 rows as CSV.'],
+        [base, 'Measurements: CSV file (1 KB) you can open as a table, filter, chart and export up to 10,000 rows.'],
+        [{ ...base, format: 'PDF', map_provider: 'arcgis' }, 'Measurements: interactive map on CanQuery, plus the original PDF download (1 KB).'],
+        [{ ...base, format: 'PDF' }, 'Measurements: PDF file (1 KB). View metadata, licence and the direct download on CanQuery.']
     ])('writes truthful capability-specific copy for %#', (resource, expected) => {
-        expect(seo.resourceMeta(resource).description).toMatch(expected);
+        expect(seo.resourceMeta(resource).description).toBe(expected);
+    });
+
+    it('adds the publisher and record date, dropping them first when space runs out', () => {
+        const dated = { ...base, org_title_en: 'Environment Canada', last_modified: '2026-03-04T00:00:00Z' };
+        expect(seo.resourceMeta(dated).description).toBe('Measurements: CSV file (1 KB) you can open as a table, filter, ' +
+            'chart and export up to 10,000 rows. From Environment Canada, updated Mar 2026.');
+        const shorter = seo.resourceMeta({ ...dated, name_en: 'Measurements of a very long and specific indicator' }).description;
+        expect(shorter).toMatch(/\. Updated Mar 2026\.$/);
+        expect(shorter).not.toContain('From ');
+        expect(shorter.length).toBeLessThanOrEqual(160);
+        const shortest = seo.resourceMeta({ ...dated, name_en: 'Measurements of a very long and specific indicator series' }).description;
+        expect(shortest).toMatch(/10,000 rows\.$/);
+        expect(shortest.length).toBeLessThanOrEqual(160);
+        expect(seo.resourceDescription(dated, { lang: 'fr', max: 1200 })).toBe('Measurements : fichier CSV (1 ko) à ouvrir comme tableau pour ' +
+            'filtrer, créer des graphiques et exporter jusqu’à 10 000 lignes. Source : Environment Canada, mis à jour mars 2026.');
+        expect(seo.resourceDescription(dated, { lang: 'fr' })).toMatch(/lignes\. Mis à jour mars 2026\.$/);
     });
 
     it('emits the stable dataset and UUID resource hierarchy', () => {
@@ -388,13 +457,14 @@ describe('seoMeta - renderHtml injection', () => {
                 id: 'd',
                 name: 'n',
                 title_en: "Grants and Contributions ($'000)",
+                org_title_en: 'Amounts in $&thousands, per $`unit, paid in CA$$',
                 notes_en: 'Amounts in $&thousands, per $`unit, paid in CA$$.',
             },
             []
         );
         const html = seo.renderHtml(template, meta);
         expect(html).toContain('<title>Grants and Contributions ($&#39;000) - CanQuery</title>');
-        expect(html).toContain('Amounts in $&amp;thousands, per $`unit, paid in CA$$.');
+        expect(html).toContain('from Amounts in $&amp;thousands, per $`unit, paid in CA$$.');
         expect(html.match(/<title>/g)).toHaveLength(1);
         expect(html.match(/rel="canonical"/g)).toHaveLength(1);
         expect(html).not.toContain('<title>default</title>');
@@ -441,14 +511,97 @@ describe('seoMeta - content hygiene and organization pages', () => {
     });
 
     it('builds bounded organization metadata and CollectionPage schema', () => {
-        const meta = seo.organizationMeta({
+        const organization = {
             id: 'o1', name: 'city-works', title_en: 'City Works',
             dataset_count: 23, queryable_dataset_count: 4, mappable_dataset_count: 8
-        }, [{ id: 'd1', name: 'roads', title_en: 'Roads' }]);
-        expect(meta.title).toBe('City Works open data - CanQuery');
+        };
+        const meta = seo.organizationMeta(organization, [{ id: 'd1', name: 'roads', title_en: 'Roads' }]);
+        expect(meta.title).toBe('City Works: 23 open datasets, tables and maps - CanQuery');
+        expect(meta.description).toBe('City Works publishes 23 open datasets on CanQuery: 4 with live tables and 8 with maps. ' +
+            'Preview tables, export CSV and follow original downloads.');
         expect(meta.canonical).toBe('https://canquery.com/organizations/city-works');
         const collection = meta.jsonLd.find(item => item['@type'] === 'CollectionPage');
         expect(collection.mainEntity.numberOfItems).toBe(23);
         expect(collection.mainEntity.itemListElement[0].url).toBe('https://canquery.com/datasets/roads');
+        expect(collection.about['@type']).toBe('Organization');
+        const municipal = seo.organizationMeta({ ...organization, place_id: 'p1', place_name_en: 'Example' }, []);
+        expect(municipal.jsonLd[0].about['@type']).toBe('GovernmentOrganization');
+        expect(municipal.description).toContain(' Part of Example open data. ');
+        expect(seo.organizationMeta({ ...organization, government: true }, []).jsonLd[0].about['@type']).toBe('GovernmentOrganization');
+        expect(seo.organizationMeta({ ...organization, queryable_dataset_count: 0, mappable_dataset_count: 0 }, []).title)
+            .toBe('City Works: 23 open datasets - CanQuery');
+        expect(seo.organizationMeta({ ...organization, mappable_dataset_count: 0 }, []).title)
+            .toBe('City Works: 23 open datasets and tables - CanQuery');
+        expect(seo.organizationMeta({ ...organization, title_en: 'Innovation, Science and Economic Development Canada' }, []).title)
+            .toBe('Innovation, Science and Economic Development Canada: 23 open datasets - CanQuery');
+        expect(seo.organizationMeta({ ...organization, title_en: 'Innovation, Science and Economic Development Canada', dataset_count: 12345 }, []).title)
+            .toBe('Innovation, Science and Economic Development Canada open data - CanQuery');
+    });
+});
+
+describe('seoMeta - title compaction, paging and place names', () => {
+    it('collapses spelled-out acronyms and leading clauses before cutting words, never with an ellipsis', () => {
+        const long = 'Temporary Foreign Worker Program (TFWP): Positive Labour Market Impact Assessment (LMIA) Employers List';
+        expect(seo.compactTitle(long, 60)).toBe('TFWP: Positive LMIA Employers List');
+        expect(seo.compactTitle(long, 200)).toBe(long);
+        expect(seo.compactTitle('Ward Boundaries for 2021 October 18 General Election (2021) results and maps', 40))
+            .toBe('Ward Boundaries for 2021 October 18');
+        expect(seo.compactTitle('Building Permits - Active Permits with a very long qualifying tail', 40)).toBe('Building Permits - Active Permits');
+        expect(seo.compactTitle("Grants and Contributions ($'000) with a very long tail of words", 40)).toBe("Grants and Contributions ($'000)");
+        expect(seo.compactTitle('A lengthy publisher dataset title '.repeat(10), 21)).toBe('A lengthy publisher');
+        expect(seo.compactTitle('Supercalifragilisticexpialidocious statistics', 12)).toBe('Supercalifr…');
+    });
+
+    it('prefers titles that fit a search result, then the hard bound, then a compacted last resort', () => {
+        expect(seo.fitTitle(['A'.repeat(70), 'B'.repeat(65), 'C'.repeat(50)])).toBe('C'.repeat(50));
+        expect(seo.fitTitle(['A'.repeat(70), 'B'.repeat(65)])).toBe('B'.repeat(65));
+        expect(seo.fitTitle(['Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron']).length).toBeLessThanOrEqual(69);
+        expect(seo.fitTitle([])).toBe('Open data');
+        // A tier with the facts is kept while any of its candidates fits the hard bound.
+        expect(seo.fitTitleTiers([['A'.repeat(70), 'B'.repeat(65)], ['C'.repeat(20)]])).toBe('B'.repeat(65));
+        expect(seo.fitTitleTiers([['A'.repeat(70)], ['C'.repeat(20)]])).toBe('C'.repeat(20));
+        expect(seo.fitTitleTiers([['A'.repeat(70)], ['B'.repeat(80)]]).length).toBeLessThanOrEqual(69);
+    });
+
+    it('labels later pages in the title and description', () => {
+        const meta = seo.pagedMeta({ title: 'Roads - CanQuery', description: 'D'.repeat(160) }, 3);
+        expect(meta.title).toBe('Roads (page 3) - CanQuery');
+        expect(meta.description.endsWith(' (page 3)')).toBe(true);
+        expect(meta.description.length).toBeLessThanOrEqual(160);
+        expect(seo.pagedMeta({ title: 'Roads - CanQuery', description: 'D' }, 1).title).toBe('Roads - CanQuery');
+        const long = seo.pagedMeta({ title: 'W'.repeat(69) + ' - CanQuery', description: 'D' }, 12);
+        expect(long.title.length).toBeLessThanOrEqual(80);
+        expect(long.title.endsWith(' (page 12) - CanQuery')).toBe(true);
+    });
+
+    it('names the province of regions and municipalities and counts datasets and maps in place titles', () => {
+        const ancestors = [
+            { id: 'ca', slug: 'canada', kind: 'country', name_en: 'Canada' },
+            { id: 'on', slug: 'ontario', kind: 'province', name_en: 'Ontario' },
+            { id: 'p', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa' }
+        ];
+        const meta = seo.placeMeta({ id: 'p', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa', type_en: 'City',
+            dataset_count: 200, mappable_dataset_count: 150, ancestors }, []);
+        expect(meta.title).toBe('Oshawa, Ontario open data: 200 datasets and 150 maps - CanQuery');
+        expect(meta.description).toBe('200 open datasets for Oshawa, Ontario (City): 150 with interactive maps. ' +
+            'Browse by publisher and format, preview tables and export CSV on CanQuery.');
+        expect(meta.jsonLd[1].name).toBe('Oshawa open data');
+        const withTables = seo.placeMeta({ id: 'p', slug: 'oka-qc', kind: 'municipality', name_en: 'Oka',
+            dataset_count: 9, mappable_dataset_count: 5, ancestors: [ancestors[0], { id: 'qc', slug: 'quebec', kind: 'province', name_en: 'Quebec' }] }, [], { queryable: 4 });
+        expect(withTables.title).toBe('Oka, Quebec open data: 9 datasets, 4 live tables and 5 maps - CanQuery');
+        expect(withTables.description).toContain(': 5 with interactive maps, 4 with live tables.');
+        // The live-table count stays in the description when the title would overflow a search result.
+        const longer = seo.placeMeta({ id: 'p', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa',
+            dataset_count: 200, mappable_dataset_count: 150, ancestors }, [], { queryable: 40 });
+        expect(longer.title).toBe('Oshawa, Ontario open data: 200 datasets and 150 maps - CanQuery');
+        expect(longer.description).toContain(', 40 with live tables.');
+        expect(seo.placeMeta({ id: 'on', slug: 'ontario', kind: 'province', name_en: 'Ontario', dataset_count: 12085, ancestors: ancestors.slice(0, 2) }, []).title)
+            .toBe('Ontario open data: 12,085 datasets - CanQuery');
+        expect(seo.placeMeta({ id: 'p0', slug: 'empty', kind: 'municipality', name_en: 'Empty', dataset_count: 0, ancestors }, []).title)
+            .toBe('Empty, Ontario open data - CanQuery');
+    });
+
+    it('describes the About page without repeating the site name', () => {
+        expect(seo.staticMeta('about').title).toBe('About - CanQuery');
     });
 });

@@ -1,6 +1,7 @@
 const seo = require('./seoMeta');
 const { listArticles } = require('./blogContent');
 const { classifyResource } = require('./resourceCapabilities');
+const catalogFacts = require('./catalogFacts');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { hostedRoute, pageOverride } = require('../extensions');
 
@@ -54,9 +55,14 @@ function paginationLinks(pagination) {
         (hasMore ? ' ' + pathLink(pagePath(path, page + 1), String(page + 1)) + ' ' + pathLink(pagePath(path, page + 1), 'Next') : '') + '</nav>';
 }
 
-function shell({ breadcrumbs, title, summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
+// `lead` is CanQuery's own paragraph about the record (facts and what a visitor
+// can do here); the publisher's text follows it as `summary`. Later pages of a
+// paginated list name their page in the heading so no two pages read alike.
+function shell({ breadcrumbs, title, lead = '', summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
+    const heading = pagination && pagination.page > 1 ? title + ' (page ' + pagination.page + ')' : title;
     return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' +
-        breadcrumb(breadcrumbs) + '<article><h1>' + text(title) + '</h1>' +
+        breadcrumb(breadcrumbs) + '<article><h1>' + text(heading) + '</h1>' +
+        (lead ? '<p data-cq-lead="true">' + text(lead) + '</p>' : '') +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
         factList(facts) + overviewHtml + linkList('Official sources and licences', sources) + linkList(linksTitle, links, pagination ? PAGE_SIZE : MAX_LINKS) + paginationLinks(pagination) +
         linkList('Related open data', relatedLinks) + linkList('Data guides', guides) + '</article></main>';
@@ -103,14 +109,35 @@ function overviewSnapshot(presentation, dataset = false) {
     ]) + table + '</section>';
 }
 
+// CanQuery's own paragraph about a dataset: what it holds and what a visitor
+// can do with it here, built only from catalogue facts.
+function datasetLead(info) {
+    const title = info.title || 'This dataset';
+    const files = info.fileCount
+        ? ' with ' + catalogFacts.formatCount(info.fileCount) + ' ' + catalogFacts.plural(info.fileCount, 'file') +
+            (info.formats.length ? ' (' + info.formats.slice(0, 5).join(', ') + ')' : '')
+        : '';
+    const intro = title + ' is an open dataset' + (info.publisher ? ' from ' + info.publisher : '') + files +
+        (info.updatedDate ? '; catalogue record updated ' + info.updatedDate : '') + '.';
+    const actions = [];
+    if (info.queryable) actions.push('preview ' + (info.queryable === 1 ? 'its live table' : catalogFacts.formatCount(info.queryable) + ' live tables'));
+    if (info.loadable) actions.push('open ' + (info.loadable === 1 ? 'its CSV or Excel file as a table' : catalogFacts.formatCount(info.loadable) + ' CSV or Excel files as tables'));
+    if (info.queryable || info.loadable) actions.push('filter, chart and export up to 10,000 rows as CSV');
+    if (info.mapped) actions.push('explore ' + (info.mapped === 1 ? 'its interactive map' : catalogFacts.formatCount(info.mapped) + ' interactive maps'));
+    actions.push(info.fileCount ? 'follow the original downloads' : 'read the publisher metadata and licence');
+    return intro + ' On CanQuery you can ' + catalogFacts.joinList(actions) + '.' +
+        (info.bilingual ? ' Files are available in English and French.' : '');
+}
+
 function datasetSnapshot(dataset, resources, pagination) {
     const presentation = datasetPresentation(dataset, resources);
+    const info = catalogFacts.datasetFacts(dataset, resources);
     const title = seo.plainText(dataset.title_en) || seo.plainText(dataset.title_fr) || dataset.name || dataset.id;
     const organization = seo.plainText(dataset.org_title_en) || seo.plainText(dataset.org_title_fr);
     const links = (pagination?.items || (resources || []).slice(0, MAX_LINKS)).map(resource => ({
         path: '/resources/' + encodeURIComponent(resource.id),
         label: resourcePresentation({ ...resource, dataset_title_en: dataset.title_en, dataset_title_fr: dataset.title_fr }).title.en,
-        detail: resource.format || classifyResource(resource).capability
+        detail: resource.format || catalogFacts.accessLabel(classifyResource(resource).capability, { mapped: catalogFacts.isMapped(resource) })
     }));
     const placeLinks = (Array.isArray(dataset.places) ? dataset.places : []).map(place => ({
         path: '/places/' + encodeURIComponent(place.slug || place.id),
@@ -124,6 +151,7 @@ function datasetSnapshot(dataset, resources, pagination) {
         pagination,
         breadcrumbs: [{ label: 'Datasets', path: '/datasets' }, { label: title }],
         title,
+        lead: datasetLead(info),
         summary: presentation.summary.en,
         overviewHtml: overviewSnapshot(presentation, true),
         sources: sourceLinks(dataset),
@@ -160,6 +188,7 @@ function resourceSnapshot(resource) {
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const organization = seo.plainText(resource.org_title_en) || seo.plainText(resource.org_title_fr);
     const capability = classifyResource(resource).capability;
+    const info = catalogFacts.resourceFacts(resource);
     const links = [];
     if (organization && resource.org_name) {
         links.push({ path: '/organizations/' + encodeURIComponent(resource.org_name), label: organization });
@@ -184,7 +213,9 @@ function resourceSnapshot(resource) {
         guides: resource.dataset_id || resource.dataset_name ? listArticles({ dataset: resource.dataset_id || resource.dataset_name }).map(article => ({ path: article.path, label: article.title })) : [],
         facts: [
             { label: 'Format', value: resource.format || 'File' },
-            { label: 'Access', value: capability },
+            { label: 'Access', value: catalogFacts.accessLabel(capability, { mapped: info.mapped }) },
+            info.rows != null ? { label: 'Rows', value: catalogFacts.formatCount(info.rows) } : null,
+            info.fields != null ? { label: 'Fields', value: catalogFacts.formatCount(info.fields) } : null,
             resource.size_bytes ? { label: 'Size', value: Number(resource.size_bytes).toLocaleString('en-CA') + ' bytes' } : null,
             resource.last_modified ? { label: 'Publisher-reported update', value: new Date(resource.last_modified).toLocaleDateString('en-CA') } : null
         ],

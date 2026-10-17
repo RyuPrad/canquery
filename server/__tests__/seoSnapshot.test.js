@@ -111,12 +111,40 @@ describe('server-rendered crawl snapshots', () => {
             places: [{ slug: 'example-on', name_en: 'Example' }]
         }, resources);
         expect(html).toContain('<h1>Road network</h1>');
+        expect(html).toContain('<p data-cq-lead="true">Road network is an open dataset from City with 30 files (CSV). ' +
+            'On CanQuery you can open 30 CSV or Excel files as tables, filter, chart and export up to 10,000 rows as CSV ' +
+            'and follow the original downloads.</p>');
         expect(html).toContain('Public &amp; maintained roads.');
         expect(html).not.toContain('<script>');
         expect(html).not.toContain('<img');
         expect((html.match(/href="\/resources\//g) || [])).toHaveLength(12);
         expect(html).toContain('href="/organizations/city-works"');
         expect(html).toContain('href="/places/example-on"');
+    });
+
+    it('describes access in reader words and never leaks capability codes', () => {
+        const ready = snapshot.resourceSnapshot({ id: 'r', name_en: 'Permits', format: 'CSV', url: 'https://example.test/p.csv',
+            ingest_status: 'ready', ingested_row_count: 1200, ingested_columns: [{ id: 'a', type: 'TEXT' }, { id: 'b', type: 'TEXT' }] });
+        expect(ready).toContain('<dt>Access</dt><dd>Live table (filter, chart, export)</dd>');
+        expect(ready).toContain('<dt>Rows</dt><dd>1,200</dd>');
+        expect(ready).toContain('<dt>Fields</dt><dd>2</dd>');
+        const loadable = snapshot.resourceSnapshot({ id: 'r', name_en: 'Permits', format: 'XLSX', url: 'https://example.test/p.xlsx', map_provider: 'arcgis' });
+        expect(loadable).toContain('<dd>Table on demand (prepared when opened) and interactive map</dd>');
+        const download = snapshot.resourceSnapshot({ id: 'r', name_en: 'Report', format: 'PDF', url: 'https://example.test/p.pdf' });
+        expect(download).toContain('<dd>Original download only</dd>');
+        for (const html of [ready, loadable, download]) {
+            expect(html).not.toMatch(/<dd>(?:ingestable|file-only|ingested|datastore|mapped)<\/dd>/);
+        }
+        const dataset = snapshot.datasetSnapshot({ id: 'd', name: 'x', title_en: 'X' }, [{ id: 'r1', name_en: 'Table', format: null, url: 'https://e/t.csv' }]);
+        expect(dataset).toContain('<span>Original download only</span>');
+    });
+
+    it('names later pages in the heading only', () => {
+        const dataset = { id: 'd', name: 'x', title_en: 'Roads' };
+        const resources = Array.from({ length: 60 }, (_, i) => ({ id: 'r' + i, name_en: 'File ' + i, format: 'CSV' }));
+        const { pageSlice } = require('../services/catalogPagination');
+        expect(snapshot.datasetSnapshot(dataset, resources, pageSlice(resources.slice(50), 2, '/datasets/x'))).toContain('<h1>Roads (page 2)</h1>');
+        expect(snapshot.datasetSnapshot(dataset, resources, pageSlice(resources, 1, '/datasets/x'))).toContain('<h1>Roads</h1>');
     });
 
     it('renders one semantic h1 and canonical internal links for organizations', () => {

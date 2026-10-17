@@ -6,6 +6,7 @@
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { classifyResource } = require('./resourceCapabilities');
 const { plainText, collapse, truncate, resourceLanguages } = require('./catalogText');
+const facts = require('./catalogFacts');
 const { hostedRoutes, hostedRoute, pageOverride } = require('../extensions');
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
@@ -19,6 +20,11 @@ const TITLE_MAX = 80;
 const DESCRIPTION_MAX = 160;
 const TITLE_SUFFIX = ' - CanQuery';
 const DATASET_DESCRIPTION_MIN = 50;
+// Search results show about 60 characters of a title. Candidates that fit are
+// preferred; longer ones stay whole up to the hard bound and are compacted at
+// natural boundaries beyond it, never cut mid-word with an ellipsis.
+const TITLE_SOFT = 60;
+const TITLE_HARD = TITLE_MAX - TITLE_SUFFIX.length;
 
 function escapeHtml(value) {
     return String(value == null ? '' : value)
@@ -54,6 +60,111 @@ function pick(en, fr) {
 function siteTitle(value) {
     return truncate(collapse(value) || 'Open data', TITLE_MAX - TITLE_SUFFIX.length) + TITLE_SUFFIX;
 }
+
+// Function words skipped when matching a phrase's initials against its acronym.
+const ACRONYM_SKIP = new Set(['a', 'an', 'and', 'at', 'by', 'de', 'des', 'du', 'et', 'for', 'from', 'in', 'la', 'le',
+    'les', 'of', 'on', 'or', 'par', 'pour', 'sur', 'the', 'to', 'à']);
+
+// "Labour Market Impact Assessment (LMIA) list" -> "LMIA list": a parenthetical
+// acronym replaces the shortest preceding phrase whose initials spell it.
+// Digit-only and format tokens such as "(2021)" or "(CSV)" match no phrase.
+function collapseAcronyms(value, max) {
+    let text = value;
+    const re = /\(([A-Z][A-Z0-9]{1,9})\)/g;
+    let match;
+    while (text.length > max && (match = re.exec(text))) {
+        const acronym = match[1];
+        const head = text.slice(0, match.index).trimEnd();
+        const words = head ? head.split(' ') : [];
+        let replaced = false;
+        for (let start = words.length - 1; start >= 0 && words.length - start <= 12; start -= 1) {
+            const phrase = words.slice(start);
+            const initials = phrase
+                .filter(word => !ACRONYM_SKIP.has(word.toLowerCase().replace(/[^a-zà-ÿ]/g, '')))
+                .map(word => (word.match(/[A-Za-zÀ-ÿ0-9]/) || [''])[0])
+                .join('')
+                .toUpperCase();
+            if (phrase.length >= 2 && initials === acronym) {
+                const before = words.slice(0, start).join(' ');
+                text = (before ? before + ' ' : '') + acronym + text.slice(match.index + match[0].length);
+                re.lastIndex = (before ? before.length + 1 : 0) + acronym.length;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) re.lastIndex = match.index + match[0].length;
+    }
+    return text;
+}
+
+const TITLE_SEPARATOR_RE = /:\s|\s[-–—|]\s/g;
+
+// Shorten a title to `max` characters without a mid-string ellipsis: collapse
+// spelled-out acronyms, then keep the leading clause before a natural
+// separator, then cut at a word boundary; `truncate` only as a last resort.
+function compactTitle(value, max) {
+    const text = collapse(value);
+    if (text.length <= max) return text;
+    const collapsed = collapseAcronyms(text, max);
+    if (collapsed.length <= max) return collapsed;
+    let best = null;
+    for (const match of collapsed.matchAll(TITLE_SEPARATOR_RE)) {
+        const head = collapsed.slice(0, match.index).trim();
+        if (head.length >= 24 && head.length <= max && (!best || head.length > best.length)) best = head;
+    }
+    if (best) return best;
+    let cut = collapsed.slice(0, max + 1).replace(/\s+\S*$/, '');
+    if ((cut.match(/\(/g) || []).length > (cut.match(/\)/g) || []).length) cut = cut.slice(0, cut.lastIndexOf('('));
+    cut = cut.trim().replace(/[\s,;:(–—-]+$/, '');
+    // A cut never ends on a dangling function word ("… with a").
+    let trailing;
+    while ((trailing = cut.match(/\s+(a|an|and|at|by|de|des|du|et|for|from|in|la|le|les|of|on|or|the|to|with)$/i))) {
+        cut = cut.slice(0, cut.length - trailing[0].length).replace(/[\s,;:(–—-]+$/, '');
+    }
+    const minimum = Math.max(12, Math.min(24, Math.floor(max * 0.75)));
+    return cut.length >= minimum && cut.length <= max ? cut : truncate(collapsed, max);
+}
+
+// Prefer the first candidate that fits a search-result title, then the first
+// within the hard bound, then a compacted version of the last candidate.
+function fitTitle(candidates, { soft = TITLE_SOFT, hard = TITLE_HARD } = {}) {
+    const list = (candidates || []).map(collapse).filter(Boolean);
+    return list.find(candidate => candidate.length <= soft) ||
+        list.find(candidate => candidate.length <= hard) ||
+        compactTitle(list[list.length - 1] || 'Open data', hard);
+}
+
+// Candidates come in tiers of decreasing information (with the facts a
+// searcher wants, then without). A tier is abandoned only when none of its
+// candidates fits the hard bound, so a bare title never beats a longer one
+// that still says what the page offers.
+function fitTitleTiers(tiers, { soft = TITLE_SOFT, hard = TITLE_HARD } = {}) {
+    for (const tier of tiers) {
+        const list = (tier || []).map(collapse).filter(Boolean);
+        const found = list.find(candidate => candidate.length <= soft) || list.find(candidate => candidate.length <= hard);
+        if (found) return found;
+    }
+    return fitTitle(tiers.flat(), { soft, hard });
+}
+
+// Later pages of a paginated page carry "(page N)" in their title and
+// description, so they never duplicate page one's snippet.
+function pagedMeta(meta, page) {
+    if (!(page > 1)) return meta;
+    const label = ' (page ' + page + ')';
+    const title = meta.title || 'Open data' + TITLE_SUFFIX;
+    const base = title.endsWith(TITLE_SUFFIX) ? title.slice(0, -TITLE_SUFFIX.length) : title;
+    const body = base.length + label.length <= TITLE_HARD ? base : compactTitle(base, TITLE_HARD - label.length);
+    return {
+        ...meta,
+        title: body + label + TITLE_SUFFIX,
+        description: truncate(meta.description || DEFAULT_DESC, DESCRIPTION_MAX - label.length) + label
+    };
+}
+
+// Publishers bound to a place or mirrored from the federal portal are
+// governments; anything else is described as an organization.
+const organizationType = row => (row && (row.place_id || row.government) ? 'GovernmentOrganization' : 'Organization');
 
 const GENERIC_RESOURCE_NAMES = new Set([
     'data', 'dataset', 'download', 'english', 'en', 'file', 'french', 'fr',
@@ -117,9 +228,33 @@ function resourceTitleBase(resource, max = null, lang = 'en') {
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
     if (max && datasetTitle && (isPeriodName(name) || qualifier)) {
         const period = ' — ' + (qualifier || name);
-        base = truncate(datasetTitle, Math.max(12, max - suffix.length - period.length)) + period;
+        base = compactTitle(datasetTitle, Math.max(12, max - suffix.length - period.length)) + period;
     }
-    return (max ? truncate(base, Math.max(12, max - suffix.length)) : base) + suffix;
+    return (max ? compactTitle(base, Math.max(12, max - suffix.length)) : base) + suffix;
+}
+
+// The <title> of a resource page: the subject plus a qualifier that says what
+// the file is on CanQuery, such as "(French, XLSX table)", "(CSV live table
+// and map)" or "(English, PDF)". The qualifier never follows a cut-off subject.
+function resourceTitle(resource) {
+    const name = pick(resource.name_en, resource.name_fr);
+    const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
+    const qualifier = downloadName(name, resource.format)?.qualifier;
+    const info = facts.resourceFacts(resource);
+    const subject = resourceSubject(resource) || 'Resource';
+    const languages = info.languages.map(code => (code === 'fr' ? 'French' : 'English'));
+    const formatPart = [titleContainsFormat(subject, info.format) ? '' : info.format, facts.capabilityWord(info)]
+        .filter(Boolean).join(' ');
+    const suffixParts = [...languages, formatPart].filter(Boolean);
+    const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
+    let base;
+    if (datasetTitle && (isPeriodName(name) || qualifier)) {
+        const period = ' — ' + (qualifier || name);
+        base = compactTitle(datasetTitle, Math.max(12, TITLE_HARD - suffix.length - period.length)) + period;
+    } else {
+        base = compactTitle(subject, Math.max(12, TITLE_HARD - suffix.length));
+    }
+    return base + suffix + TITLE_SUFFIX;
 }
 
 function buildBreadcrumbJsonLd(items) {
@@ -239,7 +374,7 @@ const STATIC_META = {
         path: '/faq',
     },
     about: {
-        title: 'About CanQuery - CanQuery',
+        title: 'About - CanQuery',
         description: 'Learn about CanQuery, an independent, open-source project for finding and working with Canadian public data, and how to contact support.',
         path: '/about',
     },
@@ -298,21 +433,10 @@ function absoluteHttpUrl(value) {
     }
 }
 
-function humanFileSize(value) {
-    if (value == null || value === '') return null;
-    const bytes = Number(value);
-    if (!Number.isFinite(bytes) || bytes < 0) return null;
-    if (bytes < 1024) return Math.round(bytes) + ' bytes';
-    const units = ['KB', 'MB', 'GB', 'TB'];
-    let amount = bytes / 1024;
-    let unit = units[0];
-    for (let i = 1; i < units.length && amount >= 1024; i += 1) {
-        amount /= 1024;
-        unit = units[i];
-    }
-    return (amount >= 10 ? amount.toFixed(0) : amount.toFixed(1)).replace(/\.0$/, '') + ' ' + unit;
-}
+const humanFileSize = facts.humanFileSize;
 
+// The long-form text for the Dataset schema: the publisher's notes, with
+// generated facts added only when the notes are too short to stand alone.
 function datasetDescription(dataset, resources, max = 5000) {
     const name = pick(dataset.title_en, dataset.title_fr) || 'This dataset';
     const notes = pick(dataset.notes_en, dataset.notes_fr);
@@ -359,13 +483,16 @@ function buildDatasetJsonLd(dataset, resources) {
     if (alternateName && alternateName.toLocaleLowerCase('fr-CA') !== name.toLocaleLowerCase('fr-CA')) {
         ld.alternateName = alternateName;
     }
+    // Only records mirrored from the federal portal may fall back to its
+    // landing page, licence and publisher; a municipal record states what its
+    // own source recorded, or nothing.
     const source = sourceForDataset(dataset);
-    ld.license = source && source.license_url
-        ? source.license_url
-        : 'https://open.canada.ca/en/open-government-licence-canada';
-    ld.sameAs = source && source.landing_url
-        ? source.landing_url
-        : 'https://open.canada.ca/data/en/dataset/' + dataset.id;
+    const federalPortal = dataset.jurisdiction != null || Boolean(source && source.id === 'open-canada');
+    const federalGovernment = dataset.jurisdiction === 'federal';
+    if (source && source.license_url) ld.license = source.license_url;
+    else if (federalGovernment) ld.license = 'https://open.canada.ca/en/open-government-licence-canada';
+    if (source && source.landing_url) ld.sameAs = source.landing_url;
+    else if (federalPortal) ld.sameAs = 'https://open.canada.ca/data/en/dataset/' + dataset.id;
     const keywords = []
         .concat(dataset.keywords_en || [], dataset.keywords_fr || [])
         .map(collapse)
@@ -379,7 +506,7 @@ function buildDatasetJsonLd(dataset, resources) {
     if (org) {
         ld.creator = { '@type': 'Organization', name: org };
     }
-    const publisher = source ? pick(source.name_en, source.name_fr) : 'Government of Canada';
+    const publisher = source ? pick(source.name_en, source.name_fr) : federalGovernment ? 'Government of Canada' : '';
     if (publisher) ld.publisher = { '@type': 'Organization', name: publisher };
     const places = (Array.isArray(dataset.places) ? dataset.places : [])
         .map(place => pick(place.name_en, place.name_fr))
@@ -435,59 +562,170 @@ function staticMeta(type, pathname) {
     };
 }
 
-function datasetMeta(dataset, resources) {
-    const title = pick(dataset.title_en, dataset.title_fr) || 'Dataset';
-    const description = datasetDescription(dataset, resources, DESCRIPTION_MAX);
-    const slug = dataset.name || dataset.id;
-    // Keep the official catalogue name in the page and Dataset schema while
-    // giving this frequently searched, long-titled dataset a complete snippet.
-    const snippet = dataset.id === '90fed587-1364-4f33-a9ee-208181dc0b97' ? {
-        title: 'Positive LMIA Employer Lists (TFWP) - CanQuery',
-        description: 'Browse official positive LMIA employer lists by quarter and language, with CSV and Excel downloads from Canada’s open data portal.'
-    } : null;
-    return {
-        title: snippet ? snippet.title : siteTitle(title),
-        description: snippet ? snippet.description : description,
-        canonical: SITE_URL + '/datasets/' + encodeURIComponent(slug),
-        ogType: 'website',
-        jsonLd: [
-            buildDatasetJsonLd(dataset, resources),
-            buildBreadcrumbJsonLd([
-                { name: 'Datasets', path: '/datasets' },
-                { name: title, path: '/datasets/' + encodeURIComponent(slug) }
-            ])
+// The dataset <title> leads with what CanQuery adds ("table and 2 files") so
+// the result reads differently from the publisher's own page. The publisher
+// joins short titles, which are the ones several publishers tend to share.
+function datasetTitle(title, info) {
+    const base = compactTitle(title, TITLE_SOFT);
+    const publisher = info.publisher && collapse(title).length < 25 ? ' (' + info.publisher + ')' : '';
+    const phrase = facts.capabilityPhrase(info);
+    const shortPhrase = facts.capabilityPhrase(info, { short: true });
+    return fitTitleTiers([
+        [
+            phrase ? base + publisher + ': ' + phrase : '',
+            shortPhrase ? base + publisher + ': ' + shortPhrase : '',
+            phrase && publisher ? base + ': ' + phrase : '',
+            shortPhrase && publisher ? base + ': ' + shortPhrase : ''
         ],
+        [base + publisher, base]
+    ]);
+}
+
+// The meta description states the facts a searcher compares results on: file
+// count and formats, publisher, record date and what they can do here. Parts
+// are dropped from the least to the most useful until the text fits.
+function datasetSnippet(title, info) {
+    // The title already heads the result; it opens the description only when
+    // it fits whole, never as a cut-off fragment.
+    const name = collapse(title).length <= 48 ? collapse(title) : '';
+    const files = info.fileCount ? facts.formatCount(info.fileCount) + ' ' + facts.plural(info.fileCount, 'file') : '';
+    const build = ({ withTitle, withFormats, withDate, withBilingual }) => {
+        const titled = withTitle && name;
+        const formats = withFormats && info.topFormats.length ? ' (' + info.topFormats.join(', ') + ')' : '';
+        const from = info.publisher ? ' from ' + info.publisher : '';
+        const updated = withDate && info.updated ? ', updated ' + info.updated : '';
+        const record = titled ? 'catalogue record' : 'Catalogue record';
+        const head = (titled ? name + ': ' : '') + (files ? files + formats : record) + from + updated + '.';
+        const action = files
+            ? facts.capabilitySentence(info) + ' on CanQuery.'
+            : 'View metadata, publisher and licence on CanQuery.';
+        const bilingual = withBilingual && info.bilingual ? ' Files in English and French.' : '';
+        return head + ' ' + action + bilingual;
+    };
+    const attempts = [
+        { withTitle: true, withFormats: true, withDate: true, withBilingual: true },
+        { withTitle: true, withFormats: true, withDate: true, withBilingual: false },
+        { withTitle: true, withFormats: false, withDate: true, withBilingual: false },
+        { withTitle: false, withFormats: false, withDate: true, withBilingual: false },
+        { withTitle: false, withFormats: false, withDate: false, withBilingual: false }
+    ];
+    for (const flags of attempts) {
+        const text = build(flags);
+        if (text.length <= DESCRIPTION_MAX) return text;
+    }
+    return truncate(build(attempts[attempts.length - 1]), DESCRIPTION_MAX);
+}
+
+// Page two onwards of a dataset's resource list describes that page, not the
+// whole dataset, so the Dataset schema appears once, on the canonical page.
+function buildDatasetPageJsonLd(dataset, resources, pageItems, page, datasetUrl) {
+    const title = pick(dataset.title_en, dataset.title_fr) || 'Dataset';
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'CollectionPage',
+        name: title + ' (page ' + page + ')',
+        url: datasetUrl + '?page=' + page,
+        isPartOf: datasetUrl,
+        mainEntity: {
+            '@type': 'ItemList',
+            numberOfItems: (resources || []).length,
+            itemListElement: (pageItems || []).map((resource, index) => ({
+                '@type': 'ListItem',
+                position: index + 1,
+                name: resourceTitleBase({ ...resource, dataset_title_en: dataset.title_en, dataset_title_fr: dataset.title_fr }),
+                url: SITE_URL + '/resources/' + encodeURIComponent(resource.id)
+            }))
+        }
     };
 }
 
+function datasetMeta(dataset, resources, { page = 1, pageItems = null } = {}) {
+    const title = pick(dataset.title_en, dataset.title_fr) || 'Dataset';
+    const info = facts.datasetFacts(dataset, resources);
+    const slug = dataset.name || dataset.id;
+    const datasetUrl = SITE_URL + '/datasets/' + encodeURIComponent(slug);
+    const breadcrumb = buildBreadcrumbJsonLd([
+        { name: 'Datasets', path: '/datasets' },
+        { name: title, path: '/datasets/' + encodeURIComponent(slug) }
+    ]);
+    return {
+        title: datasetTitle(title, info) + TITLE_SUFFIX,
+        description: datasetSnippet(title, info),
+        canonical: datasetUrl,
+        ogType: 'website',
+        jsonLd: page > 1
+            ? [buildDatasetPageJsonLd(dataset, resources, pageItems, page, datasetUrl), breadcrumb]
+            : [buildDatasetJsonLd(dataset, resources), breadcrumb],
+    };
+}
+
+// The resource description names the subject, says what the file is and what
+// a visitor can do with it on CanQuery, then the publisher and record date.
+// Variants drop the publisher, the date, the size and the counts, in that
+// order, until the text fits; only then is it truncated.
 function resourceDescription(resource, { lang = 'en', max = DESCRIPTION_MAX } = {}) {
-    const capability = classifyResource(resource).capability;
-    const subject = resourceSubject(resource) || 'open data';
-    const language = resourceLanguages(resource).map(lang => lang === 'fr' ? 'French' : 'English').join('/');
-    const format = [language, plainText(resource.format).toUpperCase()].filter(Boolean).join(' ');
-    const mapped = Boolean(resource.map_provider || resource.map?.available);
-    let action;
-    if (capability === 'datastore' || capability === 'ingested') {
-        action = 'Query, filter, chart and export this live ' + (format ? format + ' ' : '') + 'table';
-    } else if (capability === 'ingestable') {
-        action = 'Explore this ' + (format ? format + ' ' : '') + 'resource in an automatically prepared table';
-    } else {
-        action = 'View metadata and access the original ' + (format ? format + ' ' : '') + 'file';
-    }
-    if (lang === 'fr') {
-        const localizedFormat = [resourceLanguages(resource).map(code => code === 'fr' ? 'français' : 'anglais').join('/'),
-            plainText(resource.format).toUpperCase()].filter(Boolean).join(' ');
-        if (capability === 'datastore' || capability === 'ingested') {
-            action = 'Recherchez, filtrez et exportez ce tableau ' + localizedFormat;
-        } else if (capability === 'ingestable') {
-            action = 'Explorez le tableau préparé automatiquement de ce fichier ' + localizedFormat;
-        } else {
-            action = 'Consultez les métadonnées et le fichier original ' + localizedFormat;
+    const fr = lang === 'fr';
+    const info = facts.resourceFacts(resource);
+    const subject = resourceSubject(resource) || (fr ? 'données ouvertes' : 'open data');
+    const languages = info.languages
+        .map(code => (fr ? (code === 'fr' ? 'français' : 'anglais') : (code === 'fr' ? 'French' : 'English')))
+        .join('/');
+    const format = info.format;
+    const size = facts.humanFileSize(resource.size_bytes, lang);
+    const rows = info.rows != null ? facts.formatCount(info.rows, lang) : null;
+    const fields = info.fields != null ? facts.formatCount(info.fields, lang) : null;
+    const updated = facts.monthYear(resource.last_modified, lang);
+    // A map alongside a table must survive every shortening step.
+    const prefix = info.mapped && (info.table || info.loadable)
+        ? (fr ? 'Explorez la carte interactive. ' : 'Explore the interactive map. ') : '';
+    const build = ({ subject, withPublisher, withDate, withSize, withCounts }) => {
+        const publisher = withPublisher ? info.publisher : '';
+        const dated = withDate && updated ? updated : '';
+        let from = '';
+        if (publisher && dated) from = (fr ? ' Source : ' + publisher + ', mis à jour ' : ' From ' + publisher + ', updated ') + dated + '.';
+        else if (publisher) from = (fr ? ' Source : ' : ' From ') + publisher + '.';
+        else if (dated) from = (fr ? ' Mis à jour ' : ' Updated ') + dated + '.';
+        const sized = withSize && size ? ' (' + size + ')' : '';
+        let counts = '';
+        if (withCounts && (rows || fields)) {
+            counts = (fr ? ' avec ' : ' with ') + facts.joinList([
+                rows ? rows + (fr ? ' lignes' : ' rows') : '',
+                fields ? fields + (fr ? ' champs' : ' fields') : ''
+            ], lang);
+        }
+        if (fr) {
+            const langFr = languages ? ' (' + languages + ')' : '';
+            const detail = [languages, withSize && size ? size : ''].filter(Boolean).join(', ');
+            const detailed = detail ? ' (' + detail + ')' : '';
+            if (info.table) return subject + ' : tableau ' + format + ' en direct' + langFr + counts + '. Filtrez, créez des graphiques et exportez jusqu’à 10 000 lignes en CSV.' + from;
+            if (info.loadable) return subject + ' : fichier ' + format + detailed + ' à ouvrir comme tableau pour filtrer, créer des graphiques et exporter jusqu’à 10 000 lignes.' + from;
+            if (info.mapped) return subject + ' : carte interactive sur CanQuery, plus le téléchargement original ' + format + sized + '.' + from;
+            return subject + ' : fichier ' + format + detailed + '.' + from + ' Consultez les métadonnées, la licence et le téléchargement direct sur CanQuery.';
+        }
+        const langEn = languages ? languages + ' ' : '';
+        if (info.table) return subject + ': live ' + langEn + format + ' table' + counts + '. Filter, chart and export up to 10,000 rows as CSV.' + from;
+        if (info.loadable) return subject + ': ' + langEn + format + ' file' + sized + ' you can open as a table, filter, chart and export up to 10,000 rows.' + from;
+        if (info.mapped) return subject + ': interactive map on CanQuery, plus the original ' + format + ' download' + sized + '.' + from;
+        return subject + ': ' + langEn + format + ' file' + sized + '.' + from + ' View metadata, licence and the direct download on CanQuery.';
+    };
+    const steps = [
+        { withPublisher: true, withDate: true, withSize: true, withCounts: true },
+        { withPublisher: false, withDate: true, withSize: true, withCounts: true },
+        { withPublisher: false, withDate: false, withSize: true, withCounts: true },
+        { withPublisher: false, withDate: false, withSize: false, withCounts: true },
+        { withPublisher: false, withDate: false, withSize: false, withCounts: false }
+    ];
+    // A long subject (a federal title repeated for every quarterly file) is
+    // compacted before anything is cut mid-sentence.
+    const subjects = [subject];
+    if (subject.length > TITLE_SOFT) subjects.push(compactTitle(subject, TITLE_SOFT));
+    for (const candidate of subjects) {
+        for (const flags of steps) {
+            const text = collapse(prefix + build({ subject: candidate, ...flags }));
+            if (text.length <= max) return text;
         }
     }
-    // Mapping is independent of the table capability and must survive truncation.
-    if (mapped) action = (lang === 'fr' ? 'Explorez la carte interactive. ' : 'Explore the interactive map. ') + action;
-    return truncate(action + ': ' + subject + '.', max);
+    return truncate(prefix + build({ subject: subjects[subjects.length - 1], ...steps[steps.length - 1] }), max);
 }
 
 function buildResourceJsonLd(resource, description) {
@@ -524,7 +762,7 @@ function resourceMeta(resource) {
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const description = resourceDescription(resource);
     return {
-        title: resourceTitleBase(resource, TITLE_MAX - TITLE_SUFFIX.length) + TITLE_SUFFIX,
+        title: resourceTitle(resource),
         description,
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',
@@ -539,15 +777,42 @@ function resourceMeta(resource) {
     };
 }
 
-function placeMeta(place, datasets = []) {
+// A place's province or territory, so a title cannot be mistaken for another
+// place of the same name.
+function provinceOf(place) {
+    const ancestors = Array.isArray(place.ancestors) ? place.ancestors : [];
+    const province = ancestors.find(ancestor => ancestor && ancestor.id !== place.id &&
+        ['province', 'territory'].includes(ancestor.kind));
+    return province ? pick(province.name_en, province.name_fr) : '';
+}
+
+function placeMeta(place, datasets = [], { queryable = null } = {}) {
     const name = pick(place.name_en, place.name_fr) || 'Place';
     const type = pick(place.type_en, place.type_fr);
     const datasetCount = Number(place.dataset_count) || 0;
     const mapCount = Number(place.mappable_dataset_count) || 0;
-    const description = 'Explore ' + datasetCount.toLocaleString('en-CA') + ' open dataset' +
-        (datasetCount === 1 ? '' : 's') + ' for ' + name +
-        (mapCount ? ', including ' + mapCount.toLocaleString('en-CA') + ' with interactive maps' : '') +
-        (type ? ' (' + type + ')' : '') + ' on CanQuery.';
+    const liveTables = Number(queryable) || 0;
+    const province = ['region', 'municipality'].includes(place.kind) ? provinceOf(place) : '';
+    const qualified = province ? name + ', ' + province : name;
+    const n = facts.formatCount(datasetCount);
+    const m = facts.formatCount(mapCount);
+    const q = facts.formatCount(liveTables);
+    const title = fitTitleTiers([
+        [
+            datasetCount && liveTables && mapCount ? qualified + ' open data: ' + n + ' datasets, ' + q + ' live tables and ' + m + ' maps' : '',
+            datasetCount && mapCount ? qualified + ' open data: ' + n + ' datasets and ' + m + ' maps' : '',
+            datasetCount ? qualified + ' open data: ' + n + ' ' + facts.plural(datasetCount, 'dataset') : ''
+        ],
+        [qualified + ' open data', name + ' open data']
+    ]);
+    const describe = ({ withType, withAction }) => n + ' open ' + facts.plural(datasetCount, 'dataset') + ' for ' + qualified +
+        (withType && type ? ' (' + type + ')' : '') +
+        (mapCount ? ': ' + m + ' with interactive maps' : '') +
+        (liveTables ? (mapCount ? ', ' : ': ') + q + ' with live tables' : '') + '.' +
+        (withAction ? ' Browse by publisher and format, preview tables and export CSV on CanQuery.' : '');
+    const description = [{ withType: true, withAction: true }, { withType: false, withAction: true }, { withType: false, withAction: false }]
+        .map(describe).find(text => text.length <= DESCRIPTION_MAX) ||
+        truncate(describe({ withType: false, withAction: false }), DESCRIPTION_MAX);
     const slug = place.slug || place.id;
     const placePath = '/places/' + encodeURIComponent(slug);
     const ld = {
@@ -588,8 +853,8 @@ function placeMeta(place, datasets = []) {
         }
     };
     return {
-        title: siteTitle(name + ' open data'),
-        description: truncate(description, DESCRIPTION_MAX),
+        title: title + TITLE_SUFFIX,
+        description,
         canonical: SITE_URL + placePath,
         ogType: 'website',
         noindex: datasetCount === 0,
@@ -610,15 +875,28 @@ function organizationMeta(organization, datasets = []) {
     const total = Number(organization.dataset_count) || 0;
     const queryable = Number(organization.queryable_dataset_count) || 0;
     const mappable = Number(organization.mappable_dataset_count) || 0;
-    const capabilities = [
-        queryable ? queryable + ' queryable dataset' + (queryable === 1 ? '' : 's') : '',
-        mappable ? mappable + ' with interactive maps' : ''
-    ].filter(Boolean).join(' and ');
-    const description = truncate(
-        'Explore ' + total.toLocaleString('en-CA') + ' open dataset' + (total === 1 ? '' : 's') +
-        ' from ' + name + ' on CanQuery' + (capabilities ? ', including ' + capabilities : '') + '.',
-        DESCRIPTION_MAX
-    );
+    const n = facts.formatCount(total);
+    const title = fitTitleTiers([
+        [
+            total && queryable && mappable ? name + ': ' + n + ' open datasets, tables and maps' : '',
+            total && (queryable || mappable) ? name + ': ' + n + ' open datasets and ' + (queryable ? 'tables' : 'maps') : '',
+            total ? name + ': ' + n + ' open ' + facts.plural(total, 'dataset') : ''
+        ],
+        [name + ' open data']
+    ]);
+    const place = pick(organization.place_name_en, organization.place_name_fr);
+    // The place hub matters more than the counts for a municipal publisher, so
+    // the counts go first when the description must shrink.
+    const describe = ({ withPlace, withCapabilities }) => name + ' publishes ' + n + ' open ' + facts.plural(total, 'dataset') +
+        ' on CanQuery' + (withCapabilities && (queryable || mappable) ? ': ' + facts.joinList([
+            queryable ? facts.formatCount(queryable) + ' with live tables' : '',
+            mappable ? facts.formatCount(mappable) + ' with maps' : ''
+        ]) : '') + '.' +
+        (withPlace && place ? ' Part of ' + place + ' open data.' : '') +
+        ' Preview tables, export CSV and follow original downloads.';
+    const description = [{ withPlace: true, withCapabilities: true }, { withPlace: true, withCapabilities: false }, { withPlace: false, withCapabilities: false }]
+        .map(describe).find(text => text.length <= DESCRIPTION_MAX) ||
+        truncate(describe({ withPlace: false, withCapabilities: false }), DESCRIPTION_MAX);
     const items = (datasets || []).slice(0, 12).map((dataset, index) => ({
         '@type': 'ListItem',
         position: index + 1,
@@ -632,7 +910,7 @@ function organizationMeta(organization, datasets = []) {
         description,
         url: SITE_URL + organizationPath,
         about: {
-            '@type': 'GovernmentOrganization',
+            '@type': organizationType(organization),
             name,
             identifier: organization.id
         },
@@ -643,7 +921,7 @@ function organizationMeta(organization, datasets = []) {
         }
     };
     return {
-        title: siteTitle(name + ' open data'),
+        title: title + TITLE_SUFFIX,
         description,
         canonical: SITE_URL + organizationPath,
         ogType: 'website',
@@ -748,8 +1026,15 @@ module.exports = {
     buildBreadcrumbJsonLd,
     isGenericResourceName,
     resourceTitleBase,
+    resourceTitle,
     resourceDescription,
     siteTitle,
+    compactTitle,
+    fitTitle,
+    fitTitleTiers,
+    pagedMeta,
+    organizationType,
+    datasetSnippet,
     homeMeta,
     staticMeta,
     datasetMeta,
