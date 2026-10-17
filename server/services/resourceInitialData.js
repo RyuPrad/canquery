@@ -31,15 +31,7 @@ function pageIndex(params, maxOffset) {
     return Number.isInteger(page) && page > 0 ? Math.min(page, maxPage) : 0;
 }
 
-// Resolves null when the read outlasts the budget. The read itself is not
-// aborted: an abort would discard the pooled connection, and the lease is
-// released normally once the query completes in the background.
-function withinBudget(promise, ms) {
-    let timer;
-    const expiry = new Promise(resolve => { timer = setTimeout(() => resolve(null), ms); });
-    promise.catch(() => {});
-    return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
-}
+const { withinBudget } = require('../utils/timeBudget');
 
 const defaultDeps = {
     resourceDetail: row => catalogService.resourceDetail(row),

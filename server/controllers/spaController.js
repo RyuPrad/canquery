@@ -7,7 +7,10 @@ const { injectRouteAssets } = require('../services/routeAssets');
 const { resourceInitialData } = require('../services/resourceInitialData');
 const { hostedRoutes, hostedRoute } = require('../extensions');
 const catalogRead = require('../db/catalogReadQueries');
+const queryLogQueries = require('../db/queryLogQueries');
+const catalogFacets = require('../services/catalogFacets');
 const catalogReadCache = require('../services/catalogReadCache');
+const { loadPlaceHub } = require('../services/placeHub');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
 
 // The built index.html is immutable for the life of the process (a deploy
@@ -93,6 +96,15 @@ function paginatedPage(path, meta, rows, page, render) {
         body: render(pagination) };
 }
 
+// A place hub's optional reads come from the same catalogue module as the
+// page's, plus the facet counts and query-log popularity that live elsewhere.
+// Injected test dependencies are used as they are.
+function hubDeps(deps) {
+    return deps === catalogRead
+        ? { ...catalogRead, datasetFacets: catalogFacets.datasetFacets, listPopularResources: queryLogQueries.listPopularResources }
+        : deps;
+}
+
 // The Top 100 links give /insights real content before JavaScript runs; when
 // they cannot be read the page keeps its static copy instead of failing.
 async function topDownloadLinks(deps) {
@@ -152,10 +164,10 @@ async function resolvePage(requestTarget, deps = catalogRead) {
             meta: seoMeta.notFoundMeta(reqPath),
             body: seoSnapshot.errorSnapshot('Place not found', 'The requested place is not available in the CanQuery directory.')
         };
-        const datasets = await deps.searchDatasets(searchArgs({ place: place.slug || place.id, offset }));
+        const hub = await loadPlaceHub(place, { page, offset, deps: hubDeps(deps) });
         const canonicalPath = '/places/' + encodeURIComponent(place.slug || place.id);
-        return paginatedPage(canonicalPath, seoMeta.placeMeta(place, datasets), datasets, page,
-            pagination => seoSnapshot.placeSnapshot(place, pagination.items, pagination));
+        return paginatedPage(canonicalPath, seoMeta.placeMeta(place, hub.datasets, { facets: hub.facets }), hub.datasets, page,
+            pagination => seoSnapshot.placeSnapshot(place, pagination.items, pagination, hub));
     }
     if (route.type === 'organization') {
         const organization = await deps.getOrganizationByName(route.id);
@@ -184,8 +196,10 @@ async function resolvePage(requestTarget, deps = catalogRead) {
     } else if (route.type === 'organizations') {
         items = await deps.listOrganizations({ q: null, source: null, place: null, limit: PAGE_SIZE + 1, offset });
     } else if (route.type === 'places') {
+        // Every place with open data, not only the curated ones: the same set
+        // as the places sitemap, so each hub has a crawlable link.
         items = await deps.listPlaces({
-            q: null, kind: null, parent: null, featured: true, limit: PAGE_SIZE + 1, offset
+            q: null, kind: null, parent: null, featured: null, limit: PAGE_SIZE + 1, offset
         });
     }
     if (paginated) return paginatedPage(staticPath(route.type), seoMeta.staticMeta(route.type, reqPath), items, page,

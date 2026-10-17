@@ -91,11 +91,86 @@ describe('server-rendered crawl snapshots', () => {
         });
     });
 
-    it('links pilot places to their guide without adding unrelated guides', () => {
-        expect(snapshot.placeSnapshot({ id: 'p1', slug: 'oshawa-on', name_en: 'Oshawa' }, []))
-            .toContain('href="/blog/oshawa-parks-map"');
+    it('links pilot places to their guides in both languages without adding unrelated guides', () => {
+        const html = snapshot.placeSnapshot({ id: 'p1', slug: 'oshawa-on', name_en: 'Oshawa' }, []);
+        expect(html).toContain('href="/blog/oshawa-parks-map"');
+        expect(html).toContain('href="/fr/blog/carte-parcs-oshawa"');
+        expect(html).toContain('<span>(français)</span>');
         expect(snapshot.placeSnapshot({ id: 'p2', name_en: 'Elsewhere' }, []))
             .not.toContain('href="/blog/');
+    });
+
+    it('renders the place hub: lead, facts, sections, the dataset list and nearby places in order', () => {
+        const place = { id: 'sgc-csd-3518013', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa', type_en: 'City',
+            dataset_count: 200, direct_dataset_count: 20, mappable_dataset_count: 150, last_modified: '2026-10-01T12:00:00Z',
+            ancestors: [{ id: 'ca', slug: 'canada', kind: 'country', name_en: 'Canada' }, { id: 'on', slug: 'ontario', kind: 'province', name_en: 'Ontario' },
+                { id: 'sgc-cd-3518', slug: 'durham-on', kind: 'region', name_en: 'Durham' }, { id: 'sgc-csd-3518013', slug: 'oshawa-on', kind: 'municipality', name_en: 'Oshawa' }],
+            children: [] };
+        const hub = {
+            facets: { total: 200, facets: { level: [{ value: 'municipal', count: 20 }, { value: 'provincial', count: 180 }],
+                access: [{ value: 'queryable', count: 40 }, { value: 'mappable', count: 150 }],
+                organization: [{ value: 'city-of-oshawa', count: 20 }, { value: 'ontario', count: 180 }], source: [], format: [], keyword: [] } },
+            organizations: [{ name: 'city-of-oshawa', title_en: 'City of Oshawa', dataset_count: 20 }],
+            sources: [{ id: 'oshawa-hub', name_en: 'Oshawa Open Data', homepage_url: 'https://data.oshawa.ca/', dataset_count: 20, authoritative_dataset_count: 18 },
+                { id: 'bad', name_en: 'Bad', homepage_url: 'javascript:alert(1)' }],
+            popular: [{ resource_id: 'r1', name_en: 'Parks', hits: 9 }, { resource_id: 'r2', name_en: null, dataset_title_en: 'Roads', hits: 1 }],
+            recent: [{ resource_id: 'r3', name_en: 'Trails', format: 'CSV' }],
+            siblings: [{ id: 'a', slug: 'ajax-on', name_en: 'Ajax', dataset_count: 430 }]
+        };
+        const datasets = [{ id: 'd1', name: 'parks', title_en: 'Parks', mappable_count: 1, preview_map_id: 'm1' },
+            { id: 'd2', name: 'roads', title_en: 'Roads', mappable_count: 0 }];
+        const html = snapshot.placeSnapshot(place, datasets, { page: 1, path: '/places/oshawa-on', items: datasets, hasMore: false }, hub);
+        expect(html).toContain('<h1>Oshawa open data</h1>');
+        expect(html).toContain('<p data-cq-lead="true">Oshawa (City, Ontario) has 200 open datasets on CanQuery: 20 municipal and 180 provincial. ' +
+            '150 have an interactive map and 40 have a live table you can filter, chart and export. They come from 2 publishers. ' +
+            'Below: the publishers and official portals, the most used and recently prepared tables, the datasets with maps, every dataset, the guides and nearby places.</p>');
+        expect(html).toContain('<dt>With live tables</dt><dd>40</dd>');
+        expect(html).toContain('<dt>Publishers</dt><dd>2</dd>');
+        expect(html).toContain('<dt>Last catalogue update</dt><dd>2026-10-01</dd>');
+        const order = ['<h2>Publishers</h2>', 'href="/organizations/city-of-oshawa">City of Oshawa</a> <span>20 datasets</span>',
+            '<h2>Official portals</h2>', 'href="https://data.oshawa.ca/">Oshawa Open Data</a> <span>18 datasets</span>',
+            '<h2>Popular tables</h2>', 'href="/resources/r1">Parks</a> <span>9 queries this week</span>', 'href="/resources/r2">Roads</a> <span>1 query this week</span>',
+            '<h2>Recently loaded tables</h2>', 'href="/resources/r3">Trails</a> <span>CSV</span>',
+            '<h2>Datasets with maps</h2>', 'href="/resources/m1?view=map">Parks</a>',
+            '<h2>Datasets</h2>', 'href="/datasets/parks">Parks</a>', 'href="/datasets/roads">Roads</a>',
+            '<h2>Nearby places</h2>', 'href="/places/ontario">Ontario</a> <span>Province</span>', 'href="/places/ajax-on">Ajax</a> <span>430 datasets</span>'];
+        let position = -1;
+        for (const marker of order) {
+            const next = html.indexOf(marker);
+            expect(next).toBeGreaterThan(position);
+            position = next;
+        }
+        expect(html).not.toContain('javascript:');
+        const later = snapshot.placeSnapshot(place, datasets, { page: 2, path: '/places/oshawa-on', items: datasets, hasMore: false }, hub);
+        expect(later).toContain('<h1>Oshawa open data (page 2)</h1>');
+        expect(later).not.toContain('<h2>Publishers</h2>');
+        expect(later).toContain('<h2>Datasets</h2>');
+        expect(later).toContain('href="/places/ontario"');
+        expect(later).not.toContain('href="/places/ajax-on"');
+    });
+
+    it('always lists a place’s children beside its datasets', () => {
+        const html = snapshot.placeSnapshot({ id: 'on', slug: 'ontario', kind: 'province', name_en: 'Ontario', dataset_count: 5,
+            children: [{ id: 't', slug: 'toronto-on', name_en: 'Toronto', dataset_count: 556 }, { id: 'o', slug: 'oshawa-on', name_en: 'Oshawa', dataset_count: 200 }] },
+        [{ id: 'd1', name: 'roads', title_en: 'Roads' }]);
+        expect(html).toContain('<h2>Datasets</h2>');
+        expect(html).toContain('<h2>Nearby places</h2><ul><li><a href="/places/toronto-on">Toronto</a> <span>556 datasets</span></li>');
+        expect(html).toContain('href="/places/oshawa-on">Oshawa</a> <span>200 datasets</span>');
+    });
+
+    it('groups the places directory by province, with places outside one first', () => {
+        const html = snapshot.staticSnapshot('places', [
+            { id: 'ca', slug: 'canada', name_en: 'Canada', kind: 'country', dataset_count: 36000 },
+            { id: 'on', slug: 'ontario', name_en: 'Ontario', kind: 'province', province_name_en: 'Ontario', dataset_count: 12000 },
+            { id: 't', slug: 'toronto-on', name_en: 'Toronto', kind: 'municipality', province_name_en: 'Ontario', dataset_count: 556 },
+            { id: 'm', slug: 'montreal-qc', name_en: 'Montréal', kind: 'municipality', province_name_en: 'Quebec', province_name_fr: 'Québec', dataset_count: 405 }
+        ]);
+        expect(html.indexOf('<h2>Canada</h2>')).toBeLessThan(html.indexOf('<h2>Ontario</h2>'));
+        expect(html.indexOf('<h2>Ontario</h2>')).toBeLessThan(html.indexOf('<h2>Quebec</h2>'));
+        expect(html).toContain('<h2>Ontario</h2><ul><li><a href="/places/ontario">Ontario</a> <span>12,000 datasets</span></li><li><a href="/places/toronto-on">Toronto</a> <span>556 datasets</span></li></ul>');
+        expect(html).toContain('href="/places/montreal-qc">Montréal</a>');
+        expect(html).not.toContain('Featured places');
+        expect(html).not.toContain('Explore CanQuery');
     });
     it('escapes catalogue text and bounds linked resources', () => {
         const resources = Array.from({ length: 30 }, (_, index) => ({
@@ -189,8 +264,12 @@ describe('server-rendered crawl snapshots', () => {
             ...Array.from({ length: 20 }, (_, i) => ({ id: 'd' + i, name: 'parks' + i, title_en: 'Parks' }))
         ]);
         expect((html.match(/<h1>/g) || [])).toHaveLength(1);
+        // The place sentence outranks the capability counts when the description must shrink.
+        expect(html).toContain('<p data-cq-lead="true">City Works publishes 2 open datasets on CanQuery. ' +
+            'Part of Example open data. Preview tables, export CSV and follow original downloads.</p>');
+        expect(html).toContain('<h2>Datasets</h2>');
         expect(html).toContain('href="/datasets/roads"');
-        expect(html).toContain('href="/places/example-on"');
+        expect(html).toContain('<h2>Part of</h2><ul><li><a href="/places/example-on">Example open data</a></li></ul>');
         expect((html.match(/href="\/datasets\//g) || [])).toHaveLength(12);
     });
 });

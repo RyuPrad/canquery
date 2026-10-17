@@ -80,15 +80,20 @@ function paginationLinks(pagination) {
 // `lead` is CanQuery's own paragraph about the record (facts and what a visitor
 // can do here); the publisher's text follows it as `summary`. Later pages of a
 // paginated list name their page in the heading so no two pages read alike.
-function shell({ breadcrumbs, title, lead = '', summary, facts, linksTitle, links, linksLimit, relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
+// `sections` are extra link lists placed before the main list (a hub's
+// publishers, portals and tables); `relatedTitle` names the related list.
+function shell({ breadcrumbs, title, lead = '', summary, facts, linksTitle, links, linksLimit, sections = [],
+    relatedTitle = 'Related open data', relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
     const heading = pagination && pagination.page > 1 ? title + ' (page ' + pagination.page + ')' : title;
     return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' + sectionNav() +
         breadcrumb(breadcrumbs) + '<article><h1>' + text(heading) + '</h1>' +
         (lead ? '<p data-cq-lead="true">' + text(lead) + '</p>' : '') +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
-        factList(facts) + overviewHtml + linkList('Official sources and licences', sources) +
+        factList(facts) + overviewHtml +
+        sections.map(section => linkList(section.title, section.links, section.limit || MAX_LINKS)).join('') +
+        linkList('Official sources and licences', sources) +
         linkList(linksTitle, links, linksLimit || (pagination ? PAGE_SIZE : MAX_LINKS)) + paginationLinks(pagination) +
-        linkList('Related open data', relatedLinks) + linkList('Data guides', guides) + '</article></main>';
+        linkList(relatedTitle, relatedLinks) + linkList('Data guides', guides) + '</article></main>';
 }
 
 function sourceLinks(row) {
@@ -251,39 +256,112 @@ function resourceSnapshot(resource) {
     });
 }
 
-function placeSnapshot(place, datasets, pagination) {
-    const name = seo.plainText(place.name_en) || seo.plainText(place.name_fr) || place.slug || place.id;
-    const ancestors = (Array.isArray(place.ancestors) ? place.ancestors : [])
-        .filter(ancestor => ancestor.id !== place.id)
-        .map(ancestor => ({
-            label: seo.plainText(ancestor.name_en) || seo.plainText(ancestor.name_fr),
-            path: '/places/' + encodeURIComponent(ancestor.slug || ancestor.id)
-        }));
+const placeLabel = row => seo.plainText(row.name_en) || seo.plainText(row.name_fr) || row.slug || row.id;
+const placeLink = row => ({ path: '/places/' + encodeURIComponent(row.slug || row.id), label: placeLabel(row),
+    detail: catalogFacts.formatCount(row.dataset_count || 0) + ' datasets' });
+const resourceLabel = row => seo.plainText(row.name_en) || seo.plainText(row.name_fr) ||
+    seo.plainText(row.dataset_title_en) || seo.plainText(row.dataset_title_fr) || row.resource_id;
+
+// The province or territory a place belongs to, from its ancestry.
+function provinceOf(place) {
+    const ancestor = (Array.isArray(place.ancestors) ? place.ancestors : [])
+        .find(row => row && row.id !== place.id && ['province', 'territory'].includes(row.kind));
+    return ancestor || null;
+}
+
+// CanQuery's own paragraph about a place: what it holds, by level and access,
+// from how many publishers, and what the page offers below.
+function placeLead({ name, type, province, count, maps, liveTables, levels, publishers }) {
+    const where = [type, province].filter(Boolean).join(', ');
+    const intro = name + (where ? ' (' + where + ')' : '') + ' has ' + catalogFacts.formatCount(count) + ' open ' +
+        catalogFacts.plural(count, 'dataset') + ' on CanQuery' +
+        (levels.length ? ': ' + catalogFacts.joinList(levels.map(([level, n]) => catalogFacts.formatCount(n) + ' ' + level)) : '') + '.';
+    const access = [
+        maps ? catalogFacts.formatCount(maps) + ' ' + catalogFacts.plural(maps, 'has', 'have') + ' an interactive map' : '',
+        liveTables ? catalogFacts.formatCount(liveTables) + ' ' + catalogFacts.plural(liveTables, 'has', 'have') + ' a live table you can filter, chart and export' : ''
+    ].filter(Boolean);
+    const sentence = access.length ? ' ' + catalogFacts.joinList(access).replace(/^./, c => c.toUpperCase()) + '.' : '';
+    const from = publishers ? ' They come from ' + catalogFacts.formatCount(publishers) + ' ' + catalogFacts.plural(publishers, 'publisher') + '.' : '';
+    return intro + sentence + from + ' Below: the publishers and official portals, the most used and recently prepared tables, ' +
+        'the datasets with maps, every dataset, the guides and nearby places.';
+}
+
+// The place page is the "<place> open data" landing page: the hub's optional
+// sections appear on page one; later pages carry the dataset list only.
+function placeSnapshot(place, datasets, pagination, hub = null) {
+    const name = placeLabel(place);
+    const type = seo.plainText(place.type_en) || seo.plainText(place.type_fr);
+    const ancestors = (Array.isArray(place.ancestors) ? place.ancestors : []).filter(ancestor => ancestor.id !== place.id);
+    const province = provinceOf(place);
+    const slug = place.slug || place.id;
     const datasetLinks = (datasets || []).map(dataset => ({
         path: '/datasets/' + encodeURIComponent(dataset.name || dataset.id),
         label: seo.plainText(dataset.title_en) || seo.plainText(dataset.title_fr) || dataset.name || dataset.id
     }));
-    const childLinks = (Array.isArray(place.children) ? place.children : []).map(child => ({
-        path: '/places/' + encodeURIComponent(child.slug || child.id),
-        label: seo.plainText(child.name_en) || seo.plainText(child.name_fr) || child.slug,
-        detail: Number(child.dataset_count || 0).toLocaleString('en-CA') + ' datasets'
-    }));
     const count = Number(place.dataset_count) || 0;
     const maps = Number(place.mappable_dataset_count) || 0;
+    const facets = hub && hub.facets ? hub.facets : null;
+    const liveTables = seo.facetCount(facets, 'access', 'queryable');
+    const levels = ['municipal', 'provincial', 'federal'].map(level => [level, seo.facetCount(facets, 'level', level)]).filter(([, n]) => n > 0);
+    const organizations = hub ? hub.organizations : [];
+    const publishers = facets && Array.isArray(facets.facets.organization) && facets.facets.organization.length
+        ? facets.facets.organization.length : organizations.length;
+    const firstPage = !pagination || pagination.page === 1;
+    const sections = [];
+    if (hub && firstPage) {
+        if (organizations.length) sections.push({ title: 'Publishers', links: organizations.map(row => ({
+            path: '/organizations/' + encodeURIComponent(row.name),
+            label: seo.plainText(row.title_en) || seo.plainText(row.title_fr) || row.name,
+            detail: catalogFacts.formatCount(row.dataset_count || 0) + ' datasets'
+        })) });
+        const portals = hub.sources.map(row => {
+            const url = safeHttpUrl(row.homepage_url);
+            return url ? { path: url, label: seo.plainText(row.name_en) || seo.plainText(row.name_fr) || row.id,
+                detail: catalogFacts.formatCount(row.authoritative_dataset_count || row.dataset_count || 0) + ' datasets' } : null;
+        }).filter(Boolean);
+        if (portals.length) sections.push({ title: 'Official portals', links: portals });
+        if (hub.popular.length) sections.push({ title: 'Popular tables', links: hub.popular.map(row => ({
+            path: '/resources/' + encodeURIComponent(row.resource_id), label: resourceLabel(row),
+            detail: catalogFacts.formatCount(row.hits || 0) + ' ' + catalogFacts.plural(Number(row.hits) || 0, 'query', 'queries') + ' this week'
+        })) });
+        if (hub.recent.length) sections.push({ title: 'Recently loaded tables', links: hub.recent.map(row => ({
+            path: '/resources/' + encodeURIComponent(row.resource_id), label: resourceLabel(row), detail: row.format || ''
+        })) });
+        const mapped = (datasets || []).filter(dataset => Number(dataset.mappable_count) > 0).slice(0, 6);
+        if (mapped.length) sections.push({ title: 'Datasets with maps', links: mapped.map(dataset => ({
+            path: dataset.preview_map_id
+                ? '/resources/' + encodeURIComponent(dataset.preview_map_id) + '?view=map'
+                : '/datasets/' + encodeURIComponent(dataset.name || dataset.id),
+            label: seo.plainText(dataset.title_en) || seo.plainText(dataset.title_fr) || dataset.name || dataset.id
+        })) });
+    }
+    const nearby = [
+        province ? { ...placeLink(province), detail: 'Province' + (province.kind === 'territory' ? ' or territory' : '') } : null,
+        ...(Array.isArray(place.children) ? place.children : []).map(placeLink),
+        ...(hub && firstPage ? hub.siblings : []).map(placeLink)
+    ].filter(Boolean);
+    const guides = ['en', 'fr'].flatMap(lang => listArticles({ lang, place: slug })
+        .map(article => ({ path: article.path, label: article.title, detail: lang === 'fr' ? '(français)' : '' })));
     return shell({
         pagination,
-        breadcrumbs: [{ label: 'Places', path: '/places' }, ...ancestors, { label: name }],
+        breadcrumbs: [{ label: 'Places', path: '/places' }, ...ancestors.map(ancestor => ({
+            label: placeLabel(ancestor), path: '/places/' + encodeURIComponent(ancestor.slug || ancestor.id) })), { label: name }],
         title: name + ' open data',
-        summary: 'Explore ' + count.toLocaleString('en-CA') + ' open dataset' + (count === 1 ? '' : 's') +
-            ' for ' + name + (maps ? ', including ' + maps.toLocaleString('en-CA') + ' with interactive maps.' : '.'),
+        lead: placeLead({ name, type, province: province ? placeLabel(province) : '', count, maps, liveTables, levels, publishers }),
         facts: [
             { label: 'Datasets', value: count },
             { label: 'Direct datasets', value: Number(place.direct_dataset_count) || 0 },
-            { label: 'Mappable datasets', value: maps }
+            { label: 'With maps', value: maps },
+            liveTables ? { label: 'With live tables', value: liveTables } : null,
+            publishers ? { label: 'Publishers', value: publishers } : null,
+            place.last_modified ? { label: 'Last catalogue update', value: catalogFacts.isoDate(place.last_modified) } : null
         ],
-        linksTitle: datasetLinks.length ? 'Open datasets' : 'Places in this area',
-        links: datasetLinks.length ? datasetLinks : childLinks,
-        relatedLinks: listArticles({ place: place.slug || place.id }).map(article => ({ path: article.path, label: article.title }))
+        sections,
+        linksTitle: 'Datasets',
+        links: datasetLinks,
+        relatedTitle: 'Nearby places',
+        relatedLinks: nearby,
+        guides
     });
 }
 
@@ -295,9 +373,10 @@ function organizationSnapshot(organization, datasets, pagination) {
     }));
     const relatedLinks = [];
     if (organization.place_id) {
+        const placeName = seo.plainText(organization.place_name_en) || seo.plainText(organization.place_name_fr) || organization.place_slug;
         relatedLinks.push({
             path: '/places/' + encodeURIComponent(organization.place_slug || organization.place_id),
-            label: seo.plainText(organization.place_name_en) || seo.plainText(organization.place_name_fr) || organization.place_slug
+            label: placeName + ' open data'
         });
     }
     const total = Number(organization.dataset_count) || 0;
@@ -305,15 +384,15 @@ function organizationSnapshot(organization, datasets, pagination) {
         pagination,
         breadcrumbs: [{ label: 'Organizations', path: '/organizations' }, { label: name }],
         title: name + ' open data',
-        summary: 'Browse ' + total.toLocaleString('en-CA') + ' open dataset' + (total === 1 ? '' : 's') +
-            ' published by ' + name + ' and mirrored by CanQuery.',
+        lead: seo.organizationMeta(organization, datasets).description,
         facts: [
             { label: 'Datasets', value: total },
             { label: 'Queryable datasets', value: Number(organization.queryable_dataset_count) || 0 },
             { label: 'Mappable datasets', value: Number(organization.mappable_dataset_count) || 0 }
         ],
-        linksTitle: 'Open datasets',
+        linksTitle: 'Datasets',
         links,
+        relatedTitle: 'Part of',
         relatedLinks
     });
 }
@@ -466,14 +545,19 @@ function staticSnapshot(type, items = [], pagination) {
     const route = hostedRoute(type);
     const copy = override?.copy || STATIC_COPY[type] || route?.copy || STATIC_COPY.home;
     const hostedOverview = override?.overview || route?.overview;
-    const regions = items.filter(item => item.kind === 'region');
-    const regionIds = new Set(regions.map(item => item.id));
-    const ordered = type === 'places' ? [
-        ...regions.flatMap(region => [region, ...items.filter(item => item.kind === 'municipality' && item.parent_id === region.id)]),
-        ...items.filter(item => item.kind === 'municipality' && !regionIds.has(item.parent_id)),
-        ...items.filter(item => !['region', 'municipality'].includes(item.kind))
-    ] : items;
-    const dynamicLinks = ordered.map(item => {
+    // The places directory is grouped by province or territory in the order
+    // the query returns them; places without one (the country) come first.
+    const placeSections = [];
+    if (type === 'places') {
+        const groups = new Map();
+        for (const item of items) {
+            const title = seo.plainText(item.province_name_en) || seo.plainText(item.province_name_fr) || 'Canada';
+            if (!groups.has(title)) groups.set(title, []);
+            groups.get(title).push(placeLink(item));
+        }
+        for (const [title, links] of groups) placeSections.push({ title, links, limit: PAGE_SIZE });
+    }
+    const dynamicLinks = (type === 'places' ? [] : items).map(item => {
         if (type === 'datasets') return {
             path: '/datasets/' + encodeURIComponent(item.name || item.id),
             label: seo.plainText(item.title_en) || seo.plainText(item.title_fr) || item.name || item.id
@@ -482,13 +566,6 @@ function staticSnapshot(type, items = [], pagination) {
             return {
                 path: '/organizations/' + encodeURIComponent(item.name),
                 label: seo.plainText(item.title_en) || seo.plainText(item.title_fr) || item.name,
-                detail: Number(item.dataset_count || 0).toLocaleString('en-CA') + ' datasets'
-            };
-        }
-        if (type === 'places') {
-            return {
-                path: '/places/' + encodeURIComponent(item.slug || item.id),
-                label: seo.plainText(item.name_en) || seo.plainText(item.name_fr) || item.slug,
                 detail: Number(item.dataset_count || 0).toLocaleString('en-CA') + ' datasets'
             };
         }
@@ -515,10 +592,11 @@ function staticSnapshot(type, items = [], pagination) {
         guides: type === 'home' ? listArticles({ lang: 'en' }).slice(0, 3).map(article => ({
             path: article.path, label: article.title, detail: article.description
         })) : [],
+        sections: placeSections,
         linksTitle: dynamicLinks.length
-            ? (type === 'places' ? 'Featured places' : type === 'datasets' ? 'Open datasets' : type === 'insights' ? 'Top 100 downloaded datasets' : 'Publishing organizations')
+            ? (type === 'datasets' ? 'Open datasets' : type === 'insights' ? 'Top 100 downloaded datasets' : 'Publishing organizations')
             : 'Explore CanQuery',
-        links: dynamicLinks.length ? dynamicLinks : copy.links,
+        links: dynamicLinks.length || placeSections.length ? dynamicLinks : copy.links,
         linksLimit: type === 'insights' ? 100 : undefined,
         relatedLinks: type === 'insights' && dynamicLinks.length ? copy.links : undefined
     });

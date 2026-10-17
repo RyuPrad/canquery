@@ -55,6 +55,7 @@ const schemas = {
         mappable_dataset_count: integer, metadata_modified: date, place: nullable(ref('PlaceIdentity')) }),
     Place: object({ id: string, slug: string, kind: { type: 'string', enum: kinds }, name: ref('LocalizedText'), type: ref('LocalizedText'),
         featured: { type: 'boolean' }, parent: nullable(ref('PlaceIdentity')), parent_id: textOrNull, location: nullable(ref('Location')),
+        province: nullable(object({ slug: string, name: ref('LocalizedText') }, ['slug', 'name'])),
         ancestors: array(ref('PlaceIdentity')), children: array(ref('Place')), dataset_count: integer, direct_dataset_count: integer,
         mappable_resource_count: integer, mappable_dataset_count: integer }),
     Source: object({ id: string, kind: string, name: ref('LocalizedText'), homepage_url: string, catalog_url: textOrNull, upstream: string,

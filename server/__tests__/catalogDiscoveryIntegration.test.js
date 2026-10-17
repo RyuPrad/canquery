@@ -146,9 +146,12 @@ integrationDescribe('paged place discovery PostgreSQL integration', () => {
         expect(paged).toEqual(all);
         expect(await read({ limit: 2, offset: 4 })).toEqual([]);
         expect((await read({ featured: false })).map(row => row.id)).toEqual([id('b')]);
+        // Without a featured filter the directory lists every place with datasets
+        // plus the featured ones, the same set as the places sitemap.
         const normal = await read({ featured: null });
-        expect(normal.map(row => row.id)).toEqual(['a', 'b'].map(id));
-        expect(counts(normal[1])).toEqual([3, 1, 1]);
+        expect(normal.map(row => row.id)).toEqual(['a', 'a_twin', 'b', 'c'].map(id));
+        expect(counts(normal[2])).toEqual([3, 1, 1]);
+        expect(normal.map(row => row.province_slug)).toEqual([null, null, null, null]);
     });
 
     test('keeps bilingual and alias search and includes a featured place without coverage', async () => {

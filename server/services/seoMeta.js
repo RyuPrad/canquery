@@ -791,12 +791,22 @@ function provinceOf(place) {
     return province ? pick(province.name_en, province.name_fr) : '';
 }
 
-function placeMeta(place, datasets = [], { queryable = null } = {}) {
+// One count from a shaped facet summary ({ total, facets: { group: [{ value, count }] } }).
+function facetCount(facets, group, value) {
+    const list = facets && facets.facets && Array.isArray(facets.facets[group]) ? facets.facets[group] : [];
+    const entry = list.find(item => item && item.value === value);
+    return entry ? Number(entry.count) || 0 : 0;
+}
+
+const PLACE_LEVELS = ['municipal', 'provincial', 'federal'];
+
+function placeMeta(place, datasets = [], { queryable = null, facets = null } = {}) {
     const name = pick(place.name_en, place.name_fr) || 'Place';
     const type = pick(place.type_en, place.type_fr);
     const datasetCount = Number(place.dataset_count) || 0;
     const mapCount = Number(place.mappable_dataset_count) || 0;
-    const liveTables = Number(queryable) || 0;
+    const liveTables = Number(queryable) || facetCount(facets, 'access', 'queryable');
+    const levels = PLACE_LEVELS.map(level => [level, facetCount(facets, 'level', level)]).filter(([, count]) => count > 0);
     const province = ['region', 'municipality'].includes(place.kind) ? provinceOf(place) : '';
     const qualified = province ? name + ', ' + province : name;
     const n = facts.formatCount(datasetCount);
@@ -815,8 +825,21 @@ function placeMeta(place, datasets = [], { queryable = null } = {}) {
         (mapCount ? ': ' + m + ' with interactive maps' : '') +
         (liveTables ? (mapCount ? ', ' : ': ') + q + ' with live tables' : '') + '.' +
         (withAction ? ' Browse by publisher and format, preview tables and export CSV on CanQuery.' : '');
-    const description = [{ withType: true, withAction: true }, { withType: false, withAction: true }, { withType: false, withAction: false }]
-        .map(describe).find(text => text.length <= DESCRIPTION_MAX) ||
+    // With counts by government level the description reads as the hub it is;
+    // without them it falls back to the plain place summary.
+    const access = [mapCount ? m + ' with maps' : '', liveTables ? q + ' with live tables' : ''].filter(Boolean).join(', ');
+    const hubFacts = levels.length
+        ? n + ' open ' + facts.plural(datasetCount, 'dataset') + ' for ' + qualified + ': ' +
+            facts.joinList(levels.map(([level, count]) => facts.formatCount(count) + ' ' + level)) + (access ? '; ' + access : '') + '.'
+        : '';
+    const hubDescriptions = hubFacts ? [
+        hubFacts + ' Publishers, portals, popular tables and guides on CanQuery.',
+        hubFacts + ' Publishers, portals and guides on CanQuery.',
+        hubFacts
+    ] : [];
+    const description = [...hubDescriptions, describe({ withType: true, withAction: true }), describe({ withType: false, withAction: true }),
+        describe({ withType: false, withAction: false })]
+        .find(text => text && text.length <= DESCRIPTION_MAX) ||
         truncate(describe({ withType: false, withAction: false }), DESCRIPTION_MAX);
     const slug = place.slug || place.id;
     const placePath = '/places/' + encodeURIComponent(slug);
@@ -1040,6 +1063,7 @@ module.exports = {
     pagedMeta,
     organizationType,
     datasetSnippet,
+    facetCount,
     homeMeta,
     staticMeta,
     datasetMeta,

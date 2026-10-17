@@ -93,6 +93,22 @@ export async function fetchFeaturedPlaces() {
   return { data, pagination: { nextCursor: null }, meta };
 }
 
+// Every place with open data (the directory's full set), for grouping by province.
+export async function fetchAllPlaces() {
+  const data = [];
+  const seenCursors = new Set();
+  let cursor;
+  do {
+    const env = await fetchPlaces({ limit: 100, cursor });
+    data.push(...(env.data || []));
+    const nextCursor = env.pagination?.nextCursor || null;
+    if (nextCursor && seenCursors.has(nextCursor)) throw new Error('Place pagination returned a repeated cursor');
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+  return { data, pagination: { nextCursor: null } };
+}
+
 export function fetchPlace(idOrSlug) {
   return getJSON('/web-api/v1/places/' + encodeURIComponent(idOrSlug));
 }

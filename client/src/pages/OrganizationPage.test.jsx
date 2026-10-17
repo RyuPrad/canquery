@@ -62,7 +62,9 @@ describe('OrganizationPage', () => {
     expect(screen.getByText('23 datasets')).toBeInTheDocument();
     expect(screen.getByText('4 queryable')).toBeInTheDocument();
     expect(screen.getByText('8 mappable')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Example' })).toHaveAttribute('href', '/places/example-on');
+    expect(screen.getByText('City Works publishes 23 open datasets on CanQuery: 4 with live tables and 8 with maps.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Part of Example open data' })).toHaveAttribute('href', '/places/example-on');
+    expect(screen.getByRole('heading', { name: 'Published datasets' })).toBeInTheDocument();
     expect(await screen.findByText('Road network')).toBeInTheDocument();
     expect(searchDatasets).toHaveBeenCalledWith(expect.objectContaining({ org: 'city-works', limit: 50 }));
 
@@ -83,7 +85,7 @@ describe('OrganizationPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Travaux municipaux' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Exemple' })).toHaveAttribute('href', '/places/example-on');
+    expect(screen.getByRole('link', { name: 'Fait partie des données ouvertes : Exemple' })).toHaveAttribute('href', '/places/example-on');
     expect(screen.getByRole('navigation', { name: 'Fil d’Ariane' })).toBeInTheDocument();
   });
 });

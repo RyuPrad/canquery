@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchPlaces } from '../api/catalog.js';
+import { fetchAllPlaces, fetchPlaces } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import { MapPinIcon, ArrowRightIcon, MapIcon, SearchIcon } from '../components/Icons.jsx';
 import CatalogPagination from '../components/CatalogPagination.jsx';
@@ -25,6 +25,24 @@ export default function PlacesPage() {
     limit: PAGE_SIZE, cursor
   }), [debouncedQuery], Boolean(debouncedQuery));
   const { items: places, loading, error } = collection;
+
+  // Every place with open data beyond the curated ones, grouped by province.
+  const [allPlaces, setAllPlaces] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => fetchAllPlaces())
+      .then(env => { if (!cancelled) setAllPlaces(env?.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const featuredIds = new Set(places.map(place => place.id));
+  const moreByProvince = new Map();
+  for (const place of allPlaces) {
+    if (featuredIds.has(place.id)) continue;
+    const province = place.province?.name?.[lang] || place.province?.name?.en || 'Canada';
+    if (!moreByProvince.has(province)) moreByProvince.set(province, []);
+    moreByProvince.get(province).push(place);
+  }
 
   const placeCard = (place) => (
     <Link
@@ -114,6 +132,28 @@ export default function PlacesPage() {
           {!debouncedQuery && otherPlaces.length > 0 && <section>
             <h2 className="font-display font-semibold text-xl mb-3">{t('places.other_places')}</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{otherPlaces.map(placeCard)}</div>
+          </section>}
+          {!debouncedQuery && moreByProvince.size > 0 && <section>
+            <h2 className="font-display font-semibold text-xl mb-3">{t('places.more_places')}</h2>
+            <div className="space-y-5">
+              {[...moreByProvince].map(([province, list]) => <div key={province}>
+                <h3 className="font-display font-medium text-sm text-base-content/55 mb-2">{province}</h3>
+                <ul className="flex flex-wrap gap-2">
+                  {list.map(place => <li key={place.id}>
+                    <Link
+                      to={'/places/' + place.slug}
+                      className="cq-chip !whitespace-normal hover:text-base-content"
+                      data-analytics-event="place_open"
+                      data-analytics-place-id={place.id}
+                      data-analytics-place-slug={place.slug}
+                      data-analytics-source="directory"
+                    >
+                      {place.name?.[lang] || place.name?.en} · {place.dataset_count} {t('places.datasets')}
+                    </Link>
+                  </li>)}
+                </ul>
+              </div>)}
+            </div>
           </section>}
           {!collection.notFound && <CatalogPagination {...collection} />}
           {places.length === 0 && debouncedQuery && (
