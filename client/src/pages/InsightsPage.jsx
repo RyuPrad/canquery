@@ -13,7 +13,7 @@ function toCardItem(it) {
   return {
     resource_id: it.resource_id,
     name: it.title,
-    dataset: { id: it.dataset_id, title: it.title },
+    dataset: { id: it.dataset_id, name: it.dataset_name, title: it.title },
     row_count: it.row_count
   };
 }

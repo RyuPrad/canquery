@@ -62,3 +62,28 @@ properties distinct, and page/query breakdowns separate from property totals.
 Preserve existing frozen cohorts. Compare a separate complete 28-day period
 starting on the first full Pacific calendar day after deployment, once all
 dates are finalized; account for other releases and recrawling lag.
+
+## Crawl focus (October 2026)
+
+The resource sitemaps list only data-bearing resource pages: a live DataStore
+table, a prepared copy, a map, or a CSV/XLSX/XLS file CanQuery can prepare
+within its configured caps (`dataBearingResource` in
+`server/db/catalogSqlFragments.js`, sharing its caps with the capability
+classifier through `ingestLimits()`). Every dataset page remains listed. A
+download-only resource page carries `noindex, follow`: it repeats its dataset
+page with one link added, so the dataset page offers that download directly and
+stays the indexed landing page. Pages with a table or a map remain indexable.
+The index and the catalogue hub pages carry `<lastmod>` (the newest catalogue
+record change, read once an hour with the two counts; the newest guide update
+for the blog file); documentation pages carry none. A crawl file that cannot be
+built answers 503 with `Retry-After: 60`. Every snapshot opens with a section
+nav that reaches both guide indexes, `/insights` lists the Top 100 before
+JavaScript runs, internal links use the canonical dataset slug, `/organizations`
+omits publishers without datasets, a disabled place is noindex, and
+`/index.html` redirects to `/`.
+
+After promotion, resubmit `https://canquery.com/sitemap.xml` once. The Search
+Console "Excluded by noindex" count grows by design; "Discovered – currently
+not indexed" should fall as the submitted set shrinks from about 329,000 to
+about 115,000 URLs. Do not validate the noindex exclusions, and compare the
+indexed count only against the new submitted total.

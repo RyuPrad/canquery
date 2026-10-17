@@ -256,6 +256,16 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
             .toBe('Report (PDF) - CanQuery');
     });
 
+    it('keeps download-only pages out of the index and table or map pages in it', () => {
+        expect(seo.resourceMeta({ ...base, format: 'PDF' }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, format: 'HTML', url: 'https://example.test/guide.html' }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, format: 'CSV', url: 'https://example.test/archive.zip' }).noindex).toBe(true);
+        expect(seo.resourceMeta(base).noindex).toBeUndefined();
+        expect(seo.resourceMeta({ ...base, format: 'PDF', map_provider: 'arcgis' }).noindex).toBeUndefined();
+        expect(seo.resourceMeta({ ...base, format: 'PDF', datastore_active: true }).noindex).toBeUndefined();
+        expect(seo.resourceMeta({ ...base, format: 'PDF', ingest_status: 'ready' }).noindex).toBeUndefined();
+    });
+
     it('names the table or map a resource becomes on CanQuery in its title', () => {
         expect(seo.resourceMeta({ ...base, ingest_status: 'ready', language: 'en' }).title)
             .toBe('Measurements (English, CSV live table) - CanQuery');
@@ -340,7 +350,8 @@ describe('publisher download names', () => {
         expect(meta.jsonLd[0].mainEntity.contentUrl).toBe(resource.url);
         expect(meta.jsonLd[1].itemListElement.at(-1).name).toBe(label);
         expect(meta.canonical).toBe('https://canquery.com/resources/r');
-        expect(meta.noindex).toBeUndefined();
+        // A download-only file's page repeats its dataset page: noindex, links followed.
+        expect(meta.noindex).toBe(true);
         expect(seo.resourceMeta({ ...resource, dataset_title_en: 'Site abt179' }).title).not.toBe(meta.title);
         expect(resource.name_en).toBe(name);
     });
@@ -418,8 +429,10 @@ describe('seoMeta - site + static meta', () => {
         expect(JSON.stringify(meta.jsonLd || [])).not.toContain('FAQPage');
     });
 
-    it('keeps empty place and organization pages out of the index', () => {
+    it('keeps empty or disabled place and empty organization pages out of the index', () => {
         expect(seo.placeMeta({ id: 'p0', slug: 'empty', name_en: 'Empty', dataset_count: 0 }).noindex).toBe(true);
+        expect(seo.placeMeta({ id: 'p1', slug: 'old', name_en: 'Old', dataset_count: 3, enabled: false }).noindex).toBe(true);
+        expect(seo.placeMeta({ id: 'p2', slug: 'live', name_en: 'Live', dataset_count: 3, enabled: true }).noindex).toBe(false);
         expect(seo.organizationMeta({ id: 'o0', name: 'empty', title_en: 'Empty', dataset_count: 0 }).noindex).toBe(true);
     });
 

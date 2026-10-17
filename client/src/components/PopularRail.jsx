@@ -29,7 +29,7 @@ export default function PopularRail({ place }) {
         {items.map(item => (
           <Link
             key={item.resource_id}
-            to={item.dataset?.id ? '/datasets/' + item.dataset.id + '?highlight=' + item.resource_id : '/resources/' + item.resource_id}
+            to={item.dataset?.id ? '/datasets/' + (item.dataset.name || item.dataset.id) + '?highlight=' + item.resource_id : '/resources/' + item.resource_id}
             className="cq-card p-3.5 w-60 shrink-0 space-y-1.5"
             data-analytics-event="resource_open"
             data-analytics-resource-id={item.resource_id}

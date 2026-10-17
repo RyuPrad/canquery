@@ -1,7 +1,8 @@
 const { searchExpression, literalPatterns } = require('../services/localSearch');
 const pool = require('./pool');
 const catalogReadCache = require('../services/catalogReadCache');
-const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match } = require('./catalogSqlFragments');
+const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match, dataBearingResource } = require('./catalogSqlFragments');
+const { ingestLimits } = require('../config/ingest');
 
 function cachedRows(name, sql, values, db) {
     const read = async () => (await db.query(sql, values)).rows;
@@ -302,7 +303,8 @@ async function listOrganizations({ q, source, place, limit, offset }, db = pool)
                p.id AS place_id, p.slug AS place_slug, p.name_en AS place_name_en, p.name_fr AS place_name_fr
         FROM organizations o
         LEFT JOIN places p ON p.id = o.place_id
-        WHERE ($1::text IS NULL OR EXISTS (
+        WHERE EXISTS (SELECT 1 FROM datasets d_any WHERE d_any.org_id = o.id)
+          AND ($1::text IS NULL OR EXISTS (
             SELECT 1 FROM datasets d JOIN dataset_sources ds ON ds.dataset_id = d.id
             WHERE d.org_id = o.id AND ds.source_id = $1
         ))
@@ -430,7 +432,7 @@ async function listPlaces({ q, kind, parent, featured, limit, offset }, db = poo
 async function getPlaceByIdOrSlug(idOrSlug) {
     const placeResult = await pool.query(`
         SELECT p.id, p.slug, p.kind, p.name_en, p.name_fr, p.type_en, p.type_fr,
-               p.parent_id, p.latitude, p.longitude, p.default_zoom, p.featured
+               p.parent_id, p.latitude, p.longitude, p.default_zoom, p.featured, p.enabled
         FROM places p
         WHERE p.id = $1 OR p.slug = $1 OR EXISTS (
             SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $1
@@ -487,8 +489,10 @@ async function getStats() {
     return result.rows[0];
 }
 
-// Every public catalogue detail page is eligible, including download-only files.
-// Resource pages require a parent dataset, matching getResourceById's join.
+// Every dataset page is eligible, including metadata-only records. Resource
+// pages are listed only when they offer more than their dataset page does: a
+// live table, a prepared copy, a map, or a file CanQuery can prepare. The
+// predicate shares its caps with the capability classifier through config/ingest.
 async function countSitemapDatasets(db = pool) {
     const result = await db.query('SELECT count(*)::int AS n FROM datasets');
     return result.rows[0].n;
@@ -502,19 +506,48 @@ async function listDatasetSitemap({ limit, offset }, db = pool) {
     return result.rows;
 }
 
+const DATA_BEARING_RESOURCE = dataBearingResource({ csvCap: '$1', xlsxCap: '$2', maxRows: '$3', maxCols: '$4' });
+function dataBearingParams() {
+    const limits = ingestLimits();
+    return [limits.maxFileBytes, limits.maxXlsxBytes, limits.maxRows, limits.maxCols];
+}
+
 async function countSitemapResources(db = pool) {
     const result = await db.query(`
         SELECT count(*)::int AS n FROM resources r JOIN datasets d ON d.id = r.dataset_id
-    `);
+        WHERE ${DATA_BEARING_RESOURCE}
+    `, dataBearingParams());
     return result.rows[0].n;
 }
 
+// lastmod is the file's own publisher-reported change when recorded, else the
+// dataset record's; a future-dated value is clamped to now.
 async function listResourceSitemap({ limit, offset }, db = pool) {
     const result = await db.query(`
-        SELECT r.id, d.metadata_modified FROM resources r
+        SELECT r.id, LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
-        ORDER BY r.id LIMIT $1 OFFSET $2
-    `, [limit, offset]);
+        WHERE ${DATA_BEARING_RESOURCE}
+        ORDER BY r.id LIMIT $5 OFFSET $6
+    `, [...dataBearingParams(), limit, offset]);
+    return result.rows;
+}
+
+// The newest catalogue record change, for sitemap <lastmod> entries.
+async function getCatalogLastModified(db = pool) {
+    const result = await db.query('SELECT max(metadata_modified) AS modified FROM datasets');
+    return result.rows[0].modified || null;
+}
+
+// The Top 100 leaderboard as plain links, so /insights has real content
+// before JavaScript runs.
+async function listTopDownloadLinks(db = pool) {
+    const result = await db.query(`
+        SELECT t.rank, t.dataset_id, d.name AS dataset_name, t.title_en, t.title_fr, t.downloads
+        FROM top_downloads t
+        LEFT JOIN datasets d ON d.id = t.dataset_id
+        ORDER BY t.rank ASC
+        LIMIT 100
+    `);
     return result.rows;
 }
 
@@ -676,6 +709,8 @@ module.exports = {
     listResourceSitemap,
     listPlaceSitemap,
     listOrganizationSitemap,
+    getCatalogLastModified,
+    listTopDownloadLinks,
     pingDb,
     getLastSyncTime,
     listRecentlyIngested,

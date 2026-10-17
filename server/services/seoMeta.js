@@ -756,16 +756,21 @@ function buildResourceJsonLd(resource, description) {
     };
 }
 
+// A download-only file's page repeats its dataset page with one link added, so
+// it stays out of the index (its links are still followed); pages that offer
+// a table or a map are indexed.
 function resourceMeta(resource) {
     const name = resourceTitleBase(resource);
     const ds = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const description = resourceDescription(resource);
+    const downloadOnly = classifyResource(resource).capability === 'file-only';
     return {
         title: resourceTitle(resource),
         description,
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',
+        ...(downloadOnly ? { noindex: true } : {}),
         jsonLd: [buildResourceJsonLd(resource, description), buildBreadcrumbJsonLd([
             { name: 'Datasets', path: '/datasets' },
             datasetSlug && ds ? {
@@ -857,7 +862,7 @@ function placeMeta(place, datasets = [], { queryable = null } = {}) {
         description,
         canonical: SITE_URL + placePath,
         ogType: 'website',
-        noindex: datasetCount === 0,
+        noindex: datasetCount === 0 || place.enabled === false,
         jsonLd: [ld, collection, buildBreadcrumbJsonLd([
             { name: 'Places', path: '/places' },
             ...(Array.isArray(place.ancestors) ? place.ancestors.map(ancestor => ({

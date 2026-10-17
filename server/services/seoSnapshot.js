@@ -20,6 +20,25 @@ function pathLink(path, label) {
     return '<a href="' + seo.escapeHtml(path) + '">' + seo.escapeHtml(cleanLabel) + '</a>';
 }
 
+// A publisher file URL made absolute and checked: http(s) only, no credentials.
+function safeHttpUrl(value) {
+    try {
+        const url = new URL(toAbsoluteUrl(value));
+        return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : '';
+    } catch { return ''; }
+}
+
+// Every snapshot opens with links to the site's sections, so a crawler that
+// never runs the application still reaches the hubs and both guide indexes.
+const SECTION_LINKS = [
+    ['/datasets', 'Datasets'], ['/places', 'Places'], ['/organizations', 'Organizations'], ['/insights', 'Insights'],
+    ['/blog', 'Data guides'], ['/fr/blog', 'Guides des données'], ['/docs', 'API docs'], ['/about', 'About']
+];
+function sectionNav() {
+    return '<nav aria-label="CanQuery sections" data-cq-sections="true"><ul>' +
+        SECTION_LINKS.map(([path, label]) => '<li>' + pathLink(path, label) + '</li>').join('') + '</ul></nav>';
+}
+
 function breadcrumb(items) {
     const entries = (items || []).filter(item => item && item.label);
     if (!entries.length) return '';
@@ -38,11 +57,14 @@ function factList(facts) {
         '</dd></div>').join('') + '</dl>';
 }
 
+// `extra` is a second, independent link on the same line (a file's direct
+// download beside its page), so the file stays reachable from an indexed page.
 function linkList(title, links, limit = MAX_LINKS) {
     const entries = (links || []).filter(link => link && link.path && link.label).slice(0, limit);
     if (!entries.length) return '';
     return '<section><h2>' + text(title) + '</h2><ul>' + entries.map(link =>
-        '<li>' + pathLink(link.path, link.label) + (link.detail ? ' <span>' + text(link.detail) + '</span>' : '') + '</li>'
+        '<li>' + pathLink(link.path, link.label) + (link.detail ? ' <span>' + text(link.detail) + '</span>' : '') +
+        (link.extra && link.extra.path && link.extra.label ? ' · ' + pathLink(link.extra.path, link.extra.label) : '') + '</li>'
     ).join('') + '</ul></section>';
 }
 
@@ -58,13 +80,14 @@ function paginationLinks(pagination) {
 // `lead` is CanQuery's own paragraph about the record (facts and what a visitor
 // can do here); the publisher's text follows it as `summary`. Later pages of a
 // paginated list name their page in the heading so no two pages read alike.
-function shell({ breadcrumbs, title, lead = '', summary, facts, linksTitle, links, relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
+function shell({ breadcrumbs, title, lead = '', summary, facts, linksTitle, links, linksLimit, relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
     const heading = pagination && pagination.page > 1 ? title + ' (page ' + pagination.page + ')' : title;
-    return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' +
+    return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' + sectionNav() +
         breadcrumb(breadcrumbs) + '<article><h1>' + text(heading) + '</h1>' +
         (lead ? '<p data-cq-lead="true">' + text(lead) + '</p>' : '') +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
-        factList(facts) + overviewHtml + linkList('Official sources and licences', sources) + linkList(linksTitle, links, pagination ? PAGE_SIZE : MAX_LINKS) + paginationLinks(pagination) +
+        factList(facts) + overviewHtml + linkList('Official sources and licences', sources) +
+        linkList(linksTitle, links, linksLimit || (pagination ? PAGE_SIZE : MAX_LINKS)) + paginationLinks(pagination) +
         linkList('Related open data', relatedLinks) + linkList('Data guides', guides) + '</article></main>';
 }
 
@@ -134,11 +157,18 @@ function datasetSnapshot(dataset, resources, pagination) {
     const info = catalogFacts.datasetFacts(dataset, resources);
     const title = seo.plainText(dataset.title_en) || seo.plainText(dataset.title_fr) || dataset.name || dataset.id;
     const organization = seo.plainText(dataset.org_title_en) || seo.plainText(dataset.org_title_fr);
-    const links = (pagination?.items || (resources || []).slice(0, MAX_LINKS)).map(resource => ({
-        path: '/resources/' + encodeURIComponent(resource.id),
-        label: resourcePresentation({ ...resource, dataset_title_en: dataset.title_en, dataset_title_fr: dataset.title_fr }).title.en,
-        detail: resource.format || catalogFacts.accessLabel(classifyResource(resource).capability, { mapped: catalogFacts.isMapped(resource) })
-    }));
+    const links = (pagination?.items || (resources || []).slice(0, MAX_LINKS)).map(resource => {
+        const capability = classifyResource(resource).capability;
+        // A download-only file's own page is not indexed, so its download is
+        // offered here, from the dataset page that is.
+        const download = capability === 'file-only' ? safeHttpUrl(resource.url) : '';
+        return {
+            path: '/resources/' + encodeURIComponent(resource.id),
+            label: resourcePresentation({ ...resource, dataset_title_en: dataset.title_en, dataset_title_fr: dataset.title_fr }).title.en,
+            detail: resource.format || catalogFacts.accessLabel(capability, { mapped: catalogFacts.isMapped(resource) }),
+            ...(download ? { extra: { path: download, label: 'Download ' + (seo.plainText(resource.format) || 'file') } } : {})
+        };
+    });
     const placeLinks = (Array.isArray(dataset.places) ? dataset.places : []).map(place => ({
         path: '/places/' + encodeURIComponent(place.slug || place.id),
         label: seo.plainText(place.name_en) || seo.plainText(place.name_fr) || place.slug
@@ -174,11 +204,8 @@ function datasetSnapshot(dataset, resources, pagination) {
 }
 
 function originalFileLink(resource) {
-    try {
-        const url = new URL(toAbsoluteUrl(resource.url));
-        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return '';
-        return '<p>' + pathLink(url.href, 'Access original file') + '</p>';
-    } catch { return ''; }
+    const url = safeHttpUrl(resource.url);
+    return url ? '<p>' + pathLink(url, 'Access original file') + '</p>' : '';
 }
 
 function resourceSnapshot(resource) {
@@ -465,6 +492,13 @@ function staticSnapshot(type, items = [], pagination) {
                 detail: Number(item.dataset_count || 0).toLocaleString('en-CA') + ' datasets'
             };
         }
+        if (type === 'insights') {
+            return {
+                path: '/datasets/' + encodeURIComponent(item.dataset_name || item.dataset_id),
+                label: '#' + item.rank + ' · ' + (seo.plainText(item.title_en) || seo.plainText(item.title_fr) || item.dataset_id),
+                detail: Number(item.downloads || 0).toLocaleString('en-CA') + ' downloads'
+            };
+        }
         return null;
     }).filter(Boolean);
     return shell({
@@ -481,8 +515,12 @@ function staticSnapshot(type, items = [], pagination) {
         guides: type === 'home' ? listArticles({ lang: 'en' }).slice(0, 3).map(article => ({
             path: article.path, label: article.title, detail: article.description
         })) : [],
-        linksTitle: dynamicLinks.length ? (type === 'places' ? 'Featured places' : type === 'datasets' ? 'Open datasets' : 'Publishing organizations') : 'Explore CanQuery',
-        links: dynamicLinks.length ? dynamicLinks : copy.links
+        linksTitle: dynamicLinks.length
+            ? (type === 'places' ? 'Featured places' : type === 'datasets' ? 'Open datasets' : type === 'insights' ? 'Top 100 downloaded datasets' : 'Publishing organizations')
+            : 'Explore CanQuery',
+        links: dynamicLinks.length ? dynamicLinks : copy.links,
+        linksLimit: type === 'insights' ? 100 : undefined,
+        relatedLinks: type === 'insights' && dynamicLinks.length ? copy.links : undefined
     });
 }
 
@@ -498,6 +536,8 @@ function errorSnapshot(title, summary) {
 
 module.exports = {
     MAX_LINKS,
+    sectionNav,
+    safeHttpUrl,
     faqExplanation,
     MAX_SUMMARY,
     datasetSnapshot,

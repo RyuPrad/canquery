@@ -12,7 +12,8 @@ export default function TopDownloadRow({ item }) {
   const title = item.title?.[lang] || item.title?.en || item.title?.fr || item.dataset_id;
   const dept = (lang === 'fr' ? item.ministere : item.department) || item.department || item.ministere;
   const charted = Boolean(item.resource_id);
-  const to = '/datasets/' + item.dataset_id + (item.resource_id ? '?highlight=' + item.resource_id : '');
+  // The canonical slug avoids a redirect; the id remains the fallback.
+  const to = '/datasets/' + (item.dataset_name || item.dataset_id) + (item.resource_id ? '?highlight=' + item.resource_id : '');
   const values = (item.history || []).map((h) => h.d);
 
   return (

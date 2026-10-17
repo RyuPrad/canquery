@@ -19,6 +19,17 @@ test('a replacement representative resource never displays the previous profile'
   expect(screen.queryByText('Chart for french')).not.toBeInTheDocument();
 });
 
+test('links to the canonical dataset slug when the API supplies one, else to the id', () => {
+  fetchResourceProfile.mockImplementation(() => new Promise(() => {}));
+  const named = render(<MemoryRouter><InsightCard item={{ resource_id: 'r1', name: { en: 'Dataset' },
+    dataset: { id: 'd1', name: 'roads', title: { en: 'Roads' } } }} /></MemoryRouter>);
+  expect(named.container.querySelector('a[href="/datasets/roads?highlight=r1"]')).not.toBeNull();
+  named.unmount();
+  const byId = render(<MemoryRouter><InsightCard item={{ resource_id: 'r1', name: { en: 'Dataset' },
+    dataset: { id: 'd1', title: { en: 'Roads' } } }} /></MemoryRouter>);
+  expect(byId.container.querySelector('a[href="/datasets/d1?highlight=r1"]')).not.toBeNull();
+});
+
 test('a previous profile error does not hide a successfully loaded replacement', async () => {
   fetchResourceProfile.mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce(profile);
   const view = render(card('english'));

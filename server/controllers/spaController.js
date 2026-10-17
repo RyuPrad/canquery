@@ -7,6 +7,7 @@ const { injectRouteAssets } = require('../services/routeAssets');
 const { resourceInitialData } = require('../services/resourceInitialData');
 const { hostedRoutes, hostedRoute } = require('../extensions');
 const catalogRead = require('../db/catalogReadQueries');
+const catalogReadCache = require('../services/catalogReadCache');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
 
 // The built index.html is immutable for the life of the process (a deploy
@@ -92,6 +93,18 @@ function paginatedPage(path, meta, rows, page, render) {
         body: render(pagination) };
 }
 
+// The Top 100 links give /insights real content before JavaScript runs; when
+// they cannot be read the page keeps its static copy instead of failing.
+async function topDownloadLinks(deps) {
+    if (typeof deps.listTopDownloadLinks !== 'function') return [];
+    try {
+        return (await catalogReadCache.get('top-download-links', () => deps.listTopDownloadLinks())) || [];
+    } catch (err) {
+        console.warn('Top downloads unavailable for /insights:', err.message);
+        return [];
+    }
+}
+
 async function resolvePage(requestTarget, deps = catalogRead) {
     const [reqPath, ...query] = requestTarget.split('?');
     const params = new URLSearchParams(query.join('?'));
@@ -166,6 +179,8 @@ async function resolvePage(requestTarget, deps = catalogRead) {
     let items = [];
     if (route.type === 'datasets') {
         items = await deps.searchDatasets(searchArgs({ offset }));
+    } else if (route.type === 'insights') {
+        items = await topDownloadLinks(deps);
     } else if (route.type === 'organizations') {
         items = await deps.listOrganizations({ q: null, source: null, place: null, limit: PAGE_SIZE + 1, offset });
     } else if (route.type === 'places') {

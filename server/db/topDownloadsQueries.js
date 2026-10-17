@@ -20,11 +20,12 @@ async function listTopDownloads(lang = 'en') {
             SELECT td.*, ${CHOSEN_REP.replace(/\$LANG/g, '$1')} AS chosen_resource_id
             FROM top_downloads td
         )
-        SELECT t.rank, t.dataset_id, t.title_en, t.title_fr, t.department, t.ministere,
+        SELECT t.rank, t.dataset_id, d.name AS dataset_name, t.title_en, t.title_fr, t.department, t.ministere,
                t.downloads, t.period_year, t.period_month, t.history,
                t.chosen_resource_id AS resource_id,
                ir.status AS ingest_status, ir.row_count AS ingested_row_count
         FROM t
+        LEFT JOIN datasets d ON d.id = t.dataset_id
         LEFT JOIN ingested_resources ir ON ir.resource_id = t.chosen_resource_id
         ORDER BY t.rank ASC
     `, [lang]);
