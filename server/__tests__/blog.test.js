@@ -3,15 +3,15 @@ const path = require('node:path');
 const os = require('node:os');
 const express = require('express');
 const request = require('supertest');
-const { readArticles, listArticles, getArticle, permittedUrl } = require('../services/blogContent');
+const { readArticles, listArticles, getArticle, relatedArticles, permittedUrl } = require('../services/blogContent');
 const { resolvePage, serveSpa } = require('../controllers/spaController');
 const { renderHtml } = require('../services/seoMeta');
 const app = require('../app');
 const template = '<!doctype html><html lang="en"><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>';
 
-test('publishes six paired guides with verified resource links', () => {
-    expect(readArticles()).toHaveLength(12);
-    expect(listArticles()).toHaveLength(6);
+test('publishes fifteen paired guides with verified resource links', () => {
+    expect(readArticles()).toHaveLength(30);
+    expect(listArticles()).toHaveLength(15);
     expect(listArticles({ lang: 'fr', place: 'oshawa-on' })).toHaveLength(1);
     for (const lang of ['en', 'fr']) for (const article of listArticles({ lang })) {
         const full = getArticle(lang, article.slug);
@@ -35,7 +35,8 @@ test.each(['en', 'fr'])('renders complete %s articles and metadata without any c
         expect(html.match(/<h1\b/g)).toHaveLength(1);
         expect(html).toContain(getArticle(lang, article.slug).bodyHtml);
         const homeLabel = lang === 'fr' ? 'Rechercher d’autres données ouvertes canadiennes' : 'Search more Canadian open data';
-        expect(html).toContain('<a class="link" href="/">' + homeLabel + '</a>');
+        const searchMore = article.place ? '/?place=' + encodeURIComponent(article.place) : '/';
+        expect(html).toContain('<a class="link" href="' + searchMore + '">' + homeLabel + '</a>');
         expect(html.indexOf(homeLabel)).toBeGreaterThan(html.lastIndexOf(article.dataset));
         if (article.place) expect(html.indexOf(homeLabel)).toBeGreaterThan(html.lastIndexOf('/places/' + article.place));
         expect(page.meta.alternates).toHaveProperty('fr-CA');
@@ -56,7 +57,7 @@ test('serves article APIs, geographic listing, real 404s and the blog sitemap', 
     expect((await request(app).get('/api/v1/blog/en/missing')).status).toBe(404);
     const sitemap = await request(app).get('/sitemap-blog.xml');
     expect(sitemap.status).toBe(200);
-    expect(sitemap.text.match(/<loc>/g)).toHaveLength(14);
+    expect(sitemap.text.match(/<loc>/g)).toHaveLength(32);
     expect(sitemap.text).toContain('/fr/blog/');
 });
 
@@ -123,7 +124,7 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
             for (const lang of ['en', 'fr']) {
                 const slug = draft.editions[lang].slug;
                 const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + slug;
-                expect(content.listArticles({ lang })).toHaveLength(5);
+                expect(content.listArticles({ lang })).toHaveLength(14);
                 expect(content.getArticle(lang, slug)).toBeNull();
                 expect(resolveBlogPage(articlePath).status).toBe(404);
                 expect(res.send.mock.calls[0][0]).not.toContain(articlePath);
@@ -156,4 +157,20 @@ test('national guides support localized resource links and dataset discovery wit
         expect(html).toContain(en.path);
         expect(html).not.toContain(download.path);
     }
+});
+
+test('relates guides by place first, then by topic, in both languages', async () => {
+    const permits = listArticles({ place: 'calgary-ab' }).find(article => article.id === 'calgary-building-permits-map');
+    const related = relatedArticles(permits);
+    expect(related.map(article => article.id)).toEqual(['calgary-flood-map', 'calgary-traffic-volumes', 'calgary-ward-map']);
+    expect(related.every(article => article.lang === 'en')).toBe(true);
+    const toronto = listArticles({ lang: 'fr', place: 'toronto-on' }).find(article => article.id === 'toronto-business-licences');
+    expect(relatedArticles(toronto).map(article => article.id)).toEqual(['toronto-building-permits']);
+    const corporations = listArticles().find(article => article.id === 'federal-corporations-search');
+    expect(relatedArticles(corporations)).toEqual([]);
+    const html = (await resolvePage(permits.path)).body;
+    expect(html).toContain('<section aria-label="Related guides"');
+    expect(html).toContain('href="/blog/calgary-flood-map"');
+    expect(html).toContain('href="/?place=calgary-ab"');
+    expect((await resolvePage(corporations.path)).body).not.toContain('Related guides');
 });

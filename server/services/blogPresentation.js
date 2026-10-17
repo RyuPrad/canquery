@@ -1,19 +1,32 @@
-const { listArticles, getArticle } = require('./blogContent');
+const { listArticles, getArticle, relatedArticles } = require('./blogContent');
 const { SITE_URL, escapeHtml: esc, truncate } = require('./seoMeta');
 const { sectionNav } = require('./seoSnapshot');
 
 const LABELS = {
     en: { title: 'Data guides', intro: 'Find the right Canadian dataset, read its fields, and use its tables, maps or downloads.',
         source: 'View the source dataset', explore: 'Explore the data', city: 'More data for',
-        download: 'View download details', home: 'Search more Canadian open data',
+        download: 'View download details', home: 'Search more Canadian open data', related: 'Related guides',
         published: 'Published', updated: 'Article updated', verified: 'Data links checked', by: 'By',
         missing: 'Guide not found' },
     fr: { title: 'Guides des données', intro: 'Trouvez le bon jeu de données canadien, comprenez ses champs et utilisez ses tableaux, cartes ou fichiers.',
         source: 'Consulter le jeu de données source', explore: 'Explorer les données', city: 'Autres données pour',
         download: 'Consulter les détails du téléchargement', home: 'Rechercher d’autres données ouvertes canadiennes',
+        related: 'Guides connexes',
         published: 'Publié le', updated: 'Article mis à jour le', verified: 'Liens vérifiés le', by: 'Par',
         missing: 'Guide introuvable' }
 };
+
+// A geographic guide sends readers to the catalogue search already filtered to its place.
+const searchMorePath = article => article.place ? '/?place=' + encodeURIComponent(article.place) : '/';
+
+function relatedSection(article, labels) {
+    const related = relatedArticles(article);
+    if (!related.length) return '';
+    return '<section aria-label="' + labels.related + '" class="mt-10"><h2 class="text-xl font-semibold">' + labels.related + '</h2><ul class="mt-4 space-y-3">' +
+        related.map(item => '<li><a class="link" href="' + item.path + '">' + esc(item.title) + '</a>' +
+            (item.placeName ? ' <span class="text-base-content/60">· ' + esc(item.placeName) + '</span>' : '') + '</li>').join('') +
+        '</ul></section>';
+}
 
 function resolveBlogPage(pathname) {
     const match = /^\/(fr\/)?blog(?:\/([^/]+))?\/?$/.exec(pathname);
@@ -64,7 +77,8 @@ function resolveBlogPage(pathname) {
             '<p class="mt-8"><a class="btn btn-primary h-auto py-2" href="' + esc(article.explore) + '">' + (article.view === 'download' ? labels.download : labels.explore) + '</a></p>' +
             '<p class="mt-4"><a class="link" href="' + article.dataset + '">' + labels.source + '</a></p>' +
             (article.place ? '<p class="mt-4"><a class="link" href="/places/' + article.place + '">' + labels.city + ' ' + esc(article.placeName) + '</a></p>' : '') +
-            '<p class="mt-4"><a class="link" href="/">' + labels.home + '</a></p></article>';
+            '<p class="mt-4"><a class="link" href="' + searchMorePath(article) + '">' + labels.home + '</a></p>' +
+            relatedSection(article, labels) + '</article>';
     } else {
         body += '<h1 class="font-display text-4xl font-bold">' + title + '</h1><p class="mt-4">' + description + '</p>' +
             '<p class="mt-4">' + languageLink + '</p><div class="space-y-5 mt-8">' +

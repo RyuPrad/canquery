@@ -91,4 +91,14 @@ function getArticle(lang, slug) {
     return allArticles().find(article => article.lang === lang && article.slug === slug) || null;
 }
 
-module.exports = { readArticles, listArticles, getArticle, permittedUrl };
+// Other guides in the same language about the same place or the same topic:
+// place matches first, then topic matches, newest first within each group.
+function relatedArticles(article, { limit = 3 } = {}) {
+    const score = other => (article.place && other.place === article.place ? 2 : 0) + (other.topic === article.topic ? 1 : 0);
+    return listArticles({ lang: article.lang })
+        .filter(other => other.id !== article.id && score(other) > 0)
+        .sort((a, b) => score(b) - score(a) || b.published.localeCompare(a.published) || a.id.localeCompare(b.id))
+        .slice(0, limit);
+}
+
+module.exports = { readArticles, listArticles, getArticle, relatedArticles, permittedUrl };
