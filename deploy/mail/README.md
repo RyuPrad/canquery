@@ -11,8 +11,11 @@ adds explicit loopback/public 587 services and a separate cleanup service.
 Dovecot 2.3 provides authentication only; two independent random passwords are
 hashed with SHA512-CRYPT. Sender/login mappings prevent one credential from
 using the other's envelope sender. A dedicated OpenDKIM process signs the new
-domain only on submission, failing closed if signing is unavailable. Its key
-is owned by the signer with mode 0600. SMTP connection/message/recipient caps,
+domain only on submission, failing closed if signing is unavailable. It signs
+OpenDKIM's default header set plus `List-Unsubscribe-Post`, which RFC 8058
+one-click unsubscribe requires. On an existing install, add the `SignHeaders`
+line by hand, check it with `opendkim -n` and restart only `canquery-mail-dkim`.
+Its key is owned by the signer with mode 0600. SMTP connection/message/recipient caps,
 10 MiB message size and a 5 GiB queue-space floor bound the new service.
 
 Before installation, inspect actual units, Postfix configuration, firewall,

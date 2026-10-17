@@ -57,6 +57,7 @@ Socket local:/run/canquery-mail-dkim/dkim.sock
 UMask 007
 MacroList daemon_name=ORIGINATING
 OversignHeaders From
+SignHeaders From,Sender,Reply-To,Subject,Date,To,Cc,Resent-Date,Resent-From,Resent-Sender,Resent-To,Resent-Cc,In-Reply-To,References,List-Id,List-Help,List-Unsubscribe,List-Unsubscribe-Post,List-Subscribe,List-Post,List-Owner,List-Archive
 RequireSafeKeys yes
 '''
     options = {
