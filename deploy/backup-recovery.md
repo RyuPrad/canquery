@@ -41,6 +41,18 @@ its `.partial` name is atomically published. Only `map_store.features` **data** 
 excluded; map metadata/jobs, catalogue data, prepared `store` tables, account,
 billing and preparation-accounting state remain included.
 
+Before the dumps start, the runner takes the application's store-budget advisory
+lock (`canquery-store-budget-v1`, from
+[`evictService.js`](../server/services/evictService.js)) in its own `psql` session
+on the application database, and holds it until the dump script exits.
+Preparation, eviction and retired-table cleanup create and drop `store` tables
+only under that lock. `pg_dump` lists tables before it locks them, so a table
+dropped in between fails the whole dump with `relation ... does not exist`. While
+the backup holds the lock, a preparation waits and scheduled eviction skips its
+run. A preparation can hold the lock until its 30-minute deadline, so the runner
+waits up to 40 minutes; if the lock is still unavailable it logs
+`Store maintenance lock not acquired; dumping without it` and continues.
+
 The runner also captures the explicitly listed recovery configuration and
 `pg_dumpall --globals-only` output. That output includes cluster role definitions,
 memberships and private password hashes, potentially for other applications on a
@@ -328,7 +340,8 @@ but sets that boolean false. Before the first success there may be no verified
 time, so monitoring must remain degraded.
 
 Main subprocess work shares a 7,100-second deadline; each dump/upload stage also
-has a 5,400-second ceiling. Timeout or interruption sends TERM to the whole owned
+has a 5,400-second ceiling. Waiting for the store-budget lock counts toward the
+deadline. Timeout or interruption sends TERM to the whole owned
 process group, then KILL to remaining descendants and reaps its direct child.
 Configuration creation, local hash reads and individual manifest inspections
 also take time; do not describe the subprocess deadline as a hard whole-job SLA.

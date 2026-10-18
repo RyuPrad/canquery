@@ -11,12 +11,21 @@ import json
 import os
 import pathlib
 import re
+import select
 import signal
 import subprocess
 import tarfile
 import tempfile
 import time
 from functools import partial
+
+# Store tables are created and dropped only under the application's store-budget
+# advisory lock (server/services/evictService.js): preparation, eviction and
+# retired-table cleanup. pg_dump lists the tables before it locks them, so a
+# table dropped in between fails the whole dump ("relation ... does not exist").
+STORE_LOCK = 'canquery-store-budget-v1'
+# A preparation can hold the lock until its 30-minute deadline.
+STORE_LOCK_WAIT_SECONDS = 2400
 
 
 def run_command(args, *, timeout, check=False, capture_output=False, deadline=None, **kwargs):
@@ -53,6 +62,51 @@ def run_command(args, *, timeout, check=False, capture_output=False, deadline=No
         if check:
             result.check_returncode()
         return result
+
+
+def hold_store_lock(database, wait_seconds, command=None):
+    """Hold the store-budget lock in a psql session; None if it is not acquired in time.
+
+    While it is held, preparation waits and scheduled eviction skips its run."""
+    process = subprocess.Popen(
+        command or ['runuser', '-u', 'postgres', '--', 'psql', '-X', '-q', '-A', '-t',
+                    '-v', 'ON_ERROR_STOP=1', '-d', database],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, start_new_session=True)
+    try:
+        try:
+            process.stdin.write(f"SET lock_timeout = '{int(wait_seconds)}s';\n"
+                                f"SELECT 'locked' FROM pg_advisory_lock(hashtext('{STORE_LOCK}'));\n")
+            process.stdin.flush()
+        except BrokenPipeError:
+            pass  # psql already exited; its output is at end of file
+        ready, _, _ = select.select([process.stdout], [], [], wait_seconds + 30)
+        if ready and process.stdout.readline().strip() == 'locked':
+            return process
+    except BaseException:
+        release_store_lock(process)
+        raise
+    release_store_lock(process)
+    return None
+
+
+def release_store_lock(process):
+    """End the lock session: closing its input ends psql and releases the lock."""
+    if process is None:
+        return
+    try:
+        process.stdin.close()
+    except BrokenPipeError:
+        pass
+    try:
+        process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+    process.stdout.close()
 
 
 def interrupted(_signum, _frame):
@@ -176,8 +230,18 @@ def _run(config, state):
                        # Retention follows remote verification below. The guarded
                        # original dump script still independently attempts both DBs.
                        CANQUERY_BACKUP_KEEP_DAYS='365000')
-    execute(['bash', str(trusted_file(config['dump_script']))],
-                   env=environment, check=True, timeout=5400)
+    dump_script = trusted_file(config['dump_script'])
+    waited = time.monotonic()
+    store_lock = hold_store_lock(databases[0], STORE_LOCK_WAIT_SECONDS)
+    waited = time.monotonic() - waited
+    if store_lock is None:
+        print('Store maintenance lock not acquired; dumping without it', flush=True)
+    elif waited >= 5:
+        print(f'Waited {waited:.0f} s for the store maintenance lock', flush=True)
+    try:
+        execute(['bash', str(dump_script)], env=environment, check=True, timeout=5400)
+    finally:
+        release_store_lock(store_lock)
     files = []
     for database in databases:
         new = [p for p in dump_candidates(directory, database) if p not in before]
