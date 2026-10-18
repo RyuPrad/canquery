@@ -13,6 +13,17 @@ spec = importlib.util.spec_from_file_location('backup_runner', pathlib.Path(__fi
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
+# Stands in for psql: records its input, answers the lock query and writes a
+# marker when its input closes, which is when the real session would end.
+FAKE_PSQL = ('import pathlib,sys\n'
+             'log,released=pathlib.Path(sys.argv[1]),pathlib.Path(sys.argv[2])\n'
+             'while True:\n'
+             '    line=sys.stdin.readline()\n'
+             '    if not line: break\n'
+             '    log.write_text((log.read_text() if log.exists() else "")+line)\n'
+             '    if "pg_advisory_lock" in line: print("locked",flush=True)\n'
+             'released.write_text("yes")\n')
+
 
 class BackupRunnerTests(unittest.TestCase):
     def test_retention_requires_matching_verified_latest_dump(self):
@@ -93,6 +104,47 @@ class BackupRunnerTests(unittest.TestCase):
             self.assertEqual(marker.read_text(), 'yes')
             with self.assertRaises(ProcessLookupError):
                 os.kill(int(pidfile.read_text()), 0)
+
+    def test_store_lock_is_held_until_released(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            log, released = root / 'input.sql', root / 'released'
+            process = runner.hold_store_lock('app', 5, command=[sys.executable, '-c', FAKE_PSQL, str(log), str(released)])
+            self.assertIsNotNone(process)
+            self.assertFalse(released.exists())
+            self.assertEqual(log.read_text(), "SET lock_timeout = '5s';\n"
+                             "SELECT 'locked' FROM pg_advisory_lock(hashtext('canquery-store-budget-v1'));\n")
+            runner.release_store_lock(process)
+            self.assertEqual(released.read_text(), 'yes')
+            self.assertEqual(process.returncode, 0)
+
+    def test_store_lock_that_is_not_granted_returns_none(self):
+        # psql stops on the lock timeout error without printing a row.
+        quiet = [sys.executable, '-c', 'import sys; sys.stdin.readline(); sys.stdin.readline(); sys.exit(3)']
+        self.assertIsNone(runner.hold_store_lock('app', 5, command=quiet))
+        self.assertIsNone(runner.hold_store_lock('app', 5, command=[sys.executable, '-c', 'raise SystemExit(2)']))
+
+    def test_dumps_run_inside_the_store_lock_and_release_it_on_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            config = {'status_path': str(root / 'status.json'), 'backup_dir': str(root), 'app_database': 'app',
+                      'analytics_database': 'analytics', 'min_free_gb': 5, 'dump_script': '/trusted/dump.sh'}
+            calls = []
+            def dump(args, **_kwargs):
+                calls.append(('dump', args[-1]))
+                raise RuntimeError('dump failed')
+            with patch.object(runner, 'trusted_file', return_value=pathlib.Path('/trusted/dump.sh')), \
+                    patch.object(runner, 'hold_store_lock', side_effect=lambda database, wait: calls.append(('hold', database, wait)) or 'session'), \
+                    patch.object(runner, 'release_store_lock', side_effect=lambda session: calls.append(('release', session))), \
+                    patch.object(runner, 'run_command', side_effect=dump):
+                with self.assertRaises(RuntimeError):
+                    runner.run(config)
+            self.assertEqual(calls, [('hold', 'app', runner.STORE_LOCK_WAIT_SECONDS), ('dump', '/trusted/dump.sh'),
+                                     ('release', 'session')])
+
+    def test_store_lock_is_the_application_store_budget_lock(self):
+        evict = pathlib.Path(__file__).parents[1] / 'server' / 'services' / 'evictService.js'
+        self.assertIn(f"const STORE_BUDGET_LOCK = '{runner.STORE_LOCK}';", evict.read_text())
 
     def test_process_return_codes_and_captured_outputs_are_preserved(self):
         result = runner.run_command([sys.executable, '-c', 'print("fixture")'],
