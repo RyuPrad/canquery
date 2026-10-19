@@ -133,7 +133,7 @@ jobs:
         run: echo "CANQUERY_DATABASE_URL=postgres://canquery:canquery_test@127.0.0.1:$DATABASE_PORT/canquery" >> "$GITHUB_ENV"
       # The open-source edition must build, test and start on its own.
       - name: Remove the hosted extension
-        run: rm -rf server/enterprise client/src/enterprise
+        run: rm -rf server/enterprise client/src/enterprise mobile
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.22.1
@@ -160,7 +160,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Refuse private-only paths
         run: |
-          leaked=$(git ls-files -- server/enterprise client/src/enterprise enterprise-analytics ENTERPRISE.md LICENSE-ENTERPRISE .github/workflows/enterprise.yml)
+          leaked=$(git ls-files -- server/enterprise client/src/enterprise enterprise-analytics mobile ENTERPRISE.md LICENSE-ENTERPRISE .github/workflows/enterprise.yml)
           if [ -n "$leaked" ]; then
             echo "::error::Hosted-service paths must not be committed to the public repository."
             printf '%s\n' "$leaked"
