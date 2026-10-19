@@ -23,6 +23,10 @@ import { prepareResource, fetchJob, fetchResource, queryResource, recordResource
 import { ApiError, NotIngestedError } from '../api/client.js';
 import * as rowPageCache from '../utils/rowPageCache.js';
 import { clearResourceHints, rememberResource } from '../utils/resourceHints.js';
+import { markEngaged } from '../utils/engagement.js';
+
+// These visits have a person on the page; ResourcePage.engagement.test.jsx has none.
+markEngaged();
 
 const SNAPSHOT_1 = 'cqs1_' + '1'.repeat(64);
 const SNAPSHOT_2 = 'cqs1_' + '2'.repeat(64);

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, useReducer } from 'react';
+import { useCallback, useEffect, useRef, useState, useReducer, useSyncExternalStore } from 'react';
 import { prepareResource } from '../api/catalog.js';
 import useJobPolling from './useJobPolling.js';
 import { readUnlockJob, writeUnlockJob, clearUnlockJob } from '../utils/unlockStore.js';
+import { isEngaged, markEngaged, subscribeEngagement } from '../utils/engagement.js';
 import { track } from '../utils/analytics.js';
 import {
   initialPreparationState,
@@ -33,6 +34,7 @@ function requestPreparation(id) {
 
 export default function useResourcePreparation({ id, resource, active, needsLocal, onReady }) {
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
+  const engaged = useSyncExternalStore(subscribeEngagement, isEngaged);
   const [{ jobId, phase, retryAt, failureReason, attempt }, dispatch] = useReducer(
     preparationReducer,
     id,
@@ -161,10 +163,13 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     writeUnlockJob(id, discoveredJob);
   }, [active, visible, discoveredJob, jobId, phase, id, key]);
 
+  // A new job waits for a person to use the page (utils/engagement.js), so a
+  // browser that only opens pages never starts one. Joining a job is free.
   useEffect(() => {
     if (
       !wanted ||
       !visible ||
+      !engaged ||
       jobId ||
       requested.current === key ||
       (retryAt && retryAt > Date.now()) ||
@@ -212,7 +217,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
       clearTimeout(timer);
       if (!answered && requested.current === key) requested.current = null;
     };
-  }, [wanted, visible, jobId, key, id, completed, retryAt, metadataRetryAt]);
+  }, [wanted, visible, engaged, jobId, key, id, completed, retryAt, metadataRetryAt]);
 
   const retry = useCallback(() => {
     if (retryAt && retryAt > Date.now()) return;
@@ -232,6 +237,8 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     failureReason,
     supported,
     enabled,
-    working: ['requesting', 'pending', 'running'].includes(phase)
+    working: ['requesting', 'pending', 'running'].includes(phase),
+    awaitingVisitor: wanted && !engaged && phase === 'idle' && !jobId,
+    start: markEngaged
   };
 }

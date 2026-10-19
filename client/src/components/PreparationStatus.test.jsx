@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { LangProvider, STRINGS } from '../i18n.jsx';
 import PreparationStatus from './PreparationStatus.jsx';
@@ -49,5 +49,28 @@ describe('preparation progress', () => {
     cleanup();
     render(<PreparationStatus preparation={{ ...running, phase: 'failed', working: false }} progress={{ phase: 'loading', rows: 5 }} />);
     expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+});
+
+describe.each(['en', 'fr'])('before anybody uses the page, in %s', lang => {
+  const standby = { phase: 'idle', supported: true, enabled: true, failureReason: null, retryAt: null,
+    retry: vi.fn(), working: false, awaitingVisitor: true };
+  test('says the table is not loaded and offers to load it', async () => {
+    localStorage.setItem('cq-lang', lang);
+    const start = vi.fn();
+    render(<LangProvider><PreparationStatus preparation={{ ...standby, start }} /></LangProvider>);
+    expect(screen.getByRole('status')).toHaveTextContent(STRINGS[lang]['preparation.standby']);
+    expect(screen.getByRole('status')).not.toHaveTextContent(STRINGS[lang]['preparation.pending']);
+    expect(screen.getByText(STRINGS[lang]['preparation.automatic'])).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: STRINGS[lang]['preparation.start'] }));
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+  test('a failure or an unavailable file never offers the button', () => {
+    localStorage.setItem('cq-lang', lang);
+    const view = render(<LangProvider><PreparationStatus preparation={{ ...standby, phase: 'failed', start: vi.fn() }} /></LangProvider>);
+    expect(screen.queryByRole('button', { name: STRINGS[lang]['preparation.start'] })).toBeNull();
+    view.rerender(<LangProvider><PreparationStatus preparation={{ ...standby, supported: false, start: vi.fn() }} /></LangProvider>);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent(STRINGS[lang]['preparation.unavailable']);
   });
 });
