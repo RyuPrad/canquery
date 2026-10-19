@@ -5,6 +5,10 @@ import useResourcePreparation from './useResourcePreparation.js';
 import { ApiError, NotFoundError } from '../api/client.js';
 vi.mock('../api/catalog.js', () => ({ prepareResource: vi.fn(), fetchJob: vi.fn() }));
 import { prepareResource, fetchJob } from '../api/catalog.js';
+import { markEngaged } from '../utils/engagement.js';
+
+// These visits have a person on the page; useResourcePreparation.engagement.test.jsx has none.
+markEngaged();
 
 const resource = { id: 'hook-resource', query_mode: 'ingestable', preparation: { supported: true, enabled: true, freshness: 'unprepared' } };
 const props = overrides => ({ id: resource.id, resource, active: true, needsLocal: false, onReady: vi.fn(), ...overrides });

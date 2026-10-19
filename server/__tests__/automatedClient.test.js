@@ -15,7 +15,8 @@ describe('isAutomatedClient', () => {
         'Mozilla/5.0 (compatible;PetalBot;+https://webmaster.petalsearch.com/site/petalbot)',
         'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
         'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)',
-        'Screaming Frog SEO Spider/21.0'
+        'Screaming Frog SEO Spider/21.0',
+        'Lightpanda/1.0'
     ])('matches self-identified automation: %s', userAgent => {
         expect(isAutomatedClient(userAgent)).toBe(true);
     });

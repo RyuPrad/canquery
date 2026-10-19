@@ -24,9 +24,11 @@ function progressLine(progress, t, lang) {
 
 export default function PreparationStatus({ preparation, elapsed, compact = false, progress = null }) {
   const { t, lang } = useLang();
-  const { phase, supported, enabled, retryAt, retry, working, failureReason } = preparation;
+  const { phase, supported, enabled, retryAt, retry, working, failureReason, awaitingVisitor, start } = preparation;
   const unavailable = !supported || !enabled || phase === 'unavailable';
-  const message = unavailable ? 'unavailable' : phase === 'failed' ? 'failed'
+  // Nobody has used the page yet, so nothing was started; the button starts it.
+  const standby = Boolean(awaitingVisitor) && !unavailable && phase !== 'failed';
+  const message = unavailable ? 'unavailable' : phase === 'failed' ? 'failed' : standby ? 'standby'
     : phase === 'waiting' ? 'waiting' : phase === 'running' ? 'running' : 'pending';
   const reason = ['invalid_file', 'upstream_unavailable', 'capacity', 'temporary'].includes(failureReason)
     ? failureReason : null;
@@ -37,6 +39,7 @@ export default function PreparationStatus({ preparation, elapsed, compact = fals
         {working && <span className="loading loading-spinner loading-xs" aria-hidden="true" />}
         {t(phase === 'failed' && !unavailable && reason ? 'preparation.failure.' + reason : 'preparation.' + message)}
       </p>
+      {standby && <div className="flex justify-center"><button type="button" className="btn btn-sm btn-primary" onClick={start}>{t('preparation.start')}</button></div>}
       {!unavailable && phase !== 'failed' && <p className="text-sm text-base-content/60">{t('preparation.automatic')}</p>}
       {line && (
         <div className={'space-y-1' + (compact ? '' : ' max-w-md mx-auto')}>

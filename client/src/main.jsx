@@ -9,6 +9,9 @@ import './index.css'
 import App from './App'
 import { LangProvider } from './i18n.jsx'
 import { ThemeProvider } from './theme.jsx'
+import { watchEngagement } from './utils/engagement.js'
+
+watchEngagement()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
