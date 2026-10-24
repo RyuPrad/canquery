@@ -12,6 +12,7 @@ const catalogFacets = require('../services/catalogFacets');
 const catalogReadCache = require('../services/catalogReadCache');
 const { loadPlaceHub } = require('../services/placeHub');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
+const adsense = require('../services/adsense');
 
 // The built index.html is immutable for the life of the process (a deploy
 // restarts the API), so read it once and reuse.
@@ -25,6 +26,24 @@ function loadTemplate(distDir) {
         templateCacheDir = distDir;
     }
     return templateCache;
+}
+
+// The same template with a nonce placeholder on its scripts and modulepreloads,
+// for ad pages (services/adsense.js).
+let noncedTemplate = null;
+function loadNoncedTemplate(distDir) {
+    const template = loadTemplate(distDir);
+    if (noncedTemplate?.source !== template) noncedTemplate = { source: template, value: adsense.markTemplateNonces(template) };
+    return noncedTemplate.value;
+}
+
+// Google AdSense: the account meta on every page when ads are configured, the
+// loader and preload nonce only on ad pages. Without ads the marker line goes.
+const ADS_MARKER = '<!-- ads:config -->';
+function injectAds(template, client, nonce) {
+    if (!template.includes(ADS_MARKER)) return template;
+    if (!client) return template.replace(/[ \t]*<!-- ads:config -->\r?\n?/, '');
+    return template.replace(ADS_MARKER, () => adsense.adsTags(client, nonce));
 }
 
 function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID) {
@@ -46,6 +65,12 @@ function wantsInitialData(req) {
     return req.method === 'GET' && (!destination || destination === 'document');
 }
 const isNavigation = req => req.get('sec-fetch-mode') === 'navigate';
+// Ads load only into a page a browser tab displays: not RouteHead's fetch of a
+// route's head (Sec-Fetch-Dest: empty). HEAD answers with the same headers as GET.
+function isDocumentRequest(req) {
+    const destination = req.get('sec-fetch-dest');
+    return (req.method === 'GET' || req.method === 'HEAD') && (!destination || destination === 'document');
+}
 
 function injectInitialData(html, payload) {
     if (!payload) return html;
@@ -266,20 +291,37 @@ function serveSpa(distDir) {
                 console.warn('Initial resource data skipped:', err.message);
             }
         }
-        let html = seoMeta.renderHtml(template, page.meta, page.body);
         const privatePage = isPrivatePage(req.path);
+        const adsClient = adsense.adsenseClient();
+        // Account and sign-in pages, 404s and 503s never carry ads.
+        const adPage = Boolean(adsClient) && page.status === 200 && !privatePage && isDocumentRequest(req);
+        // The nonce replaces the template's placeholder before any catalogue
+        // text joins the page, so page content can never carry it.
+        const nonce = adPage ? adsense.createNonce() : null;
+        let html = nonce ? loadNoncedTemplate(distDir).split(adsense.NONCE_PLACEHOLDER).join(nonce) : template;
+        html = injectAds(html, adsClient, nonce);
+        html = seoMeta.renderHtml(html, page.meta, page.body);
         html = injectAnalytics(html,privatePage ? '' : process.env.ANALYTICS_WEBSITE_ID);
-        html = injectRouteAssets(html, req.originalUrl, distDir);
+        html = injectRouteAssets(html, req.originalUrl, distDir, nonce);
         html = injectInitialData(html, initial);
         res.set('Content-Type', 'text/html; charset=utf-8');
         // HTML is revalidated each load so a new deploy (and its hashed asset
-        // refs) propagates immediately; the hashed assets themselves cache for a year.
+        // refs) propagates immediately; the hashed assets themselves cache for a
+        // year. An ad page's nonce must never reach a second visitor from a cache.
         res.set('Cache-Control', privatePage || page.status >= 500
             ? 'no-store'
-            : 'public, max-age=0, must-revalidate');
+            : adPage ? 'private, no-cache' : 'public, max-age=0, must-revalidate');
+        if (adPage) {
+            // One policy replaces helmet's; a second header would intersect with it.
+            res.set('Content-Security-Policy', adsense.adPagePolicy(nonce));
+            // Google's consent messages need the origin as referrer, and an ad
+            // click may open its landing page in a new window.
+            res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+            res.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+        }
         if (page.status === 503) res.set('Retry-After', '60');
         res.status(page.status).send(html);
     };
 }
 
-module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAnalytics, injectInitialData, INITIAL_DATA_ID };
+module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAds, injectAnalytics, injectInitialData, INITIAL_DATA_ID };

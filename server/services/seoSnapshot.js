@@ -8,6 +8,7 @@ const { classifyResource } = require('./resourceCapabilities');
 const catalogFacts = require('./catalogFacts');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { hostedRoute, pageOverride } = require('../extensions');
+const { adsenseClient } = require('./adsense');
 
 const { PAGE_SIZE, pagePath } = require('./catalogPagination');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
@@ -473,6 +474,11 @@ function homeExplanation() {
     ).join('') + '</ol></section>';
 }
 
+const ADVERTISING_EXPLANATION = Object.freeze({
+    title: 'Advertising',
+    summary: 'Public pages show ads from Google AdSense. Third-party vendors, including Google, use cookies to serve ads based on your prior visits to this website or other websites. Google’s use of advertising cookies enables it and its partners to serve ads to you based on your visits to this site and other sites on the Internet. You can opt out of personalized advertising in Google’s Ads Settings (https://www.google.com/settings/ads) or opt out of some third-party vendors’ use of cookies for personalized advertising at www.aboutads.info. Do Not Track and Global Privacy Control turn off CanQuery’s analytics but not Google’s ad code. Account and sign-in pages carry no ads.'
+});
+
 function privacyExplanation() {
     const sections = [
         { title: 'Product analytics and browser controls',
@@ -482,6 +488,8 @@ function privacyExplanation() {
         { title: 'Recovery backups',
             summary: 'Encrypted recovery copies of the application and analytics databases and required configuration are stored in private Cloudflare R2 storage. These copies include account and usage records retained by CanQuery. Backup access is restricted, and decryption keys are kept separately from the uploaded copies. Data removed from the live service may remain in a retained backup until that copy expires; backup retention is managed separately from live-service retention.' }
     ];
+    // Only a deployment that runs Google AdSense (ADSENSE_CLIENT) discloses it.
+    if (adsenseClient()) sections.splice(1, 0, ADVERTISING_EXPLANATION);
     return sections.map(section => '<section><h2>' + text(section.title) + '</h2><p>' + text(section.summary) + '</p></section>').join('');
 }
 

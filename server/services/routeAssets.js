@@ -56,10 +56,12 @@ function routeAssets(requestTarget, manifest) {
     return Array.from(assets, ([file, rel]) => ({ file, rel }));
 }
 
-function injectRouteAssets(template, requestTarget, distDir) {
+// On ad pages the modulepreloads carry the page's script nonce.
+function injectRouteAssets(template, requestTarget, distDir, nonce = null) {
     const tags = routeAssets(requestTarget, loadManifest(distDir))
         .filter(({ file }) => !template.includes('href="/' + file + '"') && !template.includes('src="/' + file + '"'))
-        .map(({ file, rel }) => '<link rel="' + rel + '" crossorigin href="/' + file + '" />');
+        .map(({ file, rel }) => '<link rel="' + rel + '"' + (nonce && rel === 'modulepreload' ? ' nonce="' + nonce + '"' : '') +
+            ' crossorigin href="/' + file + '" />');
     return tags.length ? template.replace('</head>', tags.join('\n') + '\n</head>') : template;
 }
 

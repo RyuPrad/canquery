@@ -21,20 +21,18 @@ const placesRouter = require('./routes/places');
 const sourcesRouter = require('./routes/sources');
 const seoRouter = require('./routes/seo');
 const spaController = require('./controllers/spaController');
+const { CSP_DIRECTIVES } = require('./config/contentSecurityPolicy');
+const { adsenseClient } = require('./services/adsense');
 const { extension } = require('./extensions');
 
 const app = express();
 
+// A malformed ADSENSE_CLIENT stops startup here rather than leaving ads off.
+adsenseClient();
+
 app.set('trust proxy', 1);
-app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            'img-src': ["'self'", 'data:', 'blob:', 'https://maps-cartes.services.geo.ca'],
-            'connect-src': ["'self'", 'https://maps-cartes.services.geo.ca'],
-            'worker-src': ["'self'", 'blob:']
-        }
-    }
-}));
+// Ad pages replace this policy with their own (controllers/spaController.js).
+app.use(helmet({ contentSecurityPolicy: { directives: CSP_DIRECTIVES } }));
 app.use(requestId);
 app.use(require('./middleware/requestLifetime').requestLifetime());
 app.use((_req, res, next) => {
