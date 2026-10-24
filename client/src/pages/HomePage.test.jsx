@@ -6,7 +6,6 @@ import PlacesPage from './PlacesPage.jsx';
 import { LangProvider } from '../i18n.jsx';
 
 vi.mock('../components/LocalGuides.jsx', () => ({ default: () => null }));
-vi.mock('../components/MochiPromotion.jsx', () => ({ default: () => null }));
 vi.mock('../components/RecentRail.jsx', () => ({ default: () => null }));
 vi.mock('../components/PopularRail.jsx', () => ({ default: () => null }));
 vi.mock('../components/HeroChartWidget.jsx', () => ({ default: () => null }));

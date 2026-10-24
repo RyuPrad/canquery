@@ -25,7 +25,6 @@ export const ANALYTICS_EVENTS = new Set([
   'ui_language',
   'ui_theme',
   'outbound_link',
-  'promotion_view',
 ]);
 
 const MAX_VALUE_LENGTH = 500;

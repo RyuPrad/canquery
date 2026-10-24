@@ -9,7 +9,6 @@ import useSearchDraft from '../hooks/useSearchDraft.js';
 import useCountUp from '../hooks/useCountUp.js';
 import { useLang } from '../i18n.jsx';
 import SearchBar from '../components/SearchBar.jsx';
-import MochiPromotion from '../components/MochiPromotion.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import RecentRail from '../components/RecentRail.jsx';
 import PopularRail from '../components/PopularRail.jsx';
@@ -488,7 +487,6 @@ export default function HomePage() {
         {!searchQuery && !org.length && !format.length && !source.length && !keyword.length && (
           <LocalGuides place={place} limit={3} variant="compact" />
         )}
-        {!filtering && <MochiPromotion variant="slim" />}
       </div>
     </div>
   );

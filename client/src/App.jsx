@@ -4,7 +4,6 @@ import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
-import { PromotionTracking } from './components/PromotionTracking.jsx'
 import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
@@ -52,7 +51,7 @@ function NotFound() {
 
 export default function App() {
   return (
-    <PromotionTracking><div className="min-h-screen flex flex-col text-base-content">
+    <div className="min-h-screen flex flex-col text-base-content">
       <ScrollToTop />
       <RouteHead />
       <AnalyticsBridge />
@@ -83,6 +82,6 @@ export default function App() {
         </Suspense>
       </main>
       <Footer />
-    </div></PromotionTracking>
+    </div>
   )
 }

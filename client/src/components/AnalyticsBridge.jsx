@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { track } from '../utils/analytics.js';
-import { promotionProperties } from '../utils/promotion.js';
 
 function datasetProperties(element) {
   const properties = {};
@@ -32,7 +31,6 @@ export default function AnalyticsBridge() {
             host: url.host,
             path: url.pathname,
             label: (anchor.textContent || '').trim(),
-            ...(url.origin === 'https://hellomochi.app' ? promotionProperties(anchor.closest('[data-promotion]')) : {}),
           });
         }
       } catch {
