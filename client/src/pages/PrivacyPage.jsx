@@ -15,6 +15,9 @@ const COLLECTED = [
   'privacy.collect_promotions',
 ];
 
+// The server adds this meta to every page when the deployment runs Google AdSense.
+const adsEnabled = () => Boolean(globalThis.document?.querySelector('meta[name="google-adsense-account"]'));
+
 const NOT_COLLECTED = [
   'privacy.no_cookies',
   'privacy.no_raw_ip',
@@ -56,6 +59,19 @@ export default function PrivacyPage() {
         <h2 className="text-xl font-semibold font-display">{t('privacy.control_title')}</h2>
         <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.control_body')}</p>
       </section>
+
+      {adsEnabled() && (
+        <section className="mt-9">
+          <h2 className="text-xl font-semibold font-display">{t('privacy.ads_title')}</h2>
+          <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.ads_body')}</p>
+          <p className="text-sm text-base-content/65 mt-3 leading-relaxed">
+            {t('privacy.ads_optout')}{' '}
+            <a className="link" href="https://www.google.com/settings/ads">{t('privacy.ads_settings_link')}</a>
+            {' · '}
+            <a className="link" href="https://www.aboutads.info/choices/">{t('privacy.ads_aboutads_link')}</a>
+          </p>
+        </section>
+      )}
 
       <section className="mt-9">
         <h2 className="text-xl font-semibold font-display">{t('privacy.delivery_title')}</h2>

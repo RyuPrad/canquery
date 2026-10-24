@@ -21,6 +21,11 @@ export default defineConfig([
       // The house data-fetching pattern (cancelled-flag effects that seed
       // loading/error state) intentionally sets state inside effects.
       'react-hooks/set-state-in-effect': 'off',
+      // Ad pages allow eval for Google's ad code (server/services/adsense.js);
+      // CanQuery's own code must never rely on it.
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error',
     },
   },
   {

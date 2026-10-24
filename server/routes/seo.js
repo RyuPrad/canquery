@@ -1,11 +1,13 @@
 const express = require('express');
 const sitemap = require('../controllers/sitemapController');
+const { adsTxt } = require('../services/adsense');
 
 // Crawl-facing files served at the site root (not under /api). Mounted in all
 // environments so they can be smoke-tested against the dev API directly.
 const router = express.Router();
 
 router.get('/robots.txt', sitemap.robots);
+router.get('/ads.txt', adsTxt);
 router.get('/sitemap.xml', sitemap.sitemapIndex);
 router.get('/sitemap-blog.xml', sitemap.sitemapBlog);
 router.get('/sitemap-pages.xml', sitemap.sitemapPages);

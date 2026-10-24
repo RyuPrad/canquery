@@ -6,7 +6,18 @@ import PrivacyPage from './PrivacyPage.jsx';
 // Core page without any extension; src/enterprise/privacy.test.jsx covers accounts.
 vi.mock('../extensions.js', () => ({ hostedPart: (_modules, fallback) => fallback }));
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  document.head.querySelector('meta[name="google-adsense-account"]')?.remove();
+});
+
+// The server adds this meta to every page when the deployment runs Google AdSense.
+function markAdsOn() {
+  const meta = document.createElement('meta');
+  meta.name = 'google-adsense-account';
+  meta.content = 'ca-pub-9765393503852455';
+  document.head.append(meta);
+}
 
 test('discloses analytics collection and browser opt-outs in English', () => {
   render(<PrivacyPage />);
@@ -32,4 +43,28 @@ test('renders the full disclosure in French', () => {
   expect(screen.getByText(/L’hébergeur de CanQuery et Cloudflare/)).toHaveTextContent('Le refus de l’analytique dans le navigateur n’empêche pas ce traitement nécessaire');
   expect(screen.getByText(/Des copies de récupération chiffrées/)).toHaveTextContent('Les données supprimées du service actif peuvent subsister');
   expect(screen.queryByText(/Les comptes facultatifs/)).toBeNull();
+});
+
+test('discloses Google advertising only when the deployment runs it', () => {
+  const { unmount } = render(<PrivacyPage />);
+  expect(screen.queryByRole('heading', { name: 'Advertising' })).toBeNull();
+  unmount();
+
+  markAdsOn();
+  render(<PrivacyPage />);
+  expect(screen.getByRole('heading', { level: 2, name: 'Advertising' })).toBeInTheDocument();
+  expect(screen.getByText(/Third-party vendors, including Google, use cookies to serve ads/)).toHaveTextContent(
+    'Do Not Track and Global Privacy Control turn off CanQuery’s analytics but not Google’s ad code. Account and sign-in pages carry no ads.');
+  expect(screen.getByRole('link', { name: 'Google Ads Settings' })).toHaveAttribute('href', 'https://www.google.com/settings/ads');
+  expect(screen.getByRole('link', { name: 'www.aboutads.info' })).toHaveAttribute('href', 'https://www.aboutads.info/choices/');
+});
+
+test('discloses Google advertising in French', () => {
+  localStorage.setItem('cq-lang', 'fr');
+  markAdsOn();
+  render(<LangProvider><PrivacyPage /></LangProvider>);
+  expect(screen.getByRole('heading', { level: 2, name: 'Publicité' })).toBeInTheDocument();
+  expect(screen.getByText(/Des fournisseurs tiers, dont Google, utilisent des témoins/)).toHaveTextContent(
+    'mais pas le code publicitaire de Google');
+  expect(screen.getByRole('link', { name: 'Paramètres des annonces Google' })).toHaveAttribute('href', 'https://www.google.com/settings/ads');
 });
