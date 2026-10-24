@@ -21,7 +21,6 @@ export function startAnalytics(doc = globalThis.document, nav = globalThis.navig
   tracker.setAttribute('data-performance', 'false');
   tracker.setAttribute('data-do-not-track', 'true');
   tracker.addEventListener('load', () => {
-    win.dispatchEvent?.(new Event('canquery:analytics-ready'));
     const recorder = doc.createElement('script');
     recorder.async = true;
     recorder.src = '/heatmaps.js';
