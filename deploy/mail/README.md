@@ -18,6 +18,17 @@ line by hand, check it with `opendkim -n` and restart only `canquery-mail-dkim`.
 Its key is owned by the signer with mode 0600. SMTP connection/message/recipient caps,
 10 MiB message size and a 5 GiB queue-space floor bound the new service.
 
+The host's outbound name is set outside this tool. Postfix `myhostname` and
+`smtp_helo_name` should equal the PTR of the host's IPv4, and that name's A record
+should point back to the same address, so receivers see forward-confirmed reverse
+DNS. On a shared host whose name belongs to another application, move it to the
+mail hostname in this order: change the PTR in the hosting provider's panel and
+wait until public resolvers return it; back up `main.cf`; set only those two
+values with `postconf -e`; run `postfix check` and reload Postfix; then send one
+test message from every sender on the host and confirm SPF, DKIM and DMARC still
+pass. Leave `myorigin` and other applications' senders as they are. The new
+`main.cf` hash becomes the captured hash for a later `configure.py` run.
+
 Before installation, inspect actual units, Postfix configuration, firewall,
 DNS, disk space and package versions. Retain reviewed configuration snapshots
 and fresh verified encrypted database backups under the existing backup lock.

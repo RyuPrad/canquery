@@ -1,7 +1,8 @@
 """Authentication and signing for a separate Postfix submission listener.
 
 Only master.cf gets additional services. Existing main.cf, loopback SMTP,
-outbound HELO/PTR identity and other applications' DKIM paths stay intact.
+the outbound HELO/PTR identity (set separately; see README.md) and other
+applications' DKIM paths stay intact.
 """
 import ipaddress
 import re
