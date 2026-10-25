@@ -4,7 +4,18 @@ const TOPICS = [
     ['parks', 'park', 'parcs', 'parc', 'green spaces', 'green space', 'espaces verts', 'espace vert'],
     ['playgrounds', 'playground', 'play areas', 'play area', 'aires de jeux', 'aire de jeux'],
     ['building permits', 'building permit', 'permis de construction', 'permis de bâtir'],
-    ['ward boundaries', 'ward boundary', 'limites des quartiers', 'limites quartiers']
+    ['ward boundaries', 'ward boundary', 'limites des quartiers', 'limites quartiers'],
+    ['business licences', 'business licence', 'business licenses', 'business license', 'permis d’entreprise', 'permis d’entreprises'],
+    ['zoning', 'zonage'],
+    ['charities', 'charity', 'organismes de bienfaisance', 'organisme de bienfaisance'],
+    ['elections', 'election', 'élections', 'élection'],
+    ['lmia', 'eimt'],
+    ['restaurant inspections', 'restaurant inspection', 'inspections de restaurants', 'inspection de restaurants'],
+    ['natural health products', 'natural health product', 'produits de santé naturels', 'produit de santé naturel'],
+    ['notifiable diseases', 'notifiable disease', 'maladies à déclaration obligatoire', 'maladie à déclaration obligatoire'],
+    ['earthquakes', 'earthquake', 'séismes', 'séisme', 'tremblements de terre', 'tremblement de terre'],
+    ['traffic volumes', 'traffic volume', 'volumes de circulation', 'débits de circulation'],
+    ['flood maps', 'flood map', 'flood hazard', 'zones inondables', 'zone inondable']
 ];
 // Inflection is already handled by PostgreSQL. Repeating singular/plural
 // alternatives inflates the planner's match estimate and can bypass the GIN index.
@@ -12,7 +23,18 @@ const SEARCH_TERMS = [
     ['parks', 'parcs', 'green spaces', 'espaces verts'],
     ['playgrounds', 'play areas', 'aires de jeux'],
     ['building permits', 'permis de construction', 'permis de bâtir'],
-    ['ward boundaries', 'limites des quartiers', 'limites quartiers']
+    ['ward boundaries', 'limites des quartiers', 'limites quartiers'],
+    ['business licences', 'business licenses', 'permis d’entreprise'],
+    ['zoning', 'zonage'],
+    ['charities', 'organismes de bienfaisance'],
+    ['elections', 'élections'],
+    ['lmia', 'eimt'],
+    ['restaurant inspections', 'inspections de restaurants'],
+    ['natural health products', 'produits de santé naturels'],
+    ['notifiable diseases', 'maladies à déclaration obligatoire'],
+    ['earthquakes', 'séismes', 'tremblements de terre'],
+    ['traffic volumes', 'volumes de circulation', 'débits de circulation'],
+    ['flood maps', 'flood hazard', 'zones inondables']
 ];
 const words = value => String(value || '').toLocaleLowerCase('fr-CA').match(/[\p{L}\p{N}]+/gu) || [];
 const fold = value => value.normalize('NFD').replace(/\p{M}/gu, '');

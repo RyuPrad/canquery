@@ -1,3 +1,13 @@
+Durham Region's **Uxbridge Ward Boundaries** layer divides the Township of Uxbridge into five wards, labelled U1 to U5. CanQuery draws the layer as an interactive map: select a ward to read its recorded number and label.
+
+| At a glance | |
+|---|---|
+| Publisher | Durham Region |
+| Wards in the layer | Five polygons: **WARD** 1 to 5, **LABEL** U1 to U5 |
+| Other fields | **MUNICIPALITY**, **OBJECTID**, **Shape_Length**, **Shape_Area** |
+| On CanQuery | An interactive map, plus the publisher's original CSV link for the attributes |
+| For GIS files | Durham Region's dataset page lists the geographic formats |
+
 ## Open the boundary layer for Uxbridge
 
 Durham Region publishes an open-data layer called **Uxbridge Ward Boundaries**. Use the [CanQuery dataset page](/datasets/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32) to check the publisher and source links, then [open the interactive map](/resources/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32-data?view=map). This is a polygon boundary layer: its main purpose is to show areas and their recorded attributes.

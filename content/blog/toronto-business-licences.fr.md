@@ -2,6 +2,15 @@ Vous voulez savoir si un commerce, un entrepreneur ou un vendeur ambulant de Tor
 
 Le jeu couvre des catégories commerciales comme les établissements de restauration, les centres holistiques, les rénovateurs et les vendeurs ambulants. La Ville précise qu’il n’inclut pas les permis personnels, par exemple ceux des chauffeurs de taxi ou des praticiens holistiques.
 
+| En bref | |
+|---|---|
+| Producteur | Ville de Toronto, Municipal Licensing & Standards (ML&S) |
+| Contenu | Les permis et licences d’entreprise par catégorie; les permis personnels, comme ceux des chauffeurs de taxi, ne sont pas inclus |
+| Taille | Environ 160 000 dossiers |
+| Recherche par | **Operating Name**, **Client Name**, rue, **Category**, **Licence No.**, **Ward** |
+| Toujours actif? | Un dossier avec une **Cancel Date** n’est plus un permis actif |
+| Dans CanQuery | Une table en direct actualisée à partir du DataStore de la Ville, avec export CSV jusqu’à 10 000 lignes |
+
 ## Ouvrir la table des permis d’entreprise
 
 1. [Ouvrez la table des permis d’entreprise de Toronto dans CanQuery](/resources/ckan-toronto-open-data-resource-169e90ba-3ae0-43dd-8b2f-919e87002f50). La copie préparée sur CanQuery compte environ 160 000 enregistrements et provient du DataStore de la Ville.

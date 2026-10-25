@@ -22,7 +22,13 @@ integrationDescribe('resident search PostgreSQL integration', () => {
             ['fr', null, 'Parcs et espaces publics', null, 'Les grands parcs et les espaces verts de Montréal.', 'sgc-csd-2466023'],
             ['play', 'Recreation Facilities', null, 'Outdoor playgrounds for children.', null, 'sgc-cd-3520'],
             ['permits', 'Building Permits', null, 'Active building applications and permits.', null, 'sgc-cd-3520'],
-            ['wards', 'Uxbridge Ward Boundaries', null, 'Municipal boundary layer.', null, 'sgc-cd-3520']
+            ['wards', 'Uxbridge Ward Boundaries', null, 'Municipal boundary layer.', null, 'sgc-cd-3520'],
+            ['quakes', 'Earthquakes in Canada 2010-2019', null, 'Historical earthquakes recorded by Earthquakes Canada.', null, 'sgc-cd-3520'],
+            ['charities', 'List of charities 2024', null, 'Registered charities and their annual returns.', null, 'sgc-cd-3520'],
+            ['lmia', 'Positive LMIA Employers List', null, 'Employers that received a positive Labour Market Impact Assessment.', null, 'sgc-cd-3520'],
+            ['zoning', 'Zoning By-law', null, 'Zoning areas of the city.', null, 'sgc-cd-3520'],
+            ['snow', 'Snow Removal Zones', null, 'Priority zones for snow clearing.', null, 'sgc-cd-3520'],
+            ['maladies', null, 'Maladies à déclaration obligatoire', null, 'Nombre de cas déclarés de maladies à déclaration obligatoire.', 'sgc-csd-2466023']
         ];
         for (const [key, en, fr, notesEn, notesFr, place] of datasets) {
             await db.query(`INSERT INTO datasets (id, name, org_id, title_en, title_fr, notes_en, notes_fr)
@@ -67,8 +73,20 @@ integrationDescribe('resident search PostgreSQL integration', () => {
         expect(first[0].id).not.toBe(second[0].id);
     });
 
+    test('pairs the guide topics across English and French', async () => {
+        expect((await search('séismes')).map(row => row.id)).toEqual([id('quakes')]);
+        expect((await search('organismes de bienfaisance')).map(row => row.id)).toEqual([id('charities')]);
+        expect((await search('EIMT')).map(row => row.id)).toEqual([id('lmia')]);
+        expect((await search('notifiable diseases')).map(row => row.id)).toEqual([id('maladies')]);
+        expect(await search("permis d'entreprise")).toEqual([]);
+        // Stemming lets zoning reach zones; the literal match still ranks first.
+        const zoning = (await search('zoning')).map(row => row.id);
+        expect(zoning[0]).toBe(id('zoning'));
+        expect((await search('zonage'))[0].id).toBe(id('zoning'));
+    });
+
     test('handles empty browsing, punctuation and stop words without SQL errors', async () => {
-        expect((await search(null)).length).toBe(6);
+        expect((await search(null)).length).toBe(12);
         expect(await search("' | ! ;")).toEqual([]);
         expect(await search('the')).toEqual([]);
     });

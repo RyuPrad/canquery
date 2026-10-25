@@ -1,5 +1,13 @@
 Vous voulez savoir à quel quartier électoral (ward) de Calgary appartient une adresse, qui représente ce quartier au conseil ou comment les 14 quartiers se comparent en logements et en résidents. La Ville de Calgary publie ses limites de quartiers en données ouvertes, avec un jeu distinct pour chaque découpage. Ce guide utilise **Ward Boundaries for 2021 October 18 General Election**, les limites entrées en vigueur le jour de l’élection de 2021.
 
+| En bref | |
+|---|---|
+| Producteur | Ville de Calgary |
+| Limites | 14 quartiers, tels que fixés pour l’élection générale du 18 octobre 2021 |
+| Champ du quartier | **WardNumber** |
+| Aussi joints | Des totaux du recensement municipal, comme **SUM_RES_CNT** (résidents) et **SUM_DWELL_CNT** (logements) |
+| Dans CanQuery | Une carte interactive et une table à représenter en graphique ou à exporter en CSV |
+
 ## Trouver un quartier sur la carte
 
 1. [Ouvrez la carte des quartiers électoraux de Calgary dans CanQuery](/resources/socrata-calgary-open-data-resource-bxgr-t8xb?view=map). Chaque polygone est un quartier.

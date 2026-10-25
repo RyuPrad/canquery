@@ -1,5 +1,15 @@
 You want to check that a charity is registered with the Canada Revenue Agency (CRA), find its business number before you donate, or build a list of registered charities in your city or in a category. The CRA publishes the **List of charities** as open data, one dataset per year, compiled from the annual return (form T3010) every registered charity files. This guide uses the **2024 List of charities**; CanQuery offers its files as live tables you can search in the browser.
 
+| At a glance | |
+|---|---|
+| Publisher | Canada Revenue Agency (CRA) |
+| What it lists | Registered charities, compiled from the annual T3010 return |
+| Edition in this guide | 2024 List of charities: about 84,000 charities in the Identification table |
+| Search by | **BN**, **Legal Name**, **Account Name**, **Category**, **City**, **Province** |
+| Earlier years | One list per year, back to 2011 |
+| On CanQuery | A live table you can search, filter and chart, with CSV export of up to 10,000 rows |
+| Current status | Confirm it in the CRA's online charities listing |
+
 ## Look up a charity
 
 1. [Open the Identification table in CanQuery](/resources/694fdc72-eae4-4ee0-83eb-832ab7b230e3). It lists about 84,000 charities with **BN** (the business number and registration suffix), **Legal Name**, **Account Name**, **Category**, **Sub Category**, **Designation** and the address fields **City**, **Province**, **Postal Code** and **Country**.

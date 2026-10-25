@@ -2,6 +2,15 @@ You want to know whether a Toronto shop, contractor or mobile vendor holds a cit
 
 The dataset covers business categories such as eating establishments, holistic centres, building renovators and mobile vendors. The City notes that it does not include licences for individual people, such as taxicab drivers or holistic practitioners.
 
+| At a glance | |
+|---|---|
+| Publisher | City of Toronto, Municipal Licensing & Standards (ML&S) |
+| What it lists | Business licences and permits by category; licences for individuals such as taxicab drivers are not included |
+| Size | About 160,000 records |
+| Search by | **Operating Name**, **Client Name**, street, **Category**, **Licence No.**, **Ward** |
+| Still active? | A record with a **Cancel Date** is no longer an active licence |
+| On CanQuery | A live table refreshed from the City's DataStore, with CSV export of up to 10,000 rows |
+
 ## Open the business licences table
 
 1. [Open the Toronto business licences table in CanQuery](/resources/ckan-toronto-open-data-resource-169e90ba-3ae0-43dd-8b2f-919e87002f50). The copy prepared on CanQuery holds about 160,000 records and is refreshed from the City's DataStore.

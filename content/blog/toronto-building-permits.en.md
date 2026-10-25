@@ -2,6 +2,14 @@ You have noticed work on a Toronto street and want to learn what the city's reco
 
 CanQuery lets you search this official table in your browser. You can start with a street name, inspect matching records, and follow the source link when you need more context.
 
+| At a glance | |
+|---|---|
+| Publisher | City of Toronto |
+| What it lists | Active building applications and permits, updated during the City's review and inspection work |
+| Not included | Completed or closed permits, which are in the separate cleared-permits dataset |
+| Search by | Street name (**STREET_NAME**), building number, permit type, status and work description |
+| On CanQuery | A live table from the City's DataStore, with exact street filters such as `=KING` and CSV export of up to 10,000 rows |
+
 ## Start with the active-permits table
 
 1. [Open Toronto’s active building permits in CanQuery](/resources/ckan-toronto-open-data-resource-6d0229af-bc54-46de-9c2b-26759b01dd05).

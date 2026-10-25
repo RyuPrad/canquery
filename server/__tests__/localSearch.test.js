@@ -21,3 +21,19 @@ test('suggests one-edit vocabulary corrections without replacing valid queries',
     expect(spellingSuggestions('xx')).toEqual([]);
     expect(spellingSuggestions('completely unrelated')).toEqual([]);
 });
+
+test('pairs the guide topics across English and French without swallowing other words', () => {
+    expect(searchExpression("permis d'entreprise toronto")).toBe(
+        "('business' <-> 'licences' | 'business' <-> 'licenses' | 'permis' <-> 'd' <-> 'entreprise') & ('toronto')");
+    expect(searchExpression('EIMT')).toBe("('lmia' | 'eimt')");
+    expect(searchExpression('séismes')).toContain("'earthquakes'");
+    expect(searchExpression('earthquake')).toContain("'tremblements' <-> 'de' <-> 'terre'");
+    expect(searchExpression('organismes de bienfaisance')).toContain("'charities'");
+    expect(searchExpression('maladies à déclaration obligatoire')).toContain("'notifiable' <-> 'diseases'");
+    expect(searchExpression('natural health products')).toContain("'produits' <-> 'de' <-> 'santé' <-> 'naturels'");
+    expect(searchExpression('zoning bylaw')).toBe("('zoning' | 'zonage') & ('bylaw')");
+    expect(searchExpression('flood map calgary')).toMatch(/'zones' <-> 'inondables'\) & \('calgary'\)$/);
+    // A word that merely contains a topic stays a plain word.
+    expect(searchExpression('electoral districts')).toBe("('electoral') & ('districts')");
+    expect(spellingSuggestions('earthquaks')).toContain('earthquakes');
+});
