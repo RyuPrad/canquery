@@ -25,6 +25,12 @@ test('publishes nineteen paired guides with verified resource links, keeping two
     }
 });
 
+test('keeps every guide title, drafts included, within the 70 characters Bing allows with the site name', () => {
+    // Guide pages show the manifest title followed by " - CanQuery" (blogPresentation.js).
+    const long = readArticles().filter(article => (article.title + ' - CanQuery').length > 70);
+    expect(long.map(article => article.path)).toEqual([]);
+});
+
 test.each(['en', 'fr'])('renders complete %s articles and metadata without any catalogue query', async lang => {
     const articles = listArticles({ lang });
     const unavailable = new Proxy({}, { get() { throw new Error('Catalogue must not be accessed'); } });
