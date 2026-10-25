@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { fetchDataset } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
 import { track } from '../utils/analytics.js';
 import { rememberResource } from '../utils/resourceHints.js';
+import { takeDatasetInitialData, consumeInitialData } from '../utils/initialData.js';
 import CatalogPagination from '../components/CatalogPagination.jsx';
 import { PAGE_SIZE, pageNumber } from '../utils/catalogPagination.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
@@ -47,8 +48,14 @@ function FormatTile({ format }) {
 function DatasetExplorer({ idOrName }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { lang: uiLang, t } = useLang();
-  const [dataset, setDataset] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  // A direct visit's HTML carries this dataset and its guide lists.
+  const [initial] = useState(() => takeDatasetInitialData({ idOrName, location }));
+  useEffect(() => {
+    consumeInitialData();
+  }, []);
+  const [dataset, setDataset] = useState(() => initial?.dataset.data ?? null);
+  const [loading, setLoading] = useState(!initial);
   const [error, setError] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [contentLang, setContentLang] = useState(uiLang);
@@ -61,6 +68,18 @@ function DatasetExplorer({ idOrName }) {
   const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
 
   useEffect(() => {
+    if (initial) {
+      if (openedRef.current) return undefined;
+      openedRef.current = true;
+      for (const resource of initial.dataset.data.resources || []) rememberResource(resource);
+      track('dataset_open', {
+        dataset_id: initial.dataset.data.id,
+        dataset_slug: initial.dataset.data.name || '',
+        resource_count: (initial.dataset.data.resources || []).length,
+        source: 'inline',
+      });
+      return undefined;
+    }
     let cancelled = false;
     if (dataset === null) setLoading(true);
     fetchDataset(idOrName)
@@ -91,7 +110,8 @@ function DatasetExplorer({ idOrName }) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-    // dataset is intentionally omitted: it only gates the first-load spinner.
+    // dataset is intentionally omitted: it only gates the first-load spinner;
+    // initial never changes for one explorer (it is keyed by idOrName).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idOrName]);
 
@@ -330,7 +350,7 @@ function DatasetExplorer({ idOrName }) {
         ))}
       </div>
       <CatalogPagination page={page} hasMore={page * PAGE_SIZE < dataset.resources.length} path={'/datasets/' + encodeURIComponent(dataset.name || dataset.id)} />
-      <LocalGuides dataset={dataset.id} />
+      <LocalGuides dataset={dataset.id} initial={initial?.guides} />
     </div>
   );
 }

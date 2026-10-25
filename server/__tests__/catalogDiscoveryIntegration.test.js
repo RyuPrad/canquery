@@ -74,6 +74,20 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         const rest = await queries.listResourceSitemap({ limit: 25000, offset: 2 }, db);
         expect([...first, ...rest]).toEqual(all);
     });
+    test('dates each sitemap chunk by the newest entry of exactly that chunk', async () => {
+        const newest = rows => {
+            const times = rows.map(row => row.lastmod ?? row.metadata_modified).filter(Boolean).map(value => new Date(value).getTime());
+            return times.length ? Math.max(...times) : null;
+        };
+        const check = (chunks, rows, size) => {
+            expect(chunks.map(row => row.chunk)).toEqual(Array.from({ length: Math.ceil(rows.length / size) }, (_, index) => index + 1));
+            for (const { chunk, lastmod } of chunks) {
+                expect(lastmod ? new Date(lastmod).getTime() : null).toBe(newest(rows.slice((chunk - 1) * size, chunk * size)));
+            }
+        };
+        check(await queries.listResourceSitemapChunkLastmods(2, db), await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db), 2);
+        check(await queries.listDatasetSitemapChunkLastmods(40, db), await queries.listDatasetSitemap({ limit: 25000, offset: 0 }, db), 40);
+    });
 });
 
 integrationDescribe('paged place discovery PostgreSQL integration', () => {
@@ -161,5 +175,23 @@ integrationDescribe('paged place discovery PostgreSQL integration', () => {
         expect(isolated.map(row => row.id)).toEqual([id('isolated')]);
         expect(counts(isolated[0])).toEqual([0, 0, 0]);
         expect(await read({ kind: 'province' })).toEqual([]);
+    });
+
+    test('lists a place\'s publishers by the datasets that apply to it, as the general publisher query does', async () => {
+        await db.query(`INSERT INTO organizations (id, name, title_en) VALUES ($1, $1, 'Works'), ($2, $2, 'Statistics')`,
+            [id('works'), id('stats')]);
+        await db.query('UPDATE datasets SET org_id = $1 WHERE id = ANY($2)', [id('works'), [id('direct'), id('inherited'), id('noninherited')]]);
+        await db.query('UPDATE datasets SET org_id = $1 WHERE id = ANY($2)', [id('stats'), [id('countrywide'), id('sibling')]]);
+        for (const name of ['direct', 'inherited', 'noninherited', 'countrywide', 'localcoverage', 'sibling']) {
+            await db.query('INSERT INTO dataset_sources (source_id, external_id, dataset_id) VALUES ($1, $2, $2)', [id('source1'), id(name)]);
+        }
+        const publishers = args => queries.listOrganizations({ q: null, source: null, limit: 12, offset: 0, ...args }, db);
+        const fast = await publishers({ place: id('a') });
+        expect(fast.map(row => [row.name, row.dataset_count])).toEqual([[id('works'), 2], [id('stats'), 1]]);
+        // Every dataset carries source1, so the general query (reached through a source filter) must agree.
+        expect(await publishers({ place: id('a'), source: id('source1') })).toEqual(fast);
+        expect((await publishers({ place: id('a'), q: 'statis' })).map(row => row.name)).toEqual([id('stats')]);
+        expect(await publishers({ place: id('a'), limit: 1, offset: 1 })).toEqual(fast.slice(1));
+        expect(await publishers({ place: id('missing') })).toEqual([]);
     });
 });

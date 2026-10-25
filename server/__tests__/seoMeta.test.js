@@ -431,6 +431,11 @@ describe('seoMeta - site + static meta', () => {
         expect(website.description).toBe(meta.description);
         expect(website.potentialAction['@type']).toBe('SearchAction');
         expect(website.potentialAction.target.urlTemplate).toContain('{search_term_string}');
+        // A page title is not an alternate site name.
+        expect(website.alternateName).toBeUndefined();
+        const organization = meta.jsonLd.find((o) => o['@type'] === 'Organization');
+        expect(organization.logo).toBe('https://canquery.com/android-chrome-512.png');
+        expect(organization.sameAs).toEqual(['https://github.com/RyuPrad/canquery', 'https://bsky.app/profile/canquery.com']);
     });
 
     it('builds indexable metadata for place pages', () => {
@@ -494,6 +499,17 @@ describe('seoMeta - renderHtml injection', () => {
         expect(html).toContain('<link rel="canonical" href="https://canquery.com/datasets/n" />');
         expect(html).toContain('application/ld+json');
         expect(html).not.toContain('<title>default</title>');
+    });
+
+    it('shares a raster preview image with its size and description', () => {
+        const html = seo.renderHtml(template, seo.homeMeta());
+        expect(html).toContain('<meta property="og:image" content="https://canquery.com/og-image.png" />');
+        expect(html).toContain('<meta property="og:image:width" content="1200" />');
+        expect(html).toContain('<meta property="og:image:height" content="630" />');
+        expect(html).toContain('<meta property="og:image:alt" content="CanQuery: Canadian open data search, tables and maps" />');
+        expect(html).toContain('<meta name="twitter:image" content="https://canquery.com/og-image.png" />');
+        expect(html).toContain('<meta name="twitter:image:alt" content="CanQuery: Canadian open data search, tables and maps" />');
+        expect(html).not.toContain('og-image.svg');
     });
 
     it('adds a robots noindex tag when requested', () => {
@@ -692,6 +708,17 @@ describe('seoMeta - title compaction, paging and place names', () => {
     });
 
     it('describes the About page without repeating the site name', () => {
-        expect(seo.staticMeta('about').title).toBe('About - CanQuery');
+        const meta = seo.staticMeta('about');
+        expect(meta.title).toBe('About CanQuery: search and explore Canadian open data');
+        expect(meta.title.match(/CanQuery/g)).toHaveLength(1);
+    });
+
+    it('describes the About page as an AboutPage of the CanQuery organization, with a breadcrumb', () => {
+        const [about, breadcrumb] = seo.staticMeta('about').jsonLd;
+        expect(about).toMatchObject({ '@type': 'AboutPage', url: 'https://canquery.com/about',
+            about: { '@type': 'Organization', name: 'CanQuery', logo: 'https://canquery.com/android-chrome-512.png' } });
+        expect(breadcrumb['@type']).toBe('BreadcrumbList');
+        expect(breadcrumb.itemListElement.map(item => item.item)).toEqual(['https://canquery.com/', 'https://canquery.com/about']);
+        expect(seo.staticMeta('faq').jsonLd).toBeUndefined();
     });
 });

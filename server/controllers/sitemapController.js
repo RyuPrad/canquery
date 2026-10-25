@@ -42,21 +42,48 @@ function chunkNumber(value) {
     return Number.isSafeInteger(parsed) && parsed <= maxChunk ? parsed : null;
 }
 
+const isoDate = value => {
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
+};
+const latest = (...values) => values.filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || '';
+
 // Crawlers fetch the index and every chunk in bursts, and each count or
 // lastmod read is a full scan, so they are read once an hour per process.
-const sitemapCache = createCache({ name: 'sitemap', ttlMs: 60 * 60 * 1000, negativeTtlMs: 0, maxEntries: 8 });
+const sitemapCache = createCache({ name: 'sitemap', ttlMs: 60 * 60 * 1000, negativeTtlMs: 0, maxEntries: 16 });
 const catalogueTotals = () => sitemapCache.get('totals', async () => {
     const [datasets, resources] = await Promise.all([catalogRead.countSitemapDatasets(), catalogRead.countSitemapResources()]);
     return { datasets, resources };
 });
-const catalogueLastmod = () => sitemapCache.get('lastmod', async () => {
-    const value = await catalogRead.getCatalogLastModified();
-    const date = value ? new Date(value) : null;
-    return date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
+const catalogueLastmod = () => sitemapCache.get('lastmod', async () => isoDate(await catalogRead.getCatalogLastModified()));
+// The newest change inside each dataset or resource chunk, by chunk number.
+const chunkLastmods = family => sitemapCache.get('chunks:' + family, async () => {
+    const rows = await (family === 'datasets'
+        ? catalogRead.listDatasetSitemapChunkLastmods(PAGE_SIZE)
+        : catalogRead.listResourceSitemapChunkLastmods(PAGE_SIZE));
+    return new Map(rows.map(row => [Number(row.chunk), isoDate(row.lastmod)]));
 });
+// The place and organization files and their index dates share one read.
+const placeRows = () => sitemapCache.get('places', () => catalogRead.listPlaceSitemap());
+const organizationRows = () => sitemapCache.get('organizations', () => catalogRead.listOrganizationSitemap());
+const newestRow = rows => latest(...rows.map(row => isoDate(row.metadata_modified)));
 const blogLastmod = () => ['en', 'fr'].flatMap(lang => listArticles({ lang })).map(article => article.updated).sort().at(-1) || '';
-const latest = (...values) => values.filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || '';
-const resetSitemapCache = () => sitemapCache.clear();
+
+// Each file is built once an hour per process and then served from memory: a
+// resource chunk filters and joins every file row (seconds of work), and
+// crawlers fetch the index and its chunks in bursts. A chunk past the end
+// builds null and is not kept.
+const fileCache = createCache({ name: 'sitemap-file', ttlMs: 60 * 60 * 1000, negativeTtlMs: 0, maxEntries: 64,
+    cacheable: body => typeof body === 'string' });
+const resetSitemapCache = () => {
+    sitemapCache.clear();
+    fileCache.clear();
+};
+const sendXml = (res, body, maxAge) => {
+    res.type('application/xml');
+    res.set('Cache-Control', 'public, max-age=' + maxAge);
+    res.send(body);
+};
 
 // A crawl file that cannot be built is a temporary condition: tell the crawler
 // to retry instead of handing it a JSON error or an empty document.
@@ -91,41 +118,41 @@ const robots = (req, res) => {
 
 // GET /sitemap.xml - the index: hub pages, places, organizations, guides and
 // the complete dataset chunks plus the data-bearing resource chunks. Each entry
-// carries the newest change it can contain, so a crawler can skip unchanged files.
+// carries the newest change its file holds, so a crawler can skip unchanged files.
 const sitemapIndex = crawlFile(async (req, res) => {
-    const [totals, catalogue] = await Promise.all([catalogueTotals(), catalogueLastmod()]);
-    const blog = blogLastmod();
-    const datasetPages = Math.max(1, Math.ceil(totals.datasets / PAGE_SIZE));
-    const resourcePages = Math.ceil(totals.resources / PAGE_SIZE);
-    const entries = [
-        ['/sitemap-pages.xml', latest(catalogue, blog)],
-        ['/sitemap-places.xml', catalogue],
-        ['/sitemap-organizations.xml', catalogue],
-        ['/sitemap-blog.xml', blog]
-    ];
-    for (let i = 1; i <= datasetPages; i++) entries.push(['/sitemap-datasets-' + i + '.xml', catalogue]);
-    for (let i = 1; i <= resourcePages; i++) entries.push(['/sitemap-resources-' + i + '.xml', catalogue]);
-    const body =
-        '<?xml version="1.0" encoding="UTF-8"?>\n' +
-        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-        entries.map(([path, lastmod]) => '  <sitemap><loc>' + xmlEscape(SITE_URL + path) + '</loc>' +
-            (lastmod ? '<lastmod>' + xmlEscape(lastmod) + '</lastmod>' : '') + '</sitemap>').join('\n') +
-        '\n</sitemapindex>\n';
-    res.type('application/xml');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.send(body);
+    const body = await fileCache.get('index', async () => {
+        const [totals, catalogue, datasetChunks, resourceChunks, places, organizations] = await Promise.all([
+            catalogueTotals(), catalogueLastmod(), chunkLastmods('datasets'), chunkLastmods('resources'),
+            placeRows(), organizationRows()
+        ]);
+        const blog = blogLastmod();
+        const datasetPages = Math.max(1, Math.ceil(totals.datasets / PAGE_SIZE));
+        const resourcePages = Math.ceil(totals.resources / PAGE_SIZE);
+        const entries = [
+            ['/sitemap-pages.xml', latest(catalogue, blog)],
+            ['/sitemap-places.xml', newestRow(places)],
+            ['/sitemap-organizations.xml', newestRow(organizations)],
+            ['/sitemap-blog.xml', blog]
+        ];
+        for (let i = 1; i <= datasetPages; i++) entries.push(['/sitemap-datasets-' + i + '.xml', datasetChunks.get(i) || '']);
+        for (let i = 1; i <= resourcePages; i++) entries.push(['/sitemap-resources-' + i + '.xml', resourceChunks.get(i) || '']);
+        return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+            '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+            entries.map(([path, lastmod]) => '  <sitemap><loc>' + xmlEscape(SITE_URL + path) + '</loc>' +
+                (lastmod ? '<lastmod>' + xmlEscape(lastmod) + '</lastmod>' : '') + '</sitemap>').join('\n') +
+            '\n</sitemapindex>\n';
+    });
+    sendXml(res, body, 3600);
 });
 
 // GET /sitemap-pages.xml - the hub pages (home + the curated sections). The
 // catalogue hubs change whenever the catalogue does; the documentation pages
 // have no honest change date and carry none.
 const sitemapPages = crawlFile(async (req, res) => {
-    const catalogue = await catalogueLastmod();
-    const hub = catalogue ? { lastmod: catalogue } : {};
-    res.type('application/xml');
-    res.set('Cache-Control', 'public, max-age=86400');
-    res.send(
-        urlset([
+    const body = await fileCache.get('pages', async () => {
+        const catalogue = await catalogueLastmod();
+        const hub = catalogue ? { lastmod: catalogue } : {};
+        return urlset([
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', ...hub },
             { loc: SITE_URL + '/datasets', changefreq: 'daily', priority: '0.9', ...hub },
             { loc: SITE_URL + '/insights', changefreq: 'daily', priority: '0.9', ...hub },
@@ -136,76 +163,69 @@ const sitemapPages = crawlFile(async (req, res) => {
             { loc: SITE_URL + '/about', changefreq: 'monthly', priority: '0.5' },
             ...hostedRoutes().filter(route => route.sitemap).map(route => ({ loc: SITE_URL + route.path, ...route.sitemap })),
             { loc: SITE_URL + '/privacy', changefreq: 'yearly', priority: '0.3' },
-        ])
-    );
+        ]);
+    });
+    sendXml(res, body, 86400);
 });
 
 // GET /sitemap-places.xml - place pages backed by at least one dataset.
 const sitemapPlaces = crawlFile(async (req, res) => {
-    const rows = await catalogRead.listPlaceSitemap();
-    const entries = rows.map(place => ({
+    const body = await fileCache.get('places', async () => urlset((await placeRows()).map(place => ({
         loc: SITE_URL + '/places/' + encodeURIComponent(place.slug),
-        lastmod: place.metadata_modified ? new Date(place.metadata_modified).toISOString() : null,
+        lastmod: isoDate(place.metadata_modified) || null,
         changefreq: 'weekly'
-    }));
-    res.type('application/xml');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.send(urlset(entries));
+    }))));
+    sendXml(res, body, 3600);
 });
 
 // GET /sitemap-organizations.xml - public organizations with at least one
 // mirrored dataset. Their detail pages are useful discovery hubs even when a
 // particular dataset is download-only.
 const sitemapOrganizations = crawlFile(async (req, res) => {
-    const rows = await catalogRead.listOrganizationSitemap();
-    const entries = rows.map(organization => ({
+    const body = await fileCache.get('organizations', async () => urlset((await organizationRows()).map(organization => ({
         loc: SITE_URL + '/organizations/' + encodeURIComponent(organization.name),
-        lastmod: organization.metadata_modified
-            ? new Date(organization.metadata_modified).toISOString()
-            : null,
+        lastmod: isoDate(organization.metadata_modified) || null,
         changefreq: 'weekly'
-    }));
-    res.type('application/xml');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.send(urlset(entries));
+    }))));
+    sendXml(res, body, 3600);
 });
 
 // GET /sitemap-datasets-:n.xml - one chunk of dataset URLs.
 const sitemapDatasets = crawlFile(async (req, res, next) => {
     const n = chunkNumber(req.params.n);
     if (n === null) return next(new AppError('Not found', 404));
-    const rows = await catalogRead.listDatasetSitemap({
-        limit: PAGE_SIZE,
-        offset: (n - 1) * PAGE_SIZE,
+    const body = await fileCache.get('datasets-' + n, async () => {
+        const rows = await catalogRead.listDatasetSitemap({
+            limit: PAGE_SIZE,
+            offset: (n - 1) * PAGE_SIZE,
+        });
+        return rows.length ? urlset(rows.map((d) => ({
+            loc: SITE_URL + '/datasets/' + encodeURIComponent(d.name || d.id),
+            lastmod: isoDate(d.metadata_modified) || null,
+            changefreq: 'monthly',
+        }))) : null;
     });
-    if (!rows.length) return next(new AppError('Not found', 404));
-    const entries = rows.map((d) => ({
-        loc: SITE_URL + '/datasets/' + encodeURIComponent(d.name || d.id),
-        lastmod: d.metadata_modified ? new Date(d.metadata_modified).toISOString() : null,
-        changefreq: 'monthly',
-    }));
-    res.type('application/xml');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.send(urlset(entries));
+    if (body === null) return next(new AppError('Not found', 404));
+    sendXml(res, body, 3600);
 });
 
 // GET /sitemap-resources-:n.xml - the data-bearing resource detail pages.
 const sitemapResources = crawlFile(async (req, res, next) => {
     const n = chunkNumber(req.params.n);
     if (n === null) return next(new AppError('Not found', 404));
-    const rows = await catalogRead.listResourceSitemap({
-        limit: PAGE_SIZE,
-        offset: (n - 1) * PAGE_SIZE,
+    const body = await fileCache.get('resources-' + n, async () => {
+        const rows = await catalogRead.listResourceSitemap({
+            limit: PAGE_SIZE,
+            offset: (n - 1) * PAGE_SIZE,
+        });
+        return rows.length ? urlset(rows.map(resource => ({
+            loc: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
+            lastmod: isoDate(resource.lastmod) || null,
+            changefreq: 'monthly',
+        }))) : null;
     });
-    if (!rows.length) return next(new AppError('Not found', 404));
-    const entries = rows.map(resource => ({
-        loc: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
-        lastmod: resource.lastmod ? new Date(resource.lastmod).toISOString() : null,
-        changefreq: 'monthly',
-    }));
-    res.type('application/xml');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.send(urlset(entries));
+    if (body === null) return next(new AppError('Not found', 404));
+    sendXml(res, body, 3600);
 });
 
 const sitemapBlog = (req, res) => {

@@ -3,17 +3,23 @@ import { Link } from 'react-router-dom';
 import { fetchBlog } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 
-export default function LocalGuides({ place, dataset, limit, variant }) {
+// `initial` holds the guide lists embedded in a dataset page's HTML, by language.
+export default function LocalGuides({ place, dataset, limit, variant, initial }) {
   const { t, lang } = useLang();
-  const [articles, setArticles] = useState([]);
+  const [articles, setArticles] = useState(() => initial?.[lang]?.data ?? []);
   useEffect(() => {
+    const embedded = initial?.[lang];
+    if (embedded) {
+      setArticles(embedded.data);
+      return undefined;
+    }
     let cancelled = false;
     setArticles([]);
     fetchBlog({ lang, place: place || undefined, dataset: dataset || undefined }).then(env => {
       if (!cancelled) setArticles(env.data);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [lang, place, dataset]);
+  }, [lang, place, dataset, initial]);
   const visibleArticles = articles.slice(0, limit);
   const compact = variant === 'compact';
   if (!visibleArticles.length) return null;

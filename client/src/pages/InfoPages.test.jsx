@@ -49,6 +49,9 @@ test.each(['en', 'fr'])('FAQ offers readable answers and safe support without AP
 test.each(['en', 'fr'])('About preserves attribution and distinguishes software and data licences (%s)', lang => {
   const { container } = renderPage(AboutPage, lang);
   expect(screen.getByRole('heading', { level: 1, name: lang === 'en' ? 'About CanQuery' : 'À propos de CanQuery' })).toBeInTheDocument();
+  const what = screen.getByRole('heading', { level: 2, name: lang === 'en' ? 'What is CanQuery?' : 'Qu’est-ce que CanQuery?' });
+  expect(what.nextElementSibling).toHaveTextContent(lang === 'en'
+    ? 'CanQuery is a free search engine for Canadian open data.' : 'CanQuery est un moteur de recherche gratuit pour les données ouvertes canadiennes.');
   expect(screen.getByText(/@RyuPrad/)).toHaveTextContent(lang === 'en' ? 'not affiliated with the Government of Canada' : 'sans affiliation avec le gouvernement du Canada');
   expect(screen.getByText(/@RyuPrad/)).toHaveTextContent(lang === 'en' ? 'software licence is separate' : 'licence du logiciel est distincte');
   expect(container.querySelector('a[href="https://github.com/RyuPrad/canquery"]')).not.toBeNull();

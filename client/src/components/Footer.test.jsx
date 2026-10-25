@@ -107,6 +107,10 @@ describe('Footer social links', () => {
     expect(bsky.getAttribute('href')).toBe('https://bsky.app/profile/bsky.best');
     expect(x.getAttribute('target')).toBe('_blank');
     expect(bsky.getAttribute('target')).toBe('_blank');
+    const canquery = screen.getByRole('link', { name: 'Follow CanQuery on Bluesky (@canquery.com)' });
+    expect(canquery.getAttribute('href')).toBe('https://bsky.app/profile/canquery.com');
+    expect(canquery.getAttribute('target')).toBe('_blank');
+    expect(canquery).toHaveTextContent('@canquery.com');
   });
 });
 

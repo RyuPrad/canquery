@@ -280,7 +280,40 @@ async function getResourceMapById(id) {
     return result.rows[0] || null;
 }
 
+// A place's publishers without a source filter (the place hub and its client
+// rail): the place's datasets are found once and grouped by publisher, instead
+// of testing every publisher's datasets against the place, which is a pass over
+// the whole catalogue. Same rows, counts and order as the general query.
+const PLACE_ORGANIZATIONS_SQL = `WITH RECURSIVE selected_place AS (
+        SELECT p.id, p.parent_id, 0 AS depth FROM places p
+        WHERE p.id = $1 OR p.slug = $1
+        UNION ALL
+        SELECT p.id, p.parent_id, selected_place.depth + 1
+        FROM places p JOIN selected_place ON selected_place.parent_id = p.id
+    ), place_datasets AS (
+        SELECT DISTINCT dp.dataset_id FROM dataset_places dp
+        JOIN selected_place sp ON sp.id = dp.place_id
+        WHERE sp.depth = 0 OR dp.includes_descendants
+    ), counts AS (
+        SELECT d.org_id, count(*)::int AS dataset_count
+        FROM place_datasets pd JOIN datasets d ON d.id = pd.dataset_id
+        WHERE d.org_id IS NOT NULL
+        GROUP BY d.org_id
+    )
+        SELECT o.id, o.name, o.title_en, o.title_fr, c.dataset_count,
+               p.id AS place_id, p.slug AS place_slug, p.name_en AS place_name_en, p.name_fr AS place_name_fr
+        FROM counts c
+        JOIN organizations o ON o.id = c.org_id
+        LEFT JOIN places p ON p.id = o.place_id
+        WHERE $4::text IS NULL OR position(lower($4) in lower(concat_ws(' ', o.name, o.title_en, o.title_fr))) > 0
+        ORDER BY c.dataset_count DESC, o.name ASC
+        LIMIT $2 OFFSET $3
+    `;
+
 async function listOrganizations({ q, source, place, limit, offset }, db = pool) {
+    if (place && !source) {
+        return cachedRows('place-organizations', PLACE_ORGANIZATIONS_SQL, [place, limit, offset, q || null], db);
+    }
     return cachedRows('organizations', `WITH RECURSIVE selected_place AS (
         SELECT p.id, p.parent_id, 0 AS depth FROM places p
         WHERE $2::text IS NOT NULL AND (p.id = $2 OR p.slug = $2)
@@ -554,6 +587,30 @@ async function listResourceSitemap({ limit, offset }, db = pool) {
     return result.rows;
 }
 
+// The newest change each sitemap chunk holds, numbered like the chunk files
+// (1-based, in id order, pageSize URLs each) and dated like their entries.
+async function listDatasetSitemapChunkLastmods(pageSize, db = pool) {
+    const result = await db.query(`
+        SELECT chunk::int AS chunk, max(lastmod) AS lastmod FROM (
+            SELECT (row_number() OVER (ORDER BY d.id) - 1) / $1 + 1 AS chunk, d.metadata_modified AS lastmod
+            FROM datasets d
+        ) chunks GROUP BY chunk ORDER BY chunk
+    `, [pageSize]);
+    return result.rows;
+}
+
+async function listResourceSitemapChunkLastmods(pageSize, db = pool) {
+    const result = await db.query(`
+        SELECT chunk::int AS chunk, max(lastmod) AS lastmod FROM (
+            SELECT (row_number() OVER (ORDER BY r.id) - 1) / $5 + 1 AS chunk,
+                   LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod
+            FROM resources r JOIN datasets d ON d.id = r.dataset_id
+            WHERE ${DATA_BEARING_RESOURCE}
+        ) chunks GROUP BY chunk ORDER BY chunk
+    `, [...dataBearingParams(), pageSize]);
+    return result.rows;
+}
+
 // The newest catalogue record change, for sitemap <lastmod> entries.
 async function getCatalogLastModified(db = pool) {
     const result = await db.query('SELECT max(metadata_modified) AS modified FROM datasets');
@@ -732,6 +789,8 @@ module.exports = {
     listPlaceSitemap,
     listOrganizationSitemap,
     getCatalogLastModified,
+    listDatasetSitemapChunkLastmods,
+    listResourceSitemapChunkLastmods,
     listTopDownloadLinks,
     pingDb,
     getLastSyncTime,

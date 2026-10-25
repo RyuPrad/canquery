@@ -22,6 +22,8 @@ describe('server-rendered crawl snapshots', () => {
         const html = snapshot.staticSnapshot('about');
         expect(html.match(/<h1>/g)).toHaveLength(1);
         expect(html).toContain('<h1>About CanQuery</h1>');
+        expect(html).toContain('<section><h2>What is CanQuery?</h2><p>CanQuery is a free search engine for Canadian open data.');
+        expect(html.indexOf('What is CanQuery?')).toBeLessThan(html.indexOf('Find the data. Keep the context.'));
         expect(html).toContain('not affiliated with the Government of Canada');
         expect(html).toContain('built by @RyuPrad');
         expect(html).toContain('The software licence is separate from the licences that apply to the published data.');

@@ -1,5 +1,5 @@
 import { getJSON, postJSON } from './client.js';
-import { resourceResponse, queryResponse, previewResponse, listResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
+import { resourceResponse, queryResponse, previewResponse, listResponse, datasetResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
 import { normalizeResource } from './resourceEnvelope.js';
 
 const DATASET_PARAMS = ['q', 'org', 'format', 'keyword', 'place', 'source', 'level', 'mappable', 'queryable', 'sort', 'lang', 'facets', 'limit', 'cursor'];
@@ -23,7 +23,7 @@ export function searchDatasets(params = {}, options = {}) {
 }
 
 export function fetchDataset(idOrName) {
-  return getJSON('/web-api/v1/datasets/' + encodeURIComponent(idOrName));
+  return getJSON('/web-api/v1/datasets/' + encodeURIComponent(idOrName), undefined, { validate: datasetResponse });
 }
 
 export async function fetchResource(id, options) {

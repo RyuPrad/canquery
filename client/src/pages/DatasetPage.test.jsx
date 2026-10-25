@@ -186,3 +186,44 @@ test('links download-only files and keeps keyword search as an action', async ()
   expect(await screen.findByText('Filtered search')).toBeInTheDocument();
   expect(enqueueIngest).not.toHaveBeenCalled();
 });
+
+describe('DatasetPage embedded data', () => {
+  const guide = { id: 'g1', lang: 'en', path: '/blog/g1', title: 'Read the dataset', description: 'How to read it.', topic: 't', query: 'q', translations: {} };
+  const embed = (path, envelope = datasetEnvelope('ingested')) => {
+    const element = document.createElement('script');
+    element.type = 'application/json';
+    element.id = 'cq-initial';
+    element.textContent = JSON.stringify({ version: 1, kind: 'dataset', path, dataset: envelope,
+      guides: { en: { data: [guide] }, fr: { data: [] } } });
+    document.body.appendChild(element);
+  };
+  const renderAt = (entry) => render(
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+    </MemoryRouter>
+  );
+
+  test('renders the dataset and its guides from the page without fetching either', async () => {
+    const { fetchBlog } = await import('../api/catalog.js');
+    fetchDataset.mockReset();
+    embed('/datasets/dataset-a');
+    renderAt('/datasets/dataset-a');
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Dataset A' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Read the dataset' })).toHaveAttribute('href', '/blog/g1');
+    expect(fetchDataset).not.toHaveBeenCalled();
+    expect(fetchBlog).not.toHaveBeenCalled();
+    expect(document.getElementById('cq-initial')).toBeNull();
+  });
+
+  test('fetches as usual when the block answers another URL', async () => {
+    fetchDataset.mockReset();
+    fetchDataset.mockResolvedValue(datasetEnvelope('ingested'));
+    embed('/datasets/dataset-a?page=2');
+    renderAt('/datasets/dataset-a');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dataset A' })).toBeInTheDocument();
+    expect(fetchDataset).toHaveBeenCalledWith('dataset-a');
+    expect(document.getElementById('cq-initial')).toBeNull();
+  });
+});

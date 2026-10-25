@@ -14,8 +14,11 @@ const SITE_NAME = 'CanQuery';
 const DEFAULT_TITLE = 'Canadian open data & government datasets - CanQuery';
 const DEFAULT_DESC =
     'Search Canadian government datasets by place and topic. Find CSV downloads, explore supported tables and maps, and use CanQuery’s free API.';
-const DEFAULT_IMAGE = SITE_URL + '/og-image.svg';
+// Link previews (Facebook, LinkedIn, X, Bluesky, Slack) need a raster image.
+const DEFAULT_IMAGE = SITE_URL + '/og-image.png';
+const DEFAULT_IMAGE_ALT = 'CanQuery: Canadian open data search, tables and maps';
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
+const BLUESKY_URL = 'https://bsky.app/profile/canquery.com';
 const TITLE_MAX = 80;
 const DESCRIPTION_MAX = 160;
 const TITLE_SUFFIX = ' - CanQuery';
@@ -420,8 +423,8 @@ const STATIC_META = {
         path: '/faq',
     },
     about: {
-        title: 'About - CanQuery',
-        description: 'Learn about CanQuery, an independent, open-source project for finding and working with Canadian public data, and how to contact support.',
+        title: 'About CanQuery: search and explore Canadian open data',
+        description: 'CanQuery is a free search engine for Canadian open data. Find government datasets by place or topic, explore live tables and maps, then open the source.',
         path: '/about',
     },
 };
@@ -431,7 +434,6 @@ function buildWebsiteJsonLd() {
         '@context': 'https://schema.org',
         '@type': 'WebSite',
         name: SITE_NAME,
-        alternateName: DEFAULT_TITLE,
         url: SITE_URL + '/',
         description: DEFAULT_DESC,
         potentialAction: {
@@ -451,8 +453,8 @@ function buildOrganizationJsonLd() {
         '@type': 'Organization',
         name: SITE_NAME,
         url: SITE_URL + '/',
-        logo: SITE_URL + '/favicon.svg',
-        sameAs: [REPO_URL],
+        logo: SITE_URL + '/android-chrome-512.png',
+        sameAs: [REPO_URL, BLUESKY_URL],
     };
 }
 
@@ -597,9 +599,23 @@ function homeMeta() {
     };
 }
 
+// The about page answers "What is CanQuery?": an AboutPage whose subject is
+// the same Organization the home page describes.
+function aboutJsonLd(entry) {
+    return [{
+        '@context': 'https://schema.org',
+        '@type': 'AboutPage',
+        name: entry.title,
+        description: entry.description,
+        url: SITE_URL + entry.path,
+        about: buildOrganizationJsonLd(),
+    }, buildBreadcrumbJsonLd([{ name: 'CanQuery', path: '/' }, { name: 'About', path: entry.path }])];
+}
+
 function staticMeta(type, pathname) {
     if (type === 'home') return homeMeta();
-    const entry = pageOverride(type)?.meta || STATIC_META[type] || hostedRoute(type)?.meta;
+    const override = pageOverride(type)?.meta;
+    const entry = override || STATIC_META[type] || hostedRoute(type)?.meta;
     if (entry) {
         return {
             title: entry.title,
@@ -607,6 +623,7 @@ function staticMeta(type, pathname) {
             canonical: SITE_URL + entry.path,
             ogType: 'website',
             ...(entry.noindex ? {noindex:true} : {}),
+            ...(type === 'about' && !override ? { jsonLd: aboutJsonLd(entry) } : {}),
         };
     }
     // Unknown route -> the SPA renders a not-found page; keep it out of the index.
@@ -1060,10 +1077,16 @@ function buildManagedTags(meta) {
     tags.push('<meta property="og:url" content="' + url + '" />');
     tags.push('<meta property="og:site_name" content="CanQuery" />');
     tags.push('<meta property="og:image" content="' + image + '" />');
+    if (!meta.image) {
+        tags.push('<meta property="og:image:width" content="1200" />');
+        tags.push('<meta property="og:image:height" content="630" />');
+        tags.push('<meta property="og:image:alt" content="' + escapeHtml(DEFAULT_IMAGE_ALT) + '" />');
+    }
     tags.push('<meta name="twitter:card" content="summary_large_image" />');
     tags.push('<meta name="twitter:title" content="' + title + '" />');
     tags.push('<meta name="twitter:description" content="' + description + '" />');
     tags.push('<meta name="twitter:image" content="' + image + '" />');
+    if (!meta.image) tags.push('<meta name="twitter:image:alt" content="' + escapeHtml(DEFAULT_IMAGE_ALT) + '" />');
     for (const obj of meta.jsonLd || []) tags.push(jsonLdScript(obj));
     return tags;
 }

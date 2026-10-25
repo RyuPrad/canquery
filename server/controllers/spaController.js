@@ -5,6 +5,7 @@ const seoSnapshot = require('../services/seoSnapshot');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
 const { resourceInitialData } = require('../services/resourceInitialData');
+const { datasetInitialData } = require('../services/datasetInitialData');
 const { hostedRoutes, hostedRoute } = require('../extensions');
 const catalogRead = require('../db/catalogReadQueries');
 const queryLogQueries = require('../db/queryLogQueries');
@@ -54,9 +55,10 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
     return template.replace(ANALYTICS_MARKER, () => tag);
 }
 
-// The resource page's initial data (metadata plus the first rows) is embedded
-// only for a document navigation: the client's RouteHead fetch of a route's
-// HTML (Sec-Fetch-Dest: empty), HEAD requests and scripted reads never use it.
+// A resource page's initial data (metadata plus the first rows) and a dataset
+// page's (its envelope and guide lists) are embedded only for a document
+// navigation: the client's RouteHead fetch of a route's HTML (Sec-Fetch-Dest:
+// empty), HEAD requests and scripted reads never use it.
 // A browser navigation also records the popularity hit the page's first row
 // query recorded before; a crawler's fetch sends no Fetch Metadata headers.
 const INITIAL_DATA_ID = 'cq-initial';
@@ -162,9 +164,9 @@ async function resolvePage(requestTarget, deps = catalogRead) {
         const resources = await deps.listResourcesForDataset(dataset.id);
         const canonicalPath = '/datasets/' + encodeURIComponent(dataset.name || dataset.id);
         const meta = seoMeta.datasetMeta(dataset, resources, { page, pageItems: resources.slice(offset, offset + PAGE_SIZE) });
-        return paginatedPage(canonicalPath, meta,
+        return { ...paginatedPage(canonicalPath, meta,
             resources.slice(offset, offset + PAGE_SIZE + 1), page,
-            pagination => seoSnapshot.datasetSnapshot(dataset, resources, pagination));
+            pagination => seoSnapshot.datasetSnapshot(dataset, resources, pagination)), datasetRows: { dataset, resources } };
     }
     if (route.type === 'resource') {
         const resource = await deps.getResourceById(route.id);
@@ -289,6 +291,12 @@ function serveSpa(distDir) {
                     { path: req.originalUrl, params: query, signal: req.signal, log: isNavigation(req) });
             } catch (err) {
                 console.warn('Initial resource data skipped:', err.message);
+            }
+        } else if (page.status === 200 && page.datasetRows && wantsInitialData(req)) {
+            try {
+                initial = datasetInitialData(page.datasetRows.dataset, page.datasetRows.resources, { path: req.originalUrl });
+            } catch (err) {
+                console.warn('Initial dataset data skipped:', err.message);
             }
         }
         const privatePage = isPrivatePage(req.path);

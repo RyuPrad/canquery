@@ -15,6 +15,8 @@ jest.mock('../db/catalogReadQueries', () => ({
     listPlaceSitemap: jest.fn(),
     listOrganizationSitemap: jest.fn(),
     getCatalogLastModified: jest.fn(),
+    listDatasetSitemapChunkLastmods: jest.fn(),
+    listResourceSitemapChunkLastmods: jest.fn(),
     listTopDownloadLinks: jest.fn(),
     getPlaceByIdOrSlug: jest.fn(),
     pingDb: jest.fn(),
@@ -87,23 +89,39 @@ describe('robots.txt', () => {
 });
 
 describe('sitemap index', () => {
-    it('lists one chunk per 25k datasets and data-bearing resources, dated by the newest change each file can hold', async () => {
+    const noRows = () => {
+        catalogRead.listDatasetSitemapChunkLastmods.mockResolvedValue([]);
+        catalogRead.listResourceSitemapChunkLastmods.mockResolvedValue([]);
+        catalogRead.listPlaceSitemap.mockResolvedValue([]);
+        catalogRead.listOrganizationSitemap.mockResolvedValue([]);
+    };
+
+    it('lists one chunk per 25k datasets and data-bearing resources, each dated by the newest change it holds', async () => {
         catalogRead.countSitemapDatasets.mockResolvedValue(30000);
         catalogRead.countSitemapResources.mockResolvedValue(26000);
         catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
+        catalogRead.listDatasetSitemapChunkLastmods.mockResolvedValue([
+            { chunk: 1, lastmod: '2026-09-01T00:00:00Z' }, { chunk: 2, lastmod: '2026-10-01T00:00:00Z' }]);
+        catalogRead.listResourceSitemapChunkLastmods.mockResolvedValue([
+            { chunk: 1, lastmod: '2026-08-15T00:00:00Z' }, { chunk: 2, lastmod: null }]);
+        catalogRead.listPlaceSitemap.mockResolvedValue([
+            { slug: 'oshawa-on', metadata_modified: '2026-08-01T00:00:00Z' }, { slug: 'ottawa-on', metadata_modified: '2026-09-20T00:00:00Z' }]);
+        catalogRead.listOrganizationSitemap.mockResolvedValue([{ name: 'city-works', metadata_modified: '2026-07-30T00:00:00Z' }]);
         const res = await request(app).get('/sitemap.xml');
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/xml/);
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-pages.xml</loc>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-places.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-organizations.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-places.xml</loc><lastmod>2026-09-20T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-organizations.xml</loc><lastmod>2026-07-30T00:00:00.000Z</lastmod>');
         expect(res.text).toContain('<loc>https://canquery.com/sitemap-blog.xml</loc><lastmod>' + newestGuideUpdate() + '</lastmod>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-2.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc><lastmod>2026-09-01T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-2.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
         expect(res.text).not.toContain('sitemap-datasets-3.xml');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-1.xml</loc><lastmod>2026-10-01T00:00:00.000Z</lastmod>');
-        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-2.xml</loc>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-1.xml</loc><lastmod>2026-08-15T00:00:00.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-resources-2.xml</loc></sitemap>');
         expect(res.text).not.toContain('sitemap-resources-3.xml');
+        expect(catalogRead.listDatasetSitemapChunkLastmods).toHaveBeenCalledWith(25000);
+        expect(catalogRead.listResourceSitemapChunkLastmods).toHaveBeenCalledWith(25000);
         // The hub file is as new as the newest of the catalogue and the guides.
         const pagesDate = [new Date('2026-10-01T00:00:00Z'), new Date(newestGuideUpdate())].sort((a, b) => b - a)[0];
         const expected = pagesDate.toISOString() === '2026-10-01T00:00:00.000Z' ? '2026-10-01T00:00:00.000Z' : newestGuideUpdate();
@@ -111,6 +129,7 @@ describe('sitemap index', () => {
     });
 
     it('always emits a dataset chunk but omits empty resource chunks, and omits lastmod when unknown', async () => {
+        noRows();
         catalogRead.countSitemapDatasets.mockResolvedValue(0);
         catalogRead.countSitemapResources.mockResolvedValue(0);
         catalogRead.getCatalogLastModified.mockResolvedValue(null);
@@ -119,16 +138,23 @@ describe('sitemap index', () => {
         expect(res.text).not.toContain('sitemap-resources-1.xml');
     });
 
-    it('reads the counts and the change date once per hour instead of on every request', async () => {
+    it('reads the counts and the change dates once per hour instead of on every request', async () => {
+        noRows();
         catalogRead.countSitemapDatasets.mockResolvedValue(10);
         catalogRead.countSitemapResources.mockResolvedValue(10);
         catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
-        await request(app).get('/sitemap.xml');
-        await request(app).get('/sitemap.xml');
+        const first = await request(app).get('/sitemap.xml');
+        const second = await request(app).get('/sitemap.xml');
         await request(app).get('/sitemap-pages.xml');
+        await request(app).get('/sitemap-places.xml');
+        await request(app).get('/sitemap-organizations.xml');
+        expect(second.text).toBe(first.text);
         expect(catalogRead.countSitemapResources).toHaveBeenCalledTimes(1);
         expect(catalogRead.countSitemapDatasets).toHaveBeenCalledTimes(1);
         expect(catalogRead.getCatalogLastModified).toHaveBeenCalledTimes(1);
+        expect(catalogRead.listResourceSitemapChunkLastmods).toHaveBeenCalledTimes(1);
+        expect(catalogRead.listPlaceSitemap).toHaveBeenCalledTimes(1);
+        expect(catalogRead.listOrganizationSitemap).toHaveBeenCalledTimes(1);
     });
 
     it('tells crawlers to retry when the catalogue cannot be read, without leaking the error', async () => {
@@ -240,6 +266,19 @@ describe('resource sitemap chunk', () => {
         });
         const res = await request(app).get('/sitemap-resources-99.xml');
         expect(res.status).toBe(404);
+    });
+
+    it('builds each chunk once an hour and serves the same bytes, but rereads a chunk past the end', async () => {
+        catalogRead.listResourceSitemap.mockResolvedValueOnce([{ id: 'r1', lastmod: null }]).mockResolvedValue([]);
+        const first = await request(app).get('/sitemap-resources-1.xml');
+        const second = await request(app).get('/sitemap-resources-1.xml');
+        expect(second.status).toBe(200);
+        expect(second.text).toBe(first.text);
+        expect(second.headers['cache-control']).toBe('public, max-age=3600');
+        expect(catalogRead.listResourceSitemap).toHaveBeenCalledTimes(1);
+        expect((await request(app).get('/sitemap-resources-2.xml')).status).toBe(404);
+        expect((await request(app).get('/sitemap-resources-2.xml')).status).toBe(404);
+        expect(catalogRead.listResourceSitemap).toHaveBeenCalledTimes(3);
     });
 
     it('rejects malformed chunk numbers without querying the catalogue', async () => {
@@ -819,5 +858,76 @@ describe('resource page initial data', () => {
         expect(res.status).toBe(200);
         expect(res.text).not.toContain('cq-initial');
         expect(catalogRead.getResourceById).not.toHaveBeenCalled();
+    });
+});
+
+describe('dataset page initial data', () => {
+    let distDir;
+    let spa;
+    const LMIA = '90fed587-1364-4f33-a9ee-208181dc0b97';
+    const dataset = {
+        id: LMIA, name: 'tfwp-positive-lmia', title_en: 'Positive LMIA employers', title_fr: 'Employeurs EIMT positive',
+        notes_en: 'Quarterly lists.', org_name: 'esdc-edsc', org_title_en: 'Employment and Social Development Canada',
+        metadata_modified: '2026-07-01T00:00:00.000Z', places: [], provenance_sources: []
+    };
+    const files = [{ id: 'r1', dataset_id: LMIA, name_en: '2026Q1 employers', format: 'CSV', url: 'https://example.test/q1.csv' }];
+    const readInitial = text => {
+        const match = text.match(/<script type="application\/json" id="cq-initial">(.*?)<\/script>/s);
+        return match ? JSON.parse(match[1]) : null;
+    };
+    const navigate = { 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate' };
+
+    beforeAll(() => {
+        distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-dataset-initial-'));
+        fs.writeFileSync(path.join(distDir, 'index.html'),
+            '<!doctype html><html><head><!-- seo:start --><title>x</title><!-- seo:end --></head><body><div id="root"></div></body></html>');
+        spa = express();
+        spa.get(/.*/, serveSpa(distDir));
+    });
+    afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+    beforeEach(() => {
+        catalogRead.getDatasetByIdOrName.mockResolvedValue(dataset);
+        catalogRead.listResourcesForDataset.mockResolvedValue(files);
+    });
+
+    it('embeds the same dataset and guide envelopes the page would fetch', async () => {
+        const res = await request(spa).get('/datasets/tfwp-positive-lmia?highlight=r1').set(navigate);
+        expect(res.status).toBe(200);
+        const payload = readInitial(res.text);
+        expect(payload).toMatchObject({ version: 1, kind: 'dataset', path: '/datasets/tfwp-positive-lmia?highlight=r1' });
+        const api = await request(app).get('/web-api/v1/datasets/tfwp-positive-lmia');
+        expect(api.status).toBe(200);
+        expect(payload.dataset).toEqual(api.body);
+        for (const lang of ['en', 'fr']) {
+            const guides = await request(app).get('/web-api/v1/blog').query({ lang, dataset: LMIA });
+            expect(payload.guides[lang]).toEqual(guides.body);
+            expect(payload.guides[lang].data.map(article => article.id)).toEqual(['lmia-employer-lists']);
+        }
+        expect(catalogRead.listResourcesForDataset).toHaveBeenCalledWith(LMIA);
+    });
+
+    it('embeds the block for a plain document request and skips it for in-app HTML fetches and HEAD', async () => {
+        expect(readInitial((await request(spa).get('/datasets/tfwp-positive-lmia')).text).dataset.data.id).toBe(LMIA);
+        const fetched = await request(spa).get('/datasets/tfwp-positive-lmia').set({ 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors' });
+        expect(fetched.status).toBe(200);
+        expect(fetched.text).not.toContain('cq-initial');
+        const head = await request(spa).head('/datasets/tfwp-positive-lmia');
+        expect(head.status).toBe(200);
+    });
+
+    it('leaves the block out for a missing dataset and for a dataset with very many files', async () => {
+        catalogRead.getDatasetByIdOrName.mockResolvedValueOnce(null);
+        const missing = await request(spa).get('/datasets/nope').set(navigate);
+        expect(missing.status).toBe(404);
+        expect(missing.text).not.toContain('cq-initial');
+
+        catalogRead.listResourcesForDataset.mockResolvedValue(Array.from({ length: 2000 }, (_, index) => ({
+            id: 'r' + index, dataset_id: LMIA, name_en: 'Quarterly employer list ' + index + ' '.padEnd(60, 'x'),
+            format: 'CSV', url: 'https://example.test/' + index + '.csv'
+        })));
+        const large = await request(spa).get('/datasets/tfwp-positive-lmia').set(navigate);
+        expect(large.status).toBe(200);
+        expect(large.text).toContain('data-cq-seo-snapshot="true"');
+        expect(large.text).not.toContain('cq-initial');
     });
 });
