@@ -1,12 +1,18 @@
-import { resourceResponse, queryResponse } from '../api/responseContracts.js';
+import {
+  resourceResponse,
+  queryResponse,
+  datasetResponse,
+  listResponse
+} from '../api/responseContracts.js';
 import { normalizeResource } from '../api/resourceEnvelope.js';
 
 // A direct visit to a resource page receives, inside its HTML, the metadata
 // envelope and (for the unfiltered table view of a prepared copy) the first
 // page of rows that the application would otherwise fetch one after the
-// other. The explorer reads the block once, checks that it answers exactly
-// this URL and resource, validates it like a fetched response, and removes
-// it so a later navigation never reuses stale data.
+// other; a dataset page receives its envelope and both guide lists. The page
+// reads the block once, checks that it answers exactly this URL and record,
+// validates it like a fetched response, and removes it so a later navigation
+// never reuses stale data.
 
 export const INITIAL_DATA_ID = 'cq-initial';
 const VERSION = 1;
@@ -48,6 +54,32 @@ export function takeInitialData({ id, location, doc = document }) {
     rows: payload.rows,
     page: payload.page
   };
+}
+
+/**
+ * A dataset page's block: its envelope and the guide lists in both languages,
+ * or null when it answers another URL or dataset, or is not what the server sends.
+ * @param {{ idOrName: string, location: { pathname: string, search: string }, doc?: Document }} options
+ * @returns {import('../api/contracts').DatasetInitialData | null}
+ */
+export function takeDatasetInitialData({ idOrName, location, doc = document }) {
+  const element = doc.getElementById(INITIAL_DATA_ID);
+  if (!element) return null;
+  let payload;
+  try {
+    payload = JSON.parse(element.textContent || '');
+  } catch {
+    return null;
+  }
+  if (!record(payload) || payload.version !== VERSION || payload.kind !== 'dataset') return null;
+  if (payload.path !== location.pathname + location.search) return null;
+  if (!record(payload.dataset) || !datasetResponse(payload.dataset)) return null;
+  const { id, name } = payload.dataset.data;
+  if (idOrName !== id && idOrName !== name) return null;
+  const guides = record(payload.guides) ? payload.guides : {};
+  if (!['en', 'fr'].every((lang) => record(guides[lang]) && listResponse(guides[lang])))
+    return null;
+  return { dataset: payload.dataset, guides: { en: guides.en, fr: guides.fr } };
 }
 
 /** Removes the block; safe to call more than once. @param {Document} [doc] */

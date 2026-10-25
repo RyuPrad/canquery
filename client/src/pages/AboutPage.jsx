@@ -12,6 +12,10 @@ export default function AboutPage() {
       <p className="cq-info-intro">{t('about.intro')}</p>
     </header>
     <section className="cq-info-section">
+      <h2>{t('about.what_title')}</h2>
+      <p>{t('about.what_body')}</p>
+    </section>
+    <section className="cq-info-section">
       <h2>{t('about.mission_title')}</h2>
       <p>{t('about.mission_body')}</p>
       <div className="cq-info-links">

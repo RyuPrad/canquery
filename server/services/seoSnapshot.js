@@ -503,6 +503,9 @@ function supportExplanation() {
 
 function aboutExplanation() {
     const sections = [
+        { title: 'What is CanQuery?', paragraphs: [
+            'CanQuery is a free search engine for Canadian open data. It brings together datasets from federal, provincial, territorial and municipal publishers so you can find them by place or topic, explore supported files as live tables, charts and maps, and follow each one back to its official source.'
+        ] },
         { title: 'Find the data. Keep the context.', paragraphs: [
             'CanQuery is for anyone exploring Canadian public data, from curious residents to researchers and developers building reports or dashboards. The website and API help you discover datasets without losing sight of who published them or what they cover.'
         ] },

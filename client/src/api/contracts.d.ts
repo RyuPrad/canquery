@@ -46,6 +46,11 @@ export interface InitialData {
   rows: ApiEnvelope<Record<string, any>> | null;
 }
 
+export interface DatasetInitialData {
+  dataset: ApiEnvelope<Record<string, any>>;
+  guides: { en: ApiEnvelope<Record<string, any>[]>; fr: ApiEnvelope<Record<string, any>[]> };
+}
+
 export type ResourceView = 'table' | 'chart' | 'map';
 export interface ResourceUrlState {
   q: string;

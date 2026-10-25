@@ -1,7 +1,7 @@
 const catchAsync = require('../utils/catchAsync');
 const catalogService = require('../services/catalogService');
 const { envelope } = require('../utils/envelope');
-const { catalogProvenanceMeta: provenanceMeta, resourceEnvelope } = require('../services/resourceEnvelopes');
+const { resourceEnvelope, datasetEnvelope } = require('../services/resourceEnvelopes');
 const AppError = require('../utils/AppError');
 
 const cleanStr = (v) => {
@@ -51,7 +51,7 @@ const listDatasets = async (req, res) => {
 const getDataset = async (req, res) => {
     const dataset = await catalogService.getDataset(req.params.idOrName);
     res.set('Cache-Control', 'public, max-age=300');
-    res.json(envelope(dataset, { meta: provenanceMeta(dataset) }));
+    res.json(datasetEnvelope(dataset));
 };
 
 const getResource = async (req, res) => {

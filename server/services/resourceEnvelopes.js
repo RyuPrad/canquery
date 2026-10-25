@@ -30,6 +30,7 @@ function queryProvenanceMeta(provenance) {
 }
 
 const resourceEnvelope = (resource) => envelope(resource, { meta: catalogProvenanceMeta(resource) });
+const datasetEnvelope = (dataset) => envelope(dataset, { meta: catalogProvenanceMeta(dataset) });
 
 const queryEnvelope = (result) => envelope(
     { fields: result.fields, records: result.records, total: result.total },
@@ -41,4 +42,4 @@ const queryEnvelope = (result) => envelope(
     ) }
 );
 
-module.exports = { catalogProvenanceMeta, queryProvenanceMeta, resourceEnvelope, queryEnvelope };
+module.exports = { catalogProvenanceMeta, queryProvenanceMeta, resourceEnvelope, datasetEnvelope, queryEnvelope };

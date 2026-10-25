@@ -12,6 +12,8 @@ const REPO_URL = 'https://github.com/RyuPrad/canquery';
 const PROFILE_URL = 'https://github.com/RyuPrad';
 const X_URL = 'https://x.com/Daffmor';
 const BLUESKY_URL = 'https://bsky.app/profile/bsky.best';
+// CanQuery's own account (the daily chart posts), named so it differs from the icon-only links.
+const CANQUERY_BLUESKY_URL = 'https://bsky.app/profile/canquery.com';
 
 // Live GitHub star count, fetched once on mount from our own cached proxy
 // (/web-api/v1/repo). null while loading or if the upstream was unavailable, in
@@ -114,6 +116,16 @@ export default function Footer() {
             </p>
           </div>
           <div className="flex items-center gap-3 pt-1">
+            <a
+              href={CANQUERY_BLUESKY_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t('footer.follow_canquery_bluesky')}
+              className="inline-flex items-center gap-1.5 text-xs text-base-content/55 hover:text-base-content transition-colors"
+            >
+              <BlueskyIcon size={15} />
+              <span aria-hidden="true">@canquery.com</span>
+            </a>
             <a
               href={X_URL}
               target="_blank"

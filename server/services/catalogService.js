@@ -192,26 +192,30 @@ const searchDatasets = async ({ facets, limit, cursor, ...criteria }) => {
 // The homepage and /datasets open on the unfiltered counts in both languages.
 const startCatalogCountWarming = () => startFacetWarming(['en', 'fr'].map(lang => normalizeDatasetSearch({ lang })));
 
+// The dataset detail shape, built from the rows the API and the dataset page's
+// HTML both read (the page embeds it, services/datasetInitialData.js).
+const datasetDetail = (row, resources) => ({
+    id: row.id,
+    name: row.name,
+    title: { en: row.title_en, fr: row.title_fr },
+    notes: { en: row.notes_en, fr: row.notes_fr },
+    keywords: { en: row.keywords_en, fr: row.keywords_fr },
+    metadata_modified: row.metadata_modified,
+    organization: row.org_name
+        ? { name: row.org_name, title: { en: row.org_title_en, fr: row.org_title_fr } }
+        : null,
+    places: shapePlaces(row.places),
+    provenance: shapeProvenance(row.provenance_sources),
+    presentation: datasetPresentation(row, resources),
+    resources: resources.map(resource => ({ ...shapeResource(resource),
+        presentation: resourcePresentation({ ...resource, dataset_title_en: row.title_en, dataset_title_fr: row.title_fr }) }))
+});
+
 const getDataset = async (idOrName) => {
     const row = await catalogReadQueries.getDatasetByIdOrName(idOrName);
     if (!row) throw new AppError('Dataset not found', 404);
     const resources = await catalogReadQueries.listResourcesForDataset(row.id);
-    return {
-        id: row.id,
-        name: row.name,
-        title: { en: row.title_en, fr: row.title_fr },
-        notes: { en: row.notes_en, fr: row.notes_fr },
-        keywords: { en: row.keywords_en, fr: row.keywords_fr },
-        metadata_modified: row.metadata_modified,
-        organization: row.org_name
-            ? { name: row.org_name, title: { en: row.org_title_en, fr: row.org_title_fr } }
-            : null,
-        places: shapePlaces(row.places),
-        provenance: shapeProvenance(row.provenance_sources),
-        presentation: datasetPresentation(row, resources),
-        resources: resources.map(resource => ({ ...shapeResource(resource),
-            presentation: resourcePresentation({ ...resource, dataset_title_en: row.title_en, dataset_title_fr: row.title_fr }) }))
-    };
+    return datasetDetail(row, resources);
 };
 
 // Public resource detail for a catalogue row. The resource page's HTML shell
@@ -551,6 +555,7 @@ module.exports = {
     normalizeDatasetSearch,
     startCatalogCountWarming,
     getDataset,
+    datasetDetail,
     getResource,
     resourceDetail,
     getOrganization,

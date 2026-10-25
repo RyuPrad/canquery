@@ -18,6 +18,9 @@ export const previewResponse = ({ data, meta }) => record(data) && Array.isArray
 
 export const listResponse = ({ data }) => Array.isArray(data) && data.every(record);
 
+export const datasetResponse = ({ data }) => record(data) && typeof data.id === 'string' &&
+  Array.isArray(data.resources) && data.resources.every(resource => record(resource) && typeof resource.id === 'string');
+
 const count = value => Number.isSafeInteger(value) && value >= 0;
 const facetValue = value => record(value) && typeof value.value === 'string' && count(value.count) &&
   (value.label === undefined || record(value.label));

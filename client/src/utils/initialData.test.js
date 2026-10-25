@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest';
-import { INITIAL_DATA_ID, readInitialData, takeInitialData, consumeInitialData } from './initialData.js';
+import { INITIAL_DATA_ID, readInitialData, takeInitialData, takeDatasetInitialData, consumeInitialData } from './initialData.js';
 
 const resource = (overrides = {}) => ({
   data: { id: 'r1', query_mode: 'ingested', dataset: { id: 'd1' }, ingestion: { snapshot_id: 'cqs1_' + '1'.repeat(64) }, ...overrides },
@@ -83,5 +83,33 @@ describe('taking the block for an explorer', () => {
     consumeInitialData();
     expect(document.getElementById(INITIAL_DATA_ID)).toBeNull();
     expect(takeInitialData({ id: 'r1', location: location() })).toBeNull();
+  });
+});
+
+describe('a dataset page block', () => {
+  const dataset = () => ({ data: { id: 'd1', name: 'roads', resources: [{ id: 'r1' }] }, pagination: { nextCursor: null }, meta: { source: 'canquery' } });
+  const guides = () => ({ en: { data: [{ id: 'g1' }] }, fr: { data: [] } });
+  const block = (overrides = {}) => ({ version: 1, kind: 'dataset', path: '/datasets/roads', dataset: dataset(), guides: guides(), ...overrides });
+  const at = (search = '') => ({ pathname: '/datasets/roads', search });
+
+  test('answers its dataset by name or id on the exact URL', () => {
+    embed(block());
+    const taken = takeDatasetInitialData({ idOrName: 'roads', location: at() });
+    expect(taken.dataset.data.id).toBe('d1');
+    expect(taken.guides.en.data).toEqual([{ id: 'g1' }]);
+    expect(takeDatasetInitialData({ idOrName: 'd1', location: at() })).not.toBeNull();
+    expect(takeDatasetInitialData({ idOrName: 'other', location: at() })).toBeNull();
+    expect(takeDatasetInitialData({ idOrName: 'roads', location: at('?page=2') })).toBeNull();
+  });
+
+  test('is null for other kinds, versions and shapes, and the resource reader ignores it', () => {
+    embed(block());
+    expect(readInitialData()).toBeNull();
+    for (const overrides of [{ kind: 'resource' }, { version: 2 }, { dataset: { data: { id: 'd1' } } },
+      { guides: { en: { data: [] } } }, { guides: { en: { data: 'x' }, fr: { data: [] } } }]) {
+      document.body.innerHTML = '';
+      embed(block(overrides));
+      expect(takeDatasetInitialData({ idOrName: 'roads', location: at() })).toBeNull();
+    }
   });
 });

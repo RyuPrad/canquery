@@ -49,6 +49,22 @@ describe('resource sitemap queries', () => {
         expect(params).toEqual([...caps(), 25000, 50000]);
     });
 
+    it('dates each sitemap chunk by the newest entry it holds, numbered in id order', async () => {
+        pool.query.mockResolvedValue({ rows: [{ chunk: 1, lastmod: '2026-08-27T00:00:00Z' }] });
+        await expect(queries.listResourceSitemapChunkLastmods(25000)).resolves.toEqual([{ chunk: 1, lastmod: '2026-08-27T00:00:00Z' }]);
+        const [sql, params] = pool.query.mock.calls[0];
+        expectDataBearing(sql);
+        expect(sql).toContain('(row_number() OVER (ORDER BY r.id) - 1) / $5 + 1 AS chunk');
+        expect(sql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod');
+        expect(params).toEqual([...caps(), 25000]);
+
+        await queries.listDatasetSitemapChunkLastmods(25000);
+        const [datasetSql, datasetParams] = pool.query.mock.calls[1];
+        expect(datasetSql).toContain('(row_number() OVER (ORDER BY d.id) - 1) / $1 + 1 AS chunk');
+        expect(datasetSql).toContain('max(lastmod) AS lastmod');
+        expect(datasetParams).toEqual([25000]);
+    });
+
     it('reads the newest catalogue change for sitemap dates', async () => {
         pool.query.mockResolvedValue({ rows: [{ modified: '2026-10-01T00:00:00Z' }] });
         await expect(queries.getCatalogLastModified()).resolves.toBe('2026-10-01T00:00:00Z');
@@ -89,6 +105,17 @@ describe('organization sitemap queries', () => {
         pool.query.mockResolvedValue({ rows: [{ id: 'p1', enabled: false }] });
         await queries.getPlaceByIdOrSlug('old-on');
         expect(pool.query.mock.calls[1][0]).toContain('p.featured, p.enabled');
+    });
+
+    it('groups a place\'s own datasets by publisher when no source filter applies', async () => {
+        pool.query.mockResolvedValue({ rows: [] });
+        await queries.listOrganizations({ q: null, source: null, place: 'calgary-ab', limit: 12, offset: 0 });
+        const [sql, params] = pool.query.mock.calls[0];
+        expect(sql).toContain('place_datasets AS (');
+        expect(sql).toContain('FROM counts c');
+        expect(params).toEqual(['calgary-ab', 12, 0, null]);
+        await queries.listOrganizations({ q: null, source: 'calgary-open-data', place: 'calgary-ab', limit: 12, offset: 0 });
+        expect(pool.query.mock.calls[1][0]).toContain('WHERE EXISTS (SELECT 1 FROM datasets d_any WHERE d_any.org_id = o.id)');
     });
 });
 
