@@ -65,6 +65,21 @@ describe('resource sitemap queries', () => {
         expect(datasetParams).toEqual([25000]);
     });
 
+    it('reads the pages whose sitemap entry changed in a window, for IndexNow', async () => {
+        pool.query.mockResolvedValueOnce({ rows: [{ id: 'd1', name: 'roads' }] }).mockResolvedValueOnce({ rows: [{ id: 'r1' }] });
+        const since = new Date('2026-10-24T07:45:00Z');
+        const until = new Date('2026-10-26T07:45:00Z');
+        await expect(queries.listChangedSitemapPages({ since, until, limit: 50001 }))
+            .resolves.toEqual({ datasets: [{ id: 'd1', name: 'roads' }], resources: [{ id: 'r1' }] });
+        const [datasetSql, datasetParams] = pool.query.mock.calls[0];
+        expect(datasetSql).toContain('d.metadata_modified > $1 AND d.metadata_modified <= $2');
+        expect(datasetParams).toEqual([since, until, 50001]);
+        const [resourceSql, resourceParams] = pool.query.mock.calls[1];
+        expectDataBearing(resourceSql);
+        expect(resourceSql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $5');
+        expect(resourceParams).toEqual([...caps(), since, until, 50001]);
+    });
+
     it('reads the newest catalogue change for sitemap dates', async () => {
         pool.query.mockResolvedValue({ rows: [{ modified: '2026-10-01T00:00:00Z' }] });
         await expect(queries.getCatalogLastModified()).resolves.toBe('2026-10-01T00:00:00Z');

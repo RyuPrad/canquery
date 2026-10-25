@@ -26,6 +26,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # privileges; no credential is placed in the cron file.
 45 4 * * * root /usr/local/sbin/canquery-run-map-job.sh prune-map-objects
 
+# Optional IndexNow submissions after the source syncs. Set INDEXNOW_KEY in
+# the API and job environments first, then uncomment.
+# 45 7 * * * root /usr/local/sbin/canquery-run-job.sh indexnow-submit
+
 # Optional private Search Console reporting. Configure GSC_OAUTH_PATH,
 # GSC_SITE_URL, and GSC_REPORT_PATH, complete a durable OAuth grant, run the
 # first 90-day import, then uncomment both entries.

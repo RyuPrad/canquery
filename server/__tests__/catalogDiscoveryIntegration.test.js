@@ -68,6 +68,18 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         expect(maps[0].mappable_count).toBe(1);
         expect(maps[0].preview_map_id).toBe(id('resource4'));
     });
+    test('reads the changed dataset and data-bearing resource pages in a window', async () => {
+        const window = (since, until) => queries.listChangedSitemapPages({ since: new Date(since), until: new Date(until), limit: 1000 }, db);
+        const changed = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z');
+        expect(changed.datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(101);
+        expect(changed.resources.filter(row => row.id.startsWith(prefix)).map(row => row.id)).toEqual(
+            [1, 2, 3, 4].map(n => id('resource' + n)));
+        // The window's start is exclusive and its end inclusive.
+        const later = await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z');
+        expect(later.datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(0);
+        const ending = await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z');
+        expect(ending.datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(101);
+    });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         const first = await queries.listResourceSitemap({ limit: 2, offset: 0 }, db);
