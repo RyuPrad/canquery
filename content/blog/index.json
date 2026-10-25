@@ -10,22 +10,22 @@
     },
     "view": "table",
     "published": "2026-09-09",
-    "updated": "2026-10-07",
-    "verified": "2026-10-07",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
     "dataset": "/datasets/toronto-open-data-building-permits-active-permits",
     "explore": "/resources/ckan-toronto-open-data-resource-6d0229af-bc54-46de-9c2b-26759b01dd05",
     "editions": {
       "en": {
         "slug": "toronto-building-permits",
-        "title": "How to look up active building permits in Toronto",
-        "description": "Look up Toronto building applications and permits by street, understand the records, and open the official source through CanQuery.",
+        "title": "Toronto building permits: search active permits by street",
+        "description": "Search the City of Toronto’s active building permits and applications by street, read each status and description, and find cleared permits.",
         "placeName": "Toronto",
         "topicName": "Building permits"
       },
       "fr": {
         "slug": "permis-construction-toronto",
-        "title": "Consulter les permis de construction actifs à Toronto",
-        "description": "Recherchez les demandes et permis de construction de Toronto par rue et apprenez à lire les données officielles dans CanQuery.",
+        "title": "Permis de construction à Toronto : chercher les permis actifs par rue",
+        "description": "Cherchez les permis et demandes de construction actifs de Toronto par rue, lisez le statut et la description, et trouvez les permis fermés.",
         "placeName": "Toronto",
         "topicName": "Permis de construction"
       }
@@ -169,23 +169,23 @@
     },
     "view": "map",
     "published": "2026-09-11",
-    "updated": "2026-10-07",
-    "verified": "2026-10-07",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
     "dataset": "/datasets/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32",
     "datasetId": "arcgis-6881ab21ee78498e90d7317d20b3f8e9-32",
     "explore": "/resources/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32-data?view=map",
     "editions": {
       "en": {
         "slug": "uxbridge-ward-boundaries-map",
-        "title": "Explore Uxbridge ward boundaries on a map",
-        "description": "Open Durham Region’s Uxbridge ward layer, read its WARD and LABEL fields, and choose between the interactive map and source downloads.",
+        "title": "Uxbridge ward map: the township’s five ward boundaries",
+        "description": "See Uxbridge’s five wards (U1 to U5) on Durham Region’s boundary map, read the WARD and LABEL fields and pick the right download for GIS work.",
         "topicName": "Ward boundaries",
         "placeName": "Uxbridge"
       },
       "fr": {
         "slug": "carte-limites-quartiers-uxbridge",
-        "title": "Explorer les limites des quartiers d’Uxbridge sur une carte",
-        "description": "Consultez la couche d’Uxbridge publiée par Durham, lisez les champs WARD et LABEL et choisissez une carte ou un téléchargement à la source.",
+        "title": "Carte des quartiers d’Uxbridge : les cinq quartiers du canton",
+        "description": "Voyez les cinq quartiers d’Uxbridge (U1 à U5) sur la carte de la région de Durham, lisez les champs WARD et LABEL et choisissez le bon téléchargement.",
         "topicName": "Limites des quartiers",
         "placeName": "Uxbridge"
       }
@@ -203,23 +203,23 @@
     },
     "view": "table",
     "published": "2026-10-17",
-    "updated": "2026-10-17",
-    "verified": "2026-10-17",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
     "dataset": "/datasets/toronto-open-data-municipal-licensing-and-standards-business-licences-and-permits",
     "datasetId": "ckan-toronto-open-data-dataset-57b2285f-4f80-45fb-ae3e-41a02c3a137f",
     "explore": "/resources/ckan-toronto-open-data-resource-169e90ba-3ae0-43dd-8b2f-919e87002f50",
     "editions": {
       "en": {
         "slug": "toronto-business-licences",
-        "title": "How to look up Toronto business licences and permits",
-        "description": "Search the City of Toronto’s live table of business licences by name, street, category or ward, read a licence record and follow the source.",
+        "title": "Toronto business licence lookup: search ML&S licences and permits",
+        "description": "Look up a Toronto business licence by name, street, category or ward in the City’s live ML&S table, read the record and check the source.",
         "topicName": "Business licences",
         "placeName": "Toronto"
       },
       "fr": {
         "slug": "permis-entreprise-toronto",
-        "title": "Comment consulter les permis d’entreprise de Toronto",
-        "description": "Recherchez la table en direct des permis d’entreprise de Toronto par nom, rue, catégorie ou quartier, lisez un dossier et suivez la source.",
+        "title": "Recherche de permis d’entreprise à Toronto : licences et permis ML&S",
+        "description": "Trouvez un permis d’entreprise de Toronto par nom, rue, catégorie ou quartier dans la table ML&S en direct, lisez le dossier et vérifiez la source.",
         "topicName": "Permis d’entreprise",
         "placeName": "Toronto"
       }
@@ -335,22 +335,22 @@
     },
     "view": "map",
     "published": "2026-10-17",
-    "updated": "2026-10-17",
-    "verified": "2026-10-17",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
     "dataset": "/datasets/calgary-open-data-bxgr-t8xb",
     "datasetId": "socrata-calgary-open-data-dataset-bxgr-t8xb",
     "explore": "/resources/socrata-calgary-open-data-resource-bxgr-t8xb?view=map",
     "editions": {
       "en": {
         "slug": "calgary-ward-map",
-        "title": "Calgary ward map and boundaries",
+        "title": "Calgary ward map: find your ward and its boundaries",
         "description": "Find which of Calgary’s 14 wards an address belongs to, compare wards with the attached civic census totals and choose the right boundary set.",
         "topicName": "Ward boundaries",
         "placeName": "Calgary"
       },
       "fr": {
         "slug": "carte-quartiers-calgary",
-        "title": "Carte et limites des quartiers électoraux de Calgary",
+        "title": "Carte des quartiers de Calgary : trouver votre quartier électoral",
         "description": "Trouvez le quartier électoral d’une adresse parmi les 14 de Calgary, comparez les quartiers avec le recensement municipal et choisissez le bon découpage.",
         "topicName": "Limites des quartiers",
         "placeName": "Calgary"
@@ -400,22 +400,22 @@
     },
     "view": "table",
     "published": "2026-10-17",
-    "updated": "2026-10-17",
-    "verified": "2026-10-17",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
     "dataset": "/datasets/80c00cdb-1358-415c-bb8b-0de7f12675b8",
     "datasetId": "80c00cdb-1358-415c-bb8b-0de7f12675b8",
     "explore": "/resources/694fdc72-eae4-4ee0-83eb-832ab7b230e3",
     "editions": {
       "en": {
         "slug": "cra-list-of-charities",
-        "title": "Look up registered charities in the CRA list of charities",
-        "description": "Search the Canada Revenue Agency’s 2024 list of registered charities by name or city, join its 19 tables on the business number and know what it confirms.",
+        "title": "CRA list of charities: look up a registered charity",
+        "description": "Search the CRA List of charities by name, business number or city, read the registration details and confirm current status with the CRA.",
         "topicName": "Registered charities"
       },
       "fr": {
         "slug": "liste-organismes-bienfaisance-arc",
-        "title": "Consulter la liste des organismes de bienfaisance de l’ARC",
-        "description": "Recherchez la liste 2024 des organismes de bienfaisance de l’ARC par nom ou ville, joignez ses 19 tables par numéro d’entreprise et sachez ce qu’elle confirme.",
+        "title": "Liste des organismes de bienfaisance de l’ARC : trouver un organisme",
+        "description": "Cherchez dans la liste de l’ARC par nom, numéro d’entreprise ou ville, lisez les détails d’enregistrement et confirmez le statut auprès de l’ARC.",
         "topicName": "Organismes de bienfaisance"
       }
     }
@@ -478,6 +478,193 @@
         "description": "Vérifiez si une entreprise est une société de régime fédéral, lisez son statut et ses dépôts dans la table des sociétés actives et listez celles d’une ville.",
         "topicName": "Sociétés de régime fédéral",
         "explore": "/resources/a1cbafa3-df2b-44c9-8488-833b31b76e01"
+      }
+    }
+  },
+  {
+    "id": "canada-earthquakes",
+    "status": "published",
+    "topic": "earthquakes",
+    "query": {
+      "en": "earthquakes",
+      "fr": "séismes"
+    },
+    "view": "table",
+    "published": "2026-10-25",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
+    "dataset": "/datasets/2c3672b6-4c17-4ff5-9861-29e2dd6d03b3",
+    "datasetId": "2c3672b6-4c17-4ff5-9861-29e2dd6d03b3",
+    "explore": "/resources/f9fefce6-f183-4e7c-9917-2e210ad09fd4",
+    "editions": {
+      "en": {
+        "slug": "canada-earthquakes",
+        "title": "Earthquakes in Canada: search 100,000 recorded events since 1985",
+        "description": "Search, sort and chart Earthquakes Canada's record of 101,365 events from 1985 to 2019 by date, magnitude and province, and find recent events.",
+        "topicName": "Earthquakes"
+      },
+      "fr": {
+        "slug": "seismes-canada",
+        "title": "Séismes au Canada : chercher 100 000 événements depuis 1985",
+        "description": "Cherchez, triez et représentez les 101 365 séismes enregistrés par Séismes Canada de 1985 à 2019 par date, magnitude et province.",
+        "topicName": "Séismes",
+        "explore": "/resources/ab19e6ef-fa1e-43fa-a355-ff3d61d849eb"
+      }
+    }
+  },
+  {
+    "id": "surrey-restaurant-inspections",
+    "status": "published",
+    "place": "surrey-bc",
+    "topic": "restaurant-inspections",
+    "query": {
+      "en": "restaurant inspections",
+      "fr": "inspections de restaurants"
+    },
+    "view": "table",
+    "published": "2026-10-25",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
+    "dataset": "/datasets/arcgis-320cec8503034bb997d8f6e57690dd5d-0",
+    "datasetId": "arcgis-320cec8503034bb997d8f6e57690dd5d-0",
+    "explore": "/resources/arcgis-320cec8503034bb997d8f6e57690dd5d-0-data",
+    "editions": {
+      "en": {
+        "slug": "surrey-restaurant-inspections",
+        "title": "Surrey restaurant inspections: Fraser Health ratings and violations",
+        "description": "Find a Surrey restaurant on the map, then read its Fraser Health inspections: dates, hazard ratings and violations, from 2022 to 2026.",
+        "topicName": "Restaurant inspections",
+        "placeName": "Surrey"
+      },
+      "fr": {
+        "slug": "inspections-restaurants-surrey",
+        "title": "Inspections de restaurants à Surrey : cotes et infractions",
+        "description": "Trouvez un restaurant de Surrey sur la carte, puis lisez ses inspections de Fraser Health : dates, cotes de risque et infractions.",
+        "topicName": "Inspections de restaurants",
+        "placeName": "Surrey"
+      }
+    }
+  },
+  {
+    "id": "health-canada-inspections-dhpid",
+    "status": "published",
+    "topic": "health-product-inspections",
+    "query": {
+      "en": "health product inspections",
+      "fr": "inspections produits de santé"
+    },
+    "view": "download",
+    "published": "2026-10-25",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
+    "dataset": "/datasets/e06c5d6c-e2b1-4d08-9b7e-095299695102",
+    "datasetId": "e06c5d6c-e2b1-4d08-9b7e-095299695102",
+    "explore": "/resources/9d57c3e6-2d57-47a2-ad5b-350f15276096",
+    "editions": {
+      "en": {
+        "slug": "health-canada-inspections-dhpid",
+        "title": "Health Canada inspection database (DHPID): search inspection results",
+        "description": "Search Health Canada's Drug and Health Product Inspections Database by program, read compliant and non-compliant ratings and observations.",
+        "topicName": "Health product inspections"
+      },
+      "fr": {
+        "slug": "inspections-sante-canada-imps",
+        "title": "Inspections de Santé Canada (base IMPS) : chercher un résultat",
+        "description": "Cherchez dans la base Inspections des médicaments et des produits de santé par programme et lisez les cotes conforme ou non conforme.",
+        "topicName": "Inspections des produits de santé",
+        "explore": "/resources/7cb92378-0329-490d-b93a-c5360d63962e"
+      }
+    }
+  },
+  {
+    "id": "bc-lidar-data",
+    "status": "published",
+    "topic": "lidar",
+    "query": {
+      "en": "lidar",
+      "fr": "lidar"
+    },
+    "view": "download",
+    "published": "2026-10-25",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
+    "dataset": "/datasets/d08b2795-d192-4377-8056-eccef50296e6",
+    "datasetId": "d08b2795-d192-4377-8056-eccef50296e6",
+    "explore": "/resources/f01a8ef6-f229-4e21-bbe3-40d32664eb7f",
+    "editions": {
+      "en": {
+        "slug": "bc-lidar-data",
+        "title": "BC LiDAR data: download point clouds and elevation models",
+        "description": "Download British Columbia LiDAR from LidarBC, NRCan's CanElevation point clouds and city surveys: formats, coverage and licences.",
+        "topicName": "LiDAR"
+      },
+      "fr": {
+        "slug": "donnees-lidar-colombie-britannique",
+        "title": "Lidar de la C.-B. : nuages de points et modèles d’élévation",
+        "description": "Téléchargez le lidar de la Colombie-Britannique avec LidarBC, les nuages de points CanÉlévation de RNCan et des relevés municipaux.",
+        "topicName": "Lidar"
+      }
+    }
+  },
+  {
+    "id": "lnhpd-natural-health-products",
+    "status": "draft",
+    "topic": "natural-health-products",
+    "query": {
+      "en": "natural health products",
+      "fr": "produits de santé naturels"
+    },
+    "view": "download",
+    "published": "2026-10-25",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
+    "dataset": "/datasets/1e7f1c59-794e-49df-a256-6bb8658f5058",
+    "datasetId": "1e7f1c59-794e-49df-a256-6bb8658f5058",
+    "explore": "/resources/cf8b1877-9cee-4429-ae92-8bea3512c0f4",
+    "editions": {
+      "en": {
+        "slug": "lnhpd-natural-health-products",
+        "title": "LNHPD: look up a licensed natural health product (NPN) in Canada",
+        "description": "Check a natural health product's licence in Health Canada's LNHPD: NPN or DIN-HM, ingredients, approved uses, warnings and status, or use the API.",
+        "topicName": "Natural health products"
+      },
+      "fr": {
+        "slug": "bdpsnh-produits-sante-naturels",
+        "title": "BDPSNH : vérifier un produit de santé naturel homologué (NPN)",
+        "description": "Vérifiez la licence d’un produit de santé naturel dans la BDPSNH : NPN ou DIN-HM, ingrédients, usages approuvés, mises en garde et statut.",
+        "topicName": "Produits de santé naturels",
+        "explore": "/resources/fcbf45fc-20f9-439e-a6c3-18dbdbd40f38"
+      }
+    }
+  },
+  {
+    "id": "canada-notifiable-diseases",
+    "status": "draft",
+    "topic": "notifiable-diseases",
+    "query": {
+      "en": "notifiable diseases",
+      "fr": "maladies à déclaration obligatoire"
+    },
+    "view": "table",
+    "published": "2026-10-25",
+    "updated": "2026-10-25",
+    "verified": "2026-10-25",
+    "dataset": "/datasets/f2a711f9-be80-4b98-a205-8ac9e5e0d126",
+    "datasetId": "f2a711f9-be80-4b98-a205-8ac9e5e0d126",
+    "explore": "/resources/211adf12-1213-4953-afda-846c33a10972",
+    "editions": {
+      "en": {
+        "slug": "canada-notifiable-diseases",
+        "title": "Notifiable diseases in Canada: case counts and rates since 1924",
+        "description": "Explore PHAC's notifiable disease counts and rates from 1924 to 2016 as live tables, and find data up to 2024 in Notifiable Diseases Online.",
+        "topicName": "Notifiable diseases"
+      },
+      "fr": {
+        "slug": "maladies-declaration-obligatoire-canada",
+        "title": "Maladies à déclaration obligatoire : cas et taux depuis 1924",
+        "description": "Explorez les nombres et taux de maladies à déclaration obligatoire de 1924 à 2016, et les données jusqu’en 2024 sur le site de l’ASPC.",
+        "topicName": "Maladies à déclaration obligatoire",
+        "explore": "/resources/f3aa3a93-8091-4ae3-b4d6-2feccaf059aa"
       }
     }
   }

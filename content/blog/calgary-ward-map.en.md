@@ -1,5 +1,13 @@
 You want to know which Calgary ward an address belongs to, who the ward's councillor represents or how the 14 wards compare in dwellings and residents. The City of Calgary publishes its ward boundaries as open data, with a separate dataset for each boundary set. This guide uses **Ward Boundaries for 2021 October 18 General Election**, the boundaries that took effect on election day in 2021.
 
+| At a glance | |
+|---|---|
+| Publisher | City of Calgary |
+| Boundaries | 14 wards, as set for the October 18, 2021 general election |
+| Ward field | **WardNumber** |
+| Also attached | Civic census totals such as **SUM_RES_CNT** (residents) and **SUM_DWELL_CNT** (dwellings) |
+| On CanQuery | An interactive map and a table you can chart or export as CSV |
+
 ## Find a ward on the map
 
 1. [Open the Calgary ward boundaries map in CanQuery](/resources/socrata-calgary-open-data-resource-bxgr-t8xb?view=map). Each polygon is one ward.

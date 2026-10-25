@@ -1,5 +1,15 @@
 Vous voulez vérifier qu’un organisme de bienfaisance est enregistré auprès de l’Agence du revenu du Canada (ARC), trouver son numéro d’entreprise avant de donner, ou dresser la liste des organismes enregistrés de votre ville ou d’une catégorie. L’ARC publie la **Liste des organismes de bienfaisance** en données ouvertes, un jeu par année, compilé à partir de la déclaration annuelle (formulaire T3010) que chaque organisme enregistré doit produire. Ce guide utilise la **Liste des organismes de bienfaisance 2024**; CanQuery en propose les fichiers comme des tables en direct consultables dans le navigateur.
 
+| En bref | |
+|---|---|
+| Producteur | Agence du revenu du Canada (ARC) |
+| Contenu | Les organismes de bienfaisance enregistrés, d’après la déclaration annuelle T3010 |
+| Édition utilisée | Liste 2024 : environ 84 000 organismes dans la table Identification |
+| Recherche par | **BN**, **Legal Name**, **Account Name**, **Category**, **City**, **Province** |
+| Années antérieures | Une liste par année, depuis 2011 |
+| Dans CanQuery | Une table en direct à chercher, filtrer et représenter, avec export CSV jusqu’à 10 000 lignes |
+| Statut actuel | À confirmer dans la liste en ligne des organismes de bienfaisance de l’ARC |
+
 ## Rechercher un organisme
 
 1. [Ouvrez la table Identification dans CanQuery](/resources/694fdc72-eae4-4ee0-83eb-832ab7b230e3). Elle recense environ 84 000 organismes avec **BN** (le numéro d’entreprise et son suffixe d’enregistrement), **Legal Name**, **Account Name**, **Category**, **Sub Category**, **Designation** et les champs d’adresse **City**, **Province**, **Postal Code** et **Country**.

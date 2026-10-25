@@ -9,9 +9,10 @@ const { renderHtml } = require('../services/seoMeta');
 const app = require('../app');
 const template = '<!doctype html><html lang="en"><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>';
 
-test('publishes fifteen paired guides with verified resource links', () => {
-    expect(readArticles()).toHaveLength(30);
-    expect(listArticles()).toHaveLength(15);
+test('publishes nineteen paired guides with verified resource links, keeping two drafts out', () => {
+    expect(readArticles()).toHaveLength(42);
+    expect(listArticles()).toHaveLength(19);
+    expect(listArticles().map(article => article.id)).not.toContain('lnhpd-natural-health-products');
     expect(listArticles({ lang: 'fr', place: 'oshawa-on' })).toHaveLength(1);
     for (const lang of ['en', 'fr']) for (const article of listArticles({ lang })) {
         const full = getArticle(lang, article.slug);
@@ -57,7 +58,7 @@ test('serves article APIs, geographic listing, real 404s and the blog sitemap', 
     expect((await request(app).get('/api/v1/blog/en/missing')).status).toBe(404);
     const sitemap = await request(app).get('/sitemap-blog.xml');
     expect(sitemap.status).toBe(200);
-    expect(sitemap.text.match(/<loc>/g)).toHaveLength(32);
+    expect(sitemap.text.match(/<loc>/g)).toHaveLength(40);
     expect(sitemap.text).toContain('/fr/blog/');
 });
 
@@ -124,7 +125,7 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
             for (const lang of ['en', 'fr']) {
                 const slug = draft.editions[lang].slug;
                 const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + slug;
-                expect(content.listArticles({ lang })).toHaveLength(14);
+                expect(content.listArticles({ lang })).toHaveLength(18);
                 expect(content.getArticle(lang, slug)).toBeNull();
                 expect(resolveBlogPage(articlePath).status).toBe(404);
                 expect(res.send.mock.calls[0][0]).not.toContain(articlePath);

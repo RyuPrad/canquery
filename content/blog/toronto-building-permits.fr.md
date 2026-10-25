@@ -2,6 +2,14 @@ Vous avez remarqué des travaux dans une rue de Toronto et souhaitez savoir ce q
 
 CanQuery permet de consulter cette table officielle dans votre navigateur. Vous pouvez commencer par un nom de rue, examiner les résultats et suivre le lien vers la source pour obtenir davantage de contexte.
 
+| En bref | |
+|---|---|
+| Producteur | Ville de Toronto |
+| Contenu | Les demandes et permis de construction actifs, mis à jour pendant l’examen et les inspections de la Ville |
+| Non inclus | Les permis terminés ou fermés, publiés dans le jeu distinct des permis clôturés |
+| Recherche par | Nom de rue (**STREET_NAME**), numéro civique, type de permis, statut et description des travaux |
+| Dans CanQuery | Une table en direct du DataStore de la Ville, avec filtres exacts comme `=KING` et export CSV jusqu’à 10 000 lignes |
+
 ## Ouvrir la table des permis actifs
 
 1. [Ouvrez les permis de construction actifs de Toronto dans CanQuery](/resources/ckan-toronto-open-data-resource-6d0229af-bc54-46de-9c2b-26759b01dd05).

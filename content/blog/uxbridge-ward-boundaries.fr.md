@@ -1,3 +1,13 @@
+La couche **Uxbridge Ward Boundaries** de la région de Durham divise le canton d’Uxbridge en cinq quartiers, nommés U1 à U5. CanQuery affiche cette couche sur une carte interactive : sélectionnez un quartier pour lire son numéro et son libellé enregistrés.
+
+| En bref | |
+|---|---|
+| Producteur | Région de Durham |
+| Quartiers de la couche | Cinq polygones : **WARD** 1 à 5, **LABEL** U1 à U5 |
+| Autres champs | **MUNICIPALITY**, **OBJECTID**, **Shape_Length**, **Shape_Area** |
+| Dans CanQuery | Une carte interactive, et le lien CSV original du producteur pour les attributs |
+| Fichiers SIG | La page de la région de Durham indique les formats géographiques offerts |
+
 ## Ouvrir la couche des limites d’Uxbridge
 
 La région de Durham publie une couche de données ouvertes intitulée **Uxbridge Ward Boundaries**. Consultez sa [fiche dans CanQuery](/datasets/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32) pour vérifier le producteur et les liens de provenance, puis [ouvrez la carte interactive](/resources/arcgis-6881ab21ee78498e90d7317d20b3f8e9-32-data?view=map). Il s’agit d’une couche de polygones : elle sert principalement à représenter des zones et leurs attributs enregistrés.
