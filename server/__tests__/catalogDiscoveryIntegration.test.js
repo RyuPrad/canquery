@@ -42,6 +42,28 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
             [1, 2, 3, 4].map(n => id('resource' + n)));
         expect(resources.find(row => row.id === id('resource1')).lastmod.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     });
+    test('counts the files of a dataset that share a name, format and language', async () => {
+        // A savepoint keeps these rows out of the counts the later tests take.
+        await db.query('SAVEPOINT yearly_files');
+        try {
+            await db.query(`INSERT INTO datasets (id, name, title_en) VALUES ($1, $1, 'Library statistics')`, [id('yearly')]);
+            await db.query(`INSERT INTO resources (id, dataset_id, name_en, name_fr, format, language, url) VALUES
+                ($1 || 'a', $2, 'Key ratios', NULL, 'XLSX', 'fr', 'https://example.test/key-ratios-fr-2023.xlsx'),
+                ($1 || 'b', $2, ' key ratios ', NULL, 'xlsx', 'fr', 'https://example.test/key-ratios-fr-2024.xlsx'),
+                ($1 || 'c', $2, '', 'Key ratios', 'XLSX', 'fr', 'https://example.test/key-ratios-fr-2025.xlsx'),
+                ($1 || 'd', $2, 'Key ratios', NULL, 'XLSX', 'en', 'https://example.test/key-ratios-en-2023.xlsx'),
+                ($1 || 'e', $2, 'General information', NULL, 'XLSX', 'fr', 'https://example.test/general-fr-2023.xlsx')`,
+                [id('yearly-'), id('yearly')]);
+            // Case, surrounding spaces and a missing English name (the French one counts) do not split a group.
+            const listed = await queries.listResourcesForDataset(id('yearly'), db);
+            expect(Object.fromEntries(listed.map(row => [row.id, row.same_name_siblings]))).toEqual({
+                [id('yearly-a')]: 2, [id('yearly-b')]: 2, [id('yearly-c')]: 2, [id('yearly-d')]: 0, [id('yearly-e')]: 0 });
+            expect((await queries.getResourceById(id('yearly-a'), db)).same_name_siblings).toBe(2);
+            expect((await queries.getResourceById(id('yearly-e'), db)).same_name_siblings).toBe(0);
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT yearly_files');
+        }
+    });
     test('pages through tied dataset dates without losing or repeating records', async () => {
         const search = offset => queries.searchDatasets({ org: prefix, q: null, limit: 50, offset }, db);
         const pages = [...await search(0), ...await search(50)];

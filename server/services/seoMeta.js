@@ -207,13 +207,58 @@ function isPeriodName(name) {
         /^(?:[QT][1-4]\s+\d{4}|\d{4}\s+[QT][1-4])$/i.test(name);
 }
 
+// The year, or fiscal year such as 2006–07, in a file's name; null when the
+// name has none or several. A digit run (a date such as 20240115 or a code
+// such as 100001) is not a year.
+const FILE_YEAR_RE = /(?:^|[^a-z0-9])((?:19|20)\d{2})(?:[-–_](\d{4}|\d{2}))?(?=$|[^a-z0-9])/gi;
+const NAME_YEAR_RE = /(?:^|[^0-9])(?:19|20)\d{2}(?![0-9])/;
+
+function fileYear(url) {
+    let file = String(url || '').split(/[?#]/)[0].split('/').pop() || '';
+    try {
+        file = decodeURIComponent(file);
+    } catch {
+        // A malformed escape keeps the raw name.
+    }
+    file = file.replace(/\.[a-z0-9]{1,5}$/i, '');
+    const years = new Set();
+    for (const match of file.matchAll(FILE_YEAR_RE)) {
+        const start = Number(match[1]);
+        const end = match[2];
+        if (end && Number(end) === (end.length === 2 ? (start + 1) % 100 : start + 1)) years.add(match[1] + '–' + end.slice(-2));
+        else {
+            years.add(match[1]);
+            // A second four-digit year makes a range, which names no single year.
+            if (end && end.length === 4 && /^(?:19|20)/.test(end)) years.add(end);
+        }
+    }
+    return years.size === 1 ? [...years][0] : null;
+}
+
+// Yearly files of one dataset often share a name, format and language ("Key
+// ratios" for 2022, 2023 and 2024), so their pages had the same <title> and
+// heading and Google kept one of them as the canonical. When the dataset has
+// such siblings (same_name_siblings) and the text names no year, the year in
+// the file's name tells the pages apart.
+function siblingYear(resource, text) {
+    if (!(Number(resource.same_name_siblings) > 0) || NAME_YEAR_RE.test(text || '')) return null;
+    return fileYear(resource.url);
+}
+
+function withSiblingYear(resource, text) {
+    const year = text ? siblingYear(resource, text) : null;
+    return year ? text + ' ' + year : text;
+}
+
 function resourceSubject(resource) {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     if (datasetTitle && isPeriodName(name)) return datasetTitle + ' — ' + name;
     const download = downloadName(name, resource.format);
-    if (datasetTitle && download) return datasetTitle + (download.qualifier ? ' — ' + download.qualifier : '');
-    return (isGenericResourceName(name, resource.format) ? datasetTitle : name) || name || datasetTitle;
+    if (datasetTitle && download) {
+        return withSiblingYear(resource, datasetTitle) + (download.qualifier ? ' — ' + download.qualifier : '');
+    }
+    return withSiblingYear(resource, isGenericResourceName(name, resource.format) ? datasetTitle : name) || name || datasetTitle;
 }
 
 function titleContainsFormat(value, format) {
@@ -221,6 +266,16 @@ function titleContainsFormat(value, format) {
     if (!normalizedFormat) return true;
     const escaped = normalizedFormat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp('(^|[^a-z0-9])' + escaped + '([^a-z0-9]|$)', 'i').test(value);
+}
+
+// A dataset title followed by a period or qualifier (" — 2023", " — English").
+// A sibling's year joins the title when it fits whole, else the qualifier, so
+// cutting a long title cannot drop it.
+function periodTitle(datasetTitle, period, year, room) {
+    const yearText = year ? ' ' + year : '';
+    const whole = collapse(datasetTitle);
+    if (whole.length + yearText.length + period.length <= room) return whole + yearText + period;
+    return compactTitle(datasetTitle, Math.max(12, room - period.length - yearText.length)) + period + yearText;
 }
 
 function resourceTitleBase(resource, max = null, lang = 'en') {
@@ -234,8 +289,8 @@ function resourceTitleBase(resource, max = null, lang = 'en') {
     const suffixParts = [...languages, format && !titleContainsFormat(base, format) ? format : ''].filter(Boolean);
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
     if (max && datasetTitle && (isPeriodName(name) || qualifier)) {
-        const period = ' — ' + (qualifier || name);
-        base = compactTitle(datasetTitle, Math.max(12, max - suffix.length - period.length)) + period;
+        const year = isPeriodName(name) ? '' : siblingYear(resource, datasetTitle);
+        base = periodTitle(datasetTitle, ' — ' + (qualifier || name), year, max - suffix.length);
     }
     return (max ? compactTitle(base, Math.max(12, max - suffix.length)) : base) + suffix;
 }
@@ -263,7 +318,7 @@ const DATASET_YEAR_RE = /\b(?:19|20)\d{2}(?:[-–/](?:\d{4}|\d{2}))?\b/;
 // dataset's year when both cannot fit; a short phrase that is still shared
 // gets the publisher.
 function distinctResourceSubject(resource, subject, room) {
-    const name = collapse(pick(resource.name_en, resource.name_fr));
+    const name = collapse(withSiblingYear(resource, pick(resource.name_en, resource.name_fr)));
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const publisher = pick(resource.org_title_en, resource.org_title_fr);
     let text = collapse(subject);
@@ -298,8 +353,8 @@ function resourceTitle(resource) {
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
     let base;
     if (datasetTitle && (isPeriodName(name) || qualifier)) {
-        const period = ' — ' + (qualifier || name);
-        base = compactTitle(datasetTitle, Math.max(12, TITLE_HARD - suffix.length - period.length)) + period;
+        const year = isPeriodName(name) ? '' : siblingYear(resource, datasetTitle);
+        base = periodTitle(datasetTitle, ' — ' + (qualifier || name), year, TITLE_HARD - suffix.length);
     } else {
         base = distinctResourceSubject(resource, subject, Math.max(12, TITLE_HARD - suffix.length));
     }
