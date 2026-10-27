@@ -66,7 +66,7 @@ describe('template path', () => {
 });
 
 describe('robots.txt', () => {
-    it('allows content reads, disallows preparation writes and render extras, and points at the sitemap index', async () => {
+    it('allows content reads, disallows preparation writes, render extras and CSV exports, and points at the sitemap index', async () => {
         const res = await request(app).get('/robots.txt');
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toMatch(/text\/plain/);
@@ -82,7 +82,9 @@ describe('robots.txt', () => {
             'Disallow: /api/v1/resources/*/activity',
             'Disallow: /api/send',
             'Disallow: /web-api/v1/repo',
-            'Disallow: /api/v1/repo'
+            'Disallow: /api/v1/repo',
+            'Disallow: /web-api/v1/resources/*/query.csv',
+            'Disallow: /api/v1/resources/*/query.csv'
         ]);
         expect(res.headers['x-robots-tag']).toBeUndefined();
     });

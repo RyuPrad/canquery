@@ -299,6 +299,31 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         expect(long).not.toContain('…');
     });
 
+    it('tells same-named yearly files of one dataset apart by the year in their file names', () => {
+        const ratios = { ...base, name_en: 'Key ratios', format: 'XLSX', language: 'fr',
+            dataset_title_en: 'Ontario public library statistics (Population group 100,001 to 250,000)',
+            org_title_en: 'Government of Ontario', url: 'https://files.ontario.ca/mtcg-100001-250000-key-ratios-fr-2023.xlsx' };
+        // Alone in its dataset, the file keeps its title.
+        expect(seo.resourceMeta(ratios).title).toBe('Key ratios — Government of Ontario (French, XLSX table) - CanQuery');
+        const sibling = { ...ratios, same_name_siblings: 3 };
+        expect(seo.resourceMeta(sibling).title).toBe('Key ratios 2023 — Government of Ontario (French, XLSX table) - CanQuery');
+        expect(seo.resourceTitleBase(sibling)).toBe('Key ratios 2023 (French, XLSX)');
+        expect(seo.resourceMeta(sibling).description).toMatch(/^Key ratios 2023: French XLSX file/);
+        // A fiscal year stays whole; a name with its own year, a range and a digit run add nothing.
+        expect(seo.resourceTitleBase({ ...sibling, url: 'https://x.test/fin-2006-07-operation.pdf', format: 'PDF' }))
+            .toBe('Key ratios 2006–07 (French, PDF)');
+        expect(seo.resourceTitleBase({ ...sibling, name_en: 'Key ratios 2022' })).toBe('Key ratios 2022 (French, XLSX)');
+        expect(seo.resourceTitleBase({ ...sibling, url: 'https://x.test/ratios_2019-2021.xlsx' })).toBe('Key ratios (French, XLSX)');
+        expect(seo.resourceTitleBase({ ...sibling, url: 'https://x.test/20240115.xlsx' })).toBe('Key ratios (French, XLSX)');
+        // A download label's year joins a whole dataset title, or follows the label when the title is cut.
+        const maps = { ...base, format: 'JP2', language: 'en', name_en: 'Download the English JP2 File through HTTP',
+            url: 'https://x.test/map_1984.jp2', same_name_siblings: 4 };
+        expect(seo.resourceMeta({ ...maps, dataset_title_en: 'Forest cover maps' }).title)
+            .toBe('Forest cover maps 1984 — English (English, JP2) - CanQuery');
+        expect(seo.resourceMeta({ ...maps, dataset_title_en: 'Forest cover maps of the northern boreal plains and the southern taiga regions' }).title)
+            .toBe('Forest cover maps of the northern — English 1984 (English, JP2) - CanQuery');
+    });
+
     it('leads with a whole dataset title or its first clause, never a fragment of it', () => {
         const tables = { ...base, name_en: 'Data tables', datastore_active: true };
         expect(seo.resourceMeta({ ...tables, dataset_title_en: 'Report on Federal Tax Expenditures - Concepts, Estimates and Evaluations 2024' }).title)

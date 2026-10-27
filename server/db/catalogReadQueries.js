@@ -169,10 +169,18 @@ async function getDatasetByIdOrName(idOrName) {
     return result.rows[0] || null;
 }
 
-async function listResourcesForDataset(datasetId) {
-    const result = await pool.query(`
+// Files of one dataset that share a name, format and language: yearly files
+// such as "Key ratios" for 2022, 2023 and 2024. The pages tell them apart by
+// the year in the file name (seoMeta.resourceSubject). The name is normalized
+// the way the page titles pick it: English, else French.
+const RESOURCE_NAME_KEY = alias => `lower(btrim(coalesce(nullif(btrim(${alias}.name_en), ''), ${alias}.name_fr, '')))`;
+const SAME_NAME_PARTITION = `${RESOURCE_NAME_KEY('r')}, upper(coalesce(r.format, '')), coalesce(r.language, '')`;
+
+async function listResourcesForDataset(datasetId, db = pool) {
+    const result = await db.query(`
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
+               (count(*) OVER (PARTITION BY ${SAME_NAME_PARTITION}) - 1)::int AS same_name_siblings,
                ir.status AS ingest_status, ir.row_count AS ingested_row_count, ir.ingested_at, ir.source_version AS ingested_source_version,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
@@ -197,10 +205,14 @@ async function listResourcesForDataset(datasetId) {
     return result.rows;
 }
 
-async function getResourceById(id) {
-    const result = await require('./snapshotRead').snapshotDb().query(`
+async function getResourceById(id, db = require('./snapshotRead').snapshotDb()) {
+    const result = await db.query(`
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
+               (SELECT count(*)::int FROM resources s
+                WHERE s.dataset_id = r.dataset_id AND s.id <> r.id AND ${RESOURCE_NAME_KEY('s')} = ${RESOURCE_NAME_KEY('r')}
+                  AND upper(coalesce(s.format, '')) = upper(coalesce(r.format, ''))
+                  AND coalesce(s.language, '') = coalesce(r.language, '')) AS same_name_siblings,
                d.name AS dataset_name, d.title_en AS dataset_title_en, d.title_fr AS dataset_title_fr,
                d.notes_en AS dataset_notes_en, d.notes_fr AS dataset_notes_fr,
                o.name AS org_name, o.title_en AS org_title_en, o.title_fr AS org_title_fr,
