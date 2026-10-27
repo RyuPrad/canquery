@@ -108,11 +108,16 @@ const PREPARATION_WRITES = ['/web-api/v1', '/api/v1'].flatMap(base =>
 // beacon and the footer's GitHub star count, which falls back to a plain link.
 // Search Console's crawl stats showed them among Googlebot's JSON fetches.
 const RENDER_EXTRAS = ['/api/send', '/web-api/v1/repo', '/api/v1/repo'].map(path => 'Disallow: ' + path);
+// CSV exports are downloads, not pages, and no page renders from them. Googlebot
+// followed the export links anyway: a live table's export asks the publisher's
+// API for every crawl, and Search Console listed them as server errors, 4xx
+// and crawled-but-not-indexed URLs.
+const CSV_EXPORTS = ['/web-api/v1', '/api/v1'].map(base => 'Disallow: ' + base + '/resources/*/query.csv');
 const robots = (req, res) => {
     res.type('text/plain');
     res.set('Cache-Control', 'public, max-age=86400');
     // Specific rules precede Allow for crawlers that apply the first matching line.
-    res.send('User-agent: *\n' + [...PREPARATION_WRITES, ...RENDER_EXTRAS].join('\n') +
+    res.send('User-agent: *\n' + [...PREPARATION_WRITES, ...RENDER_EXTRAS, ...CSV_EXPORTS].join('\n') +
         '\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 

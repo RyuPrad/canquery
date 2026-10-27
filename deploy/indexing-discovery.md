@@ -107,3 +107,30 @@ Crawl stats showed 73% of Googlebot's requests were JSON fetched while
 rendering pages. `robots.txt` now also disallows the analytics beacon
 (`/api/send`) and the footer's GitHub star count (`/web-api/v1/repo`,
 `/api/v1/repo`); the reads a page renders from stay crawlable.
+
+## Page indexing review, October 2026
+
+Search Console's Page indexing report (update of October 22) listed 59K indexed
+and 122K not indexed pages. Most reasons are by design: `/?keyword=` links and
+`?highlight=`/`?view=` variants redirect or name their canonical, www and http
+redirect to the apex, download-only resource pages carry `noindex`, and the
+404s are resources and datasets that publishers removed.
+
+Two reasons pointed at the site:
+
+- **CSV exports were crawled.** Googlebot followed the `query.csv` export
+  links despite `rel=nofollow`. They made up all 33 server errors (a live
+  table's export asks the publisher's API, which timed out or answered 502),
+  two of the three other 4xx errors and 272 of the 906 crawled-but-not-indexed
+  examples. `robots.txt` now disallows `/web-api/v1/resources/*/query.csv` and
+  `/api/v1/resources/*/query.csv`; no page renders from them.
+- **Same-named yearly files looked like duplicates.** 2,897 pages were
+  "Duplicate, Google chose different canonical than user". In the samples,
+  each pair was two files of one dataset with the same name, format and
+  language, such as Ontario public library statistics' "Key ratios" for 2022,
+  2023, 2024 and 2025: their titles, headings and descriptions were identical.
+  The resource and dataset queries now count such siblings
+  (`same_name_siblings`), and a sibling's title, heading and description add
+  the year or fiscal year from its file name when the name has none ("Key
+  ratios 2023 — Government of Ontario (French, XLSX table)"). About 1,070
+  files change; a file alone in its dataset keeps its title.
