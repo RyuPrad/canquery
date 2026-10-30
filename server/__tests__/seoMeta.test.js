@@ -112,6 +112,24 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
             .toBe('Water quality of lakes and rivers in Canada: PDF file - CanQuery');
     });
 
+    it('never cuts a name mid-phrase to make room for the capability phrase', () => {
+        const files = Array.from({ length: 5 }, (_, i) => ({ id: 'r' + i, format: 'CSV', url: 'https://example.test/' + i + '.zip' }));
+        const titled = title_en => seo.datasetMeta({ ...dataset, title_en }, files).title;
+        // No clause fits: the name takes the whole room and the phrase is left out.
+        expect(titled('Revenues from domestic sales of environmental and clean technology goods and services'))
+            .toBe('Revenues from domestic sales of environmental and clean technology - CanQuery');
+        expect(titled('Guide to validation – drugs and supporting activities (GUI-0029)'))
+            .toBe('Guide to validation – drugs and supporting activities (GUI-0029) - CanQuery');
+        // A long clause before a comma stands as the name, and the phrase follows it.
+        expect(titled('Merchandise imports and exports customs-based price indexes, Canada and United States trade, monthly'))
+            .toBe('Merchandise imports and exports customs-based price indexes: 5 files - CanQuery');
+        // A cut that leaves room for the phrase keeps it, and never ends on "… and other".
+        expect(titled('Ontario public library statistics (Population group 100,001 to 250,000)'))
+            .toBe('Ontario public library statistics: 5 files (CSV) - CanQuery');
+        expect(titled('Sales of alcoholic beverages types by liquor authorities and other retail outlets, by value, volume'))
+            .toBe('Sales of alcoholic beverages types by liquor authorities: 5 files - CanQuery');
+    });
+
     it('spells a long federal title with its acronyms instead of a hard-coded override', () => {
         const meta = seo.datasetMeta({
             ...dataset, id: '90fed587-1364-4f33-a9ee-208181dc0b97', name: '90fed587-1364-4f33-a9ee-208181dc0b97',
@@ -321,7 +339,7 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         expect(seo.resourceMeta({ ...maps, dataset_title_en: 'Forest cover maps' }).title)
             .toBe('Forest cover maps 1984 — English (English, JP2) - CanQuery');
         expect(seo.resourceMeta({ ...maps, dataset_title_en: 'Forest cover maps of the northern boreal plains and the southern taiga regions' }).title)
-            .toBe('Forest cover maps of the northern — English 1984 (English, JP2) - CanQuery');
+            .toBe('Forest cover maps of the northern boreal plains — English 1984 (JP2) - CanQuery');
     });
 
     it('leads with a whole dataset title or its first clause, never a fragment of it', () => {
@@ -334,6 +352,43 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         // A dataset title that already covers the file name is not repeated before it.
         expect(seo.resourceMeta({ ...base, name_en: 'Electricity Generation', dataset_title_en: 'Electricity generation by source' }).title)
             .toBe('Electricity Generation (CSV table) - CanQuery');
+    });
+
+    it('keeps the subject whole before the language and table words', () => {
+        const votes = { ...base, name_en: 'Table 6: Distribution of valid votes under Special Voting Rules',
+            dataset_title_en: '44th General Election: Official Voting Results', datastore_active: true, language: 'en,fr' };
+        // Bilingual: the language pair goes first, then the format and table words.
+        expect(seo.resourceMeta(votes).title).toBe('Table 6: Distribution of valid votes under Special Voting Rules - CanQuery');
+        expect(seo.resourceMeta({ ...votes, name_en: 'Downloads per organization, last 12 months' }).title)
+            .toBe('Downloads per organization, last 12 months (CSV live table) - CanQuery');
+        // A subject that fits with every word keeps them all.
+        expect(seo.resourceMeta({ ...votes, name_en: 'Activities outside Canada' }).title)
+            .toBe('Activities outside Canada (English, French, CSV live table) - CanQuery');
+        // English is the default and goes before the table words; "French" stays.
+        const projects = { ...base, name_en: 'Park and Recreation Facility Projects', dataset_title_en: 'Park and Recreation Facility Projects',
+            datastore_active: true, map_provider: 'arcgis' };
+        expect(seo.resourceMeta({ ...projects, language: 'en' }).title)
+            .toBe('Park and Recreation Facility Projects (CSV live table and map) - CanQuery');
+        const ridings = { ...base, name_en: 'History of the Federal Electoral Ridings, 1867-2010',
+            dataset_title_en: 'History of the Federal Electoral Ridings', language: 'fr' };
+        expect(seo.resourceMeta(ridings).title).toBe('History of the Federal Electoral Ridings, 1867-2010 (French) - CanQuery');
+        expect(seo.resourceMeta({ ...ridings, language: 'en' }).title)
+            .toBe('History of the Federal Electoral Ridings, 1867-2010 (CSV table) - CanQuery');
+        // A subject too long to stand whole is cut behind the shorter qualifier.
+        const cndss = { ...base, language: 'en', dataset_title_en: 'CNDSS annual counts',
+            name_en: 'Canadian Notifiable Disease Surveillance System Counts and Rates of Reported Cases of Nationally Notifiable Diseases, 1991-2016' };
+        expect(seo.resourceMeta(cndss).title).toBe('Canadian Notifiable Disease Surveillance System Counts (CSV table) - CanQuery');
+        expect(seo.resourceMeta({ ...cndss, language: 'fr' }).title)
+            .toBe('Canadian Notifiable Disease Surveillance System (French, CSV table) - CanQuery');
+    });
+
+    it('does not repeat a language the name already states', () => {
+        const quakes = { ...base, name_en: 'Canadian Earthquakes (English)', dataset_title_en: 'Earthquakes in Canada 2010-2019', language: 'en' };
+        expect(seo.resourceMeta(quakes).title).toBe('Canadian Earthquakes (English) — 2010-2019 (CSV table) - CanQuery');
+        expect(seo.resourceTitleBase(quakes)).toBe('Canadian Earthquakes (English) (CSV)');
+        expect(seo.resourceTitleBase({ ...quakes, name_en: 'Séismes canadiens (français)', language: 'fr' }, null, 'fr'))
+            .toBe('Séismes canadiens (français) (CSV)');
+        expect(seo.resourceTitleBase({ ...quakes, language: 'en,fr' })).toBe('Canadian Earthquakes (English) (French, CSV)');
     });
 
     it('cuts file-name style titles at their underscores instead of mid-word', () => {
@@ -434,7 +489,9 @@ describe('publisher download names', () => {
         const meta = seo.resourceMeta(resource);
         expect(meta.title.length).toBeLessThanOrEqual(80);
         expect(meta.description.length).toBeLessThanOrEqual(160);
-        expect(meta.title).toContain(' — English (English, French, JP2)');
+        // The bilingual pair gives way to the subject once the subject must be cut.
+        expect(meta.title).toContain(' — English (JP2) - CanQuery');
+        expect(seo.resourceTitleBase(resource)).toContain(' — English (English, French, JP2)');
         expect(seo.resourceMeta({ ...resource, name_en: 'Q4 2025' }).title).toContain(' — Q4 2025');
         expect(seo.resourceTitleBase({ name_en: 'Download EDI through HTTP', format: 'EDI' })).toBe('Download EDI through HTTP');
         expect(seo.resourceTitleBase({})).toBe('Resource');

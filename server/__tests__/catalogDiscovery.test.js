@@ -100,9 +100,12 @@ test('date-only files retain subject, period, language and format without mergin
     const fr = resourcePresentation({ ...row, id: 'r-fr', language: 'fr' });
     expect(en.title.en).toBe('Wait Time Tool — 2020-04-01 to 2020-06-30 (English, CSV)');
     expect(fr.title.fr).toContain('Outil de délais — 2020-04-01 to 2020-06-30 (français, CSV)');
-    const meta = resourceMeta({ ...row, dataset_title_en: 'A lengthy publisher dataset title '.repeat(10) });
+    const long = { ...row, dataset_title_en: 'A lengthy publisher dataset title '.repeat(10) };
+    const meta = resourceMeta(long);
     expect(meta.title.length).toBeLessThanOrEqual(80);
-    expect(meta.title).toContain('2020-04-01 to 2020-06-30 (English, CSV table)');
+    // A cut <title> gives up the default "English" first; the French edition keeps its word, so the two still differ.
+    expect(meta.title).toContain('2020-04-01 to 2020-06-30 (CSV table)');
+    expect(resourceMeta({ ...long, id: 'r-fr', language: 'fr' }).title).toContain('2020-04-01 to 2020-06-30 (French, CSV table)');
     expect(meta.title).not.toContain('…');
     expect(resourceMeta(row).canonical).not.toBe(resourceMeta({ ...row, id: 'r-fr' }).canonical);
 });
