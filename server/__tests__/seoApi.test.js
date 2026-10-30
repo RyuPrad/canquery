@@ -12,6 +12,7 @@ jest.mock('../db/catalogReadQueries', () => ({
     listDatasetSitemap: jest.fn(),
     countSitemapResources: jest.fn(),
     listResourceSitemap: jest.fn(),
+    listNoindexResourceSitemap: jest.fn(),
     listPlaceSitemap: jest.fn(),
     listOrganizationSitemap: jest.fn(),
     getCatalogLastModified: jest.fn(),
@@ -50,6 +51,7 @@ beforeEach(() => {
     catalogRead.searchDatasets.mockResolvedValue([]);
     catalogRead.listOrganizations.mockResolvedValue([]);
     catalogRead.listPlaces.mockResolvedValue([]);
+    catalogRead.listNoindexResourceSitemap.mockResolvedValue([]);
 });
 
 const newestGuideUpdate = () => ['en', 'fr'].flatMap(lang => listArticles({ lang })).map(article => article.updated).sort().at(-1);
@@ -157,6 +159,39 @@ describe('sitemap index', () => {
         expect(catalogRead.listResourceSitemapChunkLastmods).toHaveBeenCalledTimes(1);
         expect(catalogRead.listPlaceSitemap).toHaveBeenCalledTimes(1);
         expect(catalogRead.listOrganizationSitemap).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists the noindex pages Google still shows while there are any, dated by the newest entry', async () => {
+        noRows();
+        catalogRead.countSitemapDatasets.mockResolvedValue(10);
+        catalogRead.countSitemapResources.mockResolvedValue(10);
+        catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
+        catalogRead.listNoindexResourceSitemap.mockResolvedValue([
+            { id: 'r1', lastmod: '2026-10-17T04:41:02Z' }, { id: 'r2', lastmod: '2026-10-20T00:00:00Z' }]);
+        const res = await request(app).get('/sitemap.xml');
+        expect(res.text).toContain('<loc>https://canquery.com/sitemap-noindex-resources.xml</loc><lastmod>2026-10-20T00:00:00.000Z</lastmod>');
+        expect(catalogRead.listNoindexResourceSitemap).toHaveBeenCalledWith({
+            pagePrefix: 'https://canquery.com/resources/', days: 28, since: '2026-10-17T04:41:02Z', limit: 50000 });
+    });
+
+    it('leaves the noindex file out when the list is empty or cannot be read', async () => {
+        noRows();
+        catalogRead.countSitemapDatasets.mockResolvedValue(10);
+        catalogRead.countSitemapResources.mockResolvedValue(10);
+        catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
+        expect((await request(app).get('/sitemap.xml')).text).not.toContain('sitemap-noindex-resources.xml');
+        resetSitemapCache();
+        catalogRead.listNoindexResourceSitemap.mockRejectedValue(new Error('private database detail'));
+        const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const res = await request(app).get('/sitemap.xml');
+            expect(res.status).toBe(200);
+            expect(res.text).toContain('<loc>https://canquery.com/sitemap-datasets-1.xml</loc>');
+            expect(res.text).not.toContain('sitemap-noindex-resources.xml');
+            expect(log).toHaveBeenCalledWith('Sitemap noindex list unavailable:', 'private database detail');
+        } finally {
+            log.mockRestore();
+        }
     });
 
     it('tells crawlers to retry when the catalogue cannot be read, without leaking the error', async () => {
@@ -287,6 +322,41 @@ describe('resource sitemap chunk', () => {
         const res = await request(app).get('/sitemap-resources-1x.xml');
         expect(res.status).toBe(404);
         expect(catalogRead.listResourceSitemap).not.toHaveBeenCalled();
+    });
+});
+
+describe('noindex resource sitemap', () => {
+    it('lists the noindex resource pages Google still shows with the date their pages changed', async () => {
+        catalogRead.listNoindexResourceSitemap.mockResolvedValue([
+            { id: 'r1', lastmod: '2026-10-17T04:41:02Z' }, { id: 'r/2', lastmod: '2026-10-21T08:00:00Z' }]);
+        const res = await request(app).get('/sitemap-noindex-resources.xml');
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toMatch(/xml/);
+        expect(res.headers['cache-control']).toBe('public, max-age=3600');
+        expect(res.text).toContain('<loc>https://canquery.com/resources/r1</loc>\n    <lastmod>2026-10-17T04:41:02.000Z</lastmod>');
+        expect(res.text).toContain('<loc>https://canquery.com/resources/r%2F2</loc>\n    <lastmod>2026-10-21T08:00:00.000Z</lastmod>');
+        expect(res.text).not.toContain('<changefreq>');
+        // Built once an hour, like the other files.
+        expect((await request(app).get('/sitemap-noindex-resources.xml')).text).toBe(res.text);
+        expect(catalogRead.listNoindexResourceSitemap).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves a valid empty file once Google has let every page go', async () => {
+        const res = await request(app).get('/sitemap-noindex-resources.xml');
+        expect(res.status).toBe(200);
+        expect(res.text).toBe('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n\n</urlset>\n');
+    });
+
+    it('tells crawlers to retry when the list cannot be read', async () => {
+        catalogRead.listNoindexResourceSitemap.mockRejectedValue(new Error('private database detail'));
+        const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const res = await request(app).get('/sitemap-noindex-resources.xml');
+            expect(res.status).toBe(503);
+            expect(res.text).not.toContain('private database detail');
+        } finally {
+            log.mockRestore();
+        }
     });
 });
 

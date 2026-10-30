@@ -599,6 +599,33 @@ async function listResourceSitemap({ limit, offset }, db = pool) {
     return result.rows;
 }
 
+// Download-only resource pages that Google still showed in the last `days` of
+// imported Search Console data. They carry noindex, which Google applies only
+// once it crawls a page again, so a sitemap entry dated by that change brings
+// the crawler back. A page Google has dropped stops appearing in the data and
+// leaves this list `days` later. Undated files and files dated before `since`,
+// when their pages turned noindex, carry `since`.
+async function listNoindexResourceSitemap({ pagePrefix, days, since, limit }, db = pool) {
+    const result = await db.query(`
+        WITH latest AS (
+            SELECT max(data_date) AS data_date FROM search_console_breakdowns
+            WHERE search_type = 'web' AND dimension = 'page'
+        ), shown AS (
+            SELECT DISTINCT substr(b.value, length($5) + 1) AS id
+            FROM search_console_breakdowns b, latest
+            WHERE b.search_type = 'web' AND b.dimension = 'page' AND b.impressions > 0
+              AND b.data_date > latest.data_date - $6::int AND starts_with(b.value, $5)
+        )
+        SELECT r.id, GREATEST(LEAST(COALESCE(r.last_modified, d.metadata_modified, $7::timestamptz), now()), $7::timestamptz) AS lastmod
+        FROM resources r
+        JOIN datasets d ON d.id = r.dataset_id
+        JOIN shown ON shown.id = r.id
+        WHERE ${DATA_BEARING_RESOURCE} IS NOT TRUE
+        ORDER BY r.id LIMIT $8
+    `, [...dataBearingParams(), pagePrefix, days, since, limit]);
+    return result.rows;
+}
+
 // The newest change each sitemap chunk holds, numbered like the chunk files
 // (1-based, in id order, pageSize URLs each) and dated like their entries.
 async function listDatasetSitemapChunkLastmods(pageSize, db = pool) {
@@ -817,6 +844,7 @@ module.exports = {
     listDatasetSitemap,
     countSitemapResources,
     listResourceSitemap,
+    listNoindexResourceSitemap,
     listPlaceSitemap,
     listOrganizationSitemap,
     getCatalogLastModified,

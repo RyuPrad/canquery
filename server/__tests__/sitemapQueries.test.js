@@ -80,6 +80,23 @@ describe('resource sitemap queries', () => {
         expect(resourceParams).toEqual([...caps(), since, until, 50001]);
     });
 
+    it('lists the download-only pages Google showed in the recent Search Console data, dated no earlier than their noindex', async () => {
+        const rows = [{ id: 'r1', lastmod: '2026-10-17T04:41:02Z' }];
+        pool.query.mockResolvedValue({ rows });
+        const args = { pagePrefix: 'https://canquery.com/resources/', days: 28, since: '2026-10-17T04:41:02Z', limit: 50000 };
+        await expect(queries.listNoindexResourceSitemap(args)).resolves.toEqual(rows);
+        const [sql, params] = pool.query.mock.calls[0];
+        // The complement of the data-bearing predicate, so a NULL flag counts as download-only.
+        expectDataBearing(sql);
+        expect(sql).toMatch(/WHERE \(r\.datastore_active[\s\S]*\) IS NOT TRUE/);
+        expect(sql).toContain("b.search_type = 'web' AND b.dimension = 'page' AND b.impressions > 0");
+        expect(sql).toContain('b.data_date > latest.data_date - $6::int AND starts_with(b.value, $5)');
+        expect(sql).toContain('JOIN shown ON shown.id = r.id');
+        expect(sql).toContain('GREATEST(LEAST(COALESCE(r.last_modified, d.metadata_modified, $7::timestamptz), now()), $7::timestamptz) AS lastmod');
+        expect(sql).toContain('ORDER BY r.id LIMIT $8');
+        expect(params).toEqual([...caps(), 'https://canquery.com/resources/', 28, '2026-10-17T04:41:02Z', 50000]);
+    });
+
     it('reads the newest catalogue change for sitemap dates', async () => {
         pool.query.mockResolvedValue({ rows: [{ modified: '2026-10-01T00:00:00Z' }] });
         await expect(queries.getCatalogLastModified()).resolves.toBe('2026-10-01T00:00:00Z');
