@@ -604,17 +604,16 @@ async function listResourceSitemap({ limit, offset }, db = pool) {
 // once it crawls a page again, so a sitemap entry dated by that change brings
 // the crawler back. A page Google has dropped stops appearing in the data and
 // leaves this list `days` later. Undated files and files dated before `since`,
-// when their pages turned noindex, carry `since`.
+// when their pages turned noindex, carry `since`. The API reads only the
+// search_console_page_dates view (migration 046), not the Search Console tables.
 async function listNoindexResourceSitemap({ pagePrefix, days, since, limit }, db = pool) {
     const result = await db.query(`
         WITH latest AS (
-            SELECT max(data_date) AS data_date FROM search_console_breakdowns
-            WHERE search_type = 'web' AND dimension = 'page'
+            SELECT max(data_date) AS data_date FROM search_console_page_dates
         ), shown AS (
-            SELECT DISTINCT substr(b.value, length($5) + 1) AS id
-            FROM search_console_breakdowns b, latest
-            WHERE b.search_type = 'web' AND b.dimension = 'page' AND b.impressions > 0
-              AND b.data_date > latest.data_date - $6::int AND starts_with(b.value, $5)
+            SELECT DISTINCT substr(s.page, length($5) + 1) AS id
+            FROM search_console_page_dates s, latest
+            WHERE s.data_date > latest.data_date - $6::int AND starts_with(s.page, $5)
         )
         SELECT r.id, GREATEST(LEAST(COALESCE(r.last_modified, d.metadata_modified, $7::timestamptz), now()), $7::timestamptz) AS lastmod
         FROM resources r
