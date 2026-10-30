@@ -64,6 +64,44 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
             await db.query('ROLLBACK TO SAVEPOINT yearly_files');
         }
     });
+    test('lists the download-only pages Google still showed, by the latest four weeks of Search Console data', async () => {
+        await db.query('SAVEPOINT noindex_pages');
+        try {
+            const page = name => 'https://canquery.com/resources/' + id(name);
+            await db.query(`INSERT INTO resources (id, dataset_id, format, url, last_modified) VALUES
+                ($1, $4, 'PDF', 'https://example.test/stale.pdf', NULL),
+                ($2, $4, 'PDF', 'https://example.test/blank.pdf', NULL),
+                ($3, $4, 'PDF', 'https://example.test/newer.pdf', '2026-10-21T08:00:00Z')`,
+                [id('stale'), id('blank'), id('newer'), id('dataset000')]);
+            // Far-future import dates make these rows the latest data in the shared database. The window
+            // holds the 28 days ending on the latest date, so 2099-03-03 falls just outside it.
+            await db.query(`INSERT INTO search_console_breakdowns (data_date, search_type, dimension, value, clicks, impressions, ctr, position) VALUES
+                ('2099-03-31', 'web', 'page', $1, 0, 5, 0, 4.2),
+                ('2099-03-31', 'web', 'page', $2, 1, 9, 0.1, 3.0),
+                ('2099-03-03', 'web', 'page', $3, 0, 2, 0, 9.0),
+                ('2099-03-31', 'web', 'page', $4, 0, 0, 0, 0),
+                ('2099-03-30', 'web', 'page', $5, 0, 1, 0, 6.0),
+                ('2099-03-31', 'web', 'page', $6, 0, 3, 0, 8.0),
+                ('2099-03-31', 'web', 'page', $7, 0, 4, 0, 5.0),
+                ('2099-03-31', 'web', 'query', $8, 0, 7, 0, 2.0)`,
+                [page('resource0'), page('resource1'), page('stale'), page('blank'), page('newer'), page('orphan'),
+                    page('resource0') + '?view=table', id('resource0')]);
+            const since = '2026-10-17T04:41:02Z';
+            const list = async days => Object.fromEntries((await queries.listNoindexResourceSitemap(
+                { pagePrefix: 'https://canquery.com/resources/', days, since, limit: 1000 }, db))
+                .filter(row => row.id.startsWith(prefix)).map(row => [row.id, row.lastmod.toISOString()]));
+            // The preparable CSV is indexed, the stale page was last shown outside the window, the blank one had
+            // no impressions, the orphan has no dataset, and neither a URL with a query string nor a query row
+            // names a page. An older file date gives way to the noindex date; a newer one stays.
+            expect(await list(28)).toEqual({
+                [id('resource0')]: '2026-10-17T04:41:02.000Z',
+                [id('newer')]: '2026-10-21T08:00:00.000Z'
+            });
+            expect(await list(1)).toEqual({ [id('resource0')]: '2026-10-17T04:41:02.000Z' });
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT noindex_pages');
+        }
+    });
     test('pages through tied dataset dates without losing or repeating records', async () => {
         const search = offset => queries.searchDatasets({ org: prefix, q: null, limit: 50, offset }, db);
         const pages = [...await search(0), ...await search(50)];

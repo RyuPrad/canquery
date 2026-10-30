@@ -102,14 +102,44 @@ function collapseAcronyms(value, max) {
 
 const TITLE_SEPARATOR_RE = /:\s|\s[-–—|]\s/g;
 
+// A title that fits `max` as it stands or with its spelled-out acronyms
+// collapsed; null when it would have to be shortened.
+function wholeTitle(value, max) {
+    const text = collapse(value);
+    if (text.length <= max) return text;
+    const collapsed = collapseAcronyms(text, max);
+    return collapsed.length <= max ? collapsed : null;
+}
+
+// A title shortened only at a natural boundary: whole, or its leading clause
+// before a separator, or before a comma when that clause keeps most of the
+// room ("Merchandise imports and exports customs-based price indexes, Canada
+// and United States trade, …"); '' when only a mid-phrase cut would fit.
+function titleClause(value, max) {
+    const whole = wholeTitle(value, max);
+    if (whole) return whole;
+    const collapsed = collapseAcronyms(collapse(value), max);
+    let best = '';
+    for (const match of collapsed.matchAll(TITLE_SEPARATOR_RE)) {
+        const head = collapsed.slice(0, match.index).trim();
+        if (head.length >= 24 && head.length <= max && head.length > best.length) best = head;
+    }
+    if (best) return best;
+    for (const match of collapsed.matchAll(/,\s/g)) {
+        const head = collapsed.slice(0, match.index).trim();
+        if (head.length >= Math.floor(max * 0.75) && head.length <= max && head.length > best.length) best = head;
+    }
+    return best;
+}
+
 // Shorten a title to `max` characters without a mid-string ellipsis: collapse
 // spelled-out acronyms, then keep the leading clause before a natural
 // separator, then cut at a word boundary; `truncate` only as a last resort.
 function compactTitle(value, max) {
     const text = collapse(value);
-    if (text.length <= max) return text;
+    const whole = wholeTitle(text, max);
+    if (whole) return whole;
     const collapsed = collapseAcronyms(text, max);
-    if (collapsed.length <= max) return collapsed;
     let best = null;
     for (const match of collapsed.matchAll(TITLE_SEPARATOR_RE)) {
         const head = collapsed.slice(0, match.index).trim();
@@ -125,6 +155,14 @@ function compactTitle(value, max) {
         cut = cut.slice(0, cut.length - trailing[0].length).replace(/[\s,;:(–—-]+$/, '');
     }
     const minimum = Math.max(12, Math.min(24, Math.floor(max * 0.75)));
+    // Nor inside a two-word tail that a conjunction or a clause-opening
+    // preposition starts when the title goes on past it ("… authorities and
+    // other", "… to include"); "of" and "by" tails such as "level of
+    // education" usually stand as they are.
+    const tail = /\s+(?:and|for|in|or|to|with|à|au|aux|avec|dans|et|ou|pour)\s+\S+$/i.exec(cut);
+    if (tail && tail.index >= minimum && /^\s+[^\s,;:)]/.test(collapsed.slice(cut.length))) {
+        cut = cut.slice(0, tail.index).replace(/[\s,;:(–—-]+$/, '');
+    }
     if (cut.length >= minimum && cut.length <= max) return cut;
     // A file name ("Survey_Point_Counts_2003_EN_FR.csv") has no spaces to cut
     // at; its underscores and hyphens separate the words instead.
@@ -271,11 +309,25 @@ function titleContainsFormat(value, format) {
 // A dataset title followed by a period or qualifier (" — 2023", " — English").
 // A sibling's year joins the title when it fits whole, else the qualifier, so
 // cutting a long title cannot drop it.
+function wholePeriodTitle(datasetTitle, period, year, room) {
+    const text = collapse(datasetTitle) + (year ? ' ' + year : '') + period;
+    return text.length <= room ? text : null;
+}
+
 function periodTitle(datasetTitle, period, year, room) {
     const yearText = year ? ' ' + year : '';
-    const whole = collapse(datasetTitle);
-    if (whole.length + yearText.length + period.length <= room) return whole + yearText + period;
-    return compactTitle(datasetTitle, Math.max(12, room - period.length - yearText.length)) + period + yearText;
+    return wholePeriodTitle(datasetTitle, period, year, room) ||
+        compactTitle(datasetTitle, Math.max(12, room - period.length - yearText.length)) + period + yearText;
+}
+
+// The language words a title's qualifier adds, leaving out a language the
+// subject already names: "Canadian Earthquakes (English)" is not followed by
+// "(English, CSV)".
+const NAMED_LANGUAGE_RE = { en: /\((?:english|anglais)\)/i, fr: /\((?:french|fran[cç]ais)\)/i };
+
+function titleLanguages(subject, codes, lang = 'en') {
+    return codes.filter(code => !NAMED_LANGUAGE_RE[code].test(subject)).map(code => lang === 'fr'
+        ? (code === 'fr' ? 'français' : 'anglais') : (code === 'fr' ? 'French' : 'English'));
 }
 
 function resourceTitleBase(resource, max = null, lang = 'en') {
@@ -284,8 +336,7 @@ function resourceTitleBase(resource, max = null, lang = 'en') {
     const qualifier = downloadName(name, resource.format)?.qualifier;
     const format = collapse(resource.format).toUpperCase();
     let base = resourceSubject(resource) || 'Resource';
-    const languages = resourceLanguages(resource).map(code => lang === 'fr'
-        ? (code === 'fr' ? 'français' : 'anglais') : (code === 'fr' ? 'French' : 'English'));
+    const languages = titleLanguages(base, resourceLanguages(resource), lang);
     const suffixParts = [...languages, format && !titleContainsFormat(base, format) ? format : ''].filter(Boolean);
     const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
     if (max && datasetTitle && (isPeriodName(name) || qualifier)) {
@@ -316,8 +367,8 @@ const DATASET_YEAR_RE = /\b(?:19|20)\d{2}(?:[-–/](?:\d{4}|\d{2}))?\b/;
 // <title>. A name that its dataset's title does not already cover is led by
 // that title ("Building Permits — Data dictionary"), or followed by the
 // dataset's year when both cannot fit; a short phrase that is still shared
-// gets the publisher.
-function distinctResourceSubject(resource, subject, room) {
+// gets the publisher. The text is returned before any shortening to `room`.
+function distinctResourceText(resource, subject, room) {
     const name = collapse(withSiblingYear(resource, pick(resource.name_en, resource.name_fr)));
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const publisher = pick(resource.org_title_en, resource.org_title_fr);
@@ -334,31 +385,43 @@ function distinctResourceSubject(resource, subject, room) {
         text.length + 3 + collapse(publisher).length <= room) {
         text += ' — ' + collapse(publisher);
     }
-    return compactTitle(text, room);
+    return text;
 }
 
 // The <title> of a resource page: the subject plus a qualifier that says what
 // the file is on CanQuery, such as "(French, XLSX table)", "(CSV live table
-// and map)" or "(English, PDF)". The qualifier never follows a cut-off subject.
+// and map)" or "(English, PDF)". The subject is not cut to make room for the
+// qualifier: the language words go first, then the format and table words.
+// Only "French" on a French-only file stays, as English is the site's default:
+// the file's English twin, if any, carries no language word of its own then.
+// A subject too long to stand whole even so is shortened behind the shorter
+// qualifier.
 function resourceTitle(resource) {
     const name = pick(resource.name_en, resource.name_fr);
     const datasetTitle = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const qualifier = downloadName(name, resource.format)?.qualifier;
     const info = facts.resourceFacts(resource);
     const subject = resourceSubject(resource) || 'Resource';
-    const languages = info.languages.map(code => (code === 'fr' ? 'French' : 'English'));
+    const languages = titleLanguages(subject, info.languages);
     const formatPart = [titleContainsFormat(subject, info.format) ? '' : info.format, facts.capabilityWord(info)]
         .filter(Boolean).join(' ');
-    const suffixParts = [...languages, formatPart].filter(Boolean);
-    const suffix = suffixParts.length ? ' (' + suffixParts.join(', ') + ')' : '';
-    let base;
-    if (datasetTitle && (isPeriodName(name) || qualifier)) {
-        const year = isPeriodName(name) ? '' : siblingYear(resource, datasetTitle);
-        base = periodTitle(datasetTitle, ' — ' + (qualifier || name), year, TITLE_HARD - suffix.length);
-    } else {
-        base = distinctResourceSubject(resource, subject, Math.max(12, TITLE_HARD - suffix.length));
+    const qualify = parts => (parts.some(Boolean) ? ' (' + parts.filter(Boolean).join(', ') + ')' : '');
+    const kept = languages.length === 1 && languages[0] === 'French' ? languages : [];
+    const shorter = qualify([...kept, formatPart]);
+    const suffixes = [...new Set([qualify([...languages, formatPart]), shorter, qualify(kept)])];
+    const period = datasetTitle && (isPeriodName(name) || qualifier) ? ' — ' + (qualifier || name) : '';
+    const year = period && !isPeriodName(name) ? siblingYear(resource, datasetTitle) : '';
+    const base = (suffix, whole) => {
+        const room = Math.max(12, TITLE_HARD - suffix.length);
+        if (period) return whole ? wholePeriodTitle(datasetTitle, period, year, room) : periodTitle(datasetTitle, period, year, room);
+        const text = distinctResourceText(resource, subject, room);
+        return whole ? wholeTitle(text, room) : compactTitle(text, room);
+    };
+    for (const suffix of suffixes) {
+        const text = base(suffix, true);
+        if (text) return text + suffix + TITLE_SUFFIX;
     }
-    return base + suffix + TITLE_SUFFIX;
+    return base(shorter, false) + shorter + TITLE_SUFFIX;
 }
 
 function buildBreadcrumbJsonLd(items) {
@@ -693,9 +756,12 @@ function staticMeta(type, pathname) {
 
 // The dataset <title> leads with what CanQuery adds ("table and 2 files") so
 // the result reads differently from the publisher's own page. The publisher
-// joins short titles, which are the ones several publishers tend to share.
+// joins short titles, which are the ones several publishers tend to share. The
+// phrase follows the whole name or its leading clause; a name that would have
+// to be cut mid-phrase to make room for it is cut with the whole title room
+// instead, and the phrase follows only if it still fits.
 function datasetTitle(title, info) {
-    const base = compactTitle(title, TITLE_SOFT);
+    const base = titleClause(title, TITLE_SOFT) || compactTitle(title, TITLE_HARD);
     const publisher = info.publisher && collapse(title).length < 25 ? ' (' + info.publisher + ')' : '';
     const phrase = facts.capabilityPhrase(info);
     const shortPhrase = facts.capabilityPhrase(info, { short: true });

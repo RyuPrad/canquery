@@ -63,6 +63,14 @@ const chunkLastmods = family => sitemapCache.get('chunks:' + family, async () =>
         : catalogRead.listResourceSitemapChunkLastmods(PAGE_SIZE));
     return new Map(rows.map(row => [Number(row.chunk), isoDate(row.lastmod)]));
 });
+// Download-only resource pages have carried noindex since 2026-10-17 04:41 UTC
+// (the release of public PR #94). Pages Google still showed in the last four
+// weeks of Search Console data are listed, dated by that change, until Google
+// crawls them again and lets them go.
+const NOINDEX_SINCE = '2026-10-17T04:41:02Z';
+const NOINDEX_SHOWN_DAYS = 28;
+const noindexRows = () => sitemapCache.get('noindex-resources', () => catalogRead.listNoindexResourceSitemap({
+    pagePrefix: SITE_URL + '/resources/', days: NOINDEX_SHOWN_DAYS, since: NOINDEX_SINCE, limit: 50000 }));
 // The place and organization files and their index dates share one read.
 const placeRows = () => sitemapCache.get('places', () => catalogRead.listPlaceSitemap());
 const organizationRows = () => sitemapCache.get('organizations', () => catalogRead.listOrganizationSitemap());
@@ -122,13 +130,18 @@ const robots = (req, res) => {
 };
 
 // GET /sitemap.xml - the index: hub pages, places, organizations, guides and
-// the complete dataset chunks plus the data-bearing resource chunks. Each entry
-// carries the newest change its file holds, so a crawler can skip unchanged files.
+// the complete dataset chunks plus the data-bearing resource chunks, and the
+// noindex pages Google still shows while there are any. Each entry carries the
+// newest change its file holds, so a crawler can skip unchanged files. The
+// noindex list is optional: when it cannot be read the index goes without it.
 const sitemapIndex = crawlFile(async (req, res) => {
     const body = await fileCache.get('index', async () => {
-        const [totals, catalogue, datasetChunks, resourceChunks, places, organizations] = await Promise.all([
+        const [totals, catalogue, datasetChunks, resourceChunks, places, organizations, noindex] = await Promise.all([
             catalogueTotals(), catalogueLastmod(), chunkLastmods('datasets'), chunkLastmods('resources'),
-            placeRows(), organizationRows()
+            placeRows(), organizationRows(), noindexRows().catch(err => {
+                console.error('Sitemap noindex list unavailable:', err.message);
+                return [];
+            })
         ]);
         const blog = blogLastmod();
         const datasetPages = Math.max(1, Math.ceil(totals.datasets / PAGE_SIZE));
@@ -141,6 +154,7 @@ const sitemapIndex = crawlFile(async (req, res) => {
         ];
         for (let i = 1; i <= datasetPages; i++) entries.push(['/sitemap-datasets-' + i + '.xml', datasetChunks.get(i) || '']);
         for (let i = 1; i <= resourcePages; i++) entries.push(['/sitemap-resources-' + i + '.xml', resourceChunks.get(i) || '']);
+        if (noindex.length) entries.push(['/sitemap-noindex-resources.xml', latest(...noindex.map(row => isoDate(row.lastmod)))]);
         return '<?xml version="1.0" encoding="UTF-8"?>\n' +
             '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
             entries.map(([path, lastmod]) => '  <sitemap><loc>' + xmlEscape(SITE_URL + path) + '</loc>' +
@@ -233,6 +247,17 @@ const sitemapResources = crawlFile(async (req, res, next) => {
     sendXml(res, body, 3600);
 });
 
+// GET /sitemap-noindex-resources.xml - download-only resource pages that Google
+// still shows. They carry noindex; listing them dated by that change asks the
+// crawler to fetch them again. An empty list is a valid, empty file.
+const sitemapNoindexResources = crawlFile(async (req, res) => {
+    const body = await fileCache.get('noindex-resources', async () => urlset((await noindexRows()).map(resource => ({
+        loc: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
+        lastmod: isoDate(resource.lastmod) || null
+    }))));
+    sendXml(res, body, 3600);
+});
+
 const sitemapBlog = (req, res) => {
     const articles = ['en', 'fr'].flatMap(lang => listArticles({ lang }));
     const updated = articles.map(article => article.updated).sort().at(-1);
@@ -252,5 +277,6 @@ module.exports = {
     sitemapPlaces,
     sitemapOrganizations,
     sitemapDatasets,
-    sitemapResources
+    sitemapResources,
+    sitemapNoindexResources
 };
