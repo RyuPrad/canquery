@@ -15,6 +15,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { prepareResource } = require('../services/preparationService');
     const { cleanRetiredTables } = require('../services/retiredIngestTables');
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
+    const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
@@ -42,16 +43,26 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         if (directory) await fs.rm(directory, { recursive: true });
         await admin.end();
     });
-    test('runtime identities cannot change catalogue, pins, code-owned schema or the deployment role', async () => {
+    test('runtime identities cannot change catalogue, pins, code-owned schema or the deployment role, nor read the Search Console tables', async () => {
         const { rows: [owner] } = await admin.query('SELECT current_user AS name');
         for (const role of ['canquery_api','canquery_ingest','canquery_map']) {
             const client = await asRole(role);
             for (const sql of ['UPDATE resources SET name_en=name_en WHERE false',
                 'INSERT INTO pinned_resources(resource_id) VALUES (\'forbidden\')',
                 'CREATE TABLE public.runtime_forbidden(id int)', 'SET ROLE ' + quoteId(owner.name),
-                'SELECT * FROM search_console_daily LIMIT 0']) {
+                'SELECT * FROM search_console_daily LIMIT 0', 'SELECT * FROM search_console_breakdowns LIMIT 0',
+                'SELECT * FROM search_console_query_pages LIMIT 0']) {
                 await assert.rejects(client.query(sql), { code: '42501' });
             }
+            // Only the API reads which pages Google showed, for the noindex sitemap, and only these two columns.
+            if (role !== 'canquery_api') {
+                await assert.rejects(client.query('SELECT * FROM search_console_page_dates LIMIT 0'), { code: '42501' });
+                continue;
+            }
+            const { fields } = await client.query('SELECT * FROM search_console_page_dates LIMIT 0');
+            assert.deepEqual(fields.map(field => field.name), ['data_date', 'page']);
+            assert.ok(Array.isArray(await listNoindexResourceSitemap({ pagePrefix: 'https://canquery.com/resources/', days: 28,
+                since: '2026-10-17T04:41:02Z', limit: 10 }, dbFor(client))));
         }
     });
     test('API admits work and takes narrow catalogue locks without arbitrary writes', async () => {

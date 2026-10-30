@@ -89,8 +89,10 @@ describe('resource sitemap queries', () => {
         // The complement of the data-bearing predicate, so a NULL flag counts as download-only.
         expectDataBearing(sql);
         expect(sql).toMatch(/WHERE \(r\.datastore_active[\s\S]*\) IS NOT TRUE/);
-        expect(sql).toContain("b.search_type = 'web' AND b.dimension = 'page' AND b.impressions > 0");
-        expect(sql).toContain('b.data_date > latest.data_date - $6::int AND starts_with(b.value, $5)');
+        // Only the page-dates view: the API role cannot read the Search Console tables.
+        expect(sql).toContain('SELECT max(data_date) AS data_date FROM search_console_page_dates');
+        expect(sql).toContain('s.data_date > latest.data_date - $6::int AND starts_with(s.page, $5)');
+        expect(sql).not.toContain('search_console_breakdowns');
         expect(sql).toContain('JOIN shown ON shown.id = r.id');
         expect(sql).toContain('GREATEST(LEAST(COALESCE(r.last_modified, d.metadata_modified, $7::timestamptz), now()), $7::timestamptz) AS lastmod');
         expect(sql).toContain('ORDER BY r.id LIMIT $8');

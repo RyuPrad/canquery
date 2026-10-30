@@ -35,7 +35,7 @@ other databases before applying this cluster-level change.
 | Identity | Responsibility |
 | --- | --- |
 | Deployment owner | Migrations, catalogue/source schedules, backup administration and inspected repairs. Owns catalogue, auth/commercial objects and lock helpers. |
-| `canquery_api` | Catalogue/map/snapshot reads, queue admission, activity/popularity and necessary authentication/account/meter/billing writes. No schema DDL, catalogue writes or snapshot modification. |
+| `canquery_api` | Catalogue/map/snapshot reads, queue admission, activity/popularity and necessary authentication/account/meter/billing writes. Of the Search Console data it reads only `search_console_page_dates` (migration 046: the date and page of each page Google showed), for the noindex sitemap. No schema DDL, catalogue writes or snapshot modification. |
 | `canquery_ingest` | Queue/attempt state, snapshot construction/publication/retirement and bounded original-debit settlement. No authentication, key, SMTP or Stripe rows. |
 | `canquery_map` | Map queue and map metadata/features, with temporary geometry staging. No financial/auth rows or store snapshots. |
 | `canquery_store_owner` | NOLOGIN owner of generated snapshots and owned sequences. Only ingest/deployment inherit it. Does not own catalogue or commercial objects. |

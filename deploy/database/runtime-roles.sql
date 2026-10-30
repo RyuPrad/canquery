@@ -81,6 +81,8 @@ GRANT SELECT ON public.resources, public.datasets, public.organizations, public.
     TO canquery_api, canquery_ingest, canquery_map;
 GRANT SELECT ON public.query_log, public.top_downloads, public.sync_runs, public.ingest_runs,
     public.map_index_jobs, public.pinned_resources, public.retired_ingest_tables TO canquery_api;
+-- Which pages Google showed, for the noindex sitemap; never the Search Console tables.
+GRANT SELECT ON public.search_console_page_dates TO canquery_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA store TO canquery_api;
 GRANT SELECT ON map_store.features TO canquery_api;
 GRANT INSERT, UPDATE ON public.ingest_jobs TO canquery_api;
