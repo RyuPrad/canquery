@@ -18,6 +18,8 @@
     "src/utils/rowPageCache.js",
     "src/utils/resourceHints.js",
     "src/hooks/preparationState.js",
+    "src/utils/fold.js",
+    "src/utils/datasetFileFilter.js",
     "src/utils/chartLoadProgress.js"
   ]
 }
