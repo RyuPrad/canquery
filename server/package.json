@@ -46,12 +46,12 @@
         "express-rate-limit": "^7.4.0",
         "google-auth-library": "^10.9.1",
         "helmet": "^8.0.0",
-        "markdown-it": "14.3.1",
+        "markdown-it": "14.3.3",
         "pbf": "5.1.2",
         "pg": "^8.13.0",
         "pg-copy-streams": "^7.0.0",
         "pmtiles": "4.5.0",
-        "stream-json": "3.6.0",
+        "stream-json": "3.7.0",
         "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
     },
     "devDependencies": {
