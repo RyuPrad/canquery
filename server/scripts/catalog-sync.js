@@ -14,10 +14,12 @@ const pool = require('../db/pool');
 const { packageList, packageShow } = require('../services/ckanClient');
 const { normalizePackage } = require('../services/catalogNormalizer');
 const {
-    upsertOrganizations,
-    upsertDatasets,
-    upsertDatasetSources,
-    replaceResources,
+    loadFederalPlaceIds,
+    writeFederalChunk,
+    countUnmappedProvincial,
+    reportUnmappedProvincial
+} = require('../services/federalCatalogWrite');
+const {
     refreshOrganizationDatasetCounts,
     sweepMissingDatasets,
     getProgress,
@@ -76,6 +78,8 @@ async function main() {
             throw new Error('package_list returned no dataset ids');
         }
 
+        const knownPlaceIds = await loadFederalPlaceIds(pool);
+        const unmappedProvincial = new Map();
         const progress = await getProgress(pool, 'catalog-sync');
         let startOffset = 0;
         if (progress && Number.isInteger(progress.offset) && progress.offset > 0 && progress.offset < ids.length) {
@@ -104,31 +108,28 @@ async function main() {
             const orgsById = new Map();
             const datasets = [];
             const allResources = [];
-            const datasetIds = [];
+            const places = [];
             for (const pkg of packages) {
                 const n = normalizePackage(pkg);
                 if (n.organization) {
                     orgsById.set(n.organization.id, n.organization);
                 }
                 datasets.push(n.dataset);
-                datasetIds.push(n.dataset.id);
                 allResources.push(...n.resources);
+                places.push(...n.places);
+                countUnmappedProvincial(unmappedProvincial, n);
             }
 
             if (!dryRun && datasets.length > 0) {
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
-                    await upsertOrganizations(client, Array.from(orgsById.values()));
-                    await upsertDatasets(client, datasets);
-                    await upsertDatasetSources(client, datasets.map(dataset => ({
-                        sourceId: 'open-canada',
-                        externalId: dataset.id,
-                        datasetId: dataset.id,
-                        landingUrl: 'https://open.canada.ca/data/en/dataset/' + dataset.id,
-                        isAuthoritative: true
-                    })));
-                    await replaceResources(client, datasetIds, allResources);
+                    await writeFederalChunk(client, {
+                        organizations: Array.from(orgsById.values()),
+                        datasets,
+                        resources: allResources,
+                        places
+                    }, knownPlaceIds);
                     await client.query('COMMIT');
                 } catch (err) {
                     await client.query('ROLLBACK');
@@ -143,6 +144,7 @@ async function main() {
             resourcesUpserted += allResources.length;
             console.log('processed ' + Math.min(offset + 50, ids.length) + '/' + ids.length);
         }
+        reportUnmappedProvincial(unmappedProvincial);
 
         if (!dryRun) {
             if (!limit) {

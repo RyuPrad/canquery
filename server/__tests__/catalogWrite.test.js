@@ -1,4 +1,4 @@
-const { dedupeById, replaceResources, sweepMissingDatasets, upsertDatasets } = require('../db/catalogWriteQueries');
+const { dedupeById, replaceDatasetPlaces, replaceResources, sweepMissingDatasets, upsertDatasets } = require('../db/catalogWriteQueries');
 
 describe('dedupeById', () => {
     test('returns an empty array for empty / nullish input', () => {
@@ -131,5 +131,28 @@ describe('upsertDatasets', () => {
         expect(values).toHaveLength(24);
         expect(values[11]).toBe('federal');
         expect(values[23]).toBeNull();
+    });
+});
+
+describe('replaceDatasetPlaces', () => {
+    const link = n => ({ datasetId: 'd' + n, placeId: 'sgc-pr-48', relationship: 'direct', includesDescendants: false, assignmentMethod: 'source' });
+
+    test('clears every listed dataset once and inserts links in batches below the parameter limit', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const ids = Array.from({ length: 2500 }, (_, n) => 'd' + n);
+        await replaceDatasetPlaces(db, 'open-canada', ids, ids.map((_, n) => link(n)));
+        const [remove, ...inserts] = db.query.mock.calls;
+        expect(remove).toEqual(['DELETE FROM dataset_places WHERE source_id = $1 AND dataset_id = ANY($2::text[])', ['open-canada', ids]]);
+        expect(inserts.map(([, values]) => values.length)).toEqual([6000, 6000, 3000]);
+        for (const [sql] of inserts) expect(sql).toContain('INSERT INTO dataset_places');
+        expect(inserts.flatMap(([, values]) => values.filter((_, index) => index % 6 === 1))).toEqual(ids);
+    });
+
+    test('only clears when no dataset keeps a place', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        await replaceDatasetPlaces(db, 'open-canada', ['d1'], []);
+        expect(db.query).toHaveBeenCalledTimes(1);
+        await replaceDatasetPlaces(db, 'open-canada', [], [link(1)]);
+        expect(db.query).toHaveBeenCalledTimes(1);
     });
 });
