@@ -1,3 +1,5 @@
+const { federalPublisherPlace } = require('../config/federalPublisherPlaces');
+
 function pickTranslated(obj, fallback) {
     if (!obj) {
         return { en: null, fr: null };
@@ -30,7 +32,8 @@ function normalizeOrganization(org) {
         id: org.id,
         name: org.name,
         titleEn,
-        titleFr
+        titleFr,
+        placeId: federalPublisherPlace(org.name)
     };
 }
 
@@ -87,9 +90,14 @@ function normalizePackage(pkg) {
 
     const raw = { ...pkg };
     delete raw.resources;
+    const organization = normalizeOrganization(pkg.organization);
+    const jurisdiction = normalizeJurisdiction(pkg.jurisdiction);
+    // A provincial or territorial government's provincial record belongs to its
+    // province, directly and without inheritance (config/federalPublisherPlaces.js).
+    const placeId = jurisdiction === 'provincial' && organization ? organization.placeId : null;
 
     return {
-        organization: normalizeOrganization(pkg.organization),
+        organization,
         dataset: {
             id: pkg.id,
             name: pkg.name,
@@ -101,9 +109,16 @@ function normalizePackage(pkg) {
             keywordsEn: (pkg.keywords && pkg.keywords.en) || [],
             keywordsFr: (pkg.keywords && pkg.keywords.fr) || [],
             metadataModified: pkg.metadata_modified || null,
-            jurisdiction: normalizeJurisdiction(pkg.jurisdiction),
+            jurisdiction,
             raw
         },
+        places: placeId ? [{
+            datasetId: pkg.id,
+            placeId,
+            relationship: 'direct',
+            includesDescendants: false,
+            assignmentMethod: 'source'
+        }] : [],
         resources: (pkg.resources || []).map(r => normalizeResource(r, pkg.id))
     };
 }
