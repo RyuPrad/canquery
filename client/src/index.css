@@ -1116,6 +1116,23 @@ a.cq-card:hover,
   color: var(--cq-muted-text);
   font-size: 0.78rem;
 }
+.cq-seo-snapshot table {
+  margin-top: 0.85rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.cq-seo-snapshot th,
+.cq-seo-snapshot td {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.cq-seo-snapshot thead th {
+  color: var(--cq-muted-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------------ motion */
 
