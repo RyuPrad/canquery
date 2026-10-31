@@ -87,3 +87,26 @@ test.each(['Insights', 'Custom'])('expired %s aggregates ask the resource page t
   if (tab === 'Custom') fireEvent.click(screen.getByText('Custom'));
   await waitFor(() => expect(onUnavailable).toHaveBeenCalled());
 });
+
+describe('ChartPanel loading card reports', () => {
+  test('reports the profile until it arrives, then each insight chart', async () => {
+    const { ChartLoadContext, createChartLoadStore } = await import('../hooks/useChartLoadReport.js');
+    const store = createChartLoadStore();
+    let resolveProfile;
+    fetchResourceProfile.mockImplementationOnce(() => new Promise((done) => { resolveProfile = done; }));
+    render(<ChartLoadContext.Provider value={store}><ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" /></ChartLoadContext.Provider>);
+    expect(store.getSnapshot().profile).toBe('loading');
+    resolveProfile({ data: PROFILE, meta: {} });
+    await waitFor(() => expect(store.getSnapshot().profile).toBe('settled'));
+    await waitFor(() => expect(store.getSnapshot().charts.total).toBeGreaterThan(0));
+    await waitFor(() => expect(store.getSnapshot().charts.settled).toBe(store.getSnapshot().charts.total));
+  });
+
+  test('a failed profile is reported as failed', async () => {
+    const { ChartLoadContext, createChartLoadStore } = await import('../hooks/useChartLoadReport.js');
+    const store = createChartLoadStore();
+    fetchResourceProfile.mockRejectedValueOnce(new Error('boom'));
+    render(<ChartLoadContext.Provider value={store}><ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" /></ChartLoadContext.Provider>);
+    await waitFor(() => expect(store.getSnapshot().profile).toBe('failed'));
+  });
+});

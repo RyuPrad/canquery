@@ -42,6 +42,20 @@ describe('preparation progress', () => {
     view.rerender(<PreparationStatus preparation={running} elapsed="0:55" progress={{ phase: 'other' }} />);
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
+  test('fills the bar with the share of the file read while rows load', () => {
+    const view = render(<PreparationStatus preparation={running} elapsed="0:40" progress={{ phase: 'loading', rows: 250000, read_fraction: 0.4 }} />);
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '0.4');
+    view.rerender(<PreparationStatus preparation={running} elapsed="0:41" progress={{ phase: 'loading', rows: 250000, read_fraction: null }} />);
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('value');
+  });
+  test('keeps the ticking timer and the progress line out of the live region', () => {
+    render(<PreparationStatus preparation={running} elapsed="0:12" progress={{ phase: 'downloading', bytes: 1000, content_length: 4000 }} />);
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(STRINGS.en['preparation.running']);
+    expect(status).not.toHaveTextContent('0:12');
+    expect(status).not.toHaveTextContent('Downloading');
+    expect(screen.getByText(STRINGS.en['resource.elapsed'] + ' 0:12')).toBeInTheDocument();
+  });
   test('is bilingual and hidden once the job is not working', () => {
     localStorage.setItem('cq-lang', 'fr');
     render(<LangProvider><PreparationStatus preparation={running} elapsed="0:12" progress={{ phase: 'downloading', bytes: 52428800, content_length: 111600495 }} /></LangProvider>);

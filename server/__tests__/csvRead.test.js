@@ -31,6 +31,18 @@ describe('CSV byte decoding and content detection', () => {
         await expect(readText(filePath, encoding, { highWaterMark: 1 })).resolves.toBe(text);
     });
 
+    test.each(['utf8', 'utf16le', 'utf16be'])('counts the %s file bytes read, whatever the decoding', async encoding => {
+        const text = 'Place,Description\r\n' + 'Montréal,"échantillon 🐟"\r\n'.repeat(500);
+        const bytes = encoding === 'utf8' ? Buffer.from(text) : markedUtf16(text, encoding);
+        await fs.writeFile(filePath, bytes);
+        const stream = createCsvReadStream(filePath, encoding, { highWaterMark: 1024 });
+        let first = null;
+        for await (const chunk of stream) { void chunk; if (first === null) first = stream.bytesRead; }
+        expect(first).toBeGreaterThan(0);
+        expect(first).toBeLessThan(bytes.length);
+        expect(stream.bytesRead).toBe(bytes.length);
+    });
+
     test.each(['utf16le', 'utf16be'])('allows a partial %s surrogate only at the sample boundary', async encoding => {
         const prefix = 'Name,Note\nx,';
         const text = prefix + 'a'.repeat((65534 - 2) / 2 - prefix.length) + '🐟\n';

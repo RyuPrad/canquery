@@ -246,3 +246,31 @@ test('a completed preparation can run again after the observed ready copy expire
   await waitFor(() => expect(prepareResource).toHaveBeenCalledTimes(2));
   expect(input.onReady).toHaveBeenCalledTimes(2);
 });
+
+describe('published copy hand-off', () => {
+  test('a finished job marks the source published until fresh metadata arrives', async () => {
+    fetchJob.mockResolvedValue({ data: { id: 901, status: 'done' } });
+    const onReady = vi.fn();
+    const view = renderHook(useResourcePreparation, { initialProps: props({ onReady }) });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    expect(view.result.current.published).toBe(true);
+    expect(view.result.current.phase).toBe('idle');
+    view.rerender(props({ onReady, resource: { ...resource, query_mode: 'ingested',
+      ingestion: { ingested_at: '2026-10-31T23:00:00Z' }, preparation: { ...resource.preparation, freshness: 'current' } } }));
+    expect(view.result.current.published).toBe(false);
+  });
+
+  test('an already loaded file is published too, and a vanished job is not', async () => {
+    prepareResource.mockResolvedValue({ data: { id: null, status: 'done', already_loaded: true } });
+    const loaded = renderHook(useResourcePreparation, { initialProps: props() });
+    await waitFor(() => expect(loaded.result.current.published).toBe(true));
+    cleanup();
+
+    prepareResource.mockResolvedValue({ data: { id: 902, status: 'pending' } });
+    fetchJob.mockRejectedValue(new NotFoundError('gone'));
+    const onReady = vi.fn();
+    const gone = renderHook(useResourcePreparation, { initialProps: props({ onReady }) });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    expect(gone.result.current.published).toBe(false);
+  });
+});

@@ -257,7 +257,18 @@ describe('job progress in the API', () => {
         ingestQueries.getJobById.mockResolvedValue({ ...base, progress: { phase: 'loading', bytes: '111600495', content_length: 111600495, rows: 250000, updated_at: '2026-10-16T00:00:30.000Z' } });
         const running = await request(app).get('/api/v1/jobs/9');
         expect(running.status).toBe(200);
-        expect(running.body.data.progress).toEqual({ phase: 'loading', bytes: 111600495, content_length: 111600495, rows: 250000, updated_at: '2026-10-16T00:00:30.000Z' });
+        expect(running.body.data.progress).toEqual({ phase: 'loading', bytes: 111600495, content_length: 111600495, rows: 250000, read_fraction: null, updated_at: '2026-10-16T00:00:30.000Z' });
+        const fraction = async value => {
+            ingestQueries.getJobById.mockResolvedValue({ ...base, progress: { phase: 'loading', rows: 5000, read_fraction: value } });
+            return (await request(app).get('/api/v1/jobs/9')).body.data.progress.read_fraction;
+        };
+        expect(await fraction(0.42)).toBe(0.42);
+        expect(await fraction('0.5')).toBe(0.5);
+        expect(await fraction(0.12345)).toBe(0.123);
+        expect(await fraction(1)).toBe(1);
+        expect(await fraction(1.5)).toBeNull();
+        expect(await fraction(-0.1)).toBeNull();
+        expect(await fraction('half')).toBeNull();
         ingestQueries.getJobById.mockResolvedValue({ ...base, progress: { phase: 'teleporting' } });
         expect((await request(app).get('/api/v1/jobs/9')).body.data.progress).toBeNull();
         ingestQueries.getJobById.mockResolvedValue({ ...base, status: 'done', finished_at: '2026-10-16T00:01:00.000Z', progress: { phase: 'finishing', rows: 645327 } });

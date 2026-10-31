@@ -99,3 +99,20 @@ describe('custom aggregation controls', () => {
     expect(screen.getByText('Bar chart')).toBeInTheDocument();
   });
 });
+
+describe('the loading card', () => {
+  test('counts the custom chart until it draws, and an empty schema at once', async () => {
+    const { ChartLoadContext, createChartLoadStore } = await import('../hooks/useChartLoadReport.js');
+    const store = createChartLoadStore();
+    let resolve;
+    queryResource.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const view = render(<ChartLoadContext.Provider value={store}><ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" /></ChartLoadContext.Provider>);
+    await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 0 }));
+    resolve({ data: { records: [{ key: 'ON', value: 2 }], total: 1 } });
+    await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 }));
+    view.unmount();
+
+    render(<ChartLoadContext.Provider value={store}><ChartBuilder resourceId="r1" fields={[{ id: '_id', type: 'INTEGER' }]} queryMode="ingested" /></ChartLoadContext.Provider>);
+    expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 });
+  });
+});

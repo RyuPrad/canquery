@@ -53,6 +53,18 @@ test('a workbook waits for a person before anything is prepared', async () => {
   expect(fetchResourcePreview).not.toHaveBeenCalled();
 });
 
+test('the Chart tab keeps the button while nobody has used the page, with no percentage', async () => {
+  fetchResource.mockResolvedValue(unprepared());
+  render(<MemoryRouter initialEntries={['/resources/a?view=chart']}>
+    <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+  </MemoryRouter>);
+  expect(await screen.findByText('The full table for this file is not loaded yet.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Load the full table' })).toBeInTheDocument();
+  await act(() => pause(50));
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  expect(prepareResource).not.toHaveBeenCalled();
+});
+
 test('a CSV shows its first rows at once and is prepared when the visitor asks', async () => {
   fetchResource.mockResolvedValue(unprepared());
   renderPage();

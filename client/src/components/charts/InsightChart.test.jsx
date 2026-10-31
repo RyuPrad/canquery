@@ -31,3 +31,21 @@ test('breakdowns keep their largest groups first', async () => {
   await waitFor(() => expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ sort: 'value desc', limit: 12 }), expect.any(Object)));
   expect(await screen.findByText('Bar chart')).toBeInTheDocument();
 });
+
+test('tells the loading card when its numbers arrive or fail', async () => {
+  const { ChartLoadContext, createChartLoadStore } = await import('../../hooks/useChartLoadReport.js');
+  const store = createChartLoadStore();
+  let resolve;
+  queryResource.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  const spec = { kind: 'bar', role: 'breakdown', column: 'province', agg: 'count', colorOffset: 1 };
+  const view = render(<ChartLoadContext.Provider value={store}><InsightChart resourceId="r1" spec={spec} /></ChartLoadContext.Provider>);
+  await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 0 }));
+  resolve({ data: { records: [{ key: 'ON', value: 3 }], total: 1 } });
+  await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 }));
+  view.unmount();
+  expect(store.getSnapshot().count).toBe(0);
+
+  queryResource.mockRejectedValueOnce(new Error('rate limited'));
+  render(<ChartLoadContext.Provider value={store}><InsightChart resourceId="r1" spec={spec} /></ChartLoadContext.Provider>);
+  await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 }));
+});

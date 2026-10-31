@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const { parse } = require('csv-parse');
 const { from: copyFrom } = require('pg-copy-streams');
 const { Transform } = require('node:stream');
@@ -77,7 +78,10 @@ async function readSample(filePath, { delimiter, encoding, signal }) {
     });
 }
 
-async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols, signal, onRows }) {
+// onRows(rows, readFraction) reports progress every 5,000 rows with the share
+// of the file read so far (0 to 1); onCopied(rows) fires once every row is in,
+// before the full-file type check, the table rewrite and the index.
+async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encoding, maxRows, maxCols, signal, onRows, onCopied }) {
     signal?.throwIfAborted();
     const { headers, rows, skipRecords } = await readSample(filePath, { delimiter, encoding, signal });
     if (!headers || headers.length === 0) throw Object.assign(new Error('empty CSV'), { code: 'CSV_EMPTY' });
@@ -99,6 +103,9 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
 
     let rowCount = 0;
     let skipped = 0;
+    const { size: fileSize } = await fs.promises.stat(filePath);
+    const source = createCsvReadStream(filePath, encoding, { signal });
+    const readFraction = () => (fileSize > 0 ? Math.min(1, (Number(source.bytesRead) || 0) / fileSize) : null);
     const toCsv = new Transform({
         objectMode: true,
         transform(record, enc, cb) {
@@ -107,7 +114,7 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
                 return cb();
             }
             rowCount += 1;
-            if (onRows && rowCount % 5000 === 0) onRows(rowCount);
+            if (onRows && rowCount % 5000 === 0) onRows(rowCount, readFraction());
             if (rowCount > maxRows) {
                 const err = new Error('row count exceeds cap ' + maxRows);
                 err.code = 'CAP_ROWS';
@@ -136,14 +143,15 @@ async function loadCsvIntoStore(client, { filePath, tableName, delimiter, encodi
     });
 
     await pipeline(
-        createCsvReadStream(filePath, encoding, { signal }),
+        source,
         parse(csvParseOptions({ delimiter })),
         toCsv,
         client.query(copyFrom(copySql)),
         { signal }
     );
 
-    if (onRows) onRows(rowCount);
+    if (onRows) onRows(rowCount, 1);
+    if (onCopied) onCopied(rowCount);
 
     const typedColumns = columns.filter(col => col.type !== 'TEXT');
     if (typedColumns.length) {
