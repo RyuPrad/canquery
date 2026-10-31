@@ -3,18 +3,13 @@ import { useLang } from '../i18n.jsx';
 import PlaceSelect from './PlaceSelect.jsx';
 import { FilterIcon } from './Icons.jsx';
 import { CATALOG_LEVELS } from '../utils/catalogSearchState.js';
+import { fold } from '../utils/fold.js';
 import './CatalogFilters.css';
 
 // Shown until the first counts arrive, so the most common formats are one
 // click away even when counts are unavailable.
 const DEFAULT_FORMATS = ['CSV', 'XLSX', 'JSON', 'GEOJSON', 'PDF', 'XML'];
 const VISIBLE_OPTIONS = 8;
-
-const fold = (value) =>
-  String(value || '')
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLocaleLowerCase();
 
 function FilterGroup({ title, selectedCount, defaultOpen = false, onOpen, children }) {
   const { t } = useLang();
