@@ -1,6 +1,7 @@
 // Progress of one preparation, as the page waiting for it shows it: the bytes
-// downloaded so far against the file's length, then the rows loaded, then the
-// finishing steps (type conversion, index, publication). Writes are throttled
+// downloaded so far against the file's length, then the rows loaded with the
+// share of the file read (read_fraction), then the finishing steps that follow
+// COPY (type checks, table rewrite, index, publication). Writes are throttled
 // so a fast download does not turn every chunk into a database update; a
 // phase change and the first report always go through.
 const PHASES = ['downloading', 'loading', 'finishing'];

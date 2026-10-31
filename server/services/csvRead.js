@@ -19,15 +19,19 @@ function decodeCsvSample(bytes, encoding, complete) {
 
 // Decode marked UTF-16 streams incrementally: a byte, code unit or surrogate
 // pair can span file chunks. I/O errors retain their infrastructure error code.
+// Either stream's bytesRead counts the file's bytes read so far, whatever the
+// encoding, so the loader can tell how much of the file it has read.
 function createCsvReadStream(filePath, encoding, options = {}) {
     if (encoding !== 'utf16le' && encoding !== 'utf16be') {
         return fs.createReadStream(filePath, { ...options, encoding });
     }
-    return Readable.from((async function* () {
+    let bytesRead = 0;
+    const stream = Readable.from((async function* () {
         const input = fs.createReadStream(filePath, options);
         const decoder = new TextDecoder(encoding === 'utf16le' ? 'utf-16le' : 'utf-16be', { fatal: true });
         try {
             for await (const bytes of input) {
+                bytesRead += bytes.length;
                 const text = decodeUtf16(decoder, bytes, { stream: true });
                 if (text) yield text;
             }
@@ -37,6 +41,8 @@ function createCsvReadStream(filePath, encoding, options = {}) {
             input.destroy();
         }
     })(), { objectMode: false });
+    Object.defineProperty(stream, 'bytesRead', { get: () => bytesRead });
+    return stream;
 }
 
 module.exports = { createCsvReadStream, decodeCsvSample };

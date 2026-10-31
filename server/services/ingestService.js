@@ -59,6 +59,12 @@ async function getJob(id) {
 
 const PROGRESS_PHASES = new Set(['downloading', 'loading', 'finishing']);
 const progressNumber = value => (value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value));
+// The share of the file read while rows load, 0 to 1; null before rows load,
+// from older workers and for anything out of range.
+const progressFraction = (value) => {
+    const n = progressNumber(value);
+    return n === null || n < 0 || n > 1 ? null : Math.round(n * 1000) / 1000;
+};
 // The worker's advisory progress; absent until the first report and for jobs
 // created before progress was recorded.
 function shapeProgress(progress) {
@@ -68,6 +74,7 @@ function shapeProgress(progress) {
         bytes: progressNumber(progress.bytes),
         content_length: progressNumber(progress.content_length),
         rows: progressNumber(progress.rows),
+        read_fraction: progressFraction(progress.read_fraction),
         updated_at: typeof progress.updated_at === 'string' ? progress.updated_at : null
     };
 }

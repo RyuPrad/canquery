@@ -177,9 +177,15 @@ async function ingestResourceLocked(resource, caps, tableName, job, deadline) {
                 maxRows: caps.maxRows,
                 maxCols: caps.maxCols,
                 signal,
-                onRows: rows => report({ phase: 'loading', bytes, content_length: contentLength ?? bytes, rows })
+                onRows: (rows, readFraction) => report({
+                    phase: 'loading', bytes, content_length: contentLength ?? bytes, rows, read_fraction: readFraction
+                }),
+                // Type checks, the table rewrite and the index run after COPY;
+                // they are the finishing steps, not more loading.
+                onCopied: rows => report({
+                    phase: 'finishing', bytes, content_length: contentLength ?? bytes, rows, read_fraction: 1
+                })
             });
-            report({ phase: 'finishing', bytes, content_length: contentLength ?? bytes, rows: rowCount });
             const sizeResult = await client.query(
                 'SELECT pg_total_relation_size($1) AS size',
                 ['store.' + tableName]

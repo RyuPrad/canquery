@@ -83,6 +83,32 @@ describe('progress callbacks', () => {
         const onRows = jest.fn();
         const { rowCount } = await loadCsvIntoStore(client, { filePath, tableName: 'r_t', delimiter: ',', encoding: 'utf8', maxRows: 100, maxCols: 10, onRows });
         expect(rowCount).toBe(7);
-        expect(onRows).toHaveBeenLastCalledWith(7);
+        expect(onRows).toHaveBeenLastCalledWith(7, 1);
+    });
+
+    test.each(['utf8', 'utf16le'])('the loader reports the share of a %s file read as rows load, and finishing before the type checks', async encoding => {
+        const filePath = path.join(directory, 'large-' + encoding + '.csv');
+        const text = 'a,b\n' + Array.from({ length: 12000 }, (_, i) => i + ',' + 'x'.repeat(40)).join('\n') + '\n';
+        await fs.writeFile(filePath, encoding === 'utf16le' ? Buffer.from('\uFEFF' + text, 'utf16le') : text);
+        const events = [];
+        const client = { query: jest.fn(sql => {
+            if (sql.copySql) return new Writable({ write(chunk, chunkEncoding, callback) { callback(); } });
+            events.push(String(sql).split(' ').slice(0, 2).join(' '));
+            return Promise.resolve({ rows: [{ cast_0: true }] });
+        }) };
+        const onRows = jest.fn();
+        const onCopied = jest.fn(rows => events.push('copied ' + rows));
+        const { rowCount } = await loadCsvIntoStore(client, { filePath, tableName: 'r_t', delimiter: ',', encoding, maxRows: 100000, maxCols: 10, onRows, onCopied });
+        expect(rowCount).toBe(12000);
+        const fractions = onRows.mock.calls.map(([rows, fraction]) => [rows, fraction]);
+        expect(fractions.map(([rows]) => rows)).toEqual([5000, 10000, 12000]);
+        expect(fractions[0][1]).toBeGreaterThan(0);
+        expect(fractions[0][1]).toBeLessThan(fractions[1][1]);
+        expect(fractions[1][1]).toBeLessThanOrEqual(1);
+        expect(fractions[2][1]).toBe(1);
+        expect(onCopied).toHaveBeenCalledTimes(1);
+        const copiedAt = events.indexOf('copied 12000');
+        expect(copiedAt).toBeGreaterThan(-1);
+        expect(events.slice(copiedAt + 1)).toEqual(['SELECT coalesce(bool_and(pg_input_is_valid(nullif("a",', 'ALTER TABLE', 'CREATE UNIQUE']);
     });
 });
