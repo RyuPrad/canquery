@@ -32,10 +32,12 @@ const pool = require('../db/pool');
 const { packageSearch } = require('../services/ckanClient');
 const { normalizePackage } = require('../services/catalogNormalizer');
 const {
-    upsertOrganizations,
-    upsertDatasets,
-    upsertDatasetSources,
-    replaceResources,
+    loadFederalPlaceIds,
+    writeFederalChunk,
+    countUnmappedProvincial,
+    reportUnmappedProvincial
+} = require('../services/federalCatalogWrite');
+const {
     refreshOrganizationDatasetCounts,
     getProgress,
     setProgress,
@@ -109,34 +111,34 @@ async function main() {
 
         const orgsById = new Map();
         const datasets = [];
-        const datasetIds = [];
         const allResources = [];
+        const places = [];
+        const unmappedProvincial = new Map();
 
         if (collected.length > 0) {
             for (const pkg of collected) {
-                const { organization, dataset, resources } = normalizePackage(pkg);
-                if (organization) {
-                    orgsById.set(organization.id, organization);
+                const normalized = normalizePackage(pkg);
+                if (normalized.organization) {
+                    orgsById.set(normalized.organization.id, normalized.organization);
                 }
-                datasets.push(dataset);
-                datasetIds.push(dataset.id);
-                allResources.push(...resources);
+                datasets.push(normalized.dataset);
+                allResources.push(...normalized.resources);
+                places.push(...normalized.places);
+                countUnmappedProvincial(unmappedProvincial, normalized);
             }
+            reportUnmappedProvincial(unmappedProvincial);
 
             if (!dryRun) {
+                const knownPlaceIds = await loadFederalPlaceIds(pool);
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
-                    await upsertOrganizations(client, Array.from(orgsById.values()));
-                    await upsertDatasets(client, datasets);
-                    await upsertDatasetSources(client, datasets.map(dataset => ({
-                        sourceId: 'open-canada',
-                        externalId: dataset.id,
-                        datasetId: dataset.id,
-                        landingUrl: 'https://open.canada.ca/data/en/dataset/' + dataset.id,
-                        isAuthoritative: true
-                    })));
-                    await replaceResources(client, datasetIds, allResources);
+                    await writeFederalChunk(client, {
+                        organizations: Array.from(orgsById.values()),
+                        datasets,
+                        resources: allResources,
+                        places
+                    }, knownPlaceIds);
                     await client.query('COMMIT');
                 } catch (err) {
                     await client.query('ROLLBACK');

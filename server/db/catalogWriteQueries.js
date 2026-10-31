@@ -143,6 +143,8 @@ async function upsertDatasetSources(db, rowsRaw) {
     }
 }
 
+const PLACE_LINK_BATCH = 1000;
+
 async function replaceDatasetPlaces(db, sourceId, datasetIds, linksRaw) {
     if (!datasetIds || datasetIds.length === 0) return;
     await db.query(
@@ -153,21 +155,24 @@ async function replaceDatasetPlaces(db, sourceId, datasetIds, linksRaw) {
         link.datasetId + '\0' + link.placeId + '\0' + link.relationship,
         link
     ])).values());
-    if (links.length === 0) return;
-    const values = [];
-    const tuples = links.map((link, index) => {
-        const p = index * 6 + 1;
-        values.push(sourceId, link.datasetId, link.placeId, link.relationship, link.includesDescendants === true, link.assignmentMethod);
-        return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5})`;
-    });
-    await db.query(`
-        INSERT INTO dataset_places (
-            source_id, dataset_id, place_id, relationship, includes_descendants, assignment_method
-        ) VALUES ${tuples.join(',')}
-        ON CONFLICT (source_id, dataset_id, place_id, relationship) DO UPDATE SET
-            includes_descendants = EXCLUDED.includes_descendants,
-            assignment_method = EXCLUDED.assignment_method
-    `, values);
+    // Six parameters a link: a federal re-harvest can carry thousands of links,
+    // and one statement takes at most 65,535 parameters.
+    for (let start = 0; start < links.length; start += PLACE_LINK_BATCH) {
+        const values = [];
+        const tuples = links.slice(start, start + PLACE_LINK_BATCH).map((link, index) => {
+            const p = index * 6 + 1;
+            values.push(sourceId, link.datasetId, link.placeId, link.relationship, link.includesDescendants === true, link.assignmentMethod);
+            return `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5})`;
+        });
+        await db.query(`
+            INSERT INTO dataset_places (
+                source_id, dataset_id, place_id, relationship, includes_descendants, assignment_method
+            ) VALUES ${tuples.join(',')}
+            ON CONFLICT (source_id, dataset_id, place_id, relationship) DO UPDATE SET
+                includes_descendants = EXCLUDED.includes_descendants,
+                assignment_method = EXCLUDED.assignment_method
+        `, values);
+    }
 }
 
 async function replaceResourceMaps(db, resourceIds, mapsRaw) {

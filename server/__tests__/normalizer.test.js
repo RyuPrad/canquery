@@ -57,3 +57,34 @@ describe('catalogNormalizer.normalizeJurisdiction', () => {
         expect(normalizePackage({ ...pkg, jurisdiction: undefined }).dataset.jurisdiction).toBeNull();
     });
 });
+
+describe('catalogNormalizer provincial publishers', () => {
+    const pkg = (organization, jurisdiction) => ({
+        id: 'd-' + organization + '-' + jurisdiction, name: 'n', title: 'T', jurisdiction, resources: [],
+        organization: { id: 'org-' + organization, name: organization, title: 'Publisher | Éditeur' }
+    });
+
+    it('places a provincial government\'s provincial record in its province, without inheritance', () => {
+        const n = normalizePackage(pkg('ab', 'provincial'));
+        expect(n.organization.placeId).toBe('sgc-pr-48');
+        expect(n.places).toEqual([{ datasetId: 'd-ab-provincial', placeId: 'sgc-pr-48', relationship: 'direct',
+            includesDescendants: false, assignmentMethod: 'source' }]);
+        expect(normalizePackage(pkg('on', 'provincial')).places[0].placeId).toBe('ca-on');
+    });
+
+    it('gives Québec its place but leaves its municipal records unplaced', () => {
+        const n = normalizePackage(pkg('qc', 'municipal'));
+        expect(n.organization.placeId).toBe('sgc-pr-24');
+        expect(n.places).toEqual([]);
+    });
+
+    it('leaves federal publishers and provincial records from unlisted publishers unplaced', () => {
+        for (const n of [normalizePackage(pkg('ec', 'federal')), normalizePackage(pkg('ec', 'provincial'))]) {
+            expect(n.organization.placeId).toBeNull();
+            expect(n.places).toEqual([]);
+        }
+        expect(normalizePackage({ id: 'x', name: 'x', title: 'X', jurisdiction: 'provincial', resources: [] }).places).toEqual([]);
+        // Inherited object properties are not publishers.
+        expect(normalizePackage(pkg('constructor', 'provincial')).places).toEqual([]);
+    });
+});

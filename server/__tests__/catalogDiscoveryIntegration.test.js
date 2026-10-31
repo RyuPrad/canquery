@@ -267,3 +267,99 @@ integrationDescribe('paged place discovery PostgreSQL integration', () => {
         expect(await publishers({ place: id('missing') })).toEqual([]);
     });
 });
+
+integrationDescribe('federal provincial places PostgreSQL integration', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const { normalizePackage } = require('../services/catalogNormalizer');
+    const { loadFederalPlaceIds, writeFederalChunk } = require('../services/federalCatalogWrite');
+    let pool, db;
+    const prefix = 'federal_places_' + process.pid;
+    const id = name => prefix + '_' + name;
+    const token = 'wombatprovincefixture';
+    const migration = fs.readFileSync(path.join(__dirname, '..', 'sql', 'migrations', '047_federal_provincial_places.sql'), 'utf8');
+    const search = async filters => (await queries.searchDatasets({ q: token, limit: 50, offset: 0, ...filters }, db)).map(row => row.id).sort();
+    const placeRows = async () => (await db.query(`SELECT dataset_id, place_id, relationship, includes_descendants, assignment_method
+        FROM dataset_places WHERE dataset_id LIKE $1 AND source_id = 'open-canada' ORDER BY dataset_id`, [prefix + '%'])).rows;
+    const town = async () => (await queries.listPlaces({ q: id('town'), kind: null, parent: null, featured: null,
+        limit: 10, offset: 0 }, db)).map(row => [row.id, row.dataset_count, row.direct_dataset_count]);
+
+    beforeAll(async () => {
+        pool = new Pool({ connectionString: url });
+        db = await pool.connect();
+        await db.query('BEGIN');
+        await db.query(`INSERT INTO catalog_sources (id, kind, name_en, homepage_url, upstream_host)
+            VALUES ($1, 'ckan', $1, 'https://example.test', 'example.test')`, [id('src')]);
+        await db.query(`INSERT INTO places (id, slug, kind, parent_id, name_en) VALUES ($1, $1, 'municipality', 'sgc-pr-48', $1)`, [id('town')]);
+        // The listed publisher names are real CKAN names; the rest stay unlisted.
+        await db.query(`INSERT INTO organizations (id, name, title_en) VALUES ($1, 'ab', 'Government of Alberta'),
+            ($2, 'qc', 'Government and Municipalities of Québec'), ($3, $3, 'Federal department')`, [id('org_ab'), id('org_qc'), id('org_fed')]);
+        // [key, organization, declared jurisdiction, source, direct place]
+        for (const [key, org, jurisdiction, source, place] of [
+            ['prov_ab', 'org_ab', 'provincial', 'open-canada', null],
+            ['muni_qc', 'org_qc', 'municipal', 'open-canada', null],
+            ['fed', 'org_fed', 'federal', 'open-canada', null],
+            ['prov_unlisted', 'org_fed', 'provincial', 'open-canada', null],
+            ['prov_elsewhere', 'org_ab', 'provincial', 'src', null],
+            ['town_own', null, null, 'src', 'town']
+        ]) {
+            await db.query(`INSERT INTO datasets (id, name, title_en, org_id, jurisdiction) VALUES ($1, $1, $2, $3, $4)`,
+                [id(key), token + ' ' + key, org && id(org), jurisdiction]);
+            await db.query('INSERT INTO dataset_sources (source_id, external_id, dataset_id) VALUES ($1, $2, $2)',
+                [source === 'src' ? id('src') : source, id(key)]);
+            if (place) {
+                await db.query(`INSERT INTO dataset_places (source_id, dataset_id, place_id, relationship, assignment_method)
+                    VALUES ($1, $2, $3, 'direct', 'source')`, [id('src'), id(key), id(place)]);
+            }
+        }
+    });
+    afterAll(async () => {
+        if (db) { await db.query('ROLLBACK'); db.release(); }
+        if (pool) await pool.end();
+    });
+
+    test('the backfill places provincial government records in their province, directly, and their publishers there', async () => {
+        const provincialBefore = await search({ level: ['provincial'] });
+        const townBefore = await town();
+        await db.query('SAVEPOINT backfill');
+        try {
+            await db.query(migration);
+            await db.query(migration);
+            expect(await placeRows()).toEqual([{ dataset_id: id('prov_ab'), place_id: 'sgc-pr-48', relationship: 'direct',
+                includes_descendants: false, assignment_method: 'source' }]);
+            const orgs = await db.query('SELECT id, place_id FROM organizations WHERE id LIKE $1 ORDER BY id', [prefix + '%']);
+            expect(orgs.rows).toEqual([{ id: id('org_ab'), place_id: 'sgc-pr-48' }, { id: id('org_fed'), place_id: null },
+                { id: id('org_qc'), place_id: 'sgc-pr-24' }]);
+            // The province lists its record; the town inside it keeps only its own.
+            expect(await search({ place: 'alberta' })).toEqual([id('prov_ab')]);
+            expect(await search({ place: id('town') })).toEqual([id('town_own')]);
+            expect(await town()).toEqual(townBefore);
+            expect(townBefore).toEqual([[id('town'), 1, 1]]);
+            // Levels still come from the declared jurisdiction.
+            expect(await search({ level: ['provincial'] })).toEqual(provincialBefore);
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT backfill');
+        }
+    });
+
+    test('the federal sync writer replaces the place of every record it writes', async () => {
+        await db.query('SAVEPOINT sync');
+        try {
+            const known = await loadFederalPlaceIds(db);
+            expect(known.has('sgc-pr-48')).toBe(true);
+            const write = async jurisdiction => {
+                const n = normalizePackage({ id: id('synced'), name: id('synced'), title: token + ' synced', jurisdiction,
+                    owner_org: id('org_ab'), organization: { id: id('org_ab'), name: 'ab', title: 'Government of Alberta | Gouvernement de l’Alberta' },
+                    resources: [] });
+                await writeFederalChunk(db, { organizations: [n.organization], datasets: [n.dataset], resources: n.resources, places: n.places }, known);
+            };
+            await write('provincial');
+            expect((await placeRows()).map(row => [row.dataset_id, row.place_id])).toEqual([[id('synced'), 'sgc-pr-48']]);
+            expect((await db.query('SELECT place_id FROM organizations WHERE id = $1', [id('org_ab')])).rows[0].place_id).toBe('sgc-pr-48');
+            await write('federal');
+            expect(await placeRows()).toEqual([]);
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT sync');
+        }
+    });
+});
