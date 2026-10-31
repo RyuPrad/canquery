@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { fetchDataset } from '../api/catalog.js';
 import { NotFoundError } from '../api/client.js';
@@ -6,7 +6,20 @@ import { track } from '../utils/analytics.js';
 import { rememberResource } from '../utils/resourceHints.js';
 import { takeDatasetInitialData, consumeInitialData } from '../utils/initialData.js';
 import CatalogPagination from '../components/CatalogPagination.jsx';
+import DatasetFileFilter from '../components/DatasetFileFilter.jsx';
 import { PAGE_SIZE, pageNumber } from '../utils/catalogPagination.js';
+import {
+  EMPTY_FILE_FILTER,
+  fileFacets,
+  fileFilterKey,
+  filterFiles,
+  hasFileFilter,
+  indexFiles,
+  readFileFilter,
+  writeFileFilter,
+} from '../utils/datasetFileFilter.js';
+import useSearchDraft from '../hooks/useSearchDraft.js';
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import ResourceBadge from '../components/ResourceBadge.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Provenance from '../components/Provenance.jsx';
@@ -64,6 +77,49 @@ function DatasetExplorer({ idOrName }) {
   const page = pageNumber(searchParams);
   const handledHighlightRef = useRef(null);
   const openedRef = useRef(false);
+  const filesHeadingRef = useRef(null);
+  const reducedMotion = usePrefersReducedMotion();
+
+  // The file filter lives in the address (q, year, format, language) so a
+  // filtered list can be shared and survives a reload; the search box filters
+  // at once and writes the address after typing pauses.
+  const fileFilter = readFileFilter(searchParams);
+  const commitFileQuery = useCallback((value) => {
+    setSearchParams(current => writeFileFilter(current, { ...readFileFilter(current), q: value }), { replace: true });
+  }, [setSearchParams]);
+  const [fileQuery, setFileQuery] = useSearchDraft(fileFilter.q, commitFileQuery);
+  const effectiveFilter = useMemo(
+    () => ({ q: fileQuery, year: fileFilter.year, format: fileFilter.format, language: fileFilter.language }),
+    [fileQuery, fileFilter.year, fileFilter.format, fileFilter.language]
+  );
+  const filteringFiles = hasFileFilter(effectiveFilter);
+  const indexedFiles = useMemo(
+    () => (dataset ? indexFiles(dataset.resources || [], [dataset.title, dataset.presentation?.title]) : []),
+    [dataset]
+  );
+  const matchingFiles = useMemo(() => filterFiles(indexedFiles, effectiveFilter), [indexedFiles, effectiveFilter]);
+  const fileFacetGroups = useMemo(() => fileFacets(indexedFiles, effectiveFilter), [indexedFiles, effectiveFilter]);
+  // A filtered list pages with buttons. Its page is kept in this history entry,
+  // never in ?page, which belongs to the unfiltered list (and scrolls the window).
+  const filesKey = fileFilterKey(effectiveFilter);
+  const storedFilesPage = location.state?.filesPage;
+  const lastFilesPage = Math.max(1, Math.ceil(matchingFiles.length / PAGE_SIZE));
+  const filesPage = storedFilesPage?.key === filesKey && Number.isSafeInteger(storedFilesPage.page)
+    ? Math.min(Math.max(1, storedFilesPage.page), lastFilesPage)
+    : 1;
+  const trackedFileQueryRef = useRef(fileFilter.q);
+  useEffect(() => {
+    if (!dataset || trackedFileQueryRef.current === fileFilter.q) return;
+    trackedFileQueryRef.current = fileFilter.q;
+    if (fileFilter.q.trim()) {
+      track('catalog_filter', {
+        filter: 'dataset_file_search',
+        value: fileFilter.q.trim(),
+        dataset_id: dataset.id,
+        results: matchingFiles.length,
+      });
+    }
+  }, [dataset, fileFilter.q, matchingFiles.length]);
 
   const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
 
@@ -122,6 +178,11 @@ function DatasetExplorer({ idOrName }) {
     const focusId = searchParams.get('highlight');
     if (!focusId || !dataset || page === null) return;
     if (handledHighlightRef.current === focusId) return;
+    // The highlighted file may be filtered out: show the whole list first.
+    if (hasFileFilter(readFileFilter(searchParams))) {
+      setSearchParams(writeFileFilter(searchParams, EMPTY_FILE_FILTER), { replace: true });
+      return;
+    }
     const resourceIndex = (dataset.resources || []).findIndex(resource => resource.id === focusId);
     const targetPage = Math.floor(resourceIndex / PAGE_SIZE) + 1;
     if (resourceIndex >= 0 && targetPage !== page) {
@@ -181,7 +242,34 @@ function DatasetExplorer({ idOrName }) {
   }
 
   const queryable = (mode) => ['datastore', 'ingested', 'ingestable'].includes(mode);
-  const visibleResources = dataset.resources.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const listedResources = filteringFiles ? matchingFiles : dataset.resources;
+  const currentPage = filteringFiles ? filesPage : page;
+  const visibleResources = listedResources.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const selectFileFilter = (key, value) => {
+    const next = { ...effectiveFilter, [key]: value };
+    setSearchParams(current => writeFileFilter(current, next), { replace: true });
+    track('catalog_filter', {
+      filter: 'dataset_file_' + key,
+      value: value || 'all',
+      dataset_id: dataset.id,
+      results: filterFiles(indexedFiles, next).length,
+    });
+  };
+  const clearFileFilter = () => {
+    setSearchParams(current => writeFileFilter(current, EMPTY_FILE_FILTER), { replace: true });
+    track('catalog_filter', { action: 'clear', surface: 'dataset_files', dataset_id: dataset.id });
+  };
+  const goToFilesPage = (number) => {
+    // The pending search text is written too, so the new entry keeps it.
+    setSearchParams(writeFileFilter(searchParams, effectiveFilter), {
+      replace: true,
+      state: { filesPage: { key: filesKey, page: number } },
+    });
+    const heading = filesHeadingRef.current;
+    heading?.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+    heading?.focus({ preventScroll: true });
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-4 cq-fade">
@@ -282,10 +370,30 @@ function DatasetExplorer({ idOrName }) {
         variant="dataset"
       />
 
-      <h2 className="text-lg font-semibold font-display pt-6 flex items-center gap-2.5">
+      <h2
+        ref={filesHeadingRef}
+        tabIndex={-1}
+        className="text-lg font-semibold font-display pt-6 flex items-center gap-2.5 scroll-mt-20 focus:outline-none"
+      >
         {t('dataset.resources')}
         <span className="cq-chip cq-chip-mono">{dataset.resources.length}</span>
       </h2>
+      {dataset.resources.length > 0 && (
+        <DatasetFileFilter
+          query={fileQuery}
+          onQuery={setFileQuery}
+          filter={effectiveFilter}
+          facets={fileFacetGroups}
+          total={dataset.resources.length}
+          shown={matchingFiles.length}
+          active={filteringFiles}
+          onSelect={selectFileFilter}
+          onClear={clearFileFilter}
+        />
+      )}
+      {filteringFiles && matchingFiles.length === 0 && (
+        <p className="cq-card p-6 text-center text-sm text-base-content/60">{t('dataset.filter.none')}</p>
+      )}
       <div className="space-y-2.5">
         {visibleResources.map(resource => (
           <div
@@ -349,7 +457,11 @@ function DatasetExplorer({ idOrName }) {
           </div>
         ))}
       </div>
-      <CatalogPagination page={page} hasMore={page * PAGE_SIZE < dataset.resources.length} path={'/datasets/' + encodeURIComponent(dataset.name || dataset.id)} />
+      {filteringFiles ? (
+        <CatalogPagination page={filesPage} hasMore={filesPage * PAGE_SIZE < matchingFiles.length} onPage={goToFilesPage} />
+      ) : (
+        <CatalogPagination page={page} hasMore={page * PAGE_SIZE < dataset.resources.length} path={'/datasets/' + encodeURIComponent(dataset.name || dataset.id)} />
+      )}
       <LocalGuides dataset={dataset.id} initial={initial?.guides} />
     </div>
   );
