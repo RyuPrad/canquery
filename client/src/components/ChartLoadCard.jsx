@@ -77,7 +77,13 @@ export default function ChartLoadCard({ store, preparing, charting, published, p
   const percent = holding ? 100 : Math.round(run.shown);
   const percentText = new Intl.NumberFormat(lang === 'fr' ? 'fr-CA' : 'en-CA', { style: 'percent', maximumFractionDigits: 0 }).format(percent / 100);
   const title = t('chart.progress.title');
-  const detail = holding ? t('chart.progress.done') : stageDetail(run.info, t, lang);
+  // "Chart ready" goes with 100%: in the moment between the last chart and 100%
+  // the card still says it is drawing.
+  const detail = holding
+    ? t('chart.progress.done')
+    : run.info.stage === 'done'
+      ? t('chart.progress.drawing')
+      : stageDetail(run.info, t, lang);
   const announcement = run.announced && ANNOUNCEMENTS[run.announced] ? t(ANNOUNCEMENTS[run.announced]) : '';
 
   const card = (

@@ -63,6 +63,8 @@ describe('ChartLoadCard', () => {
     expect(screen.getByText('Drawing charts: 1 of 2')).toBeInTheDocument();
     expect(Number(screen.getByRole('progressbar').getAttribute('value'))).toBeLessThan(100);
     act(() => { store.set('c2', 'chart', 'settled'); });
+    expect(screen.getByText('Drawing the charts…')).toBeInTheDocument();
+    expect(screen.queryByText('Chart ready')).not.toBeInTheDocument();
     advance(200);
     expect(screen.getByRole('progressbar')).toHaveAttribute('value', '100');
     expect(screen.getByText('Chart ready', { selector: 'span' })).toBeInTheDocument();
