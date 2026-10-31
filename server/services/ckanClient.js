@@ -4,7 +4,9 @@ const AppError = require('../utils/AppError');
 const BASE = process.env.CKAN_BASE_URL || 'https://open.canada.ca/data/api/3/action';
 const USER_AGENT = process.env.CKAN_USER_AGENT || 'canquery/1.0';
 
-async function ckanAction(action, params, { baseUrl = BASE, signal } = {}) {
+// `maxRetries` and `timeoutMs` default to fetchWithBackoff's budget and 30 s; a
+// caller that must not linger on a busy host (the row sampler) lowers them.
+async function ckanAction(action, params, { baseUrl = BASE, signal, maxRetries, timeoutMs = 30000 } = {}) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params || {})) {
         if (value === null || value === undefined) {
@@ -22,11 +24,13 @@ async function ckanAction(action, params, { baseUrl = BASE, signal } = {}) {
             'User-Agent': USER_AGENT,
             'Accept': 'application/json'
         },
-        timeoutMs: 30000, signal
+        timeoutMs, signal, ...(maxRetries === undefined ? {} : { maxRetries })
     });
     if (!response.ok) {
         await response.body?.cancel();
-        throw new AppError('CKAN upstream returned ' + response.status + ' for ' + action, 502);
+        const error = new AppError('CKAN upstream returned ' + response.status + ' for ' + action, 502);
+        error.upstreamStatus = response.status;
+        throw error;
     }
     const body = await response.json();
     if (body.success === false) {
@@ -51,8 +55,9 @@ async function organizationList({ limit, offset, allFields, baseUrl } = {}) {
     return ckanAction('organization_list', { limit, offset, all_fields: allFields }, { baseUrl });
 }
 
-async function datastoreSearch({ resourceId, q, filters, limit, offset, sort, baseUrl, signal } = {}) {
-    return ckanAction('datastore_search', { resource_id: resourceId, q, filters, limit, offset, sort }, { baseUrl, signal });
+async function datastoreSearch({ resourceId, q, filters, limit, offset, sort, baseUrl, signal, maxRetries, timeoutMs } = {}) {
+    return ckanAction('datastore_search', { resource_id: resourceId, q, filters, limit, offset, sort },
+        { baseUrl, signal, maxRetries, timeoutMs });
 }
 
 module.exports = { ckanAction, packageSearch, packageShow, packageList, organizationList, datastoreSearch };

@@ -228,6 +228,19 @@ configured vintage changes). The ingest worker is the systemd service from step
 4, not cron. The map worker is also a systemd service; `maps:drain` is useful for
 an initial source launch or controlled rebuild.
 
+`sample-resource-rows` is optional and commented out too. Each run reads the
+first rows of up to `ROW_SAMPLE_BATCH` (50) live DataStore tables and CSV files
+that have no sample yet, are due for a recheck or changed version: the resource
+pages Google showed most often first, then the rest of the catalogue in id
+order. A DataStore table costs one 10-row `datastore_search` call and a CSV one
+ranged request for its first `ROW_SAMPLE_HEAD_BYTES` (64 KiB). Reads are paced
+per host (`ROW_SAMPLE_HOST_GAP_MS`, `ROW_SAMPLE_HOST_MAX`), a host that answers
+429 is left alone for as long as it asks, and failures back off for up to 30
+days. Resource pages then carry the first rows in their HTML for crawlers that
+do not run JavaScript; `ROW_SAMPLES_RENDER=false` in the API environment hides
+them. Run `node scripts/sample-resource-rows.js --dry-run` to see the next
+batch before enabling the schedule.
+
 The two Search Console entries are intentionally commented out in the generic
 cron template. Before enabling them, create a Google Desktop OAuth client owned
 by the site operator, enable the Search Console API, and set the OAuth app to a

@@ -14,6 +14,11 @@ const catalogReadCache = require('../services/catalogReadCache');
 const { loadPlaceHub } = require('../services/placeHub');
 const { PAGE_SIZE, pageNumber, pagePath, pageSlice } = require('../services/catalogPagination');
 const adsense = require('../services/adsense');
+const rowSampleQueries = require('../db/rowSampleQueries');
+const { fromPrepared } = require('../services/rowSamples');
+const { classifyResource } = require('../services/resourceCapabilities');
+const { resourceVersion } = require('../services/resourceVersion');
+const { withinBudget } = require('../utils/timeBudget');
 
 // The built index.html is immutable for the life of the process (a deploy
 // restarts the API), so read it once and reuse.
@@ -72,6 +77,41 @@ const isNavigation = req => req.get('sec-fetch-mode') === 'navigate';
 function isDocumentRequest(req) {
     const destination = req.get('sec-fetch-dest');
     return (req.method === 'GET' || req.method === 'HEAD') && (!destination || destination === 'document');
+}
+
+// The first rows of a resource's table in its page HTML, for crawlers that do
+// not run the application: a prepared copy's rows come from the first page the
+// page already read for its initial data; a live table's and a CSV file's from
+// the sample scripts/sample-resource-rows.js stored, while the resource is
+// still at the version it was read from. Never throws: without a sample the
+// page is as before. ROW_SAMPLES_RENDER=false hides every sample.
+const SAMPLE_READ_MS = 250;
+const SAMPLE_ORIGINS = { datastore: 'datastore', ingestable: 'file' };
+let sampleWarned = false;
+
+async function snapshotSample(row, initial, readSample = rowSampleQueries.getResourceRowSample) {
+    if (process.env.ROW_SAMPLES_RENDER === 'false') return null;
+    const capability = classifyResource(row).capability;
+    if (capability === 'ingested') {
+        const data = initial && initial.page === 0 && initial.rows ? initial.rows.data : null;
+        const sample = data ? fromPrepared(data, data.total) : null;
+        return sample && { ...sample, origin: 'prepared', read_at: row.ingested_at || null };
+    }
+    const origin = SAMPLE_ORIGINS[capability];
+    if (!origin || (origin === 'file' && String(row.format || '').toUpperCase() !== 'CSV')) return null;
+    let stored;
+    try {
+        stored = await withinBudget(readSample(row.id), SAMPLE_READ_MS);
+    } catch (err) {
+        // A missing table or grant (an older database) is logged once, not per page.
+        if (!sampleWarned) console.warn('Resource row samples unavailable:', err.message);
+        sampleWarned = true;
+        return null;
+    }
+    if (!stored || stored.origin !== origin || stored.source_version !== resourceVersion(row) ||
+        !Array.isArray(stored.fields) || !Array.isArray(stored.records)) return null;
+    return { fields: stored.fields, records: stored.records, columns_total: stored.columns_total,
+        upstream_total: stored.upstream_total == null ? null : Number(stored.upstream_total), origin, read_at: stored.sampled_at };
 }
 
 function injectInitialData(html, payload) {
@@ -299,6 +339,10 @@ function serveSpa(distDir) {
                 console.warn('Initial dataset data skipped:', err.message);
             }
         }
+        if (page.status === 200 && page.row && wantsInitialData(req)) {
+            const sample = await snapshotSample(page.row, initial);
+            if (sample) page = { ...page, body: seoSnapshot.resourceSnapshot(page.row, { sample }) };
+        }
         const privatePage = isPrivatePage(req.path);
         const adsClient = adsense.adsenseClient();
         // Account and sign-in pages, 404s and 503s never carry ads.
@@ -332,4 +376,4 @@ function serveSpa(distDir) {
     };
 }
 
-module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAds, injectAnalytics, injectInitialData, INITIAL_DATA_ID };
+module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAds, injectAnalytics, injectInitialData, snapshotSample, INITIAL_DATA_ID };

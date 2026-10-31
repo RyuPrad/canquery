@@ -30,6 +30,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # the API and job environments first, then uncomment.
 # 45 7 * * * root /usr/local/sbin/canquery-run-job.sh indexnow-submit
 
+# Optional: read the first rows of live DataStore tables and CSV files for the
+# resource pages crawlers read (see DEPLOY.md). It requests a few kilobytes
+# from each publisher, paced per host; try --dry-run first, then uncomment.
+# 7,22,37,52 * * * * root /usr/local/sbin/canquery-run-job.sh sample-resource-rows
+
 # Optional private Search Console reporting. Configure GSC_OAUTH_PATH,
 # GSC_SITE_URL, and GSC_REPORT_PATH, complete a durable OAuth grant, run the
 # first 90-day import, then uncomment both entries.

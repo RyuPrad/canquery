@@ -6,6 +6,14 @@ function sleep(ms, signal) {
     return delay(ms, undefined, { signal });
 }
 
+// Seconds or an HTTP date, as milliseconds from now; null when absent or invalid.
+function retryAfterMs(value, now = Date.now()) {
+    const text = value == null ? '' : String(value).trim();
+    if (/^\d+$/.test(text)) return Number(text) * 1000;
+    const timestamp = text ? Date.parse(text) : NaN;
+    return Number.isFinite(timestamp) ? Math.max(0, timestamp - now) : null;
+}
+
 // One attempt budget covers network, 429 and 5xx failures. Retry responses are
 // disposed before waiting; caller cancellation also interrupts backoff/body I/O.
 async function fetchWithBackoff(url, options = {}, attempt = 0) {
@@ -24,9 +32,14 @@ async function fetchWithBackoff(url, options = {}, attempt = 0) {
         }
         if (response.status !== 429 && response.status < 500) return response;
         await response.body?.cancel();
-        if (current >= maxRetries) throw new Error('Upstream retry limit reached: ' + response.status);
+        if (current >= maxRetries) {
+            const error = new Error('Upstream retry limit reached: ' + response.status);
+            error.upstreamStatus = response.status;
+            error.retryAfterMs = retryAfterMs(response.headers.get('retry-after'));
+            throw error;
+        }
         const wait = response.status === 429 ? Math.min(120000, 5000 * 2 ** current) : 2000 * 2 ** current;
         await sleep(wait, signal);
     }
 }
-module.exports = { fetchWithBackoff, sleep };
+module.exports = { fetchWithBackoff, sleep, retryAfterMs };

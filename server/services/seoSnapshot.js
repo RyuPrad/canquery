@@ -9,6 +9,7 @@ const catalogFacts = require('./catalogFacts');
 const { datasetPresentation, resourcePresentation } = require('./catalogPresentation');
 const { hostedRoute, pageOverride } = require('../extensions');
 const { adsenseClient } = require('./adsense');
+const { renderSampleTable } = require('./rowSamples');
 
 const { PAGE_SIZE, pagePath } = require('./catalogPagination');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
@@ -218,7 +219,9 @@ function originalFileLink(resource) {
     return url ? '<p>' + pathLink(url, 'Access original file') + '</p>' : '';
 }
 
-function resourceSnapshot(resource) {
+// `sample` is the first rows of the resource's table (services/rowSamples.js),
+// for crawlers that do not run the application.
+function resourceSnapshot(resource, { sample = null } = {}) {
     const presentation = resourcePresentation(resource);
     const name = presentation.title.en;
     const datasetName = seo.plainText(resource.dataset_title_en) || seo.plainText(resource.dataset_title_fr) || resource.dataset_name || resource.dataset_id;
@@ -245,7 +248,7 @@ function resourceSnapshot(resource) {
         title: name,
         summary: presentation.summary.en,
         overviewHtml: (presentation.context.en ? '<p>' + text(presentation.context.en) + '</p>' : '') +
-            originalFileLink(resource) + overviewSnapshot(presentation),
+            originalFileLink(resource) + overviewSnapshot(presentation) + renderSampleTable(sample),
         sources: sourceLinks(resource),
         guides: resource.dataset_id || resource.dataset_name ? datasetGuides(resource.dataset_id || resource.dataset_name) : [],
         facts: [

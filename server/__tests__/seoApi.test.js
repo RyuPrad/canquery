@@ -29,6 +29,7 @@ jest.mock('../services/catalogFacets', () => ({ datasetFacets: jest.fn(), refres
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), aggregateStoreTable: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
+jest.mock('../db/rowSampleQueries', () => ({ getResourceRowSample: jest.fn() }));
 
 const request = require('supertest');
 const express = require('express');
@@ -38,6 +39,8 @@ const path = require('path');
 const catalogRead = require('../db/catalogReadQueries');
 const store = require('../db/storeQueries');
 const queryLog = require('../db/queryLogQueries');
+const rowSampleQueries = require('../db/rowSampleQueries');
+const { resourceVersion } = require('../services/resourceVersion');
 const app = require('../app');
 const { serveSpa, resolvePage, resolveMeta, injectAnalytics } = require('../controllers/spaController');
 const { resetSitemapCache } = require('../controllers/sitemapController');
@@ -52,6 +55,7 @@ beforeEach(() => {
     catalogRead.listOrganizations.mockResolvedValue([]);
     catalogRead.listPlaces.mockResolvedValue([]);
     catalogRead.listNoindexResourceSitemap.mockResolvedValue([]);
+    rowSampleQueries.getResourceRowSample.mockResolvedValue(null);
 });
 
 const newestGuideUpdate = () => ['en', 'fr'].flatMap(lang => listArticles({ lang })).map(article => article.updated).sort().at(-1);
@@ -930,6 +934,111 @@ describe('resource page initial data', () => {
         expect(res.status).toBe(200);
         expect(res.text).not.toContain('cq-initial');
         expect(catalogRead.getResourceById).not.toHaveBeenCalled();
+    });
+});
+
+describe('resource page sample rows', () => {
+    let distDir;
+    let spa;
+    const base = {
+        id: 'r1', name_en: 'Permits', format: 'CSV', url: 'https://example.test/permits.csv', size_bytes: 1000,
+        dataset_id: 'd1', dataset_name: 'permits', dataset_title_en: 'Building permits', places: [], provenance_sources: []
+    };
+    const live = { ...base, datastore_active: true, raw: { source_id: 'open-canada' } };
+    const stored = (row, overrides = {}) => ({
+        origin: row.datastore_active ? 'datastore' : 'file', source_version: resourceVersion(row), sampled_at: '2026-10-31T06:00:00Z',
+        fields: [{ id: 'ward', label: 'Ward <name>', type: 'text' }], records: [['Rideau & Vanier']], columns_total: 1, upstream_total: '5000',
+        ...overrides
+    });
+    const section = text => {
+        const match = text.match(/<section data-cq-sample="([a-z]+)">.*?<\/section>/s);
+        return match ? { origin: match[1], html: match[0] } : null;
+    };
+    const navigate = { 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate' };
+
+    beforeAll(() => {
+        distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-samples-'));
+        fs.writeFileSync(path.join(distDir, 'index.html'),
+            '<!doctype html><html><head><!-- seo:start --><title>x</title><!-- seo:end --></head><body><div id="root"></div></body></html>');
+        spa = express();
+        spa.get(/.*/, serveSpa(distDir));
+    });
+    afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+    beforeEach(() => {
+        store.touchLastAccessed.mockResolvedValue(true);
+        queryLog.logQueryHit.mockResolvedValue(undefined);
+    });
+    afterEach(() => { delete process.env.ROW_SAMPLES_RENDER; });
+
+    it('shows a live table\'s stored sample, escaped, for a document request', async () => {
+        catalogRead.getResourceById.mockResolvedValue(live);
+        rowSampleQueries.getResourceRowSample.mockResolvedValue(stored(live));
+        const res = await request(spa).get('/resources/r1').set(navigate);
+        const sample = section(res.text);
+        expect(sample.origin).toBe('datastore');
+        expect(sample.html).toContain('<th scope="col">Ward &lt;name&gt;</th>');
+        expect(sample.html).toContain('<td>Rideau &amp; Vanier</td>');
+        expect(sample.html).toContain('The first row, as CanQuery read it from the publisher&#39;s live table on 2026-10-31. The table has 5,000 rows.');
+        expect(rowSampleQueries.getResourceRowSample).toHaveBeenCalledWith('r1');
+        // A crawler's plain request reads it too.
+        expect(section((await request(spa).get('/resources/r1')).text).origin).toBe('datastore');
+    });
+
+    it('shows a CSV file\'s sample only while the resource is at the version it was read from', async () => {
+        catalogRead.getResourceById.mockResolvedValue(base);
+        rowSampleQueries.getResourceRowSample.mockResolvedValue(stored(base));
+        expect(section((await request(spa).get('/resources/r1').set(navigate)).text).origin).toBe('file');
+        rowSampleQueries.getResourceRowSample.mockResolvedValue(stored(base, { source_version: 'older' }));
+        expect(section((await request(spa).get('/resources/r1').set(navigate)).text)).toBeNull();
+        // A sample read from the file is not shown once the resource has a live table.
+        catalogRead.getResourceById.mockResolvedValue(live);
+        rowSampleQueries.getResourceRowSample.mockResolvedValue(stored(base, { source_version: resourceVersion(live) }));
+        expect(section((await request(spa).get('/resources/r1').set(navigate)).text)).toBeNull();
+    });
+
+    it('shows a prepared copy\'s first page from the rows the page already read, but not for later pages', async () => {
+        catalogRead.getResourceById.mockResolvedValue({ ...base, ingest_status: 'ready', table_name: 'r_abc', ingested_at: '2026-09-01T00:00:00Z',
+            ingested_columns: [{ id: 'name', type: 'TEXT' }], ingested_row_count: 120 });
+        store.queryStoreTable.mockResolvedValue({ records: [{ _id: 1, name: 'Ottawa' }], total: 120 });
+        const first = section((await request(spa).get('/resources/r1').set(navigate)).text);
+        expect(first.origin).toBe('prepared');
+        expect(first.html).toContain('<td>Ottawa</td>');
+        expect(first.html).toContain('CanQuery&#39;s prepared copy on 2026-09-01. The table has 120 rows.');
+        expect(section((await request(spa).get('/resources/r1?page=2').set(navigate)).text)).toBeNull();
+        expect(rowSampleQueries.getResourceRowSample).not.toHaveBeenCalled();
+    });
+
+    it('reads no sample for in-app fetches, HEAD, download-only files or when samples are switched off', async () => {
+        catalogRead.getResourceById.mockResolvedValue(live);
+        rowSampleQueries.getResourceRowSample.mockResolvedValue(stored(live));
+        const fetched = await request(spa).get('/resources/r1').set({ 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors' });
+        expect(section(fetched.text)).toBeNull();
+        await request(spa).head('/resources/r1');
+        catalogRead.getResourceById.mockResolvedValue({ ...base, format: 'PDF', url: 'https://example.test/guide.pdf' });
+        await request(spa).get('/resources/r1').set(navigate);
+        catalogRead.getResourceById.mockResolvedValue({ ...base, format: 'XLSX', url: 'https://example.test/table.xlsx' });
+        await request(spa).get('/resources/r1').set(navigate);
+        process.env.ROW_SAMPLES_RENDER = 'false';
+        catalogRead.getResourceById.mockResolvedValue(live);
+        expect(section((await request(spa).get('/resources/r1').set(navigate)).text)).toBeNull();
+        expect(rowSampleQueries.getResourceRowSample).not.toHaveBeenCalled();
+    });
+
+    it('serves the page without rows when the sample read fails or runs late', async () => {
+        catalogRead.getResourceById.mockResolvedValue(live);
+        rowSampleQueries.getResourceRowSample.mockRejectedValue(Object.assign(new Error('permission denied for table resource_row_samples'), { code: '42501' }));
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const denied = await request(spa).get('/resources/r1').set(navigate);
+        await request(spa).get('/resources/r1').set(navigate);
+        warn.mockRestore();
+        expect(denied.status).toBe(200);
+        expect(section(denied.text)).toBeNull();
+        expect(denied.text).toContain('data-cq-seo-snapshot="true"');
+        expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+        rowSampleQueries.getResourceRowSample.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve(stored(live)), 600)));
+        const slow = await request(spa).get('/resources/r1').set(navigate);
+        expect(slow.status).toBe(200);
+        expect(section(slow.text)).toBeNull();
     });
 });
 

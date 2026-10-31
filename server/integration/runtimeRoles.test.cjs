@@ -16,6 +16,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { cleanRetiredTables } = require('../services/retiredIngestTables');
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
+    const { getResourceRowSample } = require('../db/rowSampleQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
@@ -54,11 +55,17 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
                 'SELECT * FROM search_console_query_pages LIMIT 0']) {
                 await assert.rejects(client.query(sql), { code: '42501' });
             }
-            // Only the API reads which pages Google showed, for the noindex sitemap, and only these two columns.
+            // Only the deployment owner writes the resource row samples.
+            await assert.rejects(client.query(`INSERT INTO resource_row_samples (resource_id, origin, status, checked_version, next_check_at, failure_code)
+                VALUES ('forbidden', 'file', 'failed', 'v', now(), 'error')`), { code: '42501' });
+            // Only the API reads which pages Google showed, for the noindex sitemap, and only these two columns;
+            // and only the API reads the samples a resource page shows.
             if (role !== 'canquery_api') {
                 await assert.rejects(client.query('SELECT * FROM search_console_page_dates LIMIT 0'), { code: '42501' });
+                await assert.rejects(client.query('SELECT * FROM resource_row_samples LIMIT 0'), { code: '42501' });
                 continue;
             }
+            assert.equal(await getResourceRowSample(prefix, dbFor(client)), null);
             const { fields } = await client.query('SELECT * FROM search_console_page_dates LIMIT 0');
             assert.deepEqual(fields.map(field => field.name), ['data_date', 'page']);
             assert.ok(Array.isArray(await listNoindexResourceSitemap({ pagePrefix: 'https://canquery.com/resources/', days: 28,
