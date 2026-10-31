@@ -107,6 +107,16 @@ function DatasetExplorer({ idOrName }) {
   const filesPage = storedFilesPage?.key === filesKey && Number.isSafeInteger(storedFilesPage.page)
     ? Math.min(Math.max(1, storedFilesPage.page), lastFilesPage)
     : 1;
+  // A page turn scrolls once the new page is drawn: scrolling during the click
+  // lets Chromium's scroll anchoring pull the window back to the pager.
+  const scrollFilesRef = useRef(false);
+  useEffect(() => {
+    if (!scrollFilesRef.current) return;
+    scrollFilesRef.current = false;
+    const heading = filesHeadingRef.current;
+    heading?.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+    heading?.focus({ preventScroll: true });
+  }, [filesPage, reducedMotion]);
   const trackedFileQueryRef = useRef(fileFilter.q);
   useEffect(() => {
     if (!dataset || trackedFileQueryRef.current === fileFilter.q) return;
@@ -266,9 +276,7 @@ function DatasetExplorer({ idOrName }) {
       replace: true,
       state: { filesPage: { key: filesKey, page: number } },
     });
-    const heading = filesHeadingRef.current;
-    heading?.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
-    heading?.focus({ preventScroll: true });
+    scrollFilesRef.current = true;
   };
 
   return (
