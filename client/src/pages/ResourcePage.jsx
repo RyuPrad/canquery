@@ -9,6 +9,13 @@ import { PAGE_SIZE, MAX_PAGE_INDEX, resourceViewState } from '../utils/resourceE
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
 import useResourceActivity from '../hooks/useResourceActivity.js';
 import PreparationStatus from '../components/PreparationStatus.jsx';
+import ChartLoadCard from '../components/ChartLoadCard.jsx';
+import {
+  ChartLoadContext,
+  createChartLoadStore,
+  useChartLoadReport
+} from '../hooks/useChartLoadReport.js';
+import { preparationCovered } from '../utils/chartLoadProgress.js';
 import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
 import { buildColumnFilters } from '../utils/columnFilter.js';
@@ -42,6 +49,13 @@ import {
 
 const noop = () => {};
 const EMPTY_FILTERS = Object.freeze({});
+
+// The chart area while its code or schema is not ready yet; the loading card
+// counts it as "opening the chart".
+function ChartFallback() {
+  useChartLoadReport('chunk', 'loading');
+  return <div className="cq-skel h-[420px] rounded-xl" />;
+}
 
 // Previous/Next plus a page box. A typed page is clamped to the last page the
 // server can serve; an unseen page keeps the current rows while it loads.
@@ -242,6 +256,8 @@ function ResourceExplorer({ id, navigationKey }) {
     onReady: onPrepared
   });
   const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
+  // What the Chart tab's loading card waits on: the chart area reports into it.
+  const [chartLoadStore] = useState(createChartLoadStore);
   const jobProgress = preparation.job?.progress || null;
   // While a CSV is prepared for the first time, its first rows stand in for the table.
   const { preview } = useResourcePreview({
@@ -338,6 +354,10 @@ function ResourceExplorer({ id, navigationKey }) {
     rowError: Boolean(dataError),
     hasPreview: Boolean(preview)
   });
+  // On the Chart tab the loading card stands in for the preparation card while
+  // a preparation runs or is about to; standby, busy and failures keep theirs.
+  const chartCovers =
+    view === 'chart' && display === 'preparation' && preparationCovered(preparation);
 
   // The recorded schema and row count draw the table frame, count and pager
   // before the first page arrives; a page response then owns the total.
@@ -584,137 +604,154 @@ function ResourceExplorer({ id, navigationKey }) {
         </div>
       )}
 
-      {display === 'map' || display === 'map-loading' ? (
-        display === 'map' ? (
-          <Suspense fallback={<div className="cq-skel h-[560px] rounded-xl" />}>
-            <MapPanel resourceId={id} map={resource.map} />
-          </Suspense>
-        ) : (
-          <LoadingSpinner label={t('map.loading')} />
-        )
-      ) : display === 'filter-preparation' ? null : display === 'loading' ? (
-        frameFields ? (
-          <div
-            role="status"
-            aria-busy="true"
-            aria-label={t('resource.loading_data')}
-            className="space-y-3"
-          >
-            <span className="sr-only">{t('resource.loading_data')}</span>
-            <DataTable
-              fields={frameFields}
-              records={null}
-              placeholderRows={10}
-              sort={sort}
-              onSortChange={changeSort}
-              columnFilters={columnFilters}
-              onColumnFilterChange={changeColumnFilter}
-            />
-            {knownTotal > PAGE_SIZE && (
-              <Pager resourceId={id} page={page} total={knownTotal} onPage={setPage} />
+      <div className="relative space-y-4">
+        {view === 'chart' && (
+          <ChartLoadCard
+            store={chartLoadStore}
+            preparing={chartCovers}
+            charting={display === 'chart'}
+            published={preparation.published}
+            phase={preparation.phase}
+            progress={jobProgress}
+            elapsed={preparation.working ? formatDuration(loadElapsed) : null}
+          />
+        )}
+        {display === 'map' || display === 'map-loading' ? (
+          display === 'map' ? (
+            <Suspense fallback={<div className="cq-skel h-[560px] rounded-xl" />}>
+              <MapPanel resourceId={id} map={resource.map} />
+            </Suspense>
+          ) : (
+            <LoadingSpinner label={t('map.loading')} />
+          )
+        ) : display === 'filter-preparation' ? null : display === 'loading' ? (
+          frameFields ? (
+            <div
+              role="status"
+              aria-busy="true"
+              aria-label={t('resource.loading_data')}
+              className="space-y-3"
+            >
+              <span className="sr-only">{t('resource.loading_data')}</span>
+              <DataTable
+                fields={frameFields}
+                records={null}
+                placeholderRows={10}
+                sort={sort}
+                onSortChange={changeSort}
+                columnFilters={columnFilters}
+                onColumnFilterChange={changeColumnFilter}
+              />
+              {knownTotal > PAGE_SIZE && (
+                <Pager resourceId={id} page={page} total={knownTotal} onPage={setPage} />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="cq-skel h-10 w-64" />
+              <div className="cq-skel h-[420px]" />
+            </div>
+          )
+        ) : display === 'download' ? (
+          <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
+            <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
+              <FileIcon size={24} />
+            </span>
+            <p className="text-base-content/70">{t('resource.file_only')}</p>
+            {downloadOnlyUrl && (
+              <a
+                href={downloadOnlyUrl}
+                className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
+                data-analytics-event="resource_download"
+                data-analytics-resource-id={id}
+                data-analytics-source="file_only"
+              >
+                <DownloadIcon size={13} />
+                {t('resource.download_here')}
+              </a>
             )}
           </div>
-        ) : (
+        ) : display === 'preparation-preview' ? (
           <div className="space-y-3">
-            <div className="cq-skel h-10 w-64" />
-            <div className="cq-skel h-[420px]" />
-          </div>
-        )
-      ) : display === 'download' ? (
-        <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
-          <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
-            <FileIcon size={24} />
-          </span>
-          <p className="text-base-content/70">{t('resource.file_only')}</p>
-          {downloadOnlyUrl && (
-            <a
-              href={downloadOnlyUrl}
-              className="btn btn-outline btn-sm rounded-lg gap-1.5 border-base-content/20"
-              data-analytics-event="resource_download"
-              data-analytics-resource-id={id}
-              data-analytics-source="file_only"
-            >
-              <DownloadIcon size={13} />
-              {t('resource.download_here')}
-            </a>
-          )}
-        </div>
-      ) : display === 'preparation-preview' ? (
-        <div className="space-y-3">
-          <PreparationStatus
-            preparation={preparation}
-            elapsed={formatDuration(loadElapsed)}
-            progress={jobProgress}
-            compact
-          />
-          <div className="cq-card p-3 text-sm flex flex-wrap items-center gap-2" role="note">
-            <span className="cq-chip cq-chip-mono">{t('preview.chip')}</span>
-            <span>{t('preview.banner')}</span>
-            <span className="text-base-content/60">
-              {preview.truncated
-                ? t('preview.partial').replace(
-                    '{rows}',
-                    preview.records.length.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')
-                  )
-                : t('preview.whole')}
-            </span>
-          </div>
-          <DataTable
-            fields={preview.fields}
-            records={preview.records}
-            previewMode
-            sort={null}
-            onSortChange={noop}
-            columnFilters={EMPTY_FILTERS}
-            onColumnFilterChange={noop}
-          />
-        </div>
-      ) : display === 'preparation' ? (
-        <PreparationStatus
-          preparation={preparation}
-          elapsed={formatDuration(loadElapsed)}
-          progress={jobProgress}
-        />
-      ) : display === 'chart' ? (
-        <Suspense fallback={<div className="cq-skel h-[420px] rounded-xl" />}>
-          {schemaReady ? (
-            <ChartPanel
-              key={JSON.stringify([
-                resource?.ingestion?.snapshot_id || resource?.ingestion?.ingested_at || id,
-                fingerprint
-              ])}
-              resourceId={id}
-              q={debouncedQ || undefined}
-              filters={Object.keys(exportFilters).length ? exportFilters : undefined}
-              fields={fields || []}
-              queryMode={resource.query_mode}
-              onUnavailable={onUnavailable}
+            <PreparationStatus
+              preparation={preparation}
+              elapsed={formatDuration(loadElapsed)}
+              progress={jobProgress}
+              compact
             />
-          ) : (
-            <div className="cq-skel h-[420px] rounded-xl" />
-          )}
-        </Suspense>
-      ) : display === 'error' ? (
-        <div className="alert alert-error">{dataError.message}</div>
-      ) : display === 'table' ? (
-        <>
-          <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+            <div className="cq-card p-3 text-sm flex flex-wrap items-center gap-2" role="note">
+              <span className="cq-chip cq-chip-mono">{t('preview.chip')}</span>
+              <span>{t('preview.banner')}</span>
+              <span className="text-base-content/60">
+                {preview.truncated
+                  ? t('preview.partial').replace(
+                      '{rows}',
+                      preview.records.length.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')
+                    )
+                  : t('preview.whole')}
+              </span>
+            </div>
             <DataTable
-              fields={data.fields}
-              records={data.records}
-              sort={sort}
-              onSortChange={changeSort}
-              columnFilters={columnFilters}
-              onColumnFilterChange={changeColumnFilter}
+              fields={preview.fields}
+              records={preview.records}
+              previewMode
+              sort={null}
+              onSortChange={noop}
+              columnFilters={EMPTY_FILTERS}
+              onColumnFilterChange={noop}
             />
           </div>
-          {data.total > PAGE_SIZE && (
-            <Pager resourceId={id} page={page} total={data.total} onPage={setPage} />
-          )}
-        </>
-      ) : (
-        <LoadingSpinner label={t('resource.querying')} />
-      )}
+        ) : display === 'preparation' ? (
+          chartCovers ? null : (
+            <PreparationStatus
+              preparation={preparation}
+              elapsed={formatDuration(loadElapsed)}
+              progress={jobProgress}
+            />
+          )
+        ) : display === 'chart' ? (
+          <ChartLoadContext.Provider value={chartLoadStore}>
+            <Suspense fallback={<ChartFallback />}>
+              {schemaReady ? (
+                <ChartPanel
+                  key={JSON.stringify([
+                    resource?.ingestion?.snapshot_id || resource?.ingestion?.ingested_at || id,
+                    fingerprint
+                  ])}
+                  resourceId={id}
+                  q={debouncedQ || undefined}
+                  filters={Object.keys(exportFilters).length ? exportFilters : undefined}
+                  fields={fields || []}
+                  queryMode={resource.query_mode}
+                  onUnavailable={onUnavailable}
+                />
+              ) : (
+                <ChartFallback />
+              )}
+            </Suspense>
+          </ChartLoadContext.Provider>
+        ) : display === 'error' ? (
+          <div className="alert alert-error">{dataError.message}</div>
+        ) : display === 'table' ? (
+          <>
+            <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+              <DataTable
+                fields={data.fields}
+                records={data.records}
+                sort={sort}
+                onSortChange={changeSort}
+                columnFilters={columnFilters}
+                onColumnFilterChange={changeColumnFilter}
+              />
+            </div>
+            {data.total > PAGE_SIZE && (
+              <Pager resourceId={id} page={page} total={data.total} onPage={setPage} />
+            )}
+          </>
+        ) : (
+          <LoadingSpinner label={t('resource.querying')} />
+        )}
+      </div>
       {resource?.dataset?.id && <LocalGuides dataset={resource.dataset.id} />}
     </div>
   );

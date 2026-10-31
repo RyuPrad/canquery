@@ -8,6 +8,7 @@ import {
 } from './charts/Visuals.jsx';
 import { humanize, cleanRecords, chronological } from './charts/theme.js';
 import { track } from '../utils/analytics.js';
+import { useChartLoadReport } from '../hooks/useChartLoadReport.js';
 
 const selectClass = 'select select-sm bg-base-200 border-base-content/10 rounded-lg font-mono text-xs';
 const NUM_RE = /int|numeric|float|double|money|real|decimal/i;
@@ -114,6 +115,8 @@ function AggregateBuilder({ resourceId, q, filters, fields, classified, onUnavai
   const [rows, setRows] = useState(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState(null);
+  // The Chart tab's loading card counts this chart until it draws, fails or has nothing to draw.
+  useChartLoadReport('chart', !cols.length || !groupBy || error || rows !== null ? 'settled' : 'loading');
   const filtersKey = JSON.stringify(filters || {});
 
   useEffect(() => {

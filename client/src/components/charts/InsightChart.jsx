@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { NotIngestedError } from '../../api/client.js';
 import { queryResource } from '../../api/catalog.js';
 import { useLang } from '../../i18n.jsx';
+import { useChartLoadReport } from '../../hooks/useChartLoadReport.js';
 import {
   ChartCard, ChartSkeleton, ChartEmpty,
   DonutChart, CategoryBar, TimeSeriesChart,
@@ -17,6 +18,8 @@ export default function InsightChart({ resourceId, q, filters, spec, framed = tr
   const [rows, setRows] = useState(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState(null);
+  // The Chart tab's loading card counts this chart until its numbers arrive or fail.
+  useChartLoadReport('chart', error || rows !== null ? 'settled' : 'loading');
 
   const filtersKey = JSON.stringify(filters || {});
   const isTime = spec.kind === 'timeseries';

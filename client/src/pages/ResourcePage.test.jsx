@@ -16,9 +16,16 @@ vi.mock('../api/catalog.js', () => ({
 vi.mock('../components/MapPanel.jsx', () => ({
   default: ({ resourceId }) => <div>live-map-{resourceId}</div>,
 }));
-vi.mock('../components/ChartPanel.jsx', () => ({
-  default: ({ resourceId, fields, queryMode }) => <div data-testid="chart" data-fields={JSON.stringify(fields)} data-mode={queryMode}>chart-{resourceId}</div>,
-}));
+vi.mock('../components/ChartPanel.jsx', async () => {
+  // Like the real panel, it tells the Chart tab's loading card when its profile is in.
+  const { useChartLoadReport } = await import('../hooks/useChartLoadReport.js');
+  return {
+    default: function ChartPanelStub({ resourceId, fields, queryMode }) {
+      useChartLoadReport('profile', 'settled');
+      return <div data-testid="chart" data-fields={JSON.stringify(fields)} data-mode={queryMode}>chart-{resourceId}</div>;
+    },
+  };
+});
 import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity, fetchResourcePreview } from '../api/catalog.js';
 import { ApiError, NotIngestedError } from '../api/client.js';
 import * as rowPageCache from '../utils/rowPageCache.js';
@@ -828,6 +835,61 @@ describe('ResourcePage preview while a file is prepared', () => {
     </MemoryRouter>);
     expect(await screen.findByText('Preparing this file automatically…')).toBeInTheDocument();
     expect(fetchResourcePreview).not.toHaveBeenCalled();
+  });
+});
+
+describe('ResourcePage chart loading card', () => {
+  const unprepared = () => ({ data: { ...resourceEnvelope('a').data, query_mode: 'ingestable',
+    preparation: { supported: true, enabled: true, freshness: 'unprepared' } } });
+  const prepared = () => ({ data: { ...resourceEnvelope('a').data, preparation: { supported: true, enabled: true, freshness: 'current' },
+    ingestion: { ingested_at: '2026-10-31', snapshot_id: SNAPSHOT_1, row_count: 200, fields: [{ id: 'name', type: 'TEXT' }] } } });
+  const renderChart = () => render(<MemoryRouter initialEntries={['/resources/a?view=chart']}>
+    <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+  </MemoryRouter>);
+
+  test('counts one percentage from the preparation to the drawn chart, with no step back after the job', async () => {
+    let reloaded;
+    fetchResource.mockResolvedValueOnce(unprepared()).mockImplementation(() => new Promise(resolve => { reloaded = resolve; }));
+    prepareResource.mockResolvedValue({ data: { id: 991, status: 'pending' } });
+    let finish;
+    fetchJob.mockResolvedValueOnce({ data: { id: 991, status: 'running', progress: { phase: 'loading', bytes: 9000, content_length: 9000, rows: 41000, read_fraction: 0.5, updated_at: '2026-10-31T23:00:00.000Z' } } })
+      .mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    renderChart();
+    const bar = await screen.findByRole('progressbar', { name: 'Building the chart…' });
+    expect(await screen.findByText('Loading rows: 41,000')).toBeInTheDocument();
+    expect(screen.queryByText('Preparing your table and charts…')).toBeNull();
+    await waitFor(() => expect(Number(bar.getAttribute('value'))).toBeGreaterThan(30), { timeout: 3000 });
+    const loading = Number(bar.getAttribute('value'));
+    await waitFor(() => expect(finish).toBeTruthy(), { timeout: 4000 });
+    await act(async () => finish({ data: { id: 991, status: 'done' } }));
+    expect(await screen.findByText('Opening the chart…')).toBeInTheDocument();
+    expect(screen.queryByText('Preparing this file automatically…')).toBeNull();
+    expect(Number(screen.getByRole('progressbar').getAttribute('value'))).toBeGreaterThanOrEqual(loading);
+    await act(async () => reloaded(prepared()));
+    expect(await screen.findByTestId('chart')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('progressbar')).toHaveAttribute('value', '100'), { timeout: 3000 });
+    await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull(), { timeout: 3000 });
+  });
+
+  test('a busy queue keeps the preparation card and its retry note, with no percentage', async () => {
+    fetchResource.mockResolvedValue(unprepared());
+    prepareResource.mockRejectedValue(new ApiError('Too many requests', 429, { retry_after: 30 }));
+    renderChart();
+    expect(await screen.findByText('Preparation is busy. This page will try again automatically.')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  test('a failed job shows its reason, and the retry starts the count again from the beginning', async () => {
+    fetchResource.mockResolvedValue(unprepared());
+    prepareResource.mockResolvedValue({ data: { id: 992, status: 'pending' } });
+    fetchJob.mockResolvedValueOnce({ data: { id: 992, status: 'failed', failure_reason: 'temporary', retry_at: new Date(Date.now() + 800).toISOString() } })
+      .mockImplementation(() => new Promise(() => {}));
+    renderChart();
+    expect(await screen.findByText('A temporary problem interrupted preparation. Any existing copy remains available.')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    const bar = await screen.findByRole('progressbar', { name: 'Building the chart…' }, { timeout: 3000 });
+    expect(Number(bar.getAttribute('value'))).toBeLessThan(10);
+    await waitFor(() => expect(prepareResource).toHaveBeenCalledTimes(2));
   });
 });
 

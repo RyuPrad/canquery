@@ -7,6 +7,7 @@ import InsightsDashboard from './InsightsDashboard.jsx';
 import ChartBuilder from './ChartBuilder.jsx';
 import { SparklesIcon, ChartIcon } from './Icons.jsx';
 import { track } from '../utils/analytics.js';
+import { useChartLoadReport } from '../hooks/useChartLoadReport.js';
 
 export default function ChartPanel({ resourceId, q, filters, fields, queryMode, onUnavailable }) {
   const { t } = useLang();
@@ -15,6 +16,7 @@ export default function ChartPanel({ resourceId, q, filters, fields, queryMode, 
   const [profileError, setProfileError] = useState(null);
 
   const ingested = queryMode === 'ingested';
+  useChartLoadReport('profile', !ingested ? 'settled' : profileError ? 'failed' : profile ? 'settled' : 'loading');
 
   // Profile the table once and share the resulting classification with both the
   // auto dashboard and the custom builder, so each picks good columns (never the

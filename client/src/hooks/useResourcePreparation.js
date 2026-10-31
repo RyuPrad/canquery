@@ -73,6 +73,9 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     ? JSON.stringify([sourceKey, metadataRetryAt, metadataReason])
     : null;
   const observedSource = useRef(sourceKey);
+  // The source a job finished for. Until fresh metadata changes the source,
+  // the page is opening the new copy rather than preparing again.
+  const [publishedSource, setPublishedSource] = useState(null);
 
   useEffect(() => {
     if (observedSource.current !== sourceKey && phase === 'failed' && !metadataRetryAt) {
@@ -119,6 +122,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
       if (job.id != null) settled.current.add(String(job.id));
       clearUnlockJob(id);
       if (job.status === 'done') {
+        setPublishedSource(sourceKey);
         dispatch({ type: 'JOB_COMPLETED' });
         onReadyRef.current();
       } else {
@@ -130,7 +134,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
       }
       track('resource_load', { resource_id: id, status: job.status, source: 'automatic' });
     },
-    [id, key]
+    [id, key, sourceKey]
   );
   const gone = useCallback(
     (missingId) => {
@@ -239,6 +243,7 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     enabled,
     working: ['requesting', 'pending', 'running'].includes(phase),
     awaitingVisitor: wanted && !engaged && phase === 'idle' && !jobId,
+    published: publishedSource === sourceKey && phase === 'idle' && !jobId,
     start: markEngaged
   };
 }
