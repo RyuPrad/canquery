@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { NotIngestedError, FileOnlyError, apiUrl } from '../api/client.js';
 import useResourceUrl from '../hooks/useResourceUrl.js';
@@ -227,6 +227,7 @@ function ResourceExplorer({ id, navigationKey }) {
     data,
     error: dataError,
     loading: dataLoading,
+    pageKey: shownPageKey,
     invalidate
   } = useResourceRows({
     id,
@@ -291,6 +292,18 @@ function ResourceExplorer({ id, navigationKey }) {
     },
     [setColumnFilters]
   );
+
+  // Another page, sort, search or filter shows its rows from the first one:
+  // once they are drawn the table box scrolls back to its top and keeps its
+  // sideways position. The window stays put (ScrollManager), so the pager
+  // stays where the visitor clicked it.
+  const tableBoxRef = useRef(null);
+  const drawnPageKey = useRef(null);
+  useLayoutEffect(() => {
+    if (!shownPageKey || drawnPageKey.current === shownPageKey) return;
+    drawnPageKey.current = shownPageKey;
+    if (tableBoxRef.current) tableBoxRef.current.scrollTop = 0;
+  }, [shownPageKey]);
 
   const exportFilters = buildColumnFilters(debouncedFilters);
   const exportHref = apiUrl('/web-api/v1/resources/' + id + '/query.csv', {
@@ -736,6 +749,7 @@ function ResourceExplorer({ id, navigationKey }) {
           <>
             <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
               <DataTable
+                boxRef={tableBoxRef}
                 fields={data.fields}
                 records={data.records}
                 sort={sort}

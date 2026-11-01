@@ -772,6 +772,42 @@ describe('ResourcePage table frame and page box', () => {
     expect(screen.getByText('row-a-100')).toBeInTheDocument();
     expect(queryResource).toHaveBeenCalledTimes(3);
   });
+
+  test('another page shows its rows from the first one, keeping the sideways position', async () => {
+    fetchResource.mockResolvedValue(prepared());
+    let finish;
+    queryResource.mockImplementation((id, { offset = 0, sort } = {}) => offset === 50
+      ? new Promise(resolve => { finish = resolve; })
+      : Promise.resolve(pageEnvelope(id, offset + (sort ? 1000 : 0))));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a-0');
+    const table = document.querySelector('.cq-table-wrap');
+    // jsdom has no layout: give the box a position the visitor scrolled to.
+    const placeBox = (top, left = 120) => {
+      Object.defineProperty(table, 'scrollTop', { value: top, writable: true, configurable: true });
+      Object.defineProperty(table, 'scrollLeft', { value: left, writable: true, configurable: true });
+    };
+    placeBox(400);
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    // The rows on screen, and the place in them, stay until page 2 arrives.
+    expect(table.scrollTop).toBe(400);
+    await act(async () => finish(pageEnvelope('a', 50)));
+    expect(await screen.findByText('row-a-50')).toBeInTheDocument();
+    expect(table.scrollTop).toBe(0);
+    expect(table.scrollLeft).toBe(120);
+    // A page already seen is drawn at once, also from its first row.
+    placeBox(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByText('row-a-0')).toBeInTheDocument();
+    expect(table.scrollTop).toBe(0);
+    // A new sort starts the table over too.
+    placeBox(250);
+    fireEvent.click(screen.getByRole('button', { name: 'nameTEXT' }));
+    expect(await screen.findByText('row-a-1000')).toBeInTheDocument();
+    expect(table.scrollTop).toBe(0);
+  });
 });
 
 describe('ResourcePage preview while a file is prepared', () => {
