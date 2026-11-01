@@ -183,6 +183,25 @@ describe('automatic preparation lifecycle', () => {
     expect(prepareResource).toHaveBeenCalledTimes(2);
   });
 
+  test('a retry timer that fires a moment before the retry time waits out the rest', async () => {
+    vi.useFakeTimers();
+    prepareResource.mockRejectedValueOnce(new ApiError('busy', 429, { retry_after: 30 }));
+    renderHook(useResourcePreparation, { initialProps: props() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    expect(prepareResource).toHaveBeenCalledTimes(1);
+    // Timers count from the event loop's cached time, which can trail the
+    // clock: the retry timer fires while Date.now() is still 5 ms short.
+    const clock = Date.now.bind(Date);
+    const trailing = vi.spyOn(Date, 'now').mockImplementation(() => clock() - 5);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+      expect(prepareResource).toHaveBeenCalledTimes(2);
+    } finally {
+      trailing.mockRestore();
+    }
+  });
+
   test('leaving before admission or before a response cannot update the departed page', async () => {
     const input = props();
     const quick = renderHook(useResourcePreparation, { initialProps: input });
