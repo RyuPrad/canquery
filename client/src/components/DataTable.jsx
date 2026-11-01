@@ -59,6 +59,7 @@ function DataTable({
   onColumnFilterChange,
   placeholderRows = 0,
   previewMode = false,
+  boxRef,
 }) {
   const { t } = useLang();
   const sortValue = sort?.trim();
@@ -82,7 +83,7 @@ function DataTable({
   };
 
   return (
-    <div className="cq-table-wrap" aria-busy={records === null ? 'true' : undefined}>
+    <div ref={boxRef} className="cq-table-wrap" aria-busy={records === null ? 'true' : undefined}>
       <table className="cq-table">
         <thead>
           <tr>

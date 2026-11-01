@@ -1,6 +1,7 @@
-import { useEffect, lazy, Suspense } from 'react'
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Routes, Route, Link } from 'react-router-dom'
 import Navbar from './components/Navbar'
+import ScrollManager from './components/ScrollManager.jsx'
 import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
@@ -27,15 +28,6 @@ const InsightsPage = lazy(() => import('./pages/InsightsPage'))
 // Pages only the hosted service serves, such as pricing and the developer account.
 const HOSTED_ROUTES = hostedPart(import.meta.glob('./enterprise/routes.jsx', { eager: true }), [])
 
-function ScrollToTop() {
-  const { pathname, search } = useLocation()
-  const page = new URLSearchParams(search).get('page')
-  useEffect(() => {
-    window.scrollTo(0, 0)
-  }, [pathname, page])
-  return null
-}
-
 function NotFound() {
   const { t } = useLang()
   return (
@@ -52,7 +44,7 @@ function NotFound() {
 export default function App() {
   return (
     <div className="min-h-screen flex flex-col text-base-content">
-      <ScrollToTop />
+      <ScrollManager />
       <RouteHead />
       <AnalyticsBridge />
       <Navbar />

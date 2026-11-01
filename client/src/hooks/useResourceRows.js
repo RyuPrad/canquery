@@ -274,6 +274,9 @@ export default function useResourceRows({
     data: hit ?? state.data,
     error: hit ? null : state.error,
     loading: !hit && pending,
+    // Set once the rows on screen are the page asked for (not the previous
+    // page kept while it loads): the cache key of that page.
+    pageKey: hit ? key : null,
     invalidate
   };
 }

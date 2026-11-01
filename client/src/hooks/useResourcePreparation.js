@@ -227,11 +227,19 @@ export default function useResourcePreparation({ id, resource, active, needsLoca
     if (retryAt && retryAt > Date.now()) return;
     dispatch({ type: 'RETRY_DUE' });
   }, [retryAt]);
+  // A timer can fire a moment before the clock reaches retryAt (it counts from
+  // the event loop's cached time, or the clock is coarsened); it then waits
+  // out the rest instead of dropping the retry.
   useEffect(() => {
     if (!wanted || !visible || !retryAt) return;
-    const timer = setTimeout(retry, Math.max(0, retryAt - Date.now()));
+    const wait = () => {
+      const remaining = retryAt - Date.now();
+      if (remaining > 0) timer = setTimeout(wait, remaining);
+      else dispatch({ type: 'RETRY_DUE' });
+    };
+    let timer = setTimeout(wait, Math.max(0, retryAt - Date.now()));
     return () => clearTimeout(timer);
-  }, [wanted, visible, retryAt, retry]);
+  }, [wanted, visible, retryAt]);
 
   return {
     phase: job?.status === 'running' ? 'running' : phase,
