@@ -184,7 +184,12 @@ function ResourceExplorer({ id, navigationKey }) {
     !fileOnly &&
     (resource.query_mode === 'ingestable' ||
       (view === 'chart' && resource.query_mode !== 'ingested'));
-  const filtersNeedPreparation = resource?.query_mode === 'datastore' && hasNonEq;
+  // A small live table held in the browser answers every filter. While it can
+  // still come, a filter the live portal cannot run waits for it rather than
+  // starting a preparation of the whole file.
+  const liveCoverage = resource?.query_mode === 'datastore' ? local.coverage : 'no';
+  const filtersNeedPreparation =
+    resource?.query_mode === 'datastore' && hasNonEq && liveCoverage === 'no';
   const fields = resource?.ingestion?.fields;
   const fingerprint = schemaFingerprint(fields);
   const [observedSchema, setObservedSchema] = useState(null);
@@ -262,7 +267,7 @@ function ResourceExplorer({ id, navigationKey }) {
     id,
     resource,
     active: view !== 'map',
-    needsLocal: view === 'chart' || hasNonEq || filterUpgrade,
+    needsLocal: view === 'chart' || ((hasNonEq || filterUpgrade) && liveCoverage === 'no'),
     onReady: onPrepared
   });
   // The preparation can't bring the full table (failed, unavailable or

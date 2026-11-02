@@ -108,3 +108,44 @@ describe('a file whose preparation cannot finish', () => {
     expect(queryResource).not.toHaveBeenCalled();
   });
 });
+
+describe('a live table arriving', () => {
+  const live = { id: 'r1', query_mode: 'datastore' };
+  const liveHandle = () => loadLocalTable({ key: 'live:r1:', fields: FIELDS, rows: rows(120), complete: true, origin: 'live' });
+
+  test("keeps the portal's answer for the query on screen, every page of it, until the query changes", async () => {
+    queryResource.mockImplementation((_id, { q, offset = 0 }) => Promise.resolve(serverPage(['portal-' + q + '-' + offset])));
+    const base = props({ resource: live, debouncedQ: 'n1', local: { table: null, interim: false, loading: true, coverage: 'pending' } });
+    const { result, rerender } = renderHook((p) => useResourceRows(p), { initialProps: base });
+    await waitFor(() => expect(result.current.data?.records[0].name).toBe('portal-n1-0'));
+    const local = { table: liveHandle(), interim: false, loading: false, coverage: 'yes' };
+    rerender({ ...base, local });
+    expect(result.current.data.records[0].name).toBe('portal-n1-0');
+    expect(result.current.local).toBe(false);
+    // The next page of the same search comes from the portal too.
+    rerender({ ...base, local, page: 1 });
+    await waitFor(() => expect(result.current.data.records[0].name).toBe('portal-n1-50'));
+    // A new query is the browser's.
+    const asked = queryResource.mock.calls.length;
+    rerender({ ...base, local, page: 0, sort: 'name desc' });
+    expect(result.current.local).toBe(true);
+    // The browser's substring search of "n1", sorted.
+    expect(result.current.data.records[0].name).toBe('n19');
+    expect(queryResource).toHaveBeenCalledTimes(asked);
+  });
+
+  test('answers at once when nothing was on screen yet, and the portal is not asked meanwhile', () => {
+    const local = { table: liveHandle(), interim: false, loading: false, coverage: 'yes' };
+    const { result } = renderHook(() => useResourceRows(props({ resource: live, hasNonEq: true, debouncedFilters: { name: 'n9' }, local })));
+    expect(result.current.local).toBe(true);
+    expect(result.current.data.records.map((record) => record.name)).toContain('n9');
+    expect(queryResource).not.toHaveBeenCalled();
+  });
+
+  test('a filter the portal cannot run waits, dimmed, while the live table can still come', () => {
+    const { result } = renderHook(() => useResourceRows(props({ resource: live, hasNonEq: true, debouncedFilters: { name: 'n9' },
+      local: { table: null, interim: false, loading: true, coverage: 'pending' } })));
+    expect(result.current.loading).toBe(true);
+    expect(queryResource).not.toHaveBeenCalled();
+  });
+});

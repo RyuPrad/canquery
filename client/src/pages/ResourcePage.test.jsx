@@ -248,6 +248,27 @@ describe('ResourcePage navigation', () => {
     expect(screen.getByText('live-row')).toBeInTheDocument();
     expect(screen.getByText('Showing the previous live results. The current search and column filters are not applied.')).toBeInTheDocument();
   });
+  test('a small live table answers a contains filter in the browser, with no preparation', async () => {
+    const fields = [{ id: '_id', type: 'int' }, { id: 'name', type: 'text' }];
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data, query_mode: 'datastore', preparation: { supported: true, enabled: true } } });
+    queryResource.mockResolvedValue({ data: { fields, records: [{ _id: 1, name: 'live-ottawa' }, { _id: 2, name: 'live-hull' }], total: 2 }, meta: { query_mode: 'datastore' } });
+    fetchResourceRows.mockResolvedValue({ data: { fields, rows: [[1, 'live-ottawa'], [2, 'live-hull']], total: 2, complete: true },
+      meta: { origin: 'live', query_mode: 'datastore' } });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('live-ottawa')).toBeInTheDocument();
+    await waitFor(() => expect(fetchResourceRows).toHaveBeenCalledWith('a', expect.objectContaining({ snapshot: undefined })));
+    fireEvent.change(screen.getByRole('textbox', { name: /name.*filter/ }), { target: { value: 'hull' } });
+    await waitFor(() => expect(screen.queryByText('live-ottawa')).toBeNull());
+    expect(screen.getByText('live-hull')).toBeInTheDocument();
+    expect(screen.queryByText('Preparing precise filtering for this dataset...')).toBeNull();
+    expect(prepareResource).not.toHaveBeenCalled();
+    expect(queryResource).toHaveBeenCalledTimes(1);
+    // What is on screen is what downloads: the export is built in the browser.
+    expect(screen.getByRole('button', { name: 'Download CSV (filtered)' })).toBeInTheDocument();
+  });
+
   test('a failed metadata read can be retried without reloading the browser', async () => {
     fetchResource.mockRejectedValueOnce(new Error('Metadata temporarily unavailable'));
     render(<MemoryRouter initialEntries={['/resources/a']}>

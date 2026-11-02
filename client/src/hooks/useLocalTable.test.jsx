@@ -30,14 +30,17 @@ beforeEach(() => {
 afterEach(() => clearLocalTables());
 
 describe('which tables come to the browser', () => {
-  test('small prepared copies and CSV files; big copies, live tables and other formats stay on the server', () => {
+  test('small prepared copies, CSV files and live tables; big copies and other formats stay on the server', () => {
     expect(localSource(copy())).toMatchObject({ origin: 'copy', snapshot: SNAPSHOT });
     expect(localSource(copy({ ingestion: { snapshot_id: SNAPSHOT, row_count: 60000, fields: [{ id: 'a' }] } }))).toBeNull();
     expect(localSource(copy({ ingestion: { snapshot_id: SNAPSHOT, row_count: 20000, fields: Array.from({ length: 11 }, (_, i) => ({ id: 'c' + i })) } }))).toBeNull();
     expect(localSource(copy({ ingestion: { row_count: 2, fields: [] } }))).toBeNull();
     expect(localSource(file())).toMatchObject({ origin: 'file', snapshot: null });
     expect(localSource(file({ format: 'XLSX' }))).toBeNull();
-    expect(localSource({ id: 'live', query_mode: 'datastore' })).toBeNull();
+    // A live table's size is the server's to check.
+    expect(localSource({ id: 'live', query_mode: 'datastore', last_modified: '2026-10-01' })).toEqual({
+      origin: 'live', key: 'live:live:2026-10-01', snapshot: null
+    });
   });
 });
 
@@ -167,5 +170,36 @@ describe('reads that do not bring the table asked for', () => {
     expect(result.current.loading).toBe(false);
     // The file's first rows stand in only until the server's page arrives.
     expect(result.current.interim).toBe(true);
+  });
+});
+
+describe('a live table in the browser', () => {
+  const live = { id: 'live', query_mode: 'datastore', format: 'CSV', last_modified: '2026-10-01' };
+  const liveEnvelope = (fields = [{ id: '_id', type: 'int' }, { id: 'name', type: 'text' }]) => ({
+    data: { fields, rows: [['1', 'Ottawa']].map((row) => row.slice(0, fields.length)), total: 1, complete: true },
+    meta: { origin: 'live', query_mode: 'datastore' }
+  });
+
+  test('its filters can wait for it while it can still come, then it answers them all', async () => {
+    let resolve;
+    fetchResourceRows.mockImplementation(() => new Promise((done) => { resolve = done; }));
+    const { result } = renderHook(() => useLocalTable({ id: 'live', resource: live, view: 'table', preview: null }));
+    expect(result.current.coverage).toBe('pending');
+    await act(async () => resolve(liveEnvelope()));
+    expect(result.current.coverage).toBe('yes');
+    expect(result.current.table.origin).toBe('live');
+  });
+
+  test('one too big for the browser leaves its filters to a preparation', async () => {
+    fetchResourceRows.mockRejectedValue(new ApiError('too large', 413, { code: 'TABLE_TOO_LARGE' }));
+    const { result } = renderHook(() => useLocalTable({ id: 'live', resource: live, view: 'table', preview: null }));
+    await waitFor(() => expect(result.current.coverage).toBe('no'));
+  });
+
+  test('one with JSON or array columns stays with the portal', async () => {
+    fetchResourceRows.mockResolvedValue(liveEnvelope([{ id: '_id', type: 'int' }, { id: 'tags', type: '_text' }]));
+    const { result } = renderHook(() => useLocalTable({ id: 'live', resource: live, view: 'table', preview: null }));
+    await waitFor(() => expect(result.current.coverage).toBe('no'));
+    expect(result.current.table).toBeNull();
   });
 });
