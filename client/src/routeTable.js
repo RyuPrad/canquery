@@ -1,6 +1,7 @@
 import { matchRoutes } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import { lazyPage } from './utils/lazyPage.js';
+import { hostedPart } from './extensions.js';
 
 // The application's page routes, in one table: App renders them, and a direct
 // visit preloads the page its address matches before the first render (the
@@ -19,6 +20,12 @@ const PlacePage = lazyPage(() => import('./pages/PlacePage.jsx'));
 const PrivacyPage = lazyPage(() => import('./pages/PrivacyPage.jsx'));
 const BlogPage = lazyPage(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazyPage(() => import('./pages/InsightsPage'));
+
+// Pages only the hosted service serves, such as pricing and the developer
+// account. A hosted route that carries `preload` is loaded before a direct
+// visit's first render too.
+/** @type {{ path: string, element: any, preload?: () => Promise<unknown> }[]} */
+export const HOSTED_ROUTES = hostedPart(import.meta.glob('./enterprise/routes.jsx', { eager: true }), []);
 
 /** @type {{ path: string, page: any, props?: Record<string, unknown> }[]} */
 export const PAGE_ROUTES = [
@@ -48,11 +55,14 @@ export const PAGE_ROUTES = [
  * @returns {Promise<void>}
  */
 export function preloadRoute(pathname) {
+  const routes = [
+    ...PAGE_ROUTES.map(({ path, page }) => ({ path, preload: page?.preload })),
+    ...HOSTED_ROUTES.map(({ path, preload }) => ({ path, preload }))
+  ];
   const matches = matchRoutes(
-    PAGE_ROUTES.map(({ path }) => ({ path })),
+    routes.map(({ path }) => ({ path })),
     pathname
   );
-  const route = matches && PAGE_ROUTES.find(({ path }) => path === matches[0].route.path);
-  const preload = route?.page?.preload;
+  const preload = matches ? routes.find(({ path }) => path === matches[0].route.path)?.preload : undefined;
   return typeof preload === 'function' ? preload().then(() => undefined, () => undefined) : Promise.resolve();
 }

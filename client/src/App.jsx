@@ -5,14 +5,10 @@ import ScrollManager from './components/ScrollManager.jsx'
 import Footer from './components/Footer'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
 import PageLoadBoundary from './components/PageLoadBoundary.jsx'
-import { PAGE_ROUTES } from './routeTable.js'
+import { HOSTED_ROUTES, PAGE_ROUTES } from './routeTable.js'
 import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
-import { hostedPart } from './extensions.js'
-
-// Pages only the hosted service serves, such as pricing and the developer account.
-const HOSTED_ROUTES = hostedPart(import.meta.glob('./enterprise/routes.jsx', { eager: true }), [])
 
 function NotFound() {
   const { t } = useLang()
