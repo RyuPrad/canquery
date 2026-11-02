@@ -911,6 +911,34 @@ describe('ResourcePage preview while a file is prepared', () => {
     expect(queryResource).not.toHaveBeenCalled();
   });
 
+  test('when the preparation fails with part of a file held, the rows answer what they can and say so', async () => {
+    fetchResource.mockResolvedValue(unprepared());
+    fetchResourcePreview.mockResolvedValue(previewEnvelope());
+    fetchResourceRows.mockResolvedValueOnce({ data: {
+      fields: [{ id: '_id', type: 'int' }, { id: 'Year', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }],
+      rows: [['1', '2024', 'preview-ottawa'], ['2', '2025', 'preview-hull'], ['3', '2026', 'file-gatineau']], total: null, complete: false },
+    meta: { origin: 'file', query_mode: 'ingestable' } });
+    prepareResource.mockResolvedValue({ data: { id: 781, status: 'pending' } });
+    fetchJob.mockResolvedValue({ data: { id: 781, status: 'failed', failure_reason: 'invalid_file',
+      retry_at: new Date(Date.now() + 3600000).toISOString() } });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('file-gatineau')).toBeInTheDocument();
+    expect(await screen.findByText(/Showing the first 3 rows of the file\. The full table could not be loaded\./, {}, { timeout: 5000 })).toBeInTheDocument();
+    // A search none of the rows held match shows no rows, not a table waiting for more.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Full-text search in this table...' }), { target: { value: 'montreal' } });
+    await waitFor(() => expect(screen.queryByText('file-gatineau')).toBeNull());
+    expect(screen.getByText(/Showing the first 3 rows/)).toBeInTheDocument();
+    expect(document.querySelector('.opacity-60')).toBeNull();
+    // A filter the rows held cannot read says so.
+    fireEvent.change(screen.getByRole('textbox', { name: /City · / }), { target: { value: '>m' } });
+    expect(await screen.findByText(/This filter can't be applied to this file/)).toBeInTheDocument();
+    // A file that is not prepared has no server export.
+    expect(screen.queryByText('Download CSV (filtered)')).toBeNull();
+    expect(queryResource).not.toHaveBeenCalled();
+  });
+
   test("a column the copy names differently keeps the visitor's sort and page, with no notice", async () => {
     const fileFields = [{ id: 'Year 2', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }];
     const copy = () => ({ data: { ...prepared().data, ingestion: { ...prepared().data.ingestion,

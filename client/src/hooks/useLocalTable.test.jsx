@@ -111,7 +111,7 @@ describe('loading a table into the browser', () => {
 
 describe('holding the server while a table is on its way', () => {
   test('a read is due from the first render on the Table tab, and one that fails lets the server answer', async () => {
-    fetchResourceRows.mockRejectedValue(new ApiError('busy', 503, { code: 'ROWS_BUSY' }));
+    fetchResourceRows.mockRejectedValue(new ApiError('upstream', 502, { code: 'ROWS_UPSTREAM' }));
     const { result } = renderHook(() => useLocalTable({ id: 'r1', resource: copy(), view: 'table', preview: null }));
     expect(result.current.loading).toBe(true);
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -121,5 +121,51 @@ describe('holding the server while a table is on its way', () => {
   test('nothing is due on another tab', () => {
     const { result } = renderHook(() => useLocalTable({ id: 'r1', resource: copy(), view: 'chart', preview: null }));
     expect(result.current.loading).toBe(false);
+  });
+});
+
+describe('reads that do not bring the table asked for', () => {
+  test('a busy server is asked again after its delay', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchResourceRows
+        .mockRejectedValueOnce(new ApiError('busy', 503, { code: 'ROWS_BUSY', retry_after: 2 }))
+        .mockResolvedValueOnce(rowsEnvelope());
+      const { result } = renderHook(() => useLocalTable({ id: 'r1', resource: copy(), view: 'table', preview: null }));
+      await act(() => vi.advanceTimersByTimeAsync(10));
+      expect(fetchResourceRows).toHaveBeenCalledTimes(1);
+      // Still due: the server is not asked for pages meanwhile.
+      expect(result.current.loading).toBe(true);
+      await act(() => vi.advanceTimersByTimeAsync(2000));
+      expect(fetchResourceRows).toHaveBeenCalledTimes(2);
+      await act(() => vi.advanceTimersByTimeAsync(10));
+      expect(result.current.table).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a copy's read answered with the file's rows is not kept as the copy", async () => {
+    fetchResourceRows.mockResolvedValue(rowsEnvelope('file', true));
+    const { result } = renderHook(() => useLocalTable({ id: 'r1', resource: copy(), view: 'table', preview: null }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.table).toBeNull();
+  });
+
+  test('a read the source change aborted leaves nothing due when the new source has no table', async () => {
+    fetchResourceRows.mockImplementation((_id, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }));
+    const preview = { fields: [{ id: 'name', type: 'TEXT' }], records: [{ name: 'Ottawa' }], truncated: true, sampledRows: 1 };
+    const bigCopy = copy({ ingestion: { snapshot_id: SNAPSHOT, row_count: 90000, fields: [{ id: 'name', type: 'TEXT' }] } });
+    const { result, rerender } = renderHook(({ resource }) => useLocalTable({ id: 'r1', resource, view: 'table', preview }), {
+      initialProps: { resource: file() }
+    });
+    await waitFor(() => expect(fetchResourceRows).toHaveBeenCalledTimes(1));
+    expect(result.current.loading).toBe(true);
+    rerender({ resource: bigCopy });
+    expect(result.current.loading).toBe(false);
+    // The file's first rows stand in only until the server's page arrives.
+    expect(result.current.interim).toBe(true);
   });
 });

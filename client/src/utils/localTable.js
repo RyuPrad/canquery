@@ -43,6 +43,10 @@ export function kindOf(field) {
   return 'text';
 }
 
+const MAX_QUERY_LENGTH = 200;
+const MAX_FILTERS = 20;
+const MAX_FILTERS_JSON = 2000;
+
 /** @param {LocalTableInput} input @returns {LocalTable} */
 export function createLocalTable({ fields, rows, complete }) {
   const idIndex = fields.findIndex((field) => field.id === '_id');
@@ -209,12 +213,22 @@ function parseBool(value) {
   return null;
 }
 
+// PostgreSQL's bigint range: a value outside it is a cast error there (400).
+const BIGINT_MIN = BigInt('-9223372036854775808');
+const BIGINT_MAX = BigInt('9223372036854775807');
+/** @param {string} text */
+const inBigint = (text) => {
+  const value = BigInt(text);
+  return value >= BIGINT_MIN && value <= BIGINT_MAX;
+};
+
 // The filter values this module reads exactly. PostgreSQL accepts more (for
 // example "Jan 5 2020", "1_000" or "+5"); those go to the server.
 /** @param {Kind} kind @param {unknown} value */
 function filterKey(kind, value) {
   const text = typeof value === 'number' ? numberText(value) : String(value);
-  if (kind === 'integer') return /^-?\d+$/.test(text) ? parseDecimal(text) : undefined;
+  if (kind === 'integer')
+    return /^-?\d+$/.test(text) && inBigint(text) ? parseDecimal(text) : undefined;
   if (kind === 'number')
     return /^-?(\d+(\.\d*)?|\.\d+)$/.test(text) ? parseDecimal(text) : undefined;
   if (kind === 'date')
@@ -411,7 +425,17 @@ function recordAt(table, row) {
 
 /** @param {LocalTable} table @param {LocalQuery} query @returns {{ rows: number[] } | LocalAnswerUnsupported} */
 function selectRows(table, { q = '', filters, sort } = {}) {
-  const mask = matchMask(table, q || '', normalizeFilters(filters));
+  // The server's request limits (queryService.validateQueryText and
+  // filterGrammar.parseFilters): what it refuses is not answered here either.
+  const text = typeof q === 'string' ? q : '';
+  if (text.length > MAX_QUERY_LENGTH) return { status: 'unsupported', reason: 'q-length' };
+  if (
+    Object.keys(filters || {}).length > MAX_FILTERS ||
+    JSON.stringify(filters || {}).length > MAX_FILTERS_JSON
+  )
+    return { status: 'unsupported', reason: 'filters-size' };
+  // A search of only spaces searches nothing, as on the server.
+  const mask = matchMask(table, text.trim() === '' ? '' : text, normalizeFilters(filters));
   if (typeof mask === 'string') return { status: 'unsupported', reason: mask };
   const order = parseSort(table, sort);
   if (typeof order === 'string') return { status: 'unsupported', reason: order };

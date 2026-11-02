@@ -8,7 +8,12 @@ const tables = new Map();
 self.onmessage = (event) => {
   const message = event.data || {};
   if (message.type === 'load') {
-    tables.set(message.tableId, createLocalTable(message.input));
+    try {
+      tables.set(message.tableId, createLocalTable(message.input));
+      self.postMessage({ type: 'loaded', tableId: message.tableId });
+    } catch (error) {
+      self.postMessage({ type: 'load-failed', tableId: message.tableId, error: String(error) });
+    }
     return;
   }
   if (message.type === 'drop') {

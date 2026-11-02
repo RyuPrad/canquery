@@ -109,12 +109,15 @@ export default function useLocalTable({ id, resource, view, preview }) {
   const engaged = useSyncExternalStore(subscribeEngagement, isEngaged, () => false);
   const source = useMemo(() => localSource(resource), [resource]);
   const sourceKey = source?.key ?? null;
+  const sourceOrigin = source?.origin ?? null;
   const sourceSnapshot = source?.snapshot ?? null;
   const [loaded, setLoaded] = useState(
     /** @returns {LocalTableHandle | null} */ () => (sourceKey && session.get(sourceKey)) || null
   );
   // The source whose read ended without a table: refused, failed or busy.
   const [missed, setMissed] = useState(/** @type {string | null} */ (null));
+  // A busy server (503) or rate limit (429) is asked again after its delay.
+  const [retry, setRetry] = useState({ key: /** @type {string | null} */ (null), count: 0 });
 
   useEffect(() => {
     if (!sourceKey || view !== 'table' || !engaged) return undefined;
@@ -128,8 +131,20 @@ export default function useLocalTable({ id, resource, view, preview }) {
       return undefined;
     }
     const controller = new AbortController();
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const tries = retry.key === sourceKey ? retry.count : 0;
     fetchResourceRows(id, { snapshot: sourceSnapshot || undefined, signal: controller.signal })
       .then((envelope) => {
+        // Only the table asked for: a copy evicted meanwhile is answered with
+        // its file's rows, which do not belong under the copy's key.
+        const answered =
+          envelope.meta.origin === sourceOrigin &&
+          (sourceOrigin !== 'copy' || envelope.meta.snapshot?.id === sourceSnapshot);
+        if (!answered) {
+          setMissed(sourceKey);
+          return;
+        }
         const handle = loadLocalTable({
           key: sourceKey,
           fields: envelope.data.fields,
@@ -143,13 +158,22 @@ export default function useLocalTable({ id, resource, view, preview }) {
       })
       .catch((error) => {
         if (error?.name === 'AbortError') return;
+        const status = Number(error?.status);
+        if ((status === 503 || status === 429) && tries < 3) {
+          const seconds = Math.min(30, Math.max(1, Number(error?.retryAfter) || 5));
+          timer = setTimeout(() => setRetry({ key: sourceKey, count: tries + 1 }), seconds * 1000);
+          return;
+        }
         // Too large, unsupported or replaced: the server pages it instead.
-        // A busy or failing publisher is tried again on a later visit.
-        if ([400, 403, 404, 409, 413, 422].includes(Number(error?.status))) refused.add(sourceKey);
+        // A failing publisher is tried again on a later visit.
+        if ([400, 403, 404, 409, 413, 422].includes(status)) refused.add(sourceKey);
         setMissed(sourceKey);
       });
-    return () => controller.abort();
-  }, [id, sourceKey, sourceSnapshot, view, engaged]);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [id, sourceKey, sourceOrigin, sourceSnapshot, view, engaged, retry]);
 
   const previewHandle = useMemo(() => (preview ? previewTable(id, preview) : null), [id, preview]);
 

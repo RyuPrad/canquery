@@ -258,6 +258,20 @@ function ResourceExplorer({ id, navigationKey }) {
           }
         }
       : null;
+  const preparation = useResourcePreparation({
+    id,
+    resource,
+    active: view !== 'map',
+    needsLocal: view === 'chart' || hasNonEq || filterUpgrade,
+    onReady: onPrepared
+  });
+  // The preparation can't bring the full table (failed, unavailable or
+  // turned off): a file's rows held in the browser are all there will be.
+  const preparationStuck =
+    !preparation.supported ||
+    !preparation.enabled ||
+    preparation.phase === 'failed' ||
+    preparation.phase === 'unavailable';
   const {
     data,
     error: dataError,
@@ -266,6 +280,7 @@ function ResourceExplorer({ id, navigationKey }) {
     partial: dataPartial,
     available: localAvailable,
     local: localAnswered,
+    unsupported: dataUnsupported,
     waitingForTable,
     invalidate
   } = useResourceRows({
@@ -283,19 +298,13 @@ function ResourceExplorer({ id, navigationKey }) {
     setFilterUpgrade,
     onUnavailable: reloadAfterExpiry,
     initialRows,
-    local
+    local,
+    heldFinal: preparationStuck
   });
   const onUnavailable = useCallback(() => {
     if (reloadAfterExpiry()) invalidate();
   }, [reloadAfterExpiry, invalidate]);
   useResourceActivity({ id, resource, active: view !== 'map', onUnavailable });
-  const preparation = useResourcePreparation({
-    id,
-    resource,
-    active: view !== 'map',
-    needsLocal: view === 'chart' || hasNonEq || filterUpgrade,
-    onReady: onPrepared
-  });
   const loadElapsed = useElapsed(preparation.job?.age_seconds, preparation.working);
   // What the Chart tab's loading card waits on: the chart area reports into it.
   const [chartLoadStore] = useState(createChartLoadStore);
@@ -344,7 +353,11 @@ function ResourceExplorer({ id, navigationKey }) {
     sort: sort || undefined
   });
   // A whole table held in the browser downloads exactly the rows on screen.
-  const browserExport = view === 'table' && localAnswered && Boolean(local.table?.complete);
+  const browserExport =
+    view === 'table' && localAnswered && !dataUnsupported && Boolean(local.table?.complete);
+  // The server exports only a table it holds or can read live; a file not
+  // prepared yet has no server export.
+  const serverExport = resource?.query_mode === 'ingested' || resource?.query_mode === 'datastore';
   const exportInBrowser = () => {
     const table = local.table;
     if (!table) return;
@@ -417,12 +430,16 @@ function ResourceExplorer({ id, navigationKey }) {
     downloadOnly,
     rowUnavailable: dataError instanceof NotIngestedError,
     rowError: Boolean(dataError),
-    hasLocalRows: view === 'table' && Boolean(local.table) && Boolean(data),
+    // Rows held in the browser make the table, also while the view asked for
+    // waits on the full table; a server error on the view shows instead.
+    hasLocalRows: view === 'table' && Boolean(local.table) && !dataError,
+    // A CSV's first rows are on their way.
     awaitingRows:
       view === 'table' &&
       resource.query_mode === 'ingestable' &&
       String(resource.format || '').toUpperCase() === 'CSV' &&
-      !previewFailed
+      !previewFailed &&
+      !local.table
   });
   // On the Chart tab the loading card stands in for the preparation card while
   // a preparation runs or is about to; standby, busy and failures keep theirs.
@@ -431,7 +448,9 @@ function ResourceExplorer({ id, navigationKey }) {
 
   // The recorded schema and row count draw the table frame, count and pager
   // before the first page arrives; a page response then owns the total.
-  const frameFields = fields ? [{ id: '_id', type: 'int' }, ...fields] : null;
+  const frameFields = fields
+    ? [{ id: '_id', type: 'int' }, ...fields]
+    : (local.table?.fields ?? null);
   const unfiltered = !debouncedQ && Object.keys(exportFilters).length === 0;
   const knownTotal = data
     ? data.total
@@ -442,11 +461,6 @@ function ResourceExplorer({ id, navigationKey }) {
   // The table frame (recorded columns, placeholder rows) and the rows share one
   // DataTable at one position, so going from the frame to the rows, or from a
   // file's rows to its prepared copy, keeps focus, widths and the box's scroll.
-  const preparationStuck =
-    !preparation.supported ||
-    !preparation.enabled ||
-    preparation.phase === 'failed' ||
-    preparation.phase === 'unavailable';
   const framing = !data;
   // No rows to show while a file is prepared (an Excel file, or a CSV whose
   // first rows could not be read): the table's shape under a progress line,
@@ -459,8 +473,15 @@ function ResourceExplorer({ id, navigationKey }) {
     !preparation.awaitingVisitor &&
     ['idle', 'requesting', 'pending', 'running'].includes(preparation.phase);
   const heldRows = local.table?.rowCount ?? 0;
+  // Part of a file is held and the rest will not come.
+  const heldOnly =
+    view === 'table' &&
+    preparationStuck &&
+    Boolean(local.table) &&
+    !local.table.complete &&
+    resource.query_mode === 'ingestable';
   const lastHeldPage =
-    dataPartial && preparationStuck && localAvailable != null
+    heldOnly && dataPartial && localAvailable != null
       ? Math.max(0, Math.ceil(localAvailable / PAGE_SIZE) - 1)
       : null;
   const pagerVisible = data
@@ -505,7 +526,12 @@ function ResourceExplorer({ id, navigationKey }) {
           onColumnFilterChange={changeColumnFilter}
         />
       </div>
-      {dataPartial && preparationStuck ? (
+      {dataUnsupported ? (
+        <p className="text-sm text-base-content/70" role="note">
+          {t('table.filter_unsupported')}
+        </p>
+      ) : null}
+      {heldOnly ? (
         <p className="text-sm text-base-content/70" role="note">
           {t('table.partial_failed').replace(
             '{rows}',
@@ -715,6 +741,7 @@ function ResourceExplorer({ id, navigationKey }) {
             data &&
             !filtersNeedPreparation &&
             !dataPartial &&
+            (browserExport || serverExport) &&
             (browserExport ? (
               <button
                 type="button"

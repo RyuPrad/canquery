@@ -118,6 +118,22 @@ describe('search and filters', () => {
   });
 });
 
+describe('the server request limits', () => {
+  test('a search of only spaces searches nothing, as on the server', () => {
+    expect(ids(ask({ q: '   ' }))).toEqual(ids(ask({})));
+  });
+
+  test('what the server refuses (long searches, many filters, integers beyond bigint) goes to it', () => {
+    expect(ask({ q: 'x'.repeat(201) })).toMatchObject({ status: 'unsupported' });
+    expect(ask({ q: 'x'.repeat(200) }).status).toBe('ok');
+    const many = Object.fromEntries(Array.from({ length: 21 }, (_, i) => ['c' + i, 'v']));
+    expect(ask({ filters: many })).toMatchObject({ status: 'unsupported' });
+    expect(ask({ filters: { Count: '9223372036854775808' } })).toMatchObject({ status: 'unsupported' });
+    expect(ask({ filters: { Count: { op: 'gt', value: '-9223372036854775809' } } })).toMatchObject({ status: 'unsupported' });
+    expect(ask({ filters: { Count: '9223372036854775807' } }).status).toBe('ok');
+  });
+});
+
 describe('sorting and paging', () => {
   test('nulls sort last ascending and first descending, ties keep _id order', () => {
     expect(ids(ask({ sort: 'Count' }))).toEqual(['4', '1', '5', '3', '2']);

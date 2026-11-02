@@ -47,7 +47,8 @@ export default function useResourceRows({
   schemaReady,
   setFilterUpgrade,
   initialRows = null,
-  local = null
+  local = null,
+  heldFinal = false
 }) {
   const filters = useMemo(() => buildColumnFilters(debouncedFilters), [debouncedFilters]);
   const unfiltered = !debouncedQ && Object.keys(filters).length === 0;
@@ -108,9 +109,16 @@ export default function useResourceRows({
       cancelled = true;
     };
   }, [localTable, localKey, localQuery]);
+  const canonical = resource?.query_mode === 'ingested' || resource?.query_mode === 'datastore';
+  // Nothing but the rows held will answer (a file whose preparation failed or
+  // is unavailable): they answer every page, and a query they can't read
+  // shows no rows rather than waiting.
+  const final = heldFinal && !canonical;
   const localUsable =
     localAnswer?.status === 'ok' &&
-    (localAnswer.complete || page * PAGE_SIZE < localAnswer.available);
+    (localAnswer.complete || final || page * PAGE_SIZE < localAnswer.available);
+  const localRefused = final && Boolean(localTable) && localAnswer?.status === 'unsupported';
+  const mode = resource?.query_mode === 'ingested' ? 'ingested' : (resource?.query_mode ?? null);
   const localData = useMemo(
     () =>
       localUsable
@@ -118,13 +126,21 @@ export default function useResourceRows({
             fields: localAnswer.fields,
             records: localAnswer.records,
             total: localAnswer.total,
-            mode: resource?.query_mode === 'ingested' ? 'ingested' : (resource?.query_mode ?? null),
+            mode,
             partial: !localAnswer.complete
           }
-        : null,
-    [localUsable, localAnswer, resource?.query_mode]
+        : localRefused
+          ? {
+              fields: localTable.fields,
+              records: [],
+              total: null,
+              mode,
+              partial: true,
+              unsupported: true
+            }
+          : null,
+    [localUsable, localRefused, localAnswer, localTable, mode]
   );
-  const canonical = resource?.query_mode === 'ingested' || resource?.query_mode === 'datastore';
   // An interim table (a file's rows while its prepared copy is canonical)
   // stays on screen until the server's page arrives; otherwise it answers alone.
   const localServes = Boolean(localData) && !(local?.interim && canonical);
@@ -164,7 +180,9 @@ export default function useResourceRows({
       setPending(false);
       return undefined;
     }
-    if (localServes || holdNetwork) {
+    // The browser answers this view, its whole copy is on its way, or the
+    // worker is still working the answer out: no server page.
+    if (localServes || holdNetwork || localThinking) {
       setPending(false);
       return undefined;
     }
@@ -214,8 +232,10 @@ export default function useResourceRows({
       handle.promise
         .then((loaded) => {
           if (cancelled) return;
-          tracked.current.add(key);
           setState({ data: loaded.data, error: null });
+          // One event per view: the local table may have answered it already.
+          if (tracked.current.has(key)) return;
+          tracked.current.add(key);
           track('resource_query', {
             resource_id: id,
             query: debouncedQ || '',
@@ -280,7 +300,8 @@ export default function useResourceRows({
     setFilterUpgrade,
     queryPage,
     localServes,
-    holdNetwork
+    holdNetwork,
+    localThinking
   ]);
 
   // A resource the application already knows to be prepared starts its first
@@ -347,10 +368,10 @@ export default function useResourceRows({
   ]);
 
   useEffect(() => {
-    if (!localData) return;
-    const trackKey = 'local:' + key;
-    if (tracked.current.has(trackKey)) return;
-    tracked.current.add(trackKey);
+    if (!localData || localData.unsupported) return;
+    // One event per view, whichever answered it first.
+    if (tracked.current.has(key)) return;
+    tracked.current.add(key);
     track('resource_query', {
       resource_id: id,
       query: debouncedQ || '',
@@ -389,10 +410,16 @@ export default function useResourceRows({
   // Rows a partial table can't give yet (a later page, a filter matching none
   // of the rows held) wait for the full table, with the rows on screen kept.
   const waitingForTable =
-    view === 'table' && Boolean(localTable) && !localUsable && !localThinking && !hit && !canonical;
-  const shown = showLocal
-    ? localData
-    : (hit ?? (localThinking || waitingForTable ? (kept ?? state.data) : state.data));
+    view === 'table' &&
+    Boolean(localTable) &&
+    !localData &&
+    !localThinking &&
+    !hit &&
+    !canonical &&
+    !final;
+  // Until the page asked for arrives, the rows last on screen stay (dimmed
+  // while it loads), whichever engine drew them.
+  const shown = showLocal ? localData : (hit ?? kept ?? state.data);
   useEffect(() => {
     if (shown && shown !== kept) setKept(shown);
   }, [shown, kept]);
@@ -409,6 +436,8 @@ export default function useResourceRows({
     available: showLocal && localAnswer?.status === 'ok' ? localAnswer.available : null,
     // The in-browser table answered (its export can be built in the browser).
     local: showLocal,
+    // The rows held could not read this query, and nothing else will answer.
+    unsupported: Boolean(showLocal && localData?.unsupported),
     waitingForTable,
     invalidate
   };
