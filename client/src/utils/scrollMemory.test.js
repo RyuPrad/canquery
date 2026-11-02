@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { createScrollMemory, entryKey, RESTORE_LIMIT_MS, restoreScroll, scrollAction } from './scrollMemory.js';
+import {
+  createScrollMemory, entryKey, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
+} from './scrollMemory.js';
 
 const at = (pathname, search = '') => ({ pathname, search });
 
@@ -108,6 +110,7 @@ describe('createScrollMemory', () => {
 
 describe('restoreScroll', () => {
   let height;
+  let y;
   let frames;
   let clock;
   const timing = () => ({
@@ -120,25 +123,38 @@ describe('restoreScroll', () => {
     const step = frames.shift();
     step?.();
   };
+  // Runs frames for `ms` of quiet page time.
+  const runFor = (ms) => {
+    const until = clock + ms;
+    while (frames.length && clock < until) nextFrame();
+  };
 
   beforeEach(() => {
     height = 1000;
+    y = 0;
     frames = [];
     clock = 0;
     Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: () => height });
     Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
-    window.scrollTo = vi.fn();
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
+    window.scrollTo = vi.fn((x, top) => { y = top; });
   });
   afterEach(() => {
     delete document.documentElement.scrollHeight;
+    delete window.scrollY;
   });
 
-  test('scrolls at once when the page is already tall enough', () => {
+  test('scrolls at once when the page is already tall enough, then finishes once it has settled', () => {
     height = 6000;
     const done = vi.fn();
     restoreScroll(4498, done, timing());
     expect(window.scrollTo).toHaveBeenCalledWith(0, 4498);
+    expect(done).not.toHaveBeenCalled();
+    runFor(SETTLE_MS - 50);
+    expect(done).not.toHaveBeenCalled();
+    runFor(100);
     expect(done).toHaveBeenCalledTimes(1);
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
     expect(frames).toHaveLength(0);
   });
 
@@ -148,11 +164,57 @@ describe('restoreScroll', () => {
     expect(window.scrollTo).not.toHaveBeenCalled();
     nextFrame();
     nextFrame();
-    expect(done).not.toHaveBeenCalled();
     height = 5299; // room 4499
     nextFrame();
     expect(window.scrollTo).toHaveBeenCalledWith(0, 4498);
+    runFor(SETTLE_MS + 50);
     expect(done).toHaveBeenCalledTimes(1);
+    expect(y).toBe(4498);
+  });
+
+  test('holds the position while a box that loads late above it pushes the content down', () => {
+    height = 8323;
+    const done = vi.fn();
+    restoreScroll(7108, done, timing());
+    expect(y).toBe(7108);
+    runFor(200);
+    // A 163 px box appears above; the browser's scroll anchoring moves the window with the content.
+    height = 8486;
+    y = 7271;
+    nextFrame();
+    expect(y).toBe(7108);
+    // Its height change restarts the quiet period.
+    runFor(SETTLE_MS - 50);
+    expect(done).not.toHaveBeenCalled();
+    runFor(100);
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(y).toBe(7108);
+  });
+
+  test('while it holds, a scroll without a change of the page is left alone (a scroll-bar drag)', () => {
+    height = 6000;
+    const done = vi.fn();
+    restoreScroll(4498, done, timing());
+    runFor(100);
+    y = 3900;
+    runFor(200);
+    expect(y).toBe(3900);
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    runFor(SETTLE_MS);
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  test('a page that keeps changing is held for at most the settle limit', () => {
+    height = 6000;
+    const done = vi.fn();
+    restoreScroll(4498, done, timing());
+    while (frames.length && clock < SETTLE_LIMIT_MS + 200) {
+      height += 1;
+      nextFrame();
+    }
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(clock).toBeGreaterThanOrEqual(SETTLE_LIMIT_MS);
+    expect(clock).toBeLessThan(SETTLE_LIMIT_MS + 50);
   });
 
   test('a page that comes back shorter ends as close as it allows', () => {
@@ -166,7 +228,7 @@ describe('restoreScroll', () => {
     expect(done).toHaveBeenCalledTimes(1);
   });
 
-  test('a visitor who scrolls, taps or types while it waits keeps the position they chose', () => {
+  test('a visitor who scrolls, taps or types while it waits or holds keeps the position they chose', () => {
     for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown']) {
       window.scrollTo.mockClear();
       const done = vi.fn();
@@ -179,6 +241,17 @@ describe('restoreScroll', () => {
       height = 1000;
       frames = [];
     }
+    // While holding: the visitor scrolls away and the page then changes height.
+    height = 6000;
+    const done = vi.fn();
+    restoreScroll(4498, done, timing());
+    runFor(100);
+    window.dispatchEvent(new Event('wheel'));
+    expect(done).toHaveBeenCalledTimes(1);
+    y = 3000;
+    height = 6200;
+    nextFrame();
+    expect(y).toBe(3000);
   });
 
   test('cancelling stops it without calling done', () => {
