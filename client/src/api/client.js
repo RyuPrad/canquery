@@ -113,7 +113,12 @@ async function decodeResponse(res, { allowNoContent = false, validate } = {}) {
 
 /** @param {string} path @param {Record<string, unknown>} [params] @param {import('./contracts').ApiRequestOptions} [options] */
 export async function getJSON(path, params, options = {}) {
-  const res = await fetch(apiUrl(path, params), { signal: options.signal });
+  const res = await fetch(
+    apiUrl(path, params),
+    options.headers
+      ? { signal: options.signal, headers: options.headers }
+      : { signal: options.signal }
+  );
   return decodeResponse(res, options);
 }
 

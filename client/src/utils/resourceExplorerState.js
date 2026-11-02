@@ -42,7 +42,7 @@ export function writeResourceUrl(params, { q, columnFilters, sort, page, view })
 
 // This is a presentation projection, not the preparation state machine. A
 // stale serving snapshot and a running refresh can coexist independently.
-/** @param {{view: import('../api/contracts').ResourceView, hasMap: boolean, filtersNeedPreparation: boolean, hasData: boolean, dataLoading: boolean, preparationRequired: boolean, downloadOnly: boolean, rowUnavailable: boolean, rowError: boolean, hasPreview?: boolean}} state */
+/** @param {{view: import('../api/contracts').ResourceView, hasMap: boolean, filtersNeedPreparation: boolean, hasData: boolean, dataLoading: boolean, preparationRequired: boolean, downloadOnly: boolean, rowUnavailable: boolean, rowError: boolean, hasLocalRows?: boolean, awaitingRows?: boolean}} state */
 export function resourceViewState({
   view,
   hasMap,
@@ -53,16 +53,18 @@ export function resourceViewState({
   downloadOnly,
   rowUnavailable,
   rowError,
-  hasPreview = false
+  hasLocalRows = false,
+  awaitingRows = false
 }) {
   if (view === 'map') return hasMap ? 'map' : 'map-loading';
   if (view === 'table' && filtersNeedPreparation && !hasData) return 'filter-preparation';
   if (view === 'table' && dataLoading && !hasData && !preparationRequired) return 'loading';
   if (downloadOnly) return 'download';
-  // The first rows read from the file stand in for the table while it is prepared.
-  if (preparationRequired || (view === 'table' && rowUnavailable)) {
-    return view === 'table' && hasPreview ? 'preparation-preview' : 'preparation';
-  }
+  // Rows held in the browser are the table, even while the file is prepared.
+  if (view === 'table' && hasLocalRows) return 'table';
+  // A CSV's first rows are on their way: the table frame, not a card.
+  if (view === 'table' && awaitingRows && !hasData) return 'loading';
+  if (preparationRequired || (view === 'table' && rowUnavailable)) return 'preparation';
   if (view === 'chart') return 'chart';
   if (rowError) return 'error';
   return hasData ? 'table' : 'loading';

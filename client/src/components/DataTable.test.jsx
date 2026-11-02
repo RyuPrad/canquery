@@ -58,14 +58,19 @@ describe('table keyboard controls', () => {
     expect(screen.getByRole('cell', { name: 'Ottawa' })).toBeInTheDocument();
   });
 
-  test('preview mode draws plain typed headers without sort buttons or filter inputs', () => {
-    const input = props({ previewMode: true, records: [{ _id: 1, 'City name': 'Ottawa' }] });
+  test('a DATE cell reads as its day, whether it came as ISO midnight or as the file wrote it', () => {
+    const input = props({
+      fields: [{ id: '_id', type: 'int' }, { id: 'Day', type: 'DATE' }, { id: 'At', type: 'TIMESTAMPTZ' }],
+      records: [
+        { _id: '1', Day: '2024-01-05T00:00:00.000Z', At: '2024-01-05T00:00:00.000Z' },
+        { _id: '2', Day: '2023-12-31', At: null }
+      ]
+    });
     render(<DataTable {...input} />);
-    expect(screen.getByRole('columnheader', { name: 'City nameTEXT' })).not.toHaveAttribute('aria-sort');
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.queryByRole('textbox')).toBeNull();
-    expect(screen.getAllByRole('row')).toHaveLength(2);
-    expect(screen.getByRole('cell', { name: 'Ottawa' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '2024-01-05' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '2023-12-31' })).toBeInTheDocument();
+    // Timestamps keep their time.
+    expect(screen.getByRole('cell', { name: '2024-01-05T00:00:00.000Z' })).toBeInTheDocument();
   });
 
   test('editing header controls does not read unchanged rows, while replacement rows and schemas render', () => {

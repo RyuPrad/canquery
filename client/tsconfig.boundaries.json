@@ -20,6 +20,9 @@
     "src/hooks/preparationState.js",
     "src/utils/fold.js",
     "src/utils/datasetFileFilter.js",
-    "src/utils/chartLoadProgress.js"
+    "src/utils/chartLoadProgress.js",
+    "src/utils/localTable.js",
+    "src/utils/localTableClient.js",
+    "src/utils/csvExport.js"
   ]
 }

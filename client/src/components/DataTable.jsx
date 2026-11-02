@@ -4,6 +4,17 @@ import { useLang } from '../i18n.jsx';
 const isNumType = (type) => /int|numeric|float|double|money/i.test(type || '');
 const isDateType = (type) => /date|time/i.test(type || '');
 
+// The JSON API sends a DATE as the ISO string of its midnight; a date reads as
+// a date, the same for a prepared copy and for a file's rows.
+const isDateOnlyType = (type) => /^date$/i.test(String(type || '').trim());
+const DATE_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00(\.0+)?Z$/;
+const cellText = (type, value) => {
+  const text = String(value);
+  if (!isDateOnlyType(type)) return text;
+  const match = DATE_MIDNIGHT.exec(text);
+  return match ? match[1] : text;
+};
+
 function typeChipClass(type) {
   if (isNumType(type)) return 'cq-type cq-type-num';
   if (isDateType(type)) return 'cq-type cq-type-date';
@@ -17,7 +28,7 @@ function typeChipClass(type) {
 const TableBody = memo(function TableBody({ fields, records, placeholderRows }) {
   const { t } = useLang();
   const columns = useMemo(() => fields.map(field => ({
-    id: field.id, className: isNumType(field.type) ? 'cq-td-num' : '',
+    id: field.id, type: field.type, className: isNumType(field.type) ? 'cq-td-num' : '',
   })), [fields]);
   if (records === null) {
     return <tbody>
@@ -39,7 +50,7 @@ const TableBody = memo(function TableBody({ fields, records, placeholderRows }) 
     </tr> : records.map((row, index) => <tr key={index}>
       {columns.map(field => {
         const value = row[field.id];
-        const text = value == null ? undefined : String(value);
+        const text = value == null ? undefined : cellText(field.type, value);
         return <td key={field.id} className={field.className} title={text}>
           {value == null ? <span className="cq-null">{'∅'}</span> : text}
         </td>;
@@ -48,8 +59,6 @@ const TableBody = memo(function TableBody({ fields, records, placeholderRows }) 
   </tbody>;
 });
 
-// `previewMode` draws the first rows read from a file before its preparation:
-// plain headers with their inferred types, no sort buttons and no filter row.
 function DataTable({
   fields,
   records,
@@ -58,7 +67,6 @@ function DataTable({
   columnFilters,
   onColumnFilterChange,
   placeholderRows = 0,
-  previewMode = false,
   boxRef,
 }) {
   const { t } = useLang();
@@ -88,16 +96,6 @@ function DataTable({
         <thead>
           <tr>
             {fields.map((field) => {
-              if (previewMode) {
-                return (
-                  <th key={field.id} scope="col">
-                    <span className="inline-flex items-center gap-1.5 text-left">
-                      {field.id}
-                      <span className={typeChipClass(field.type)}>{field.type}</span>
-                    </span>
-                  </th>
-                );
-              }
               const dir = getSortDirection(field.id);
               return (
                 <th key={field.id} scope="col" aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}>
@@ -114,7 +112,7 @@ function DataTable({
               );
             })}
           </tr>
-          {!previewMode && <tr>
+          {<tr>
             {fields.map((field) => (
               <th key={field.id}>
                 {field.id === '_id' ? (

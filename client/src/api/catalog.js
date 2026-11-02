@@ -1,5 +1,5 @@
 import { getJSON, postJSON } from './client.js';
-import { resourceResponse, queryResponse, previewResponse, listResponse, datasetResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
+import { resourceResponse, queryResponse, previewResponse, rowsResponse, listResponse, datasetResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
 import { normalizeResource } from './resourceEnvelope.js';
 
 const DATASET_PARAMS = ['q', 'org', 'format', 'keyword', 'place', 'source', 'level', 'mappable', 'queryable', 'sort', 'lang', 'facets', 'limit', 'cursor'];
@@ -32,8 +32,17 @@ export async function fetchResource(id, options) {
   return result;
 }
 
+// `background: true` marks a read the visitor did not ask for (a prefetch, or a
+// later read in the same visit): it neither renews the copy nor counts a visit.
 export function queryResource(id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot } = {}, options) {
-  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot }, { ...options, validate: queryResponse });
+  const { background, ...rest } = options || {};
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/query', { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot },
+    { ...rest, validate: queryResponse, ...(background ? { headers: { 'X-CanQuery-Read': 'background' } } : {}) });
+}
+
+// As much of a table as fits, in one response, for the in-browser table.
+export function fetchResourceRows(id, { snapshot, signal } = {}) {
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/rows', { snapshot }, { signal, validate: rowsResponse });
 }
 
 export function fetchResourcePreview(id, options) {

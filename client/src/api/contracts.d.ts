@@ -13,6 +13,7 @@ export interface ApiEnvelope<T = unknown> {
 
 export interface ApiRequestOptions {
   signal?: AbortSignal;
+  headers?: Record<string, string>;
   allowNoContent?: boolean;
   validate?: (body: ApiEnvelope) => boolean;
 }

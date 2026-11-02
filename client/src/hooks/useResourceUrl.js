@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import useDebouncedValue from './useDebouncedValue.js';
 import { readResourceUrl, writeResourceUrl } from '../utils/resourceExplorerState.js';
@@ -15,14 +15,40 @@ export default function useResourceUrl(navigationKey) {
   const debouncedQ = useDebouncedValue(q, 250);
   const debouncedFilters = useDebouncedValue(columnFilters, 250);
   const resetArmed = useRef(false);
+  // Filters and sort renamed to new column ids (a file's columns once its
+  // prepared copy arrives) keep the page: the visitor changed nothing.
+  const renamed = useRef(
+    /** @type {{ from: Record<string, string>, to: Record<string, string>, sort: string | null } | null} */ (
+      null
+    )
+  );
   useEffect(() => {
     // Preserve the page in a newly opened link. Subsequent edits start at zero.
     if (!resetArmed.current) {
       resetArmed.current = true;
       return;
     }
+    const rename = renamed.current;
+    if (
+      rename &&
+      sort === rename.sort &&
+      (debouncedFilters === rename.to || debouncedFilters === rename.from)
+    ) {
+      if (debouncedFilters === rename.to) renamed.current = null;
+      return;
+    }
+    renamed.current = null;
     setPage(0);
   }, [debouncedQ, debouncedFilters, sort]);
+  /** @param {Record<string, string>} nextFilters @param {string | null} nextSort */
+  const rename = useCallback(
+    (nextFilters, nextSort) => {
+      renamed.current = { from: columnFilters, to: nextFilters, sort: nextSort };
+      setColumnFilters(nextFilters);
+      setSort(nextSort);
+    },
+    [columnFilters]
+  );
   useEffect(() => {
     const next = writeResourceUrl(searchParams, {
       q: debouncedQ,
@@ -53,6 +79,7 @@ export default function useResourceUrl(navigationKey) {
     setQ,
     columnFilters,
     setColumnFilters,
+    renameColumns: rename,
     sort,
     setSort,
     page,

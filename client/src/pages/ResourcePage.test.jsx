@@ -9,6 +9,7 @@ vi.mock('../api/catalog.js', () => ({
   fetchResource: vi.fn(),
   queryResource: vi.fn(),
   fetchResourcePreview: vi.fn(),
+  fetchResourceRows: vi.fn(),
   prepareResource: vi.fn(),
   recordResourceActivity: vi.fn(() => Promise.resolve()),
   fetchJob: vi.fn(),
@@ -26,7 +27,8 @@ vi.mock('../components/ChartPanel.jsx', async () => {
     },
   };
 });
-import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity, fetchResourcePreview } from '../api/catalog.js';
+import { prepareResource, fetchJob, fetchResource, queryResource, recordResourceActivity, fetchResourcePreview, fetchResourceRows } from '../api/catalog.js';
+import { clearLocalTables } from '../hooks/useLocalTable.js';
 import { ApiError, NotIngestedError } from '../api/client.js';
 import * as rowPageCache from '../utils/rowPageCache.js';
 import { clearResourceHints, rememberResource } from '../utils/resourceHints.js';
@@ -86,7 +88,10 @@ beforeEach(() => {
   // Prefetching is exercised explicitly; elsewhere it would make call counts timing-dependent.
   rowPageCache.pausePrefetch(60 * 1000);
   clearResourceHints();
+  clearLocalTables();
   fetchResourcePreview.mockRejectedValue(new Error('no preview in this test'));
+  // The in-browser table is exercised explicitly; elsewhere the server pages every table.
+  fetchResourceRows.mockRejectedValue(new ApiError('too large', 413, { code: 'TABLE_TOO_LARGE' }));
   fetchResource.mockImplementation((id) => Promise.resolve(resourceEnvelope(id)));
   queryResource.mockImplementation((id) => Promise.resolve({
     data: {
@@ -824,9 +829,14 @@ describe('ResourcePage preview while a file is prepared', () => {
     meta: { query_mode: 'preview' },
   });
 
-  test('shows the first rows and the download progress while the file is prepared, then the real table', async () => {
-    fetchResource.mockResolvedValueOnce(unprepared()).mockResolvedValue(prepared());
+  test('the first rows are the table at once, and the whole file answers search and sort with no request until its copy replaces it', async () => {
+    // The copy has the file's columns, as the loader gives them.
+    const copy = () => ({ data: { ...prepared().data, ingestion: { ...prepared().data.ingestion,
+      fields: [{ id: 'Year', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }] } } });
+    fetchResource.mockResolvedValueOnce(unprepared()).mockResolvedValue(copy());
     fetchResourcePreview.mockResolvedValue(previewEnvelope());
+    let readFile;
+    fetchResourceRows.mockImplementationOnce(() => new Promise(resolve => { readFile = resolve; }));
     prepareResource.mockResolvedValue({ data: { id: 777, status: 'pending' } });
     let finish;
     fetchJob.mockResolvedValueOnce({ data: { id: 777, status: 'running', progress: { phase: 'downloading', bytes: 52428800, content_length: 111600495, rows: null, updated_at: '2026-10-16T00:00:00.000Z' } } })
@@ -835,23 +845,60 @@ describe('ResourcePage preview while a file is prepared', () => {
       <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
     </MemoryRouter>);
     expect(await screen.findByText('preview-ottawa')).toBeInTheDocument();
-    expect(screen.getByText('Preview')).toBeInTheDocument();
-    expect(screen.getByText('Showing the first 2 rows of the file.')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'YearINTEGER' })).not.toHaveAttribute('aria-sort');
-    expect(screen.queryByRole('textbox', { name: /Year/ })).toBeNull();
-    expect(await screen.findByText('Downloading 52.4 MB of 111.6 MB')).toBeInTheDocument();
-    expect(screen.getByText('Preparing your table and charts…')).toBeInTheDocument();
-    expect(fetchResourcePreview).toHaveBeenCalledWith('a', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    // Silent: no preview banner and no preparation card while rows are on screen.
+    expect(screen.queryByText('Preview')).toBeNull();
+    expect(screen.queryByText('Preparing your table and charts…')).toBeNull();
+    expect(screen.getByRole('button', { name: /Year/ })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /City · / })).toBeInTheDocument();
+    await waitFor(() => expect(fetchResourceRows).toHaveBeenCalledWith('a', expect.objectContaining({ snapshot: undefined })));
+    await act(async () => readFile({
+      data: {
+        fields: [{ id: '_id', type: 'int' }, { id: 'Year', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }],
+        rows: [['1', '2024', 'preview-ottawa'], ['2', '2025', 'preview-hull'], ['3', '2026', 'file-gatineau']],
+        total: 3,
+        complete: true
+      },
+      meta: { origin: 'file', query_mode: 'ingestable' }
+    }));
+    expect(await screen.findByText('file-gatineau')).toBeInTheDocument();
+    expect(screen.getByText('3 rows')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Year/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Year/ }));
+    await waitFor(() => expect(screen.getAllByRole('row')[2]).toHaveTextContent('file-gatineau'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Full-text search in this table...' }), { target: { value: 'hull' } });
+    await waitFor(() => expect(screen.queryByText('file-gatineau')).toBeNull());
+    expect(screen.getByText('preview-hull')).toBeInTheDocument();
     expect(queryResource).not.toHaveBeenCalled();
+    // The prepared copy takes over, with the visitor's search and sort.
     await waitFor(() => expect(finish).toBeTruthy(), { timeout: 4000 });
     await act(async () => finish({ data: { id: 777, status: 'done' } }));
     expect(await screen.findByText('row-a-0')).toBeInTheDocument();
-    expect(screen.queryByText('preview-ottawa')).toBeNull();
-    expect(screen.queryByText('Preview')).toBeNull();
+    expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ q: 'hull', sort: 'Year desc' }), expect.anything());
+    expect(screen.queryByText('The updated file has different columns. Affected filters or sorting were cleared.')).toBeNull();
     expect(fetchResourcePreview).toHaveBeenCalledTimes(1);
   });
 
-  test('a failed preview keeps the plain preparation card, and other formats never ask for one', async () => {
+  test("a column the copy names differently keeps the visitor's sort and page, with no notice", async () => {
+    const fileFields = [{ id: 'Year 2', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }];
+    const copy = () => ({ data: { ...prepared().data, ingestion: { ...prepared().data.ingestion,
+      fields: [{ id: 'Year', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }] } } });
+    fetchResource.mockResolvedValueOnce(unprepared()).mockResolvedValue(copy());
+    fetchResourcePreview.mockResolvedValue({ ...previewEnvelope(), data: { ...previewEnvelope().data, fields: fileFields,
+      records: [{ 'Year 2': '2024', City: 'preview-ottawa' }] } });
+    prepareResource.mockResolvedValue({ data: { id: 779, status: 'pending' } });
+    let finish;
+    fetchJob.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    render(<MemoryRouter initialEntries={['/resources/a?sort=Year%202%20desc&page=2']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => expect(finish).toBeTruthy(), { timeout: 4000 });
+    await act(async () => finish({ data: { id: 779, status: 'done' } }));
+    await waitFor(() => expect(queryResource).toHaveBeenCalled());
+    expect(queryResource).toHaveBeenLastCalledWith('a', expect.objectContaining({ sort: 'Year desc', offset: 100 }), expect.anything());
+    expect(screen.queryByText('The updated file has different columns. Affected filters or sorting were cleared.')).toBeNull();
+  });
+
+  test('a failed preview shows the table shape under the progress line, and other formats never ask for one', async () => {
     fetchResource.mockResolvedValue(unprepared());
     fetchResourcePreview.mockRejectedValue(new Error('upstream'));
     prepareResource.mockResolvedValue({ data: { id: 778, status: 'pending' } });
@@ -861,6 +908,7 @@ describe('ResourcePage preview while a file is prepared', () => {
     </MemoryRouter>);
     expect(await screen.findByText('Preparing this file automatically…')).toBeInTheDocument();
     await waitFor(() => expect(fetchResourcePreview).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('table-preparing')).toBeInTheDocument();
     expect(screen.queryByText('Preview')).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
     first.unmount();

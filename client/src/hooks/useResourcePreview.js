@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { fetchResourcePreview } from '../api/catalog.js';
 
 // The first rows of a CSV that CanQuery can prepare but has not prepared yet,
-// read from the start of the publisher's file, shown while the table is
-// being prepared. One request per resource; a failure just keeps the plain
-// preparation card, and the real table replaces the preview when it is ready.
+// read from the start of the publisher's file. They are the table's first
+// rows until the whole file arrives (useLocalTable). One request per resource;
+// a failure just keeps the plain preparation card.
 export default function useResourcePreview({ id, enabled }) {
   const [state, setState] = useState({ id: null, preview: null, failed: false });
   useEffect(() => {
@@ -20,6 +20,7 @@ export default function useResourcePreview({ id, enabled }) {
             fields: env.data.fields,
             records: env.data.records,
             truncated: env.data.truncated,
+            sampledRows: env.data.sampled_rows ?? null,
             contentLength: env.data.content_length ?? null
           },
           failed: false

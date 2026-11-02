@@ -5,6 +5,8 @@ import useResourceUrl from '../hooks/useResourceUrl.js';
 import useResourceMetadata from '../hooks/useResourceMetadata.js';
 import useResourceRows from '../hooks/useResourceRows.js';
 import useResourcePreview from '../hooks/useResourcePreview.js';
+import useLocalTable from '../hooks/useLocalTable.js';
+import { buildCsv, csvFilename, downloadCsv } from '../utils/csvExport.js';
 import { PAGE_SIZE, MAX_PAGE_INDEX, resourceViewState } from '../utils/resourceExplorerState.js';
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
 import useResourceActivity from '../hooks/useResourceActivity.js';
@@ -47,8 +49,8 @@ import {
   BuildingIcon
 } from '../components/Icons.jsx';
 
-const noop = () => {};
-const EMPTY_FILTERS = Object.freeze({});
+// The CSV export's row limit, also for a download built in the browser.
+const EXPORT_MAX_ROWS = 10000;
 
 // The chart area while its code or schema is not ready yet; the loading card
 // counts it as "opening the chart".
@@ -59,15 +61,21 @@ function ChartFallback() {
 
 // Previous/Next plus a page box. A typed page is clamped to the last page the
 // server can serve; an unseen page keeps the current rows while it loads.
-function Pager({ resourceId, page, total, onPage }) {
+// While only the first rows of a file are held the total is unknown: the pager
+// then shows the page alone, and Next stays open unless the table can't grow.
+function Pager({ resourceId, page, total, onPage, lastPage = null }) {
   const { t } = useLang();
   const [draft, setDraft] = useState('');
-  const totalPages = Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(total / PAGE_SIZE)));
+  const known = typeof total === 'number' && Number.isFinite(total);
+  const totalPages = known
+    ? Math.min(MAX_PAGE_INDEX + 1, Math.max(1, Math.ceil(total / PAGE_SIZE)))
+    : null;
+  const pageCount = totalPages ?? Math.min(MAX_PAGE_INDEX, lastPage ?? MAX_PAGE_INDEX) + 1;
   const jump = (event) => {
     event.preventDefault();
     const requested = Number.parseInt(draft, 10);
     if (!Number.isFinite(requested)) return;
-    const target = Math.min(Math.max(requested, 1), totalPages) - 1;
+    const target = Math.min(Math.max(requested, 1), pageCount) - 1;
     setDraft('');
     if (target === page) return;
     track('resource_page', { resource_id: resourceId, page: target + 1, direction: 'jump' });
@@ -87,11 +95,12 @@ function Pager({ resourceId, page, total, onPage }) {
         <ArrowLeftIcon size={14} />
       </button>
       <span className="text-sm text-base-content/60 font-mono tabular-nums">
-        {t('resource.page')} {page + 1} / {totalPages}
+        {t('resource.page')} {page + 1}
+        {totalPages !== null && <> / {totalPages}</>}
       </span>
       <button
         className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
-        disabled={page >= MAX_PAGE_INDEX || (page + 1) * PAGE_SIZE >= total}
+        disabled={page >= pageCount - 1}
         onClick={() => {
           track('resource_page', { resource_id: resourceId, page: page + 2, direction: 'next' });
           onPage(page + 1);
@@ -105,7 +114,7 @@ function Pager({ resourceId, page, total, onPage }) {
           type="number"
           inputMode="numeric"
           min={1}
-          max={totalPages}
+          max={pageCount}
           step={1}
           className="input input-sm w-20 rounded-lg border-base-content/20 text-center font-mono tabular-nums"
           aria-label={t('resource.go_to_page')}
@@ -144,6 +153,7 @@ function ResourceExplorer({ id, navigationKey }) {
     setQ,
     columnFilters,
     setColumnFilters,
+    renameColumns,
     sort,
     setSort,
     page,
@@ -153,6 +163,16 @@ function ResourceExplorer({ id, navigationKey }) {
     debouncedQ,
     debouncedFilters
   } = useResourceUrl(navigationKey);
+  // A CSV's first rows, read from the start of the publisher's file.
+  const { preview, failed: previewFailed } = useResourcePreview({
+    id,
+    enabled:
+      view === 'table' &&
+      resource?.query_mode === 'ingestable' &&
+      String(resource.format || '').toUpperCase() === 'CSV'
+  });
+  // The whole table in the browser when it fits, else its first rows.
+  const local = useLocalTable({ id, resource, view, preview });
   const [filterUpgrade, setFilterUpgrade] = useState(false);
   const [schemaChanged, setSchemaChanged] = useState(false);
   const hasNonEq = Object.values(buildColumnFilters(debouncedFilters)).some(
@@ -168,8 +188,10 @@ function ResourceExplorer({ id, navigationKey }) {
   const fields = resource?.ingestion?.fields;
   const fingerprint = schemaFingerprint(fields);
   const [observedSchema, setObservedSchema] = useState(null);
-  const reconciled = reconcileResourceFields(columnFilters, sort, fields);
-  const appliedFields = reconcileResourceFields(debouncedFilters, sort, fields);
+  // The columns the visitor worked with in a file's rows, before its prepared copy.
+  const previousFields = local.table && local.table.origin !== 'copy' ? local.table.fields : null;
+  const reconciled = reconcileResourceFields(columnFilters, sort, fields, previousFields);
+  const appliedFields = reconcileResourceFields(debouncedFilters, sort, fields, previousFields);
   // The first recorded schema needs no extra pass: nothing but reconciliation
   // can change before it is observed, so rows start with the metadata's commit.
   const schemaReady =
@@ -179,11 +201,21 @@ function ResourceExplorer({ id, navigationKey }) {
       !appliedFields.changed);
   useEffect(() => {
     if (fingerprint === null) return;
+    // A file's columns renamed in its prepared copy carry the visitor's
+    // filters, sort and page over silently; anything that lost its column
+    // clears with the notice, as for a changed file.
+    const silent = reconciled.changed && !reconciled.dropped && previousFields;
     if (reconciled.changed) {
-      setColumnFilters(reconciled.filters);
-      setSort(reconciled.sort);
+      if (silent) renameColumns(reconciled.filters, reconciled.sort);
+      else {
+        setColumnFilters(reconciled.filters);
+        setSort(reconciled.sort);
+      }
     }
-    if ((observedSchema !== null && observedSchema !== fingerprint) || reconciled.changed) {
+    if (
+      (observedSchema !== null && observedSchema !== fingerprint) ||
+      (reconciled.changed && !silent)
+    ) {
       setSchemaChanged(true);
       setPage(0);
     }
@@ -192,8 +224,11 @@ function ResourceExplorer({ id, navigationKey }) {
     fingerprint,
     observedSchema,
     reconciled.changed,
+    reconciled.dropped,
     reconciled.filters,
     reconciled.sort,
+    previousFields,
+    renameColumns,
     setColumnFilters,
     setSort,
     setPage
@@ -228,6 +263,10 @@ function ResourceExplorer({ id, navigationKey }) {
     error: dataError,
     loading: dataLoading,
     pageKey: shownPageKey,
+    partial: dataPartial,
+    available: localAvailable,
+    local: localAnswered,
+    waitingForTable,
     invalidate
   } = useResourceRows({
     id,
@@ -243,7 +282,8 @@ function ResourceExplorer({ id, navigationKey }) {
     schemaReady,
     setFilterUpgrade,
     onUnavailable: reloadAfterExpiry,
-    initialRows
+    initialRows,
+    local
   });
   const onUnavailable = useCallback(() => {
     if (reloadAfterExpiry()) invalidate();
@@ -260,14 +300,6 @@ function ResourceExplorer({ id, navigationKey }) {
   // What the Chart tab's loading card waits on: the chart area reports into it.
   const [chartLoadStore] = useState(createChartLoadStore);
   const jobProgress = preparation.job?.progress || null;
-  // While a CSV is prepared for the first time, its first rows stand in for the table.
-  const { preview } = useResourcePreview({
-    id,
-    enabled:
-      view === 'table' &&
-      resource?.query_mode === 'ingestable' &&
-      String(resource.format || '').toUpperCase() === 'CSV'
-  });
   useEffect(() => {
     if (resource && view === 'map' && !resource.map) setView('table');
   }, [resource, view, setView]);
@@ -311,6 +343,26 @@ function ResourceExplorer({ id, navigationKey }) {
     filters: Object.keys(exportFilters).length ? exportFilters : undefined,
     sort: sort || undefined
   });
+  // A whole table held in the browser downloads exactly the rows on screen.
+  const browserExport = view === 'table' && localAnswered && Boolean(local.table?.complete);
+  const exportInBrowser = () => {
+    const table = local.table;
+    if (!table) return;
+    const serverFallback = () => {
+      if (resource?.query_mode === 'ingested' || resource?.query_mode === 'datastore')
+        window.location.assign(exportHref);
+    };
+    table
+      .exportRows(
+        { q: debouncedQ || '', filters: exportFilters, sort: sort || null },
+        EXPORT_MAX_ROWS
+      )
+      .then((result) => {
+        if (!result || 'status' in result) serverFallback();
+        else downloadCsv(csvFilename(id), buildCsv(result.fields, result.rows));
+      })
+      .catch(serverFallback);
+  };
 
   if (notFound) {
     return (
@@ -365,7 +417,12 @@ function ResourceExplorer({ id, navigationKey }) {
     downloadOnly,
     rowUnavailable: dataError instanceof NotIngestedError,
     rowError: Boolean(dataError),
-    hasPreview: Boolean(preview)
+    hasLocalRows: view === 'table' && Boolean(local.table) && Boolean(data),
+    awaitingRows:
+      view === 'table' &&
+      resource.query_mode === 'ingestable' &&
+      String(resource.format || '').toUpperCase() === 'CSV' &&
+      !previewFailed
   });
   // On the Chart tab the loading card stands in for the preparation card while
   // a preparation runs or is about to; standby, busy and failures keep theirs.
@@ -381,6 +438,103 @@ function ResourceExplorer({ id, navigationKey }) {
     : view === 'table' && unfiltered
       ? (resource.ingestion?.row_count ?? null)
       : null;
+
+  // The table frame (recorded columns, placeholder rows) and the rows share one
+  // DataTable at one position, so going from the frame to the rows, or from a
+  // file's rows to its prepared copy, keeps focus, widths and the box's scroll.
+  const preparationStuck =
+    !preparation.supported ||
+    !preparation.enabled ||
+    preparation.phase === 'failed' ||
+    preparation.phase === 'unavailable';
+  const framing = !data;
+  // No rows to show while a file is prepared (an Excel file, or a CSV whose
+  // first rows could not be read): the table's shape under a progress line,
+  // from the moment the preparation is due. A button, a failure or a busy
+  // queue keeps its card.
+  const tablePreparing =
+    view === 'table' &&
+    preparation.supported &&
+    preparation.enabled &&
+    !preparation.awaitingVisitor &&
+    ['idle', 'requesting', 'pending', 'running'].includes(preparation.phase);
+  const heldRows = local.table?.rowCount ?? 0;
+  const lastHeldPage =
+    dataPartial && preparationStuck && localAvailable != null
+      ? Math.max(0, Math.ceil(localAvailable / PAGE_SIZE) - 1)
+      : null;
+  const pagerVisible = data
+    ? typeof data.total === 'number'
+      ? data.total > PAGE_SIZE
+      : page > 0 || data.records.length >= PAGE_SIZE
+    : knownTotal > PAGE_SIZE;
+  const renderTable = () => (
+    <div
+      className="space-y-3"
+      role={framing ? 'status' : undefined}
+      aria-busy={framing ? 'true' : undefined}
+      aria-label={framing ? t('resource.loading_data') : undefined}
+    >
+      <span
+        className="sr-only"
+        role={!framing && dataPartial && preparation.working ? 'status' : undefined}
+      >
+        {framing
+          ? t('resource.loading_data')
+          : dataPartial && preparation.working
+            ? t('table.full_loading')
+            : ''}
+      </span>
+      {waitingForTable && !preparationStuck ? (
+        <PreparationStatus
+          preparation={preparation}
+          elapsed={formatDuration(loadElapsed)}
+          progress={jobProgress}
+          compact
+        />
+      ) : null}
+      <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+        <DataTable
+          boxRef={tableBoxRef}
+          fields={data ? data.fields : frameFields}
+          records={data ? data.records : null}
+          placeholderRows={data ? 0 : 10}
+          sort={sort}
+          onSortChange={changeSort}
+          columnFilters={columnFilters}
+          onColumnFilterChange={changeColumnFilter}
+        />
+      </div>
+      {dataPartial && preparationStuck ? (
+        <p className="text-sm text-base-content/70" role="note">
+          {t('table.partial_failed').replace(
+            '{rows}',
+            heldRows.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')
+          )}{' '}
+          {resource.url && (
+            <a
+              className="link"
+              href={resource.url}
+              data-analytics-event="resource_download"
+              data-analytics-resource-id={id}
+              data-analytics-source="partial_table"
+            >
+              {t('resource.download_here')}
+            </a>
+          )}
+        </p>
+      ) : null}
+      {pagerVisible && (
+        <Pager
+          resourceId={id}
+          page={page}
+          total={data ? data.total : knownTotal}
+          onPage={setPage}
+          lastPage={lastHeldPage}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-6 space-y-4">
@@ -557,23 +711,42 @@ function ResourceExplorer({ id, navigationKey }) {
               {knownTotal.toLocaleString()} {t('resource.rows')}
             </span>
           )}
-          {view === 'table' && data && !filtersNeedPreparation && (
-            <a
-              className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
-              href={exportHref}
-              rel="nofollow"
-              download
-              title={t('resource.export_tip')}
-              data-analytics-event="resource_export"
-              data-analytics-resource-id={id}
-              data-analytics-query={debouncedQ || ''}
-              data-analytics-filters={JSON.stringify(exportFilters)}
-              data-analytics-sort={sort || ''}
-            >
-              <DownloadIcon size={13} />
-              {t('resource.download_filtered')}
-            </a>
-          )}
+          {view === 'table' &&
+            data &&
+            !filtersNeedPreparation &&
+            !dataPartial &&
+            (browserExport ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
+                title={t('resource.export_tip')}
+                onClick={exportInBrowser}
+                data-analytics-event="resource_export"
+                data-analytics-resource-id={id}
+                data-analytics-query={debouncedQ || ''}
+                data-analytics-filters={JSON.stringify(exportFilters)}
+                data-analytics-sort={sort || ''}
+              >
+                <DownloadIcon size={13} />
+                {t('resource.download_filtered')}
+              </button>
+            ) : (
+              <a
+                className="btn btn-sm btn-outline border-base-content/20 rounded-lg gap-1.5 font-normal"
+                href={exportHref}
+                rel="nofollow"
+                download
+                title={t('resource.export_tip')}
+                data-analytics-event="resource_export"
+                data-analytics-resource-id={id}
+                data-analytics-query={debouncedQ || ''}
+                data-analytics-filters={JSON.stringify(exportFilters)}
+                data-analytics-sort={sort || ''}
+              >
+                <DownloadIcon size={13} />
+                {t('resource.download_filtered')}
+              </a>
+            ))}
         </div>
       )}
 
@@ -637,34 +810,14 @@ function ResourceExplorer({ id, navigationKey }) {
           ) : (
             <LoadingSpinner label={t('map.loading')} />
           )
-        ) : display === 'filter-preparation' ? null : display === 'loading' ? (
-          frameFields ? (
-            <div
-              role="status"
-              aria-busy="true"
-              aria-label={t('resource.loading_data')}
-              className="space-y-3"
-            >
-              <span className="sr-only">{t('resource.loading_data')}</span>
-              <DataTable
-                fields={frameFields}
-                records={null}
-                placeholderRows={10}
-                sort={sort}
-                onSortChange={changeSort}
-                columnFilters={columnFilters}
-                onColumnFilterChange={changeColumnFilter}
-              />
-              {knownTotal > PAGE_SIZE && (
-                <Pager resourceId={id} page={page} total={knownTotal} onPage={setPage} />
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="cq-skel h-10 w-64" />
-              <div className="cq-skel h-[420px]" />
-            </div>
-          )
+        ) : display === 'filter-preparation' ? null : (display === 'loading' && frameFields) ||
+          display === 'table' ? (
+          renderTable()
+        ) : display === 'loading' ? (
+          <div className="space-y-3">
+            <div className="cq-skel h-10 w-64" />
+            <div className="cq-skel h-[420px]" />
+          </div>
         ) : display === 'download' ? (
           <div className="cq-card p-10 text-center space-y-4 max-w-xl mx-auto cq-fade">
             <span className="w-14 h-14 rounded-2xl bg-base-300/60 text-base-content/60 inline-flex items-center justify-center">
@@ -684,38 +837,18 @@ function ResourceExplorer({ id, navigationKey }) {
               </a>
             )}
           </div>
-        ) : display === 'preparation-preview' ? (
-          <div className="space-y-3">
-            <PreparationStatus
-              preparation={preparation}
-              elapsed={formatDuration(loadElapsed)}
-              progress={jobProgress}
-              compact
-            />
-            <div className="cq-card p-3 text-sm flex flex-wrap items-center gap-2" role="note">
-              <span className="cq-chip cq-chip-mono">{t('preview.chip')}</span>
-              <span>{t('preview.banner')}</span>
-              <span className="text-base-content/60">
-                {preview.truncated
-                  ? t('preview.partial').replace(
-                      '{rows}',
-                      preview.records.length.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')
-                    )
-                  : t('preview.whole')}
-              </span>
-            </div>
-            <DataTable
-              fields={preview.fields}
-              records={preview.records}
-              previewMode
-              sort={null}
-              onSortChange={noop}
-              columnFilters={EMPTY_FILTERS}
-              onColumnFilterChange={noop}
-            />
-          </div>
         ) : display === 'preparation' ? (
-          chartCovers ? null : (
+          chartCovers ? null : tablePreparing ? (
+            <div className="space-y-3" data-testid="table-preparing">
+              <PreparationStatus
+                preparation={preparation}
+                elapsed={formatDuration(loadElapsed)}
+                progress={jobProgress}
+                compact
+              />
+              <div className="cq-skel h-[420px]" aria-hidden="true" />
+            </div>
+          ) : (
             <PreparationStatus
               preparation={preparation}
               elapsed={formatDuration(loadElapsed)}
@@ -745,23 +878,6 @@ function ResourceExplorer({ id, navigationKey }) {
           </ChartLoadContext.Provider>
         ) : display === 'error' ? (
           <div className="alert alert-error">{dataError.message}</div>
-        ) : display === 'table' ? (
-          <>
-            <div className={dataLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
-              <DataTable
-                boxRef={tableBoxRef}
-                fields={data.fields}
-                records={data.records}
-                sort={sort}
-                onSortChange={changeSort}
-                columnFilters={columnFilters}
-                onColumnFilterChange={changeColumnFilter}
-              />
-            </div>
-            {data.total > PAGE_SIZE && (
-              <Pager resourceId={id} page={page} total={data.total} onPage={setPage} />
-            )}
-          </>
         ) : (
           <LoadingSpinner label={t('resource.querying')} />
         )}
