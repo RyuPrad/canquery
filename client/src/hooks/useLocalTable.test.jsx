@@ -108,3 +108,18 @@ describe('loading a table into the browser', () => {
     expect(result.current.table.fields[0]).toEqual({ id: '_id', type: 'int' });
   });
 });
+
+describe('holding the server while a table is on its way', () => {
+  test('a read is due from the first render on the Table tab, and one that fails lets the server answer', async () => {
+    fetchResourceRows.mockRejectedValue(new ApiError('busy', 503, { code: 'ROWS_BUSY' }));
+    const { result } = renderHook(() => useLocalTable({ id: 'r1', resource: copy(), view: 'table', preview: null }));
+    expect(result.current.loading).toBe(true);
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.table).toBeNull();
+  });
+
+  test('nothing is due on another tab', () => {
+    const { result } = renderHook(() => useLocalTable({ id: 'r1', resource: copy(), view: 'chart', preview: null }));
+    expect(result.current.loading).toBe(false);
+  });
+});

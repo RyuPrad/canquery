@@ -113,7 +113,8 @@ export default function useLocalTable({ id, resource, view, preview }) {
   const [loaded, setLoaded] = useState(
     /** @returns {LocalTableHandle | null} */ () => (sourceKey && session.get(sourceKey)) || null
   );
-  const [loading, setLoading] = useState(false);
+  // The source whose read ended without a table: refused, failed or busy.
+  const [missed, setMissed] = useState(/** @type {string | null} */ (null));
 
   useEffect(() => {
     if (!sourceKey || view !== 'table' || !engaged) return undefined;
@@ -122,9 +123,11 @@ export default function useLocalTable({ id, resource, view, preview }) {
       setLoaded(cached);
       return undefined;
     }
-    if (refused.has(sourceKey)) return undefined;
+    if (refused.has(sourceKey)) {
+      setMissed(sourceKey);
+      return undefined;
+    }
     const controller = new AbortController();
-    setLoading(true);
     fetchResourceRows(id, { snapshot: sourceSnapshot || undefined, signal: controller.signal })
       .then((envelope) => {
         const handle = loadLocalTable({
@@ -143,9 +146,7 @@ export default function useLocalTable({ id, resource, view, preview }) {
         // Too large, unsupported or replaced: the server pages it instead.
         // A busy or failing publisher is tried again on a later visit.
         if ([400, 403, 404, 409, 413, 422].includes(Number(error?.status))) refused.add(sourceKey);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        setMissed(sourceKey);
       });
     return () => controller.abort();
   }, [id, sourceKey, sourceSnapshot, view, engaged]);
@@ -160,5 +161,10 @@ export default function useLocalTable({ id, resource, view, preview }) {
   const table = current || fallback;
   // A file's own rows answer alone; any other stand-in only until the server answers.
   const interim = !current && Boolean(table) && source?.origin !== 'file';
-  return { table, interim, loading: loading && !current };
+  // The current source's table is due or on its way, so the server need not
+  // answer meanwhile. Derived rather than set by the effect, it holds from the
+  // render in which the source changes (a file's copy just published).
+  const loading =
+    Boolean(sourceKey) && view === 'table' && engaged && !current && missed !== sourceKey;
+  return { table, interim, loading };
 }

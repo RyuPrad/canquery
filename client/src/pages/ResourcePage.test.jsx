@@ -878,6 +878,39 @@ describe('ResourcePage preview while a file is prepared', () => {
     expect(fetchResourcePreview).toHaveBeenCalledTimes(1);
   });
 
+  test('a small copy replacing the file is read whole, and no server page is asked for in between', async () => {
+    const fields = [{ id: 'Year', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }];
+    const copy = () => ({ data: { ...prepared().data, ingestion: { ...prepared().data.ingestion, fields } } });
+    fetchResource.mockResolvedValueOnce(unprepared()).mockResolvedValue(copy());
+    fetchResourcePreview.mockResolvedValue(previewEnvelope());
+    let readCopy;
+    fetchResourceRows
+      .mockResolvedValueOnce({ data: { fields: [{ id: '_id', type: 'int' }, ...fields],
+        rows: [['1', '2024', 'preview-ottawa'], ['2', '2025', 'preview-hull'], ['3', '2026', 'file-gatineau']], total: 3, complete: true },
+      meta: { origin: 'file', query_mode: 'ingestable' } })
+      .mockImplementationOnce(() => new Promise(resolve => { readCopy = resolve; }));
+    prepareResource.mockResolvedValue({ data: { id: 780, status: 'pending' } });
+    let finish;
+    fetchJob.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('file-gatineau')).toBeInTheDocument();
+    await waitFor(() => expect(finish).toBeTruthy(), { timeout: 4000 });
+    await act(async () => finish({ data: { id: 780, status: 'done' } }));
+    await waitFor(() => expect(fetchResourceRows).toHaveBeenCalledTimes(2));
+    expect(fetchResourceRows).toHaveBeenLastCalledWith('a', expect.objectContaining({ snapshot: SNAPSHOT_1 }));
+    // The file's rows stay while the copy is read; the server is not asked for a page meanwhile.
+    await act(() => new Promise(resolve => setTimeout(resolve, 50)));
+    expect(screen.getByText('file-gatineau')).toBeInTheDocument();
+    expect(queryResource).not.toHaveBeenCalled();
+    await act(async () => readCopy({ data: { fields: [{ id: '_id', type: 'int' }, ...fields],
+      rows: [['1', '2024', 'copy-ottawa'], ['2', '2025', 'copy-hull'], ['3', '2026', 'copy-gatineau']], total: 3, complete: true },
+    meta: { origin: 'copy', query_mode: 'ingested', snapshot: { id: SNAPSHOT_1 } } }));
+    expect(await screen.findByText('copy-gatineau')).toBeInTheDocument();
+    expect(queryResource).not.toHaveBeenCalled();
+  });
+
   test("a column the copy names differently keeps the visitor's sort and page, with no notice", async () => {
     const fileFields = [{ id: 'Year 2', type: 'INTEGER', original_label: 'Year' }, { id: 'City', type: 'TEXT', original_label: 'City' }];
     const copy = () => ({ data: { ...prepared().data, ingestion: { ...prepared().data.ingestion,
