@@ -8,6 +8,7 @@ import {
   likeRegExp,
   parseDecimal,
   parseTimestamp,
+  refusalOf,
   textForm
 } from './localTable.js';
 
@@ -115,6 +116,24 @@ describe('search and filters', () => {
     }
     // A trailing backslash escapes the closing %, as it does in PostgreSQL.
     expect(ids(ask({ q: '100\\' }))).toEqual(['3']);
+  });
+});
+
+describe('live tables', () => {
+  test("a live table's zone-less timestamps and JSON numbers search as PostgreSQL prints them", () => {
+    expect(textForm('timestamp', '2020-01-01T10:00:00')).toBe('2020-01-01 10:00:00');
+    expect(textForm('timestamp', '2020-01-01T10:00:00.500')).toBe('2020-01-01 10:00:00.5');
+    expect(textForm('number', -1e-7)).toBe('-0.0000001');
+    expect(textForm('number', 12.5)).toBe('12.5');
+    expect(textForm('integer', 2003)).toBe('2003');
+  });
+
+  test('whether a query can be answered depends on the columns alone', () => {
+    const textYear = [{ id: '_id', type: 'int' }, { id: 'year', type: 'text' }];
+    expect(refusalOf(textYear, { filters: { year: { op: 'gt', value: '2015' } } })).toBe('collation');
+    expect(refusalOf(textYear, { filters: { year: { op: 'contains', value: '201' } }, sort: 'year desc' })).toBeNull();
+    expect(refusalOf(fields, { filters: { Count: { op: 'gt', value: '10.5' } } })).toBe('value');
+    expect(refusalOf(fields, { filters: { Missing: 'x' } })).toBe('unknown_column');
   });
 });
 

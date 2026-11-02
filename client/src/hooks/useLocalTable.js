@@ -11,10 +11,11 @@ const SESSION_CELLS = 600000;
 /** @typedef {import('../utils/localTableClient.js').LocalTableHandle} LocalTableHandle */
 
 /**
- * Which whole table this resource can have in the browser, if any. Live CKAN
- * tables come later; files and prepared copies now.
+ * Which whole table this resource can have in the browser, if any: a prepared
+ * copy within the caps, a CSV not prepared yet, or a live CKAN table (whose
+ * size only the server knows; it refuses one over 10,000 rows).
  * @param {any} resource
- * @returns {{ origin: 'copy' | 'file', key: string, snapshot: string | null } | null}
+ * @returns {{ origin: 'copy' | 'file' | 'live', key: string, snapshot: string | null } | null}
  */
 export function localSource(resource) {
   if (!resource) return null;
@@ -42,8 +43,21 @@ export function localSource(resource) {
       snapshot: null
     };
   }
+  if (resource.query_mode === 'datastore') {
+    return {
+      origin: 'live',
+      key: 'live:' + resource.id + ':' + (resource.last_modified || ''),
+      snapshot: null
+    };
+  }
   return null;
 }
+
+// Columns whose values are JSON arrays or objects (CKAN's _text, json...):
+// their text in the browser is not what the database searches and sorts.
+/** @param {{ type?: string }[]} fields */
+const scalarFields = (fields) =>
+  fields.every((field) => !/^_|json/i.test(String(field.type || '')));
 
 // Tables kept for this browser session, so returning to a table is instant.
 // Bounded by their total cells; the oldest go first.
@@ -97,13 +111,14 @@ function previewTable(resourceId, preview) {
 
 /**
  * The resource's table in the browser.
- * - Prepared copies within the caps and CSV files not prepared yet are fetched
- *   whole after the first sign of a person, on the Table tab only.
+ * - Prepared copies within the caps, CSV files not prepared yet and small live
+ *   tables are fetched whole after the first sign of a person, on the Table
+ *   tab only.
  * - Until then, a CSV's base preview stands in as a partial table.
  * - The last table stays available while the one replacing it loads, so a
  *   file table keeps answering until its prepared copy arrives.
  * @param {{ id: string, resource: any, view: string, preview: any }} options
- * @returns {{ table: LocalTableHandle | null, interim: boolean, loading: boolean }}
+ * @returns {{ table: LocalTableHandle | null, interim: boolean, loading: boolean, coverage: 'yes' | 'pending' | 'no' }}
  */
 export default function useLocalTable({ id, resource, view, preview }) {
   const engaged = useSyncExternalStore(subscribeEngagement, isEngaged, () => false);
@@ -116,7 +131,7 @@ export default function useLocalTable({ id, resource, view, preview }) {
   );
   // The source whose read ended without a table: refused, failed or busy.
   const [missed, setMissed] = useState(/** @type {string | null} */ (null));
-  // A busy server (503) or rate limit (429) is asked again after its delay.
+  // A busy server (503) is asked again after its delay.
   const [retry, setRetry] = useState({ key: /** @type {string | null} */ (null), count: 0 });
 
   useEffect(() => {
@@ -145,6 +160,11 @@ export default function useLocalTable({ id, resource, view, preview }) {
           setMissed(sourceKey);
           return;
         }
+        if (!scalarFields(envelope.data.fields)) {
+          refused.add(sourceKey);
+          setMissed(sourceKey);
+          return;
+        }
         const handle = loadLocalTable({
           key: sourceKey,
           fields: envelope.data.fields,
@@ -159,7 +179,10 @@ export default function useLocalTable({ id, resource, view, preview }) {
       .catch((error) => {
         if (error?.name === 'AbortError') return;
         const status = Number(error?.status);
-        if ((status === 503 || status === 429) && tries < 3) {
+        // Busy building other tables: try again shortly, once for a live table
+        // (its portal answers meanwhile). A rate limit means the visitor is
+        // moving fast: the server answers instead.
+        if (status === 503 && tries < (sourceOrigin === 'live' ? 1 : 3)) {
           const seconds = Math.min(30, Math.max(1, Number(error?.retryAfter) || 5));
           timer = setTimeout(() => setRetry({ key: sourceKey, count: tries + 1 }), seconds * 1000);
           return;
@@ -190,5 +213,11 @@ export default function useLocalTable({ id, resource, view, preview }) {
   // render in which the source changes (a file's copy just published).
   const loading =
     Boolean(sourceKey) && view === 'table' && engaged && !current && missed !== sourceKey;
-  return { table, interim, loading };
+  // Whether the browser can answer this table's views: 'yes' once a complete
+  // table is held, 'pending' while its read is due or running, 'no' otherwise
+  // (before the first sign of a person too, so a crawler sees what it saw
+  // before). A live table's filters wait on 'pending' instead of starting a
+  // preparation.
+  const coverage = current ? (current.complete ? 'yes' : 'no') : loading ? 'pending' : 'no';
+  return { table, interim, loading, coverage };
 }
