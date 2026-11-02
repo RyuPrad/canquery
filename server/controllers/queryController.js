@@ -19,11 +19,32 @@ function hasSpreadsheetFormulaPrefix(value) {
     return trimmed.length > 0 && '=+-@'.includes(trimmed[0]);
 }
 
+// The website marks reads a visitor did not ask for as background reads: the
+// next page fetched ahead, and later reads in the same visit. They neither
+// renew the copy nor count towards popularity. Developer API reads always do.
+const isBackgroundRead = req => String(req.baseUrl || '').startsWith('/web-api/') &&
+    req.get('X-CanQuery-Read') === 'background';
+
 async function queryResource(req, res) {
     const { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot } = req.query;
-    const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot });
+    const result = await queryService.queryResource(req.params.id, { q, filters, sort, limit, offset, group_by, agg, agg_column, bucket, snapshot },
+        isBackgroundRead(req) ? { touch: false, log: false } : undefined);
     res.set('Cache-Control', 'no-cache');
     res.json(queryEnvelope(result));
+}
+
+const pad = (value, width = 2) => String(value).padStart(width, '0');
+
+// node-pg returns DATE and TIMESTAMPTZ cells as JavaScript Dates. A DATE is
+// local midnight of its day, so its own calendar fields are the date;
+// timestamps are written in ISO UTC, as the JSON API serialises them.
+function cellText(field, value) {
+    if (!(value instanceof Date)) return value;
+    if (Number.isNaN(value.getTime())) return String(value);
+    if (String(field.type || '').trim().toUpperCase() === 'DATE') {
+        return pad(value.getFullYear(), 4) + '-' + pad(value.getMonth() + 1) + '-' + pad(value.getDate());
+    }
+    return value.toISOString();
 }
 
 function csvEscape(v, spreadsheetSafe = false) {
@@ -118,7 +139,10 @@ async function writeResourceCsv(req, res, { fields, records, provenance, snapsho
     // still bounded by EXPORT_MAX_ROWS at the upstream request.
     if (!await writeCsvLine(res, fields.map(field => csvEscape(field.id, true)))) return;
     for await (const record of records) {
-        const values = fields.map(field => csvEscape(record[field.id], shouldNeutralizeCell(field, record[field.id])));
+        const values = fields.map(field => {
+            const value = cellText(field, record[field.id]);
+            return csvEscape(value, shouldNeutralizeCell(field, value));
+        });
         if (!await writeCsvLine(res, values)) return;
     }
     res.end();

@@ -2,7 +2,7 @@ const { getResourceById } = require('../db/catalogReadQueries');
 const { computeQueryMode, shapeProvenance } = require('./catalogService');
 const { datastoreSearch } = require('./ckanClient');
 const { parseFilters, validateSort, validateAggregation } = require('../utils/filterGrammar');
-const { queryStoreTable, aggregateStoreTable, touchLastAccessed, profileStoreTable } = require('../db/storeQueries');
+const { queryStoreTable, readStoreRows, aggregateStoreTable, touchLastAccessed, profileStoreTable } = require('../db/storeQueries');
 const { logQueryHit } = require('../db/queryLogQueries');
 const { createCache } = require('../utils/cache');
 const AppError = require('../utils/AppError');
@@ -166,9 +166,21 @@ async function executeDatastore(plan, cached) {
     return result;
 }
 
+// PostgreSQL rejects a filter value its column type cannot read (an amount of
+// "abc", a date of "soon"). That is the caller's input, not a server fault.
+const INPUT_SQLSTATES = new Set(['22P02', '22007', '22008', '22003']);
+function asInputError(err) {
+    if (!err || !INPUT_SQLSTATES.has(err.code)) return err;
+    const error = new AppError('A filter value does not match its column type', 400);
+    error.publicCode = 'INVALID_FILTER_VALUE';
+    return error;
+}
+
 // The HTTP endpoints keep the defaults: a successful local read renews the
 // copy's activity and records a popularity hit. The resource page's HTML
-// shell embeds a page passively (touch: false) and logs only real navigations.
+// shell embeds a page passively (touch: false) and logs only real navigations,
+// and the website's background reads (prefetches, later reads in a visit)
+// pass the same options.
 async function queryResource(id, options = {}, { initial, signal, touch = true, log = true } = {}) {
     // Preserve validation before database access for invalid paging/search.
     clampLimit(options.limit);
@@ -181,9 +193,13 @@ async function queryResource(id, options = {}, { initial, signal, touch = true, 
         if (plan.mode === 'datastore') result = await executeDatastore(plan, true);
         else {
             const read = () => plan.aggregation ? aggregateStoreTable(plan.options) : queryStoreTable(plan.options);
-            result = plan.aggregation && row.ingested_at
-                ? await aggregateCache.get(JSON.stringify([row.table_name, row.ingested_at, plan.options]), read, { deduplicate: !requestSignal() })
-                : await read();
+            try {
+                result = plan.aggregation && row.ingested_at
+                    ? await aggregateCache.get(JSON.stringify([row.table_name, row.ingested_at, plan.options]), read, { deduplicate: !requestSignal() })
+                    : await read();
+            } catch (err) {
+                throw asInputError(err);
+            }
             if (touch) await touchLastAccessed(id, row.table_name);
         }
         if (log) logQueryHit(id, plan.mode).catch(() => {});
@@ -221,6 +237,19 @@ async function queryResourceForExport(id, options = {}, consume) {
         try { return await consume({ ...context, fields: plan.fields, records }); }
         finally { await records.return(); }
     });
+}
+
+// Every row of a small prepared copy, for the website's in-browser table. One
+// read inside the snapshot lease, pinned to the snapshot the page reported. It
+// neither renews the copy nor records popularity: the page's own first read
+// did that, and its activity keepalive goes on renewing the copy.
+async function readSnapshotRows(id, { snapshot, cap, initial } = {}) {
+    return withResource(id, snapshot, async row => {
+        if (computeQueryMode(row) !== 'ingested') throw new AppError('Resource has no prepared copy', 409);
+        const columns = Array.isArray(row.ingested_columns) ? row.ingested_columns : [];
+        const { records } = await readStoreRows({ tableName: row.table_name, limit: cap + 1 });
+        return { ...resultContext(row), query_mode: 'ingested', fields: [{ id: '_id', type: 'int' }, ...columns], records };
+    }, { initial });
 }
 
 async function profileResource(id, options = {}) {
@@ -261,5 +290,5 @@ async function recordResourceActivity(id) {
     });
 }
 
-module.exports = { queryResource, queryResourceForExport, profileResource, datastoreTarget,
+module.exports = { queryResource, queryResourceForExport, readSnapshotRows, profileResource, datastoreTarget,
     recordResourceActivity, planQuery, queryLimits };

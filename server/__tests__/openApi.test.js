@@ -89,6 +89,8 @@ afterAll(() => { process.env = savedEnv; });
 describe('OpenAPI structure and published route coverage', () => {
     test('documents every public router operation with stable translated identifiers and required path parameters', () => {
         const ids = [];
+        // routes/webResources.js is mounted on /web-api/v1 only: the website's
+        // whole-table read is not a developer API operation.
         for (const name of ['datasets', 'resources', 'organizations', 'places', 'sources', 'stats', 'insights', 'jobs', 'ops', 'blog', 'repo']) {
             const source = fs.readFileSync(path.join(__dirname, '../routes', name + '.js'), 'utf8');
             for (const match of source.matchAll(/router\.(get|post)\('([^']+)'/g)) {

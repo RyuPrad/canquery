@@ -121,11 +121,14 @@ const RENDER_EXTRAS = ['/api/send', '/web-api/v1/repo', '/api/v1/repo'].map(path
 // API for every crawl, and Search Console listed them as server errors, 4xx
 // and crawled-but-not-indexed URLs.
 const CSV_EXPORTS = ['/web-api/v1', '/api/v1'].map(base => 'Disallow: ' + base + '/resources/*/query.csv');
+// The website's whole-table read fetches a table in one go after a person
+// uses the page; no page renders from it and crawlers have no use for it.
+const TABLE_READS = ['Disallow: /web-api/v1/resources/*/rows'];
 const robots = (req, res) => {
     res.type('text/plain');
     res.set('Cache-Control', 'public, max-age=86400');
     // Specific rules precede Allow for crawlers that apply the first matching line.
-    res.send('User-agent: *\n' + [...PREPARATION_WRITES, ...RENDER_EXTRAS, ...CSV_EXPORTS].join('\n') +
+    res.send('User-agent: *\n' + [...PREPARATION_WRITES, ...RENDER_EXTRAS, ...CSV_EXPORTS, ...TABLE_READS].join('\n') +
         '\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 

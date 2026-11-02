@@ -25,6 +25,31 @@ const RECORD_LIMIT = 10 + 2 + PREVIEW_ROWS + 1;
 const previewCache = createCache({ name: 'csv-preview', ttlMs: 10 * 60 * 1000, negativeTtlMs: 60 * 1000,
     maxEntries: 200, cacheable: value => Buffer.byteLength(JSON.stringify(value)) <= 256 * 1024 });
 
+// Most publisher CSVs are smaller than the preview's read, so the preview
+// already holds the whole file. Keep those bytes a while: the website's
+// whole-table read (tableRows.js) then needs no second request to the publisher.
+const COMPLETE_HEAD_TTL_MS = 10 * 60 * 1000;
+const COMPLETE_HEAD_ENTRIES = 64;
+const completeHeads = new Map();
+const previewKey = row => JSON.stringify([row.id, row.url, row.last_modified || null]);
+
+function rememberCompleteHead(key, bytes) {
+    completeHeads.delete(key);
+    while (completeHeads.size >= COMPLETE_HEAD_ENTRIES) completeHeads.delete(completeHeads.keys().next().value);
+    completeHeads.set(key, { bytes, expiresAt: Date.now() + COMPLETE_HEAD_TTL_MS });
+}
+
+function completeHeadFor(row) {
+    const key = previewKey(row);
+    const entry = completeHeads.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+        completeHeads.delete(key);
+        return null;
+    }
+    return { bytes: entry.bytes, complete: true };
+}
+
 function csvError(message, code) {
     const error = new Error(message);
     error.code = code;
@@ -120,6 +145,7 @@ async function previewResource(id, options = {}) {
         } catch (cause) {
             throw upstreamError(cause);
         }
+        if (head.complete) rememberCompleteHead(key, head.bytes);
         let sample;
         try {
             sample = await previewRecords(head.bytes, { complete: head.complete });
@@ -128,10 +154,11 @@ async function previewResource(id, options = {}) {
         }
         return { ...sample, bytes_read: head.bytes.length, content_length: head.contentLength };
     };
-    const key = JSON.stringify([row.id, row.url, row.last_modified || null]);
+    const key = previewKey(row);
     const result = await previewCache.get(key, read, { deduplicate: !signal });
     return { ...result, provenance: shapeProvenance(row.provenance_sources), publisher_modified_at: row.last_modified || null,
         retrieved_at: new Date().toISOString() };
 }
 
-module.exports = { previewResource, previewRecords, collectRecords, previewCache, PREVIEW_BYTES, PREVIEW_ROWS, PREVIEW_TIMEOUT_MS };
+module.exports = { previewResource, previewRecords, collectRecords, previewCache, PREVIEW_BYTES, PREVIEW_ROWS, PREVIEW_TIMEOUT_MS,
+    previewKey, completeHeadFor, completeHeads, upstreamError, contentError };

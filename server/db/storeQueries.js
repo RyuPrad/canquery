@@ -58,6 +58,18 @@ async function queryStoreTable({ tableName, knownColumns, q, filters, sortSql, l
     return { records: pageResult.rows, total };
 }
 
+// The whole of a small snapshot in _id order: one index scan, no count. The
+// caller asks for one row more than it accepts, so a stale row count still
+// cannot slip a larger table past its cap.
+async function readStoreRows({ tableName, limit }) {
+    if (!TABLE_NAME_RE.test(tableName)) {
+        throw new AppError('invalid store table name', 500);
+    }
+    const result = await snapshotDb().query(
+        'SELECT * FROM store.' + quoteIdent(tableName) + ' ORDER BY "_id" ASC LIMIT $1', [limit]);
+    return { records: result.rows };
+}
+
 async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupBy, agg, aggColumn, bucket, sortSql, limit, offset, includeTotal = true }) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new AppError('invalid store table name', 500);
@@ -143,4 +155,4 @@ async function touchLastAccessed(resourceId, tableName) {
     return result.rowCount === 1;
 }
 
-module.exports = { queryStoreTable, touchLastAccessed, TABLE_NAME_RE, aggregateStoreTable, profileStoreTable };
+module.exports = { queryStoreTable, readStoreRows, touchLastAccessed, TABLE_NAME_RE, aggregateStoreTable, profileStoreTable };
