@@ -11,6 +11,7 @@ const { generalLimiter } = require('./middleware/rateLimits');
 const catalogController = require('./controllers/catalogController');
 const datasetsRouter = require('./routes/datasets');
 const resourcesRouter = require('./routes/resources');
+const webResourcesRouter = require('./routes/webResources');
 const organizationsRouter = require('./routes/organizations');
 const statsRouter = require('./routes/stats');
 const repoRouter = require('./routes/repo');
@@ -101,6 +102,8 @@ app.get('/readyz', require('./controllers/componentHealthController').readyz);
 const apiMiddleware = extension().apiMiddleware();
 if (apiMiddleware.length) app.use('/api/v1', ...apiMiddleware);
 app.use(['/api','/web-api'], generalLimiter);
+// Website-only resource routes; unmatched paths fall through to the shared router.
+app.use('/web-api/v1/resources', webResourcesRouter);
 for (const base of ['/api/v1','/web-api/v1']) {
     app.use(base+'/datasets', datasetsRouter);
     app.use(base+'/resources', resourcesRouter);
