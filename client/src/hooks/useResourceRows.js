@@ -69,7 +69,8 @@ export default function useResourceRows({
     }
     return null;
   });
-  const [state, setState] = useState({ data: null, error: null });
+  // The server's rows on screen, and the query (search, filters, sort) they answer.
+  const [state, setState] = useState({ data: null, error: null, query: null });
   const [pending, setPending] = useState(true);
   const tracked = useRef(new Set());
   // The rows last on screen, kept while the next answer is worked out.
@@ -142,17 +143,25 @@ export default function useResourceRows({
     [localUsable, localRefused, localAnswer, localTable, mode]
   );
   const hit = rowPageCache.peek(key, snapshotId);
-  // A live table arriving leaves the query the portal already answered on
-  // the portal, every page of it, until the visitor changes that query: the
+  // A live table arriving leaves the query the portal answered on the
+  // portal, every page of it, until the visitor changes that query: the
   // portal's full-text search and sort order can differ from the browser's,
-  // and the rows on screen must not change by themselves.
+  // and the rows on screen must not change by themselves. It applies while
+  // the resource is live; a prepared copy then takes over as usual.
   const liveTable = local?.table?.origin === 'live' ? local.table : null;
   const viewQuery = JSON.stringify([debouncedQ || '', filters, sort || null]);
   const [arrival, setArrival] = useState({ table: liveTable, held: null });
   if (arrival.table !== liveTable) {
-    setArrival({ table: liveTable, held: liveTable && hit ? viewQuery : null });
+    setArrival({
+      table: liveTable,
+      held: liveTable && state.query === viewQuery ? viewQuery : null
+    });
+  } else if (arrival.held !== null && arrival.held !== viewQuery) {
+    // The visitor changed the query: the browser answers it from now on.
+    setArrival({ table: liveTable, held: null });
   }
-  const networkHeld = Boolean(liveTable) && arrival.held === viewQuery;
+  const networkHeld =
+    resource?.query_mode === 'datastore' && Boolean(liveTable) && arrival.held === viewQuery;
   // An interim table (a file's rows while its prepared copy is canonical)
   // stays on screen until the server's page arrives; otherwise it answers alone.
   const localServes = Boolean(localData) && !(local?.interim && canonical) && !networkHeld;
@@ -173,7 +182,11 @@ export default function useResourceRows({
 
   const invalidate = useCallback(() => {
     rowPageCache.invalidate(id);
-    setState({ data: null, error: new NotIngestedError('Resource has no prepared copy', 409) });
+    setState({
+      data: null,
+      error: new NotIngestedError('Resource has no prepared copy', 409),
+      query: null
+    });
   }, [id, setState]);
 
   const queryPage = useCallback(
@@ -208,7 +221,7 @@ export default function useResourceRows({
       return undefined;
     }
     if (fileOnly) {
-      setState({ data: null, error: null });
+      setState({ data: null, error: null, query: null });
       setPending(false);
       return undefined;
     }
@@ -253,7 +266,7 @@ export default function useResourceRows({
       handle.promise
         .then((loaded) => {
           if (cancelled) return;
-          setState({ data: loaded.data, error: null });
+          setState({ data: loaded.data, error: null, query: viewQuery });
           // One event per view: the local table may have answered it already.
           if (tracked.current.has(key)) return;
           tracked.current.add(key);
@@ -294,7 +307,7 @@ export default function useResourceRows({
           }
           if (err instanceof NotIngestedError && resource.query_mode !== 'ingestable')
             onUnavailable();
-          setState({ data: null, error: err });
+          setState({ data: null, error: err, query: null });
         });
     run(active, false).finally(() => {
       if (!cancelled) setPending(false);
@@ -322,7 +335,8 @@ export default function useResourceRows({
     queryPage,
     localServes,
     holdNetwork,
-    localThinking
+    localThinking,
+    viewQuery
   ]);
 
   // A resource the application already knows to be prepared starts its first
@@ -410,7 +424,9 @@ export default function useResourceRows({
     if (!hit) return;
     // The page on screen is what stays visible, dimmed, while an unseen page
     // loads, whether it came from a request or from the cache.
-    setState((current) => (current.data === hit ? current : { data: hit, error: null }));
+    setState((current) =>
+      current.data === hit ? current : { data: hit, error: null, query: viewQuery }
+    );
     if (tracked.current.has(key)) return;
     tracked.current.add(key);
     track('resource_query', {
@@ -424,7 +440,7 @@ export default function useResourceRows({
       status: 'success',
       source: rowPageCache.peekSource(key, snapshotId) === 'inline' ? 'inline' : 'cache'
     });
-  }, [hit, key, id, debouncedQ, debouncedFilters, sort, page, snapshotId]);
+  }, [hit, key, id, debouncedQ, debouncedFilters, sort, page, snapshotId, viewQuery]);
 
   // Rows a partial table can't give yet (a later page, a filter matching none
   // of the rows held) wait for the full table, with the rows on screen kept.

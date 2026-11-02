@@ -78,10 +78,19 @@ export function textForm(kind, value) {
   const text = String(value);
   if (kind === 'date') return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
   if (kind === 'timestamp') {
-    const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z$/.exec(text);
+    // A zone-less timestamp (a live table's) prints without a zone.
+    const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z)?$/.exec(text);
     if (!match) return text;
     const fraction = (match[3] || '').replace(/0+$/, '');
-    return match[1] + ' ' + match[2] + (fraction ? '.' + fraction : '') + '+00';
+    return match[1] + ' ' + match[2] + (fraction ? '.' + fraction : '') + (match[4] ? '+00' : '');
+  }
+  // A JSON number (a live table's) prints as a plain decimal, never 1e-7.
+  if ((kind === 'integer' || kind === 'number') && typeof value === 'number') {
+    const decimal = parseDecimal(value);
+    if (!decimal || decimal.nan) return text;
+    return (
+      (decimal.neg ? '-' : '') + (decimal.int || '0') + (decimal.frac ? '.' + decimal.frac : '')
+    );
   }
   return text;
 }
@@ -447,6 +456,24 @@ function selectRows(table, { q = '', filters, sort } = {}) {
     if (!mask || mask[row]) rows.push(row);
   }
   return { rows };
+}
+
+// Whether a query can be answered here depends on the columns and the query
+// alone, never on the rows: the same checks, run over no rows.
+/** @type {WeakMap<LocalField[], LocalTable>} */
+const probes = new WeakMap();
+/**
+ * Why a table with these fields cannot answer this query here, or null.
+ * @param {LocalField[]} fields @param {LocalQuery} [query] @returns {string | null}
+ */
+export function refusalOf(fields, query = {}) {
+  let probe = probes.get(fields);
+  if (!probe) {
+    probe = createLocalTable({ fields, rows: [], complete: true });
+    probes.set(fields, probe);
+  }
+  const selected = selectRows(probe, query);
+  return 'status' in selected ? selected.reason : null;
 }
 
 /** @param {LocalTable} table @param {LocalQuery} [query] @returns {LocalAnswer} */

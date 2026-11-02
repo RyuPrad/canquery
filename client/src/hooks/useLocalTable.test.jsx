@@ -196,6 +196,13 @@ describe('a live table in the browser', () => {
     await waitFor(() => expect(result.current.coverage).toBe('no'));
   });
 
+  test('a rate limit lets the portal answer at once, without retrying', async () => {
+    fetchResourceRows.mockRejectedValue(new ApiError('slow down', 429, { retry_after: 30 }));
+    const { result } = renderHook(() => useLocalTable({ id: 'live', resource: live, view: 'table', preview: null }));
+    await waitFor(() => expect(result.current.coverage).toBe('no'));
+    expect(fetchResourceRows).toHaveBeenCalledTimes(1);
+  });
+
   test('one with JSON or array columns stays with the portal', async () => {
     fetchResourceRows.mockResolvedValue(liveEnvelope([{ id: '_id', type: 'int' }, { id: 'tags', type: '_text' }]));
     const { result } = renderHook(() => useLocalTable({ id: 'live', resource: live, view: 'table', preview: null }));

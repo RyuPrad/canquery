@@ -13,7 +13,7 @@ vi.mock('../api/catalog.js', () => ({
   recordResourceActivity: vi.fn(() => Promise.resolve()),
   fetchJob: vi.fn(),
 }));
-import { fetchJob, fetchResource, fetchResourcePreview, fetchResourceRows, prepareResource } from '../api/catalog.js';
+import { fetchJob, fetchResource, fetchResourcePreview, fetchResourceRows, prepareResource, queryResource } from '../api/catalog.js';
 import { markEngaged } from '../utils/engagement.js';
 
 // Nobody has used the page in this file until its last test: engagement is
@@ -65,6 +65,22 @@ test('the Chart tab keeps the button while nobody has used the page, with no per
   expect(screen.getByRole('button', { name: 'Load the full table' })).toBeInTheDocument();
   await act(() => pause(50));
   expect(screen.queryByRole('progressbar')).toBeNull();
+  expect(prepareResource).not.toHaveBeenCalled();
+});
+
+test('a live table linked with a filter its portal cannot run shows the card, as before, while nobody is there', async () => {
+  fetchResource.mockResolvedValue({ data: { ...unprepared().data, query_mode: 'datastore', format: 'CSV' } });
+  queryResource.mockResolvedValue({ data: { fields: [{ id: 'name', type: 'text' }], records: [{ name: 'live-row' }], total: 1 },
+    meta: { query_mode: 'datastore' } });
+  const filters = encodeURIComponent(JSON.stringify({ name: 'Ottawa' }));
+  render(<MemoryRouter initialEntries={['/resources/a?cf=' + filters]}>
+    <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+  </MemoryRouter>);
+  expect(await screen.findByText('Preparing precise filtering for this dataset...')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Clear column filters' })).toBeInTheDocument();
+  await act(() => pause(50));
+  // Crawlers start nothing heavy.
+  expect(fetchResourceRows).not.toHaveBeenCalled();
   expect(prepareResource).not.toHaveBeenCalled();
 });
 

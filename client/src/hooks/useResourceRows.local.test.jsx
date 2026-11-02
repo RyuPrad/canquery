@@ -149,3 +149,73 @@ describe('a live table arriving', () => {
     expect(queryResource).not.toHaveBeenCalled();
   });
 });
+
+describe('the portal keeping the query it answered', () => {
+  const live = { id: 'r1', query_mode: 'datastore' };
+  const liveHandle = () => loadLocalTable({ key: 'live:r1:', fields: FIELDS, rows: rows(120), complete: true, origin: 'live' });
+  const portal = (_id, { q = '', offset = 0, sort = '' } = {}) => Promise.resolve(serverPage(['portal-' + q + '-' + offset + '-' + sort]));
+
+  test('a table arriving after the cached page expired still leaves the rows on screen', async () => {
+    queryResource.mockImplementation(portal);
+    const base = props({ resource: live, debouncedQ: 'n1', local: { table: null, interim: false, loading: true, coverage: 'pending' } });
+    const { result, rerender } = renderHook((p) => useResourceRows(p), { initialProps: base });
+    await waitFor(() => expect(result.current.data?.records[0].name).toBe('portal-n1-0-'));
+    rowPageCache.clear();
+    rerender({ ...base, local: { table: liveHandle(), interim: false, loading: false, coverage: 'yes' } });
+    expect(result.current.local).toBe(false);
+    expect(result.current.data.records[0].name).toBe('portal-n1-0-');
+  });
+
+  test('a page the portal was asked for when the table arrived comes from the portal', async () => {
+    let answerNext;
+    queryResource.mockImplementation((id, query) => (query.offset ? new Promise((resolve) => { answerNext = resolve; }) : portal(id, query)));
+    const base = props({ resource: live, debouncedQ: 'n1', local: { table: null, interim: false, loading: true, coverage: 'pending' } });
+    const { result, rerender } = renderHook((p) => useResourceRows(p), { initialProps: base });
+    await waitFor(() => expect(result.current.data?.records[0].name).toBe('portal-n1-0-'));
+    rerender({ ...base, page: 1 });
+    await waitFor(() => expect(answerNext).toBeTruthy());
+    const local = { table: liveHandle(), interim: false, loading: false, coverage: 'yes' };
+    rerender({ ...base, page: 1, local });
+    expect(result.current.local).toBe(false);
+    await act(async () => answerNext(serverPage(['portal-n1-50'])));
+    await waitFor(() => expect(result.current.data.records[0].name).toBe('portal-n1-50'));
+    // Back to page 1 of the same search: the portal's, as the visitor saw it.
+    rerender({ ...base, page: 0, local });
+    expect(result.current.data.records[0].name).toBe('portal-n1-0-');
+  });
+
+  test('once the visitor changes the query, the browser answers, also going back to it', async () => {
+    queryResource.mockImplementation(portal);
+    const base = props({ resource: live, debouncedQ: 'n1', local: { table: null, interim: false, loading: true, coverage: 'pending' } });
+    const { result, rerender } = renderHook((p) => useResourceRows(p), { initialProps: base });
+    await waitFor(() => expect(result.current.data?.records[0].name).toBe('portal-n1-0-'));
+    const local = { table: liveHandle(), interim: false, loading: false, coverage: 'yes' };
+    rerender({ ...base, local });
+    expect(result.current.local).toBe(false);
+    rerender({ ...base, local, sort: 'name desc' });
+    expect(result.current.local).toBe(true);
+    const asked = queryResource.mock.calls.length;
+    rerender({ ...base, local });
+    expect(result.current.local).toBe(true);
+    expect(result.current.data.records[0].name).toBe('n1');
+    expect(queryResource).toHaveBeenCalledTimes(asked);
+  });
+
+  test('when the live table was prepared, its copy takes over as for a file', async () => {
+    queryResource.mockImplementation(portal);
+    const base = props({ resource: live, debouncedQ: 'n1', local: { table: null, interim: false, loading: true, coverage: 'pending' } });
+    const { result, rerender } = renderHook((p) => useResourceRows(p), { initialProps: base });
+    await waitFor(() => expect(result.current.data?.records[0].name).toBe('portal-n1-0-'));
+    const table = liveHandle();
+    rerender({ ...base, local: { table, interim: false, loading: false, coverage: 'yes' } });
+    expect(result.current.local).toBe(false);
+    // Prepared (from the Chart tab): the live rows stand in while the copy is
+    // read, so the next page shows at once, with no request.
+    const asked = queryResource.mock.calls.length;
+    rerender({ ...base, resource: copy, page: 1, local: { table, interim: true, loading: true, coverage: 'pending' } });
+    expect(result.current).toMatchObject({ local: true, loading: false });
+    // The browser's substring search of "n1" holds 22 of the 120 rows: no second page.
+    expect(result.current.data).toMatchObject({ total: 22, records: [] });
+    expect(queryResource).toHaveBeenCalledTimes(asked);
+  });
+});

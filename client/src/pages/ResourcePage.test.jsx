@@ -269,6 +269,28 @@ describe('ResourcePage navigation', () => {
     expect(screen.getByRole('button', { name: 'Download CSV (filtered)' })).toBeInTheDocument();
   });
 
+  test('a filter a held live table cannot read (a range on a text column) prepares the file, as before', async () => {
+    // XLoader loads every column as text.
+    const fields = [{ id: '_id', type: 'int' }, { id: 'year', type: 'text' }];
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data, query_mode: 'datastore', preparation: { supported: true, enabled: true } } });
+    queryResource.mockResolvedValue({ data: { fields, records: [{ _id: 1, year: '2010' }, { _id: 2, year: '2020' }], total: 2 }, meta: { query_mode: 'datastore' } });
+    fetchResourceRows.mockResolvedValue({ data: { fields, rows: [[1, '2010'], [2, '2020']], total: 2, complete: true },
+      meta: { origin: 'live', query_mode: 'datastore' } });
+    prepareResource.mockResolvedValue({ data: { id: 902, status: 'pending' } });
+    fetchJob.mockImplementation(() => new Promise(() => {}));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('2010')).toBeInTheDocument();
+    await waitFor(() => expect(fetchResourceRows).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('textbox', { name: /year.*filter/ }), { target: { value: '>2015' } });
+    expect(await screen.findByText('Preparing precise filtering for this dataset...')).toBeInTheDocument();
+    await waitFor(() => expect(prepareResource).toHaveBeenCalledWith('a'));
+    // The portal cannot export a range filter.
+    expect(screen.queryByRole('link', { name: 'Download CSV (filtered)' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download CSV (filtered)' })).toBeNull();
+  });
+
   test('a failed metadata read can be retried without reloading the browser', async () => {
     fetchResource.mockRejectedValueOnce(new Error('Metadata temporarily unavailable'));
     render(<MemoryRouter initialEntries={['/resources/a']}>

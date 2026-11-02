@@ -7,6 +7,7 @@ import useResourceRows from '../hooks/useResourceRows.js';
 import useResourcePreview from '../hooks/useResourcePreview.js';
 import useLocalTable from '../hooks/useLocalTable.js';
 import { buildCsv, csvFilename, downloadCsv } from '../utils/csvExport.js';
+import { refusalOf } from '../utils/localTable.js';
 import { PAGE_SIZE, MAX_PAGE_INDEX, resourceViewState } from '../utils/resourceExplorerState.js';
 import useResourcePreparation from '../hooks/useResourcePreparation.js';
 import useResourceActivity from '../hooks/useResourceActivity.js';
@@ -184,10 +185,20 @@ function ResourceExplorer({ id, navigationKey }) {
     !fileOnly &&
     (resource.query_mode === 'ingestable' ||
       (view === 'chart' && resource.query_mode !== 'ingested'));
-  // A small live table held in the browser answers every filter. While it can
-  // still come, a filter the live portal cannot run waits for it rather than
-  // starting a preparation of the whole file.
-  const liveCoverage = resource?.query_mode === 'datastore' ? local.coverage : 'no';
+  // A small live table held in the browser answers the filters it can read
+  // (not, for example, a range on a text column). While it can still come, a
+  // filter the live portal cannot run waits for it rather than starting a
+  // preparation of the whole file; one neither can read prepares, as before.
+  const liveRefused =
+    resource?.query_mode === 'datastore' &&
+    local.coverage === 'yes' &&
+    refusalOf(local.table.fields, {
+      q: debouncedQ || '',
+      filters: buildColumnFilters(debouncedFilters),
+      sort: sort || null
+    }) !== null;
+  const liveCoverage =
+    resource?.query_mode === 'datastore' ? (liveRefused ? 'no' : local.coverage) : 'no';
   const filtersNeedPreparation =
     resource?.query_mode === 'datastore' && hasNonEq && liveCoverage === 'no';
   const fields = resource?.ingestion?.fields;
@@ -362,7 +373,9 @@ function ResourceExplorer({ id, navigationKey }) {
     view === 'table' && localAnswered && !dataUnsupported && Boolean(local.table?.complete);
   // The server exports only a table it holds or can read live; a file not
   // prepared yet has no server export.
-  const serverExport = resource?.query_mode === 'ingested' || resource?.query_mode === 'datastore';
+  // A live table's export runs on the portal, which reads equality filters only.
+  const serverExport =
+    resource?.query_mode === 'ingested' || (resource?.query_mode === 'datastore' && !hasNonEq);
   const exportInBrowser = () => {
     const table = local.table;
     if (!table) return;
