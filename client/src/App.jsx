@@ -1,32 +1,14 @@
-import { lazy, Suspense } from 'react'
-import { Routes, Route, Link } from 'react-router-dom'
+import { Suspense } from 'react'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import ScrollManager from './components/ScrollManager.jsx'
 import Footer from './components/Footer'
-import HomePage from './pages/HomePage'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
+import PageLoadBoundary from './components/PageLoadBoundary.jsx'
+import { HOSTED_ROUTES, PAGE_ROUTES } from './routeTable.js'
 import RouteHead from './components/RouteHead.jsx'
 import { MapleLeaf } from './components/Icons.jsx'
 import { useLang } from './i18n.jsx'
-import { hostedPart } from './extensions.js'
-
-// Direct visits preload their route through the server's build manifest.
-// Other page code is fetched only when the visitor opens that route.
-const DatasetPage = lazy(() => import('./pages/DatasetPage.jsx'));
-const DatasetsPage = lazy(() => import('./pages/DatasetsPage.jsx'));
-const ResourcePage = lazy(() => import('./pages/ResourcePage.jsx'));
-const OrganizationsPage = lazy(() => import('./pages/OrganizationsPage.jsx'));
-const OrganizationPage = lazy(() => import('./pages/OrganizationPage.jsx'));
-const DocsPage = lazy(() => import('./pages/DocsPage.jsx'));
-const FaqPage = lazy(() => import('./pages/FaqPage.jsx'));
-const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
-const PlacesPage = lazy(() => import('./pages/PlacesPage.jsx'));
-const PlacePage = lazy(() => import('./pages/PlacePage.jsx'));
-const PrivacyPage = lazy(() => import('./pages/PrivacyPage.jsx'));
-const BlogPage = lazy(() => import('./pages/BlogPage.jsx'));
-const InsightsPage = lazy(() => import('./pages/InsightsPage'))
-// Pages only the hosted service serves, such as pricing and the developer account.
-const HOSTED_ROUTES = hostedPart(import.meta.glob('./enterprise/routes.jsx', { eager: true }), [])
 
 function NotFound() {
   const { t } = useLang()
@@ -42,6 +24,7 @@ function NotFound() {
 }
 
 export default function App() {
+  const { pathname } = useLocation()
   return (
     <div className="min-h-screen flex flex-col text-base-content">
       <ScrollManager />
@@ -49,29 +32,15 @@ export default function App() {
       <AnalyticsBridge />
       <Navbar />
       <main className="cq-app-main flex-1 w-full">
-        <Suspense fallback={<div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8"><div className="cq-skel h-[60vh] rounded-2xl" /></div>}>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/insights" element={<InsightsPage />} />
-            <Route path="/datasets" element={<DatasetsPage />} />
-            <Route path="/datasets/:idOrName" element={<DatasetPage />} />
-            <Route path="/resources/:id" element={<ResourcePage />} />
-            <Route path="/organizations" element={<OrganizationsPage />} />
-            <Route path="/organizations/:name" element={<OrganizationPage />} />
-            <Route path="/places" element={<PlacesPage />} />
-            <Route path="/places/:slug" element={<PlacePage />} />
-            <Route path="/docs" element={<DocsPage />} />
-            <Route path="/faq" element={<FaqPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/blog" element={<BlogPage />} />
-            <Route path="/blog/:slug" element={<BlogPage />} />
-            <Route path="/fr/blog" element={<BlogPage language="fr" />} />
-            <Route path="/fr/blog/:slug" element={<BlogPage language="fr" />} />
-            <Route path="/privacy" element={<PrivacyPage />} />
-            {HOSTED_ROUTES.map(route => <Route key={route.path} path={route.path} element={route.element} />)}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
+        <PageLoadBoundary resetKey={pathname}>
+          <Suspense fallback={<div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8"><div className="cq-skel h-[60vh] rounded-2xl" /></div>}>
+            <Routes>
+              {PAGE_ROUTES.map(({ path, page: Page, props }) => <Route key={path} path={path} element={<Page {...props} />} />)}
+              {HOSTED_ROUTES.map(route => <Route key={route.path} path={route.path} element={route.element} />)}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </PageLoadBoundary>
       </main>
       <Footer />
     </div>

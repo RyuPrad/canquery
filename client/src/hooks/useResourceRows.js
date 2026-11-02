@@ -6,6 +6,7 @@ import { PAGE_SIZE, MAX_PAGE_INDEX } from '../utils/resourceExplorerState.js';
 import { track } from '../utils/analytics.js';
 import { resourceHint } from '../utils/resourceHints.js';
 import * as rowPageCache from '../utils/rowPageCache.js';
+import { queryKey as localQueryKey } from '../utils/localTableClient.js';
 
 export const PREFETCH_DELAY_MS = 300;
 const SNAPSHOT_UNAVAILABLE = 'SNAPSHOT_UNAVAILABLE';
@@ -22,11 +23,15 @@ const toPage = (env) => ({
 
 const isAbort = (error) => error?.name === 'AbortError';
 
-// Pages come from the shared cache first. A page the visitor already saw, the
-// page prefetched behind the current one, or the page embedded in the HTML
-// shell shows without a request; a miss keeps the rows already on screen
+// A table held in the browser (useLocalTable) answers first: a complete one
+// answers every page, a partial one the pages its rows cover, with no request.
+// Otherwise pages come from the shared cache. A page the visitor already saw,
+// the page prefetched behind the current one, or the page embedded in the
+// HTML shell shows without a request; a miss keeps the rows already on screen
 // visible while its request runs. Prepared copies are pinned to the snapshot
 // the metadata reports so every page shows the same stored rows and schema.
+// After the visit's first read, server reads are sent as background reads, so
+// popularity counts visits rather than page turns.
 export default function useResourceRows({
   id,
   resource,
@@ -41,7 +46,9 @@ export default function useResourceRows({
   onUnavailable,
   schemaReady,
   setFilterUpgrade,
-  initialRows = null
+  initialRows = null,
+  local = null,
+  heldFinal = false
 }) {
   const filters = useMemo(() => buildColumnFilters(debouncedFilters), [debouncedFilters]);
   const unfiltered = !debouncedQ && Object.keys(filters).length === 0;
@@ -62,18 +69,94 @@ export default function useResourceRows({
     }
     return null;
   });
-  const hit = rowPageCache.peek(key, snapshotId);
   const [state, setState] = useState({ data: null, error: null });
   const [pending, setPending] = useState(true);
   const tracked = useRef(new Set());
+  // The rows last on screen, kept while the next answer is worked out.
+  const [kept, setKept] = useState(null);
+  // The embedded page was the visit's counted read.
+  const counted = useRef(Boolean(initialRows));
+
+  // The in-browser table, asked first.
+  const localTable = view === 'table' ? (local?.table ?? null) : null;
+  const localQuery = useMemo(
+    () => ({
+      q: debouncedQ || '',
+      filters,
+      sort: sort || null,
+      offset: page * PAGE_SIZE,
+      limit: PAGE_SIZE
+    }),
+    [debouncedQ, filters, sort, page]
+  );
+  const localKey = localTable ? localTable.key + '|' + localQueryKey(localQuery) : null;
+  const [asked, setAsked] = useState({ key: null, answer: null });
+  const peeked = localTable ? localTable.peek(localQuery) : undefined;
+  const localAnswer = peeked ?? (asked.key === localKey ? asked.answer : undefined);
+  useEffect(() => {
+    if (!localTable || localTable.peek(localQuery)) return undefined;
+    let cancelled = false;
+    localTable
+      .query(localQuery)
+      .then((answer) => {
+        if (!cancelled) setAsked({ key: localKey, answer });
+      })
+      .catch(() => {
+        if (!cancelled)
+          setAsked({ key: localKey, answer: { status: 'unsupported', reason: 'worker' } });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [localTable, localKey, localQuery]);
+  const canonical = resource?.query_mode === 'ingested' || resource?.query_mode === 'datastore';
+  // Nothing but the rows held will answer (a file whose preparation failed or
+  // is unavailable): they answer every page, and a query they can't read
+  // shows no rows rather than waiting.
+  const final = heldFinal && !canonical;
+  const localUsable =
+    localAnswer?.status === 'ok' &&
+    (localAnswer.complete || final || page * PAGE_SIZE < localAnswer.available);
+  const localRefused = final && Boolean(localTable) && localAnswer?.status === 'unsupported';
+  const mode = resource?.query_mode === 'ingested' ? 'ingested' : (resource?.query_mode ?? null);
+  const localData = useMemo(
+    () =>
+      localUsable
+        ? {
+            fields: localAnswer.fields,
+            records: localAnswer.records,
+            total: localAnswer.total,
+            mode,
+            partial: !localAnswer.complete
+          }
+        : localRefused
+          ? {
+              fields: localTable.fields,
+              records: [],
+              total: null,
+              mode,
+              partial: true,
+              unsupported: true
+            }
+          : null,
+    [localUsable, localRefused, localAnswer, localTable, mode]
+  );
+  // An interim table (a file's rows while its prepared copy is canonical)
+  // stays on screen until the server's page arrives; otherwise it answers alone.
+  const localServes = Boolean(localData) && !(local?.interim && canonical);
+  // The canonical copy is on its way whole: no server page meanwhile.
+  const holdNetwork = Boolean(local?.loading) && Boolean(localData);
+  // Asked of the worker and not answered yet: keep the rows on screen.
+  const localThinking = Boolean(localTable) && localAnswer === undefined;
+  const hit = rowPageCache.peek(key, snapshotId);
 
   const invalidate = useCallback(() => {
     rowPageCache.invalidate(id);
     setState({ data: null, error: new NotIngestedError('Resource has no prepared copy', 409) });
-  }, [id]);
+  }, [id, setState]);
 
   const queryPage = useCallback(
-    (pageIndex, pin, signal) =>
+    (pageIndex, pin, signal, background = counted.current) =>
       queryResource(
         id,
         {
@@ -84,13 +167,22 @@ export default function useResourceRows({
           offset: pageIndex * PAGE_SIZE,
           snapshot: pin || undefined
         },
-        { signal }
-      ).then(toPage),
+        { signal, background }
+      ).then((env) => {
+        counted.current = true;
+        return toPage(env);
+      }),
     [id, debouncedQ, filters, sort]
   );
 
   useEffect(() => {
     if (view !== 'table') {
+      setPending(false);
+      return undefined;
+    }
+    // The browser answers this view, its whole copy is on its way, or the
+    // worker is still working the answer out: no server page.
+    if (localServes || holdNetwork || localThinking) {
       setPending(false);
       return undefined;
     }
@@ -140,8 +232,10 @@ export default function useResourceRows({
       handle.promise
         .then((loaded) => {
           if (cancelled) return;
-          tracked.current.add(key);
           setState({ data: loaded.data, error: null });
+          // One event per view: the local table may have answered it already.
+          if (tracked.current.has(key)) return;
+          tracked.current.add(key);
           track('resource_query', {
             resource_id: id,
             query: debouncedQ || '',
@@ -204,7 +298,10 @@ export default function useResourceRows({
     onUnavailable,
     schemaReady,
     setFilterUpgrade,
-    queryPage
+    queryPage,
+    localServes,
+    holdNetwork,
+    localThinking
   ]);
 
   // A resource the application already knows to be prepared starts its first
@@ -229,7 +326,14 @@ export default function useResourceRows({
   // is on screen, so Next shows it at once. Prepared copies only, unfiltered
   // views only, visible tabs only, and never while a rate limit is in force.
   useEffect(() => {
-    if (!hit || !resource || view !== 'table' || hit.mode !== 'ingested' || !unfiltered)
+    if (
+      !hit ||
+      !resource ||
+      view !== 'table' ||
+      hit.mode !== 'ingested' ||
+      !unfiltered ||
+      localServes
+    )
       return undefined;
     const nextPage = page + 1;
     if (nextPage > MAX_PAGE_INDEX || nextPage * PAGE_SIZE >= hit.total) return undefined;
@@ -241,14 +345,45 @@ export default function useResourceRows({
       release = rowPageCache.prefetch(nextKey, {
         id,
         snapshotId,
-        fetch: (signal) => queryPage(nextPage, snapshotId, signal)
+        fetch: (signal) => queryPage(nextPage, snapshotId, signal, true)
       });
     }, PREFETCH_DELAY_MS);
     return () => {
       clearTimeout(timer);
       release?.();
     };
-  }, [hit, resource, view, unfiltered, page, id, debouncedQ, filters, sort, snapshotId, queryPage]);
+  }, [
+    hit,
+    resource,
+    view,
+    unfiltered,
+    page,
+    id,
+    debouncedQ,
+    filters,
+    sort,
+    snapshotId,
+    queryPage,
+    localServes
+  ]);
+
+  useEffect(() => {
+    if (!localData || localData.unsupported) return;
+    // One event per view, whichever answered it first.
+    if (tracked.current.has(key)) return;
+    tracked.current.add(key);
+    track('resource_query', {
+      resource_id: id,
+      query: debouncedQ || '',
+      filters: JSON.stringify(debouncedFilters),
+      sort: sort || '',
+      page: page + 1,
+      query_mode: localData.mode || '',
+      total: Number(localData.total) || 0,
+      status: 'success',
+      source: 'local'
+    });
+  }, [localData, key, id, debouncedQ, debouncedFilters, sort, page]);
 
   useEffect(() => {
     if (!hit) return;
@@ -270,13 +405,40 @@ export default function useResourceRows({
     });
   }, [hit, key, id, debouncedQ, debouncedFilters, sort, page, snapshotId]);
 
+  // The local answer, unless an interim one has been replaced by the server's page.
+  const showLocal = Boolean(localData) && (localServes || !hit);
+  // Rows a partial table can't give yet (a later page, a filter matching none
+  // of the rows held) wait for the full table, with the rows on screen kept.
+  const waitingForTable =
+    view === 'table' &&
+    Boolean(localTable) &&
+    !localData &&
+    !localThinking &&
+    !hit &&
+    !canonical &&
+    !final;
+  // Until the page asked for arrives, the rows last on screen stay (dimmed
+  // while it loads), whichever engine drew them.
+  const shown = showLocal ? localData : (hit ?? kept ?? state.data);
+  useEffect(() => {
+    if (shown && shown !== kept) setKept(shown);
+  }, [shown, kept]);
   return {
-    data: hit ?? state.data,
-    error: hit ? null : state.error,
-    loading: !hit && pending,
+    data: shown,
+    error: showLocal || hit ? null : state.error,
+    loading: showLocal || localThinking ? false : waitingForTable || (!hit && pending),
     // Set once the rows on screen are the page asked for (not the previous
     // page kept while it loads): the cache key of that page.
-    pageKey: hit ? key : null,
+    pageKey: showLocal || hit ? key : null,
+    // A partial table answered: there may be more rows than it holds.
+    partial: Boolean(showLocal && localData?.partial),
+    // Matching rows the in-browser table holds, when it answered.
+    available: showLocal && localAnswer?.status === 'ok' ? localAnswer.available : null,
+    // The in-browser table answered (its export can be built in the browser).
+    local: showLocal,
+    // The rows held could not read this query, and nothing else will answer.
+    unsupported: Boolean(showLocal && localData?.unsupported),
+    waitingForTable,
     invalidate
   };
 }

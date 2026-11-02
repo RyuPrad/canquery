@@ -25,12 +25,14 @@ test('ready charts and maps do not inherit unrelated table failure state', () =>
   expect(resourceViewState({ ...state, view: 'table' })).toBe('preparation');
 });
 
-test('the first rows read from a file stand in for the table only while a table view is prepared', () => {
+test('rows held in the browser are the table while a file is prepared, on the Table tab only', () => {
   const state = { hasMap: false, filtersNeedPreparation: false, hasData: false, dataLoading: false,
     preparationRequired: true, downloadOnly: false, rowUnavailable: false, rowError: false };
   expect(resourceViewState({ ...state, view: 'table' })).toBe('preparation');
-  expect(resourceViewState({ ...state, view: 'table', hasPreview: true })).toBe('preparation-preview');
-  expect(resourceViewState({ ...state, view: 'chart', hasPreview: true })).toBe('preparation');
-  expect(resourceViewState({ ...state, view: 'table', hasPreview: true, downloadOnly: true })).toBe('download');
-  expect(resourceViewState({ ...state, view: 'table', hasPreview: true, preparationRequired: false, rowUnavailable: true })).toBe('preparation-preview');
+  expect(resourceViewState({ ...state, view: 'table', hasData: true, hasLocalRows: true })).toBe('table');
+  expect(resourceViewState({ ...state, view: 'chart', hasData: true, hasLocalRows: true })).toBe('preparation');
+  expect(resourceViewState({ ...state, view: 'table', hasData: true, hasLocalRows: true, downloadOnly: true })).toBe('download');
+  expect(resourceViewState({ ...state, view: 'table', hasData: true, hasLocalRows: true, preparationRequired: false, rowUnavailable: true })).toBe('table');
+  // A CSV whose first rows are on their way shows the table frame, not a card.
+  expect(resourceViewState({ ...state, view: 'table', awaitingRows: true })).toBe('loading');
 });

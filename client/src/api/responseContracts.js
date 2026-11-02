@@ -16,6 +16,14 @@ export const previewResponse = ({ data, meta }) => record(data) && Array.isArray
   data.fields.every(field) && Array.isArray(data.records) && data.records.every(record) &&
   typeof data.truncated === 'boolean' && record(meta) && meta.query_mode === 'preview';
 
+// As much of a table as fits, for the in-browser table: rows are arrays in
+// field order, and `complete` says whether they are the whole table.
+export const rowsResponse = ({ data, meta }) => record(data) && Array.isArray(data.fields) &&
+  data.fields.every(field) && Array.isArray(data.rows) &&
+  data.rows.every(row => Array.isArray(row) && row.length === data.fields.length) &&
+  typeof data.complete === 'boolean' && (data.total === null || (Number.isSafeInteger(data.total) && data.total >= 0)) &&
+  record(meta) && ['copy', 'live', 'file'].includes(meta.origin);
+
 export const listResponse = ({ data }) => Array.isArray(data) && data.every(record);
 
 export const datasetResponse = ({ data }) => record(data) && typeof data.id === 'string' &&
