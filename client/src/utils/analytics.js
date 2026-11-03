@@ -25,6 +25,11 @@ export const ANALYTICS_EVENTS = new Set([
   'ui_language',
   'ui_theme',
   'outbound_link',
+  // Hosted account surfaces: the alert box and account links. They carry a
+  // dataset id or a placement, never anything about the account itself.
+  'alert_start',
+  'alert_saved',
+  'account_cta',
 ]);
 
 const MAX_VALUE_LENGTH = 500;

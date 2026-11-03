@@ -251,6 +251,7 @@ a.cq-card:hover,
 }
 .cq-navbar-logo { flex-shrink: 0; }
 .cq-navbar-primary,
+.cq-navbar-account-desktop,
 .cq-navbar-theme-desktop,
 .cq-navbar-toggle-desktop { display: none; }
 .cq-navbar-controls {
@@ -311,6 +312,7 @@ a.cq-card:hover,
 .cq-navbar-theme-label { font-size: .82rem; }
 @media (min-width: 1024px) {
   .cq-navbar-primary { display: flex; align-items: center; gap: .25rem; margin-left: auto; }
+  .cq-navbar-account-desktop,
   .cq-navbar-theme-desktop { display: block; }
   .cq-navbar-toggle-desktop { display: inline; }
   .cq-navbar-toggle-mobile,

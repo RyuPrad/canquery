@@ -6,7 +6,9 @@ import { MapleLeaf, ExternalIcon, SparklesIcon, SunIcon, MoonIcon, XIcon } from 
 import { track } from '../utils/analytics.js';
 import { hostedPart } from '../extensions.js';
 
-const { NavLinks } = hostedPart(import.meta.glob('../enterprise/navigation.jsx', { eager: true }), {});
+// The hosted edition adds account links; TopLink is its sign-in or account link,
+// in the top row on wide screens and first in the menu panel on phones.
+const { NavLinks, TopLink } = hostedPart(import.meta.glob('../enterprise/navigation.jsx', { eager: true }), {});
 
 const navClass = ({ isActive }) => 'cq-nav-link' + (isActive ? ' cq-nav-active' : '');
 
@@ -80,6 +82,7 @@ export default function Navbar() {
           </Link>
           <nav className="cq-navbar-primary" aria-label={t('nav.primary')}>{primaryLinks}</nav>
           <div className="cq-navbar-controls">
+            {TopLink && <span className="cq-navbar-account-desktop"><TopLink placement="nav" /></span>}
             <span className="cq-navbar-theme-desktop">
               <button type="button" onClick={chooseTheme} aria-label={t('theme.toggle')} title={t('theme.toggle')} className="cq-nav-link">
                 {dark ? <SunIcon size={16} /> : <MoonIcon size={16} />}
@@ -101,6 +104,7 @@ export default function Navbar() {
         </div>
         {open && <nav id={panelId} className="cq-navbar-panel cq-glass" aria-label={t('nav.menu_navigation')}>
           <div className="cq-navbar-panel-mobile cq-navbar-panel-links">
+            {TopLink && <TopLink placement="nav_menu" onNavigate={close} />}
             <NavLink to="/" end className={navClass} onClick={close}>{t('nav.search')}</NavLink>
             {primaryLinks}
           </div>
