@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { Pool } = require('pg');
-const { searchDatasets } = require('../db/catalogReadQueries');
+const { searchDatasets, matchingDatasetIds, placeDatasetIds, organizationDatasetIds } = require('../db/catalogReadQueries');
 const { readDatasetFacets } = require('../db/catalogFacetQueries');
 const { shapeDatasetFacets } = require('../services/catalogFacets');
 const url = process.env.SPATIAL_TEST_DATABASE_URL;
@@ -70,6 +70,23 @@ integrationDescribe('catalogue filters and facet counts PostgreSQL integration',
     afterAll(async () => {
         if (db) { await db.query('ROLLBACK'); db.release(); }
         if (pool) await pool.end();
+    });
+
+    test('a followed search, place or publisher reads the same datasets as the catalogue', async () => {
+        const sorted = values => [...values].sort();
+        for (const filters of [{}, { org: [id('org_a')] }, { format: ['csv'] }, { level: ['federal'] }, { place: id('territory') },
+            { place: id('town') }, { keyword: ['parks'] }, { queryable: true }]) {
+            expect(sorted(await matchingDatasetIds({ q: token, ...filters }, { limit: 100 }, db))).toEqual(sorted(await list(filters)));
+        }
+        // Newest first, and the limit tells the caller when a search is too broad.
+        expect(await matchingDatasetIds({ q: token }, { limit: 2 }, db)).toEqual([id('fed1'), id('fed2')]);
+        // A place follows its own datasets and those of the places inside it, never wider coverage.
+        expect(sorted(await placeDatasetIds(id('country'), {}, db))).toEqual(sorted([id('mun1'), id('ter1')]));
+        expect(await placeDatasetIds(id('region'), {}, db)).toEqual([id('mun1')]);
+        expect(await placeDatasetIds(id('town'), {}, db)).toEqual([id('mun1')]);
+        expect(await placeDatasetIds(prefix + '_nowhere', {}, db)).toEqual([]);
+        expect(await organizationDatasetIds(id('org_a'), {}, db)).toEqual([id('fed1'), id('mun1')]);
+        expect(await organizationDatasetIds(id('org_b'), { limit: 1 }, db)).toEqual([id('fed2')]);
     });
 
     test('counts every group, deriving levels from declarations and places', async () => {

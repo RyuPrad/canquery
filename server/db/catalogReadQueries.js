@@ -154,6 +154,63 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
         limit, offset, searchExpression(q) || null, literalPatterns(q), listParam(level), queryable || null], db);
 }
 
+// Dataset ids for what the hosted edition lets an owner follow, built from the
+// catalogue's own SQL so a saved search, a place or a publisher matches what its
+// page lists. Each returns at most `limit` ids, the most recently modified first;
+// callers ask for one more than they accept to tell when a target is too broad.
+// search is a catalogue search state (catalogSearchState.js): q, org, format,
+// keyword, place, source, level, mappable and queryable, as searchDatasets reads
+// them; sort and paging do not apply.
+async function matchingDatasetIds(search = {}, { limit = 5001 } = {}, db = pool) {
+    const { q, org, format, keyword, place, source, mappable, level, queryable } = search;
+    const { rows } = await db.query(`${PLACE_CTES}
+        SELECT d.id FROM datasets d
+        LEFT JOIN organizations o ON o.id = d.org_id
+        LEFT JOIN place_matches pm ON pm.dataset_id = d.id
+        WHERE ($1::text IS NULL OR ${match.search('$7')})
+          AND ($2::text[] IS NULL OR ${match.org('$2')})
+          AND ($3::text[] IS NULL OR ${match.format('$3')})
+          AND ($4::text[] IS NULL OR ${match.keyword('$4')})
+          AND ($5::text IS NULL OR pm.dataset_id IS NOT NULL)
+          AND ($6::text[] IS NULL OR ${match.source('$6')})
+          AND ($8::boolean IS NULL OR ${HAS_MAP})
+          AND ($9::text[] IS NULL OR ${match.level('$9')})
+          AND ($10::boolean IS NULL OR ${HAS_TABLE})
+        ORDER BY d.metadata_modified DESC NULLS LAST, d.id
+        LIMIT $11
+    `, [q || null, listParam(org), listParam(format, upper), listParam(keyword), place || null, listParam(source),
+        searchExpression(q) || null, mappable || null, listParam(level), queryable || null, limit]);
+    return rows.map(row => row.id);
+}
+
+// The datasets of a place and of every place inside it (the place's own page also
+// shows wider datasets covering it, which a follower would hear about from every
+// place). placeIdOrSlug is a place id, slug or alias slug.
+async function placeDatasetIds(placeIdOrSlug, { limit = 30001 } = {}, db = pool) {
+    const { rows } = await db.query(`WITH RECURSIVE followed AS (
+            SELECT p.id FROM places p
+            WHERE p.id = $1 OR p.slug = $1
+               OR EXISTS (SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $1)
+            UNION
+            SELECT child.id FROM places child JOIN followed f ON child.parent_id = f.id
+        )
+        SELECT d.id FROM datasets d
+        WHERE EXISTS (SELECT 1 FROM dataset_places dp WHERE dp.dataset_id = d.id AND dp.place_id IN (SELECT id FROM followed))
+        ORDER BY d.metadata_modified DESC NULLS LAST, d.id
+        LIMIT $2
+    `, [placeIdOrSlug, limit]);
+    return rows.map(row => row.id);
+}
+
+// The datasets a publishing organization (id or name) holds.
+async function organizationDatasetIds(orgIdOrName, { limit = 30001 } = {}, db = pool) {
+    const { rows } = await db.query(`SELECT d.id FROM datasets d JOIN organizations o ON o.id = d.org_id
+        WHERE o.id = $1 OR o.name = $1
+        ORDER BY d.metadata_modified DESC NULLS LAST, d.id
+        LIMIT $2`, [orgIdOrName, limit]);
+    return rows.map(row => row.id);
+}
+
 async function getDatasetByIdOrName(idOrName) {
     const result = await pool.query(`
         SELECT d.id, d.name, d.title_en, d.title_fr, d.notes_en, d.notes_fr, d.org_id,
@@ -829,6 +886,9 @@ async function getJobHealth() {
 
 module.exports = {
     searchDatasets,
+    matchingDatasetIds,
+    placeDatasetIds,
+    organizationDatasetIds,
     getDatasetByIdOrName,
     listResourcesForDataset,
     getResourceById,

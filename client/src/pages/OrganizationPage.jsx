@@ -13,6 +13,7 @@ import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
+import FollowSlot from '../components/FollowSlot.jsx';
 import { BuildingIcon, MapIcon, MapPinIcon, TableIcon } from '../components/Icons.jsx';
 
 function OrganizationExplorer({ name }) {
@@ -109,6 +110,7 @@ function OrganizationExplorer({ name }) {
             <span className="cq-chip cq-chip-red"><TableIcon size={11} />{organization.queryable_dataset_count.toLocaleString(locale)} {t('orgs.queryable')}</span>
             <span className="cq-chip cq-chip-teal"><MapIcon size={11} />{organization.mappable_dataset_count.toLocaleString(locale)} {t('orgs.mappable')}</span>
           </div>
+          <div className="mt-4 empty:hidden"><FollowSlot kind="organization" target={organization.name} title={title} /></div>
           {organization.place && (
             <Link
               to={'/places/' + organization.place.slug}

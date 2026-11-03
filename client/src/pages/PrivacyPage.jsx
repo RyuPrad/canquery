@@ -58,6 +58,7 @@ export default function PrivacyPage() {
       <section className="mt-9">
         <h2 className="text-xl font-semibold font-display">{t('privacy.control_title')}</h2>
         <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.control_body')}</p>
+        <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.recent_body')}</p>
       </section>
 
       {adsEnabled() && (

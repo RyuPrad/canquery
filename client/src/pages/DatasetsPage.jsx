@@ -164,6 +164,7 @@ export default function DatasetsPage() {
         }
       >
         <CatalogResultsHeader
+          search={search}
           total={counts.total}
           stale={counts.stale}
           sort={shown.sort}

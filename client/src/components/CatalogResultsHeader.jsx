@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { useLang } from '../i18n.jsx';
 import { XIcon } from './Icons.jsx';
+import SaveSearchSlot from './SaveSearchSlot.jsx';
 
 // Without search text the default order is already the most recently
 // updated first, so "Best match" only appears for a search.
@@ -17,7 +18,8 @@ export default function CatalogResultsHeader({
   hasQuery,
   onSort,
   chips = [],
-  onRemove
+  onRemove,
+  search
 }) {
   const { t, lang } = useLang();
   const sortId = useId();
@@ -43,6 +45,7 @@ export default function CatalogResultsHeader({
         >
           {count}
         </p>
+        <SaveSearchSlot search={search} total={total} />
         <div className="cq-sort">
           <label htmlFor={sortId}>{t('sort.label')}</label>
           <select

@@ -17,6 +17,7 @@ import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
+import FollowSlot from '../components/FollowSlot.jsx';
 import { ArrowRightIcon, BuildingIcon, MapIcon, MapPinIcon } from '../components/Icons.jsx';
 
 const PROVINCE_KINDS = ['province', 'territory'];
@@ -295,17 +296,20 @@ function PlaceExplorer({ slug }) {
             <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3">{fill(t('places.open_data_title'), { name })}</h1>
             <PlaceIntro place={place} facets={facets} lang={lang} t={t} />
           </div>
-          <Link
-            to={'/?place=' + encodeURIComponent(place.slug)}
-            className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
-            onClick={() => writePlace(place.slug)}
-            data-analytics-event="place_open"
-            data-analytics-place-id={place.id}
-            data-analytics-place-slug={place.slug}
-            data-analytics-source="search_here"
-          >
-            <MapPinIcon size={13} />{t('places.search_here')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <FollowSlot kind="place" target={place.id} title={name} />
+            <Link
+              to={'/?place=' + encodeURIComponent(place.slug)}
+              className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
+              onClick={() => writePlace(place.slug)}
+              data-analytics-event="place_open"
+              data-analytics-place-id={place.id}
+              data-analytics-place-slug={place.slug}
+              data-analytics-source="search_here"
+            >
+              <MapPinIcon size={13} />{t('places.search_here')}
+            </Link>
+          </div>
         </div>
       </div>
 

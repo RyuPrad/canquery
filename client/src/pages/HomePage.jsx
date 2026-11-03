@@ -12,6 +12,7 @@ import SearchBar from '../components/SearchBar.jsx';
 import DatasetRow from '../components/DatasetRow.jsx';
 import RecentRail from '../components/RecentRail.jsx';
 import PopularRail from '../components/PopularRail.jsx';
+import RecentlyViewedRail from '../components/RecentlyViewedRail.jsx';
 import HomeFeaturedCharts from '../components/HomeFeaturedCharts.jsx';
 import { formatRelativeTime } from '../utils/time.js';
 import { readPlace, writePlace } from '../utils/placeStore.js';
@@ -388,6 +389,7 @@ export default function HomePage() {
                 }
               >
                 <CatalogResultsHeader
+                  search={search}
                   total={counts.total}
                   stale={counts.stale}
                   sort={shown.sort}
@@ -463,6 +465,7 @@ export default function HomePage() {
 
         {!filtering && (
           <div className="cq-home-discovery">
+            <RecentlyViewedRail />
             <PopularRail place={place || undefined} />
             <RecentRail place={place || undefined} />
           </div>
