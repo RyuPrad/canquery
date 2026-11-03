@@ -32,6 +32,14 @@ describe('analytics event wrapper', () => {
     expect(track('resource_open', { resource_id: 'r1' })).toBe(false);
   });
 
+  test('allows the hosted account events, which carry only ids and placements', () => {
+    window.umami = { track: vi.fn() };
+    expect(track('alert_start', { dataset_id: 'd1', variant: 'dataset' })).toBe(true);
+    expect(track('alert_saved', { dataset_id: 'd1', lmia: false })).toBe(true);
+    expect(track('account_cta', { placement: 'nav', action: 'signin' })).toBe(true);
+    expect(window.umami.track).toHaveBeenCalledTimes(3);
+  });
+
   test('drops non-finite numbers', () => {
     expect(sanitizeAnalyticsProperties({ ok: 2, nope: Infinity })).toEqual({ ok: 2 });
   });
