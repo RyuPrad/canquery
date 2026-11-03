@@ -241,6 +241,21 @@ do not run JavaScript; `ROW_SAMPLES_RENDER=false` in the API environment hides
 them. Run `node scripts/sample-resource-rows.js --dry-run` to see the next
 batch before enabling the schedule.
 
+`build-lmia-history` is optional and commented out as well. It reads every
+English file of the federal positive LMIA employers list (dataset
+`90fed587-1364-4f33-a9ee-208181dc0b97`; CSV from 2014, Excel from 2020) through
+the same download guard and Excel converters as preparation, and loads one row
+per employer line into `lmia_positive_rows` (migration 050), then refreshes the
+`lmia_employers` view the `/lmia` pages search. A file whose catalogue version is
+unchanged is skipped, so a daily run downloads nothing until the publisher adds or
+corrects a file; the first run downloads all 40 files (about 30 MB) one at a time
+and takes a few minutes. A file that fails keeps its last good rows, and the run
+records the failure in `lmia_files` and `sync_runs` (kind `lmia-history`). Run
+`node scripts/build-lmia-history.js --dry-run` first: it downloads and reads the
+changed files and writes nothing. `--force` reloads every file and
+`--file=RESOURCE_ID` handles one. The database needs the `pg_trgm` extension
+(PostgreSQL contrib), which migration 050 creates.
+
 The two Search Console entries are intentionally commented out in the generic
 cron template. Before enabling them, create a Google Desktop OAuth client owned
 by the site operator, enable the Search Console API, and set the OAuth app to a
