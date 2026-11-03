@@ -30,9 +30,19 @@ describe('lmiaPeriod', () => {
             .toEqual({ key: 201412, kind: 'year', start: '2014-06-20', end: '2014-12-31' });
         expect(lmiaPeriod('2024Q4-Employers')).toMatchObject({ key: 202412, start: '2024-10-01', end: '2024-12-31' });
     });
-    test('refuses names without a leading period', () => {
-        for (const name of ['Employers 2016', '2017Q3Q1-Employers', '2017Q1Q4-x', '20171-Employers', '', null, 'Q2 2026']) {
-            expect(lmiaPeriod(name)).toBeNull();
+    test('refuses names without a leading period, and years the list cannot have', () => {
+        const now = new Date('2026-11-03T00:00:00Z');
+        for (const name of ['Employers 2016', '2017Q3Q1-Employers', '2017Q1Q4-x', '20171-Employers', '', null, 'Q2 2026',
+            '3026Q2-Employers', '2013-Employers', '2028Q1-Employers']) {
+            expect(lmiaPeriod(name, { now })).toBeNull();
+        }
+        expect(lmiaPeriod('2027Q1-Employers', { now })).toMatchObject({ key: 202703 });
+    });
+
+    test('a range with a day that does not exist, or that runs backwards, keeps the whole year', () => {
+        for (const name of ['2014-Employers between June 0 and December 31, 2014', '2014-Employers between June 20 and June 3, 2014',
+            '2014-Employers between February 30 and December 31, 2014']) {
+            expect(lmiaPeriod(name)).toMatchObject({ key: 201412, start: '2014-01-01', end: '2014-12-31' });
         }
     });
 });
@@ -53,16 +63,20 @@ describe('normalizeRecords', () => {
             ['Outside Canada'],
             ['Employer', 'Address', 'Positions Approved'],
             ['Global Ship Management', 'Wanchai, NL A0A 0A0', '4'],
+            ['Total Lubrication Management Company', '1740 Stebbins Drive, Houston, TX 770043', '5'],
+            ['Other employers', '', '5,967'],
+            ['Total ', '', '30,396'],
             ...NOTES
         ]);
         expect(rows.map(row => [row.employer, row.employer_key, row.province, row.city, row.approved_positions])).toEqual([
             ['Central Regional Health Authority', 'central regional health authority', 'NL', 'GRAND FALLS - WINDSOR', 2],
             ['Atlantic Fish Co.', 'atlantic fish', 'NL', "St. John's", 1],
             ['Maple Farms Ltd', 'maple farms', 'ON', 'Leamington', 12],
-            ['Global Ship Management', 'global ship management', 'HO', 'Wanchai', 4]
+            ['Global Ship Management', 'global ship management', 'HO', 'Wanchai', 4],
+            ['Total Lubrication Management Company', 'total lubrication management', 'HO', null, 5]
         ]);
         expect(rows.every(row => row.stream === null && row.occupation_code === null && row.approved_lmias === null)).toBe(true);
-        expect(skipped).toMatchObject({ sections: 2, headers: 2, notes: 3, no_positions: 0 });
+        expect(skipped).toMatchObject({ sections: 2, headers: 2, notes: 3, aggregates: 2, no_positions: 0 });
     });
 
     test('2016: blank province and employer cells carry down, with or without a new address', () => {
@@ -150,11 +164,58 @@ describe('normalizeRecords', () => {
 
     test('refuses a table that is not the list', () => {
         expect(() => normalizeRecords([['Name', 'Count'], ['A', '1']])).toThrow(LmiaFileError);
-        try {
-            normalizeRecords([['Name', 'Count']]);
-        } catch (error) {
-            expect(error.code).toBe('unrecognized_layout');
-        }
+        expect(() => normalizeRecords([['Name', 'Count']])).toThrow(expect.objectContaining({ code: 'unrecognized_layout' }));
+    });
+
+    test('pivot placeholders: a "(blank)" employer is skipped, not filled down; a "(blank)" province is unknown', () => {
+        const { rows, skipped } = normalizeRecords([
+            MODERN_HEADER,
+            ['Ontario', 'High Wage', 'First Co', 'Toronto, ON M5J 2X5', '72310-Carpenters', 'Unknown', '1', '1'],
+            ['Ontario', 'High Wage', '(blank)', '(blank)', '72310-Carpenters', 'Unknown', '1', '4'],
+            ['(blank)', '(blank)', 'Second Co', 'Ottawa, ON K1P 1J1', '(blank)', '(blank)', '1', '2']
+        ]);
+        expect(rows.map(row => [row.employer, row.province, row.stream, row.incorporation, row.approved_positions])).toEqual([
+            ['First Co', 'ON', 'High Wage', 'Unknown', 1], ['Second Co', null, null, null, 2]]);
+        expect(skipped.no_employer).toBe(1);
+    });
+
+    test('a blank employer continues the one above only when its province is blank too', () => {
+        const { rows, skipped } = normalizeRecords([
+            MODERN_HEADER,
+            ['Ontario', 'High Wage', 'First Co', 'Toronto, ON M5J 2X5', '72310-Carpenters', 'Unknown', '1', '1'],
+            ['Alberta', 'High Wage', '', 'Calgary, AB T2P 1J9', '72310-Carpenters', 'Unknown', '1', '3']
+        ]);
+        expect(rows.map(row => row.employer)).toEqual(['First Co']);
+        expect(skipped.no_employer).toBe(1);
+    });
+
+    test('an unknown label in a sectioned file ends the section instead of keeping its province', () => {
+        const { rows } = normalizeRecords([
+            ['Employer', 'Address', 'Positions approved'],
+            ['Ontario'],
+            ['Maple Farms Ltd', 'Leamington, ON N8H 1A1', '12'],
+            ['Some new grouping'],
+            ['Elsewhere Inc', 'Somewhere', '2']
+        ]);
+        expect(rows.map(row => [row.employer, row.province])).toEqual([['Maple Farms Ltd', 'ON'], ['Elsewhere Inc', null]]);
+    });
+
+    test('cities come from Canadian addresses as the publisher wrote them over the years', () => {
+        const { cityOf } = history;
+        expect(cityOf("Box 20, 215 Water Street, Suite 511, St. John's, NL A1C 6C9")).toBe("St. John's");
+        expect(cityOf("St. John's, A1N3J7")).toBe("St. John's");
+        expect(cityOf('MONTREAL, QC H3G 1T')).toBe('MONTREAL');
+        expect(cityOf('St-Sébastien,, QC J0J 2C0')).toBe('St-Sébastien');
+        expect(cityOf('Mississauga, ON, ON L5N 1A1')).toBe('Mississauga');
+        expect(cityOf('GRAND FALLS - WINDSOR, NL A2A 2E1')).toBe('GRAND FALLS - WINDSOR');
+        expect(cityOf('Edmonton, AB  T6R\u00a00X5')).toBe('Edmonton');
+        expect(cityOf('100 Mile House, BC V0K 2E0')).toBe('100 Mile House');
+        expect(cityOf('RR# 1 Waterford, ON N0E 1Y0')).toBe('Waterford');
+        expect(cityOf('R. R. #2 Simcoe, ON N3Y 4K1')).toBe('Simcoe');
+        expect(cityOf('blue river, po box 25, BC V0E 1J0')).toBe('blue river');
+        expect(cityOf('1740 Stebbins Drive, Houston, TX 770043')).toBeNull();
+        expect(cityOf('123 Main Street')).toBeNull();
+        expect(cityOf('')).toBeNull();
     });
 });
 
@@ -165,6 +226,12 @@ describe('fileSummary and validate', () => {
             known_provinces: 1 });
         expect(() => validate(fileSummary(rows))).not.toThrow();
     });
+    test('refuses a file where one line holds half the positions (a total)', () => {
+        const records = modernRecords(120);
+        records[5][7] = '1000';
+        expect(() => validate(fileSummary(normalizeRecords(records).rows))).toThrow('aggregate_row');
+    });
+
     test('refuses a file with too few rows or unknown provinces', () => {
         expect(() => validate(fileSummary(normalizeRecords(modernRecords(20)).rows))).toThrow('too_few_rows');
         const records = modernRecords(120);
@@ -241,6 +308,16 @@ function encodeWindows1252(text) {
     }));
 }
 
+describe('converterFailure', () => {
+    test('timeouts and size caps keep their meaning', () => {
+        expect(history.converterFailure(Object.assign(new Error('x'), { code: 'EXCEL_TIMEOUT' }))).toBe('timeout');
+        expect(history.converterFailure(Object.assign(new Error('x'), { name: 'TimeoutError' }))).toBe('timeout');
+        expect(history.converterFailure(Object.assign(new Error('x'), { name: 'AbortError' }))).toBe('timeout');
+        expect(history.converterFailure(Object.assign(new Error('x'), { code: 'CAP_ROWS' }))).toBe('too_large');
+        expect(history.converterFailure(new Error('corrupt'))).toBe('not_a_table');
+    });
+});
+
 describe('failureCode', () => {
     test('maps download and file errors to stable codes', () => {
         expect(history.failureCode(new LmiaFileError('too_few_rows'))).toBe('too_few_rows');
@@ -268,8 +345,8 @@ describe('runHistory', () => {
             calls,
             deps: {
                 listResources: async () => [q2, q2old, q1, odd],
-                listFiles: async () => [{ resource_id: 'q1', source_version: resourceVersion(q1) },
-                    { resource_id: 'gone', source_version: 'v' }],
+                listFiles: async () => [{ resource_id: 'q1', period_key: 202603, source_version: resourceVersion(q1) },
+                    { resource_id: 'gone', period_key: 202503, source_version: 'v' }],
                 readFile: async (row, { signal }) => {
                     expect(signal).toBeInstanceOf(AbortSignal);
                     calls.read.push(row.id);
@@ -278,6 +355,7 @@ describe('runHistory', () => {
                 saveFile: async input => { calls.saved.push(input); },
                 saveFailure: async input => { calls.failures.push(input); },
                 refreshEmployers: async () => { calls.refresh += 1; },
+                employersBehind: async () => false,
                 wait: async ms => { calls.waits.push(ms); },
                 ...overrides
             }
@@ -328,5 +406,60 @@ describe('runHistory', () => {
         expect(summary).toMatchObject({ loaded: 0, failed: 2 });
         expect(calls.failures.map(input => [input.file.id, input.failure])).toEqual([['q2', 'gone'], ['q1', 'too_few_rows']]);
         expect(calls.refresh).toBe(0);
+    });
+
+    test('the newer of two files for a period wins by date, as the database returns them', () => {
+        const { files, superseded } = history.pickFiles([
+            { ...q1, id: 'original', last_modified: new Date('2026-07-21T00:00:00Z') },
+            { ...q1, id: 'correction', last_modified: new Date('2026-10-30T00:00:00Z') },
+            { ...q1, id: 'undated', last_modified: null }
+        ]);
+        expect(files.map(file => file.id)).toEqual(['correction']);
+        expect(superseded.sort()).toEqual(['original', 'undated']);
+    });
+
+    test('a file renamed to another period loads again', async () => {
+        const { calls, deps: d } = deps({
+            listResources: async () => [q1],
+            listFiles: async () => [{ resource_id: 'q1', period_key: 202506, source_version: resourceVersion(q1) }]
+        });
+        await runHistory({ deps: d });
+        expect(calls.read).toEqual(['q1']);
+    });
+
+    test('a version that already failed waits for a new one, unless asked for', async () => {
+        const failedBefore = { resource_id: 'q2', period_key: 202606, source_version: null, failed_version: resourceVersion(q2) };
+        const waiting = deps({ listResources: async () => [q2], listFiles: async () => [failedBefore] });
+        const summary = await runHistory({ deps: waiting.deps });
+        expect(waiting.calls.read).toEqual([]);
+        expect(summary.waiting).toBe(1);
+        const asked = deps({ listResources: async () => [q2], listFiles: async () => [failedBefore] });
+        await runHistory({ only: 'q2', deps: asked.deps });
+        expect(asked.calls.read).toEqual(['q2']);
+    });
+
+    test('a failure that cannot be recorded does not stop the other files', async () => {
+        const { calls, deps: d } = deps({
+            readFile: async row => {
+                calls.read.push(row.id);
+                if (row.id === 'q2') throw Object.assign(new Error('Not Found'), { httpStatus: 404 });
+                return modernRecords();
+            },
+            saveFailure: async () => { throw new Error('check constraint'); }
+        });
+        const summary = await runHistory({ force: true, deps: d });
+        expect(calls.read).toEqual(['q2', 'q1']);
+        expect(summary).toMatchObject({ failed: 1, loaded: 1 });
+        expect(summary.results[0]).toMatchObject({ failure: 'gone', record_error: 'check constraint' });
+    });
+
+    test('a refresh that did not happen is made up on the next run; --file names an unknown file', async () => {
+        const { calls, deps: d } = deps({ employersBehind: async () => true });
+        const summary = await runHistory({ deps: { ...d, readFile: async () => { throw new Error('should not read'); },
+            listResources: async () => [q1] } });
+        expect(summary).toMatchObject({ loaded: 0, refreshed: true });
+        expect(calls.refresh).toBe(1);
+        const unknown = await runHistory({ only: 'nope', deps: deps().deps });
+        expect(unknown.unknown_file).toBe('nope');
     });
 });

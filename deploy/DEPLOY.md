@@ -250,10 +250,12 @@ per employer line into `lmia_positive_rows` (migration 050), then refreshes the
 unchanged is skipped, so a daily run downloads nothing until the publisher adds or
 corrects a file; the first run downloads all 40 files (about 30 MB) one at a time
 and takes a few minutes. A file that fails keeps its last good rows, and the run
-records the failure in `lmia_files` and `sync_runs` (kind `lmia-history`). Run
+records the failure in `lmia_files` and `sync_runs` (kind `lmia-history`); that
+version is not downloaded again until the publisher changes the file. A run also
+rebuilds the view when an earlier refresh did not finish. Run
 `node scripts/build-lmia-history.js --dry-run` first: it downloads and reads the
 changed files and writes nothing. `--force` reloads every file and
-`--file=RESOURCE_ID` handles one. The database needs the `pg_trgm` extension
+`--file=RESOURCE_ID` handles one (and retries a version that failed). The database needs the `pg_trgm` extension
 (PostgreSQL contrib), which migration 050 creates.
 
 The two Search Console entries are intentionally commented out in the generic

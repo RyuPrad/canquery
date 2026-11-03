@@ -13,7 +13,8 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
     let pool, db;
     const prefix = 'lmia_history_' + process.pid;
     const id = name => prefix + '_' + name;
-    const file = (key, name) => ({ id: id(key), period: lmiaPeriod(name) });
+    // Periods in 2999 are plausible only to a run that believes it is 2999.
+    const file = (key, name) => ({ id: id(key), period: lmiaPeriod(name, { now: new Date('2999-07-01T00:00:00Z') }) });
     const parse = rows => {
         const { rows: parsed } = normalizeRecords([HEADER, ...rows]);
         return { rows: parsed, counts: fileSummary(parsed) };
@@ -66,7 +67,9 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
         await queries.saveLmiaFile({ file: q1, version: 'v-q1', ...q1rows }, db);
         const files = mine(await queries.listLmiaFiles(db));
         expect(files.map(f => [f.period_key, f.source_version, f.failure])).toEqual([[299903, 'v-q1', null], [299906, 'v-q2', null]]);
+        expect(await queries.lmiaEmployersBehind(db)).toBe(true);
         await queries.refreshLmiaEmployers(db);
+        expect(await queries.lmiaEmployersBehind(db)).toBe(false);
 
         const { rows: [danchar] } = await db.query("SELECT * FROM lmia_employers WHERE employer_key = 'zqx danchar'");
         expect(danchar).toMatchObject({ employer: 'Zqx Danchar Ltd', province: 'ON', city: 'Toronto', provinces: ['AB', 'ON'],
@@ -82,6 +85,8 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
         const second = await queries.searchLmiaEmployers({ key: 'zqx', limit: 2, offset: 2 }, db);
         expect(second).toMatchObject({ total: 4 });
         expect(second.rows).toHaveLength(2);
+        expect(await queries.searchLmiaEmployers({ key: 'zqx', limit: 2, offset: 10 }, db)).toEqual({ total: 4, rows: [] });
+        await expect(queries.searchLmiaEmployers({ key: 'zqx%' }, db)).rejects.toThrow(TypeError);
 
         const summary = await queries.getLmiaSummary(db);
         expect(summary.latest).toMatchObject({ resource_id: id('q2'), period_key: 299906, period_kind: 'quarter',

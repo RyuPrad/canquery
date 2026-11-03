@@ -35,11 +35,14 @@ const lastDay = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate()
 // The period a file covers, from the start of its catalogue name: "2026Q2-…" is a
 // quarter, "2017Q1Q2-…" two quarters, "2016-…" a year ("…between June 20 and
 // December 31, 2014…" narrows a year). key is the year and last month: 202606.
-function lmiaPeriod(name) {
+// Years outside the list's span (2014 to next year) are typos, not periods.
+function lmiaPeriod(name, { now = new Date() } = {}) {
     const text = typeof name === 'string' ? name.trim() : '';
+    const plausible = year => year >= 2014 && year <= now.getUTCFullYear() + 1;
     let match = /^(\d{4})\s*Q([1-4])(?:\s*Q([1-4]))?(?![0-9])/i.exec(text);
     if (match) {
         const year = Number(match[1]);
+        if (!plausible(year)) return null;
         const first = Number(match[2]);
         const last = match[3] ? Number(match[3]) : first;
         if (last < first || last - first > 1) return null;
@@ -49,7 +52,7 @@ function lmiaPeriod(name) {
             start: iso(year, startMonth, 1), end: iso(year, endMonth, lastDay(year, endMonth)) };
     }
     match = /^(\d{4})(?=\s*[-–:,(]|\s*$)/.exec(text);
-    if (!match) return null;
+    if (!match || !plausible(Number(match[1]))) return null;
     const year = Number(match[1]);
     let start = iso(year, 1, 1);
     let end = iso(year, 12, 31);
@@ -57,9 +60,13 @@ function lmiaPeriod(name) {
     if (range && Number(range[5]) === year) {
         const from = MONTHS.indexOf(range[1].toLowerCase()) + 1;
         const to = MONTHS.indexOf(range[3].toLowerCase()) + 1;
-        if (from > 0 && to >= from) {
-            start = iso(year, from, Math.min(Number(range[2]), lastDay(year, from)));
-            end = iso(year, to, Math.min(Number(range[4]), lastDay(year, to)));
+        const fromDay = Number(range[2]);
+        const toDay = Number(range[4]);
+        // A narrower range only when both days exist and it runs forward.
+        if (from > 0 && to > 0 && fromDay >= 1 && toDay >= 1 && fromDay <= lastDay(year, from) && toDay <= lastDay(year, to) &&
+            (to > from || (to === from && toDay >= fromDay))) {
+            start = iso(year, from, fromDay);
+            end = iso(year, to, toDay);
         }
     }
     return { key: year * 100 + Number(end.slice(5, 7)), kind: 'year', start, end };
@@ -103,10 +110,34 @@ function occupation(value) {
     return { code: match[1], title: match[2].trim().slice(0, NAME_LIMITS.occupation_title), noc: match[1].length === 5 ? 2021 : 2011 };
 }
 
-// "GRAND FALLS - WINDSOR, NL A2A 2E1" is in Grand Falls - Windsor.
+// The city of a Canadian address: the last part left once a trailing postal code
+// (whole or cut short) and province codes are removed. "Box 20, 215 Water Street,
+// St. John's, NL A1C 6C9" is in St. John's, as are "St. John's, A1N3J7" and
+// "MONTREAL, QC H3G 1T" in Montreal. Without a province code or postal code to show
+// where the city ends (a street alone, a foreign address), there is none.
+const POSTAL_TAIL = /[\s,]*[A-Z]\d[A-Z](?:\s*\d(?:[A-Z]\d?)?)?\s*$/i;
+const PROVINCE_TAIL = /[\s,]*\b(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)\s*$/;
+const NOT_A_CITY = /^(?:p\.?\s*o\.?\s*box|box|suite|unit|bureau|c\.?\s*p\.?)\b/i;
+const ROUTE_PREFIX = /^(?:r\.?\s*r\.?|s\.?\s*s\.?)\s*#?\s*\d+\s+/i;
 function cityOf(address) {
-    const match = /^(.+?),\s*[A-Z]{2}\b(?:\s+[A-Z]\d[A-Z]\s?\d[A-Z]\d)?\s*$/.exec(address || '');
-    return match ? match[1].trim().slice(0, NAME_LIMITS.city) || null : null;
+    let text = String(address || '').replace(/\s+/g, ' ').trim();
+    let marked = false;
+    for (let pass = 0; pass < 3; pass += 1) {
+        const before = text;
+        text = text.replace(POSTAL_TAIL, '').replace(PROVINCE_TAIL, '').trim();
+        if (text === before) break;
+        marked = true;
+    }
+    if (!marked) return null;
+    // From the end: skip a box, suite or unit, and drop a rural route before the name
+    // ("RR# 1 Waterford" is in Waterford). "100 Mile House" keeps its number.
+    const parts = text.split(',').map(part => part.trim()).filter(Boolean);
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+        if (NOT_A_CITY.test(parts[index])) continue;
+        const city = parts[index].replace(ROUTE_PREFIX, '').trim();
+        return /\p{L}/u.test(city) ? city.slice(0, NAME_LIMITS.city) : null;
+    }
+    return null;
 }
 
 function count(value) {
@@ -116,6 +147,10 @@ function count(value) {
 }
 
 const clean = value => (value === null || value === undefined ? '' : String(value)).replace(/\s+/g, ' ').trim();
+// The pivot-table placeholder some files print in an empty cell.
+const PLACEHOLDER = /^\(blank\)$/i;
+// The 2014 file ends with an "Other employers" line and a "Total" line.
+const AGGREGATE = /^(?:(?:grand\s+)?total|other employers)$/i;
 
 // ---- Layout ----------------------------------------------------------------------
 
@@ -160,7 +195,7 @@ function normalizeRecords(records) {
     if (!header) throw new LmiaFileError('unrecognized_layout');
     const { columns } = header;
     const cell = (record, name) => (columns[name] === undefined ? '' : clean(record[columns[name]]));
-    const skipped = { notes: 0, sections: 0, headers: 0, other: 0, no_positions: 0, no_employer: 0 };
+    const skipped = { notes: 0, sections: 0, headers: 0, other: 0, aggregates: 0, no_positions: 0, no_employer: 0 };
     let section = null;
     for (const record of records.slice(0, header.index)) {
         const cells = record.map(clean).filter(Boolean);
@@ -182,11 +217,13 @@ function normalizeRecords(records) {
             const code = columns.province === undefined ? provinceCode(cells[0]) : null;
             if (code) {
                 section = code;
-                last = null;
                 skipped.sections += 1;
             } else {
+                // An unknown label ends the current section: its rows stay without a province.
+                if (columns.province === undefined) section = null;
                 skipped.other += 1;
             }
+            last = null;
             continue;
         }
         if (headerColumns(record)) {
@@ -198,22 +235,35 @@ function normalizeRecords(records) {
             skipped.no_positions += 1;
             continue;
         }
+        const raw = name => (PLACEHOLDER.test(cell(record, name)) ? '' : cell(record, name));
         const employerCell = cell(record, 'employer');
-        const continued = !employerCell && last !== null;
-        const employer = (employerCell || (last && last.employer) || '').slice(0, NAME_LIMITS.employer);
+        if (PLACEHOLDER.test(employerCell)) {
+            skipped.no_employer += 1;
+            continue;
+        }
+        if (AGGREGATE.test(employerCell) && !raw('address') && !raw('occupation')) {
+            skipped.aggregates += 1;
+            continue;
+        }
+        const provinceCell = raw('province');
+        // A row continues the employer above only when its grouped cells are blank too:
+        // files that repeat every column never leave an employer blank.
+        const continued = !employerCell && last !== null && (columns.province === undefined || !provinceCell);
+        const employer = (employerCell || (continued ? last.employer : '')).slice(0, NAME_LIMITS.employer);
         const key = employerKey(employer);
         if (!employer || !key) {
             skipped.no_employer += 1;
             continue;
         }
-        const address = (cell(record, 'address') || (continued ? last.address : '') || '').slice(0, NAME_LIMITS.address) || null;
-        const provinceCell = cell(record, 'province');
-        const role = occupation(cell(record, 'occupation'));
+        const address = (raw('address') || (continued ? last.address : '') || '').slice(0, NAME_LIMITS.address) || null;
+        const role = occupation(raw('occupation'));
         const row = {
             line: index + 1,
             // A province cell that is not a province stays unknown rather than inherited.
-            province: columns.province === undefined ? section : provinceCell ? provinceCode(provinceCell) : last && last.province,
-            stream: columns.stream === undefined ? null : streamName(cell(record, 'stream')) || (last && last.stream) || null,
+            province: columns.province === undefined ? section : PLACEHOLDER.test(cell(record, 'province')) ? null
+                : provinceCell ? provinceCode(provinceCell) : last ? last.province : null,
+            stream: columns.stream === undefined ? null : PLACEHOLDER.test(cell(record, 'stream')) ? null
+                : streamName(cell(record, 'stream')) || (last && last.stream) || null,
             employer,
             employer_key: key,
             address,
@@ -221,7 +271,7 @@ function normalizeRecords(records) {
             occupation_code: role ? role.code : null,
             occupation_title: role ? role.title : null,
             noc_version: role ? role.noc : null,
-            incorporation: (cell(record, 'incorporation') || (continued ? last.incorporation : '') || '')
+            incorporation: (raw('incorporation') || (continued ? last.incorporation : '') || '')
                 .slice(0, NAME_LIMITS.incorporation) || null,
             approved_lmias: count(cell(record, 'lmias')),
             approved_positions: positions
@@ -245,7 +295,8 @@ function fileSummary(rows) {
         positions: rows.reduce((sum, row) => sum + row.approved_positions, 0),
         lmias: withLmias.length ? withLmias.reduce((sum, row) => sum + row.approved_lmias, 0) : null,
         noc_version: nocs.size === 1 ? [...nocs][0] : nocs.size ? Math.max(...nocs) : null,
-        known_provinces: rows.length ? known / rows.length : 0
+        known_provinces: rows.length ? known / rows.length : 0,
+        largest_row: rows.reduce((max, row) => Math.max(max, row.approved_positions), 0)
     };
 }
 
@@ -253,6 +304,8 @@ function validate(summary) {
     if (summary.row_count < MIN_ROWS) throw new LmiaFileError('too_few_rows');
     if (summary.positions <= 0) throw new LmiaFileError('no_positions');
     if (summary.known_provinces < 0.98) throw new LmiaFileError('unknown_provinces');
+    // A line holding half a file's positions is a total, not an employer.
+    if (summary.largest_row * 2 > summary.positions) throw new LmiaFileError('aggregate_row');
 }
 
 // ---- Reading files ---------------------------------------------------------------
@@ -310,7 +363,17 @@ function fileKind(head) {
 
 function parseCsvText(text, delimiter = ',') {
     const { csvParseOptions } = require('./csvLoad');
-    return parse(text, csvParseOptions({ delimiter, skip_empty_lines: false, to: MAX_ROWS + 50 }));
+    const records = parse(text, csvParseOptions({ delimiter }));
+    if (records.length > MAX_ROWS + 50) throw new LmiaFileError('too_large');
+    return records;
+}
+
+// Why an Excel conversion failed: out of time (the converter's own limit or the
+// run's), over a size cap, or not a workbook it can read.
+function converterFailure(error) {
+    if (error && (error.code === 'EXCEL_TIMEOUT' || error.name === 'TimeoutError' || error.name === 'AbortError')) return 'timeout';
+    if (error && ['CAP_ROWS', 'CAP_COLS', 'CAP_FILE'].includes(error.code)) return 'too_large';
+    return 'not_a_table';
 }
 
 async function readRecords(filePath, { signal } = {}) {
@@ -341,7 +404,7 @@ async function readRecords(filePath, { signal } = {}) {
     try {
         converted = await convert(filePath, { maxRows: MAX_ROWS, maxCols: 40, maxCsvBytes: 4 * MAX_FILE_BYTES, signal });
     } catch (error) {
-        throw new LmiaFileError(error && error.code === 'EXCEL_TIMEOUT' ? 'timeout' : 'not_a_table', error);
+        throw new LmiaFileError(converterFailure(error), error);
     }
     try {
         return parseCsvText(await fs.promises.readFile(converted.csvPath, 'utf8'));
@@ -382,19 +445,24 @@ function failureCode(error) {
 
 // The catalogue's English files with a period, one per period: when two resources
 // claim the same period, the newer one wins and the other is reported.
-function pickFiles(resources) {
+// When the catalogue last changed a resource, as a time (node-pg returns a Date).
+function modified(row) {
+    const time = row.last_modified ? new Date(row.last_modified).getTime() : NaN;
+    return Number.isFinite(time) ? time : -Infinity;
+}
+function pickFiles(resources, { now = new Date() } = {}) {
     const byPeriod = new Map();
     const unparsed = [];
     const superseded = [];
     for (const row of resources) {
-        const period = lmiaPeriod(row.name_en || row.name_fr || '');
+        const period = lmiaPeriod(row.name_en || row.name_fr || '', { now });
         if (!period) {
             unparsed.push(row.id);
             continue;
         }
         const current = byPeriod.get(period.key);
-        const newer = !current || String(row.last_modified || '') > String(current.row.last_modified || '') ||
-            (String(row.last_modified || '') === String(current.row.last_modified || '') && row.id > current.row.id);
+        const newer = !current || modified(row) > modified(current.row) ||
+            (modified(row) === modified(current.row) && row.id > current.row.id);
         if (newer) {
             if (current) superseded.push(current.row.id);
             byPeriod.set(period.key, { id: row.id, row, period });
@@ -406,22 +474,31 @@ function pickFiles(resources) {
     return { files, unparsed, superseded };
 }
 
-// Load every file whose version changed (or every file with force), newest period
-// first, one at a time with a pause between downloads. A file that fails keeps its
-// last good rows. Files whose resource left the catalogue are reported, not deleted.
-async function runHistory({ dryRun = false, force = false, only = null, deps, gapMs = 2000, timeoutMs = 180000 } = {}) {
+// Load every file whose version or period changed (or every file with force),
+// newest period first, one at a time with a pause between downloads. A file that
+// fails keeps its last good rows, and a version that already failed waits for a
+// new version (or force, or --file). Files whose resource left the catalogue are
+// reported, not deleted. The employers view is refreshed after a load and
+// whenever an earlier refresh did not happen.
+async function runHistory({ dryRun = false, force = false, only = null, deps, gapMs = 2000, timeoutMs = 180000, now = new Date() } = {}) {
     const resources = await deps.listResources();
     const stored = new Map((await deps.listFiles()).map(file => [file.resource_id, file]));
-    const { files, unparsed, superseded } = pickFiles(resources);
-    const summary = { files: files.length, loaded: 0, unchanged: 0, failed: 0, rows: 0, unparsed, superseded,
+    const { files, unparsed, superseded } = pickFiles(resources, { now });
+    const summary = { files: files.length, loaded: 0, unchanged: 0, failed: 0, waiting: 0, rows: 0, unparsed, superseded,
         orphaned: [...stored.keys()].filter(id => !resources.some(row => row.id === id)), results: [] };
+    if (only && !files.some(file => file.id === only)) summary.unknown_file = only;
     let downloads = 0;
     for (const file of files) {
         if (only && file.id !== only) continue;
         const version = resourceVersion(file.row);
         const current = stored.get(file.id);
-        if (!force && current && current.source_version === version) {
+        const samePeriod = current && Number(current.period_key) === file.period.key;
+        if (!force && samePeriod && current.source_version === version) {
             summary.unchanged += 1;
+            continue;
+        }
+        if (!force && !only && samePeriod && current.failed_version === version) {
+            summary.waiting += 1;
             continue;
         }
         if (downloads > 0) await deps.wait(gapMs);
@@ -430,6 +507,7 @@ async function runHistory({ dryRun = false, force = false, only = null, deps, ga
         try {
             const records = await deps.readFile(file.row, { signal });
             const { rows, skipped } = normalizeRecords(records);
+            if (rows.length > MAX_ROWS) throw new LmiaFileError('too_large');
             const counts = fileSummary(rows);
             validate(counts);
             const result = { resource_id: file.id, period_key: file.period.key, status: dryRun ? 'parsed' : 'loaded',
@@ -443,15 +521,21 @@ async function runHistory({ dryRun = false, force = false, only = null, deps, ga
             summary.failed += 1;
             summary.results.push({ resource_id: file.id, period_key: file.period.key, status: 'failed', failure: code,
                 message: String(error && error.message || error).slice(0, 200) });
-            if (!dryRun) await deps.saveFailure({ file, version, failure: code });
+            // Recording the failure must not stop the other files.
+            if (!dryRun) await deps.saveFailure({ file, version, failure: code }).catch(recordError => {
+                summary.results[summary.results.length - 1].record_error = String(recordError.message || recordError).slice(0, 200);
+            });
         }
     }
-    if (!dryRun && summary.loaded > 0) await deps.refreshEmployers();
+    if (!dryRun && (summary.loaded > 0 || await deps.employersBehind())) {
+        await deps.refreshEmployers();
+        summary.refreshed = true;
+    }
     return summary;
 }
 
 module.exports = {
     LMIA_DATASET_ID, PROVINCES, PROVINCE_CODES, MAX_FILE_BYTES, LmiaFileError,
     lmiaPeriod, provinceCode, streamName, occupation, cityOf, normalizeRecords, fileSummary, validate,
-    decodeText, fileKind, parseCsvText, readRecords, readLmiaFile, failureCode, pickFiles, runHistory
+    decodeText, fileKind, parseCsvText, converterFailure, readRecords, readLmiaFile, failureCode, pickFiles, runHistory
 };

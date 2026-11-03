@@ -104,9 +104,27 @@ async function saveLmiaFailure({ file, version, failure }, db = pool) {
     `, [file.id, file.period.key, file.period.kind, file.period.start, file.period.end, failure, version]);
 }
 
+// The employers view, rebuilt from fresh statistics with a timeout of its own, and
+// the time it was rebuilt, so a later run knows whether a load is still missing from it.
+const REFRESH_KEY = 'lmia-employers';
 async function refreshLmiaEmployers(db = pool) {
-    await db.query('REFRESH MATERIALIZED VIEW CONCURRENTLY public.lmia_employers');
     await db.query('ANALYZE public.lmia_positive_rows');
+    await inTransaction(db, async client => {
+        await client.query("SET LOCAL statement_timeout = '600s'");
+        await client.query('REFRESH MATERIALIZED VIEW CONCURRENTLY public.lmia_employers');
+        await client.query(`INSERT INTO sync_progress (key, value, updated_at) VALUES ($1, jsonb_build_object('refreshed_at', now()), now())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [REFRESH_KEY]);
+    });
+    await db.query('ANALYZE public.lmia_employers');
+}
+
+// True when a file loaded after the view was last rebuilt (or it never was).
+async function lmiaEmployersBehind(db = pool) {
+    const { rows: [state] } = await db.query(`
+        SELECT (SELECT max(loaded_at) FROM lmia_files) AS loaded,
+            (SELECT (value->>'refreshed_at')::timestamptz FROM sync_progress WHERE key = $1) AS refreshed
+    `, [REFRESH_KEY]);
+    return Boolean(state.loaded) && (!state.refreshed || state.loaded > state.refreshed);
 }
 
 // ---- Reads for the /lmia pages ----------------------------------------------------
@@ -157,6 +175,8 @@ async function getLmiaSummary(db = pool) {
 // occupation code in any period. Exact and leading matches first, then the most
 // recent and largest.
 async function searchLmiaEmployers({ key = '', province = null, occupation = null, limit = 50, offset = 0 }, db = pool) {
+    // An employerKey() output: letters, digits and single spaces, so nothing LIKE treats specially.
+    if (typeof key !== 'string' || !/^[a-z0-9 ]{0,200}$/.test(key)) throw new TypeError('searchLmiaEmployers needs an employer key');
     const { rows } = await db.query(`
         SELECT employer_key, employer, province, city, provinces, first_period, last_period, periods, positions,
             last_positions, count(*) OVER ()::int AS total
@@ -168,7 +188,15 @@ async function searchLmiaEmployers({ key = '', province = null, occupation = nul
             last_positions DESC NULLS LAST, employer_key
         LIMIT $4 OFFSET $5
     `, [key, province, occupation, limit, offset]);
-    return { total: rows.length ? rows[0].total : 0, rows: rows.map(({ total: _total, ...row }) => row) };
+    if (rows.length || !offset) return { total: rows.length ? rows[0].total : 0, rows: rows.map(({ total: _total, ...row }) => row) };
+    // Past the last page the window has no row to count on.
+    const { rows: [counted] } = await db.query(`
+        SELECT count(*)::int AS total FROM lmia_employers
+        WHERE ($1 = '' OR employer_key LIKE '%' || $1 || '%')
+            AND ($2::text IS NULL OR provinces @> ARRAY[$2]::text[])
+            AND ($3::text IS NULL OR occupations @> ARRAY[$3]::text[])
+    `, [key, province, occupation]);
+    return { total: counted.total, rows: [] };
 }
 
 // Every line of one employer, newest period first, with each period's file.
@@ -186,6 +214,6 @@ async function getLmiaEmployerRows(key, { limit = 3000 } = {}, db = pool) {
 }
 
 module.exports = {
-    inTransaction, listLmiaResources, listLmiaFiles, saveLmiaFile, saveLmiaFailure, refreshLmiaEmployers,
+    inTransaction, listLmiaResources, listLmiaFiles, saveLmiaFile, saveLmiaFailure, refreshLmiaEmployers, lmiaEmployersBehind,
     getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows
 };

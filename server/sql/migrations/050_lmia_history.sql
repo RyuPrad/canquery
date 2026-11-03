@@ -35,8 +35,9 @@ CREATE TABLE public.lmia_files (
 );
 
 -- One employer line of a file, with the grouped columns of older files filled
--- down. province is a code (HO: head office outside Canada); occupation_code is a
--- NOC 2011 (4 digits) or NOC 2021 (5 digits) code.
+-- down. line is the reader's record number, a stable order within the file, not a
+-- line of the file. province is a code (HO: head office outside Canada);
+-- occupation_code is a NOC 2011 (4 digits) or NOC 2021 (5 digits) code.
 CREATE TABLE public.lmia_positive_rows (
     resource_id text NOT NULL REFERENCES public.lmia_files(resource_id) ON DELETE CASCADE,
     line integer NOT NULL CHECK (line > 0),
@@ -57,8 +58,6 @@ CREATE TABLE public.lmia_positive_rows (
     CHECK ((occupation_code IS NULL) = (noc_version IS NULL))
 );
 CREATE INDEX lmia_positive_rows_employer ON public.lmia_positive_rows (employer_key, period_key);
-CREATE INDEX lmia_positive_rows_period ON public.lmia_positive_rows (period_key, province);
-CREATE INDEX lmia_positive_rows_occupation ON public.lmia_positive_rows (occupation_code, period_key);
 
 -- One row per employer key across every loaded file: the newest spelling, city and
 -- province, every province and occupation code, the first and last periods, and
@@ -81,6 +80,5 @@ JOIN (SELECT employer_key, max(period_key) AS period_key FROM public.lmia_positi
 GROUP BY r.employer_key;
 CREATE UNIQUE INDEX lmia_employers_key ON public.lmia_employers (employer_key);
 CREATE INDEX lmia_employers_key_trgm ON public.lmia_employers USING gin (employer_key gin_trgm_ops);
-CREATE INDEX lmia_employers_recent ON public.lmia_employers (last_period DESC, last_positions DESC, employer_key);
 CREATE INDEX lmia_employers_provinces ON public.lmia_employers USING gin (provinces);
 CREATE INDEX lmia_employers_occupations ON public.lmia_employers USING gin (occupations);
