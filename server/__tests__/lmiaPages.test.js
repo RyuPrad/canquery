@@ -67,7 +67,10 @@ describe('lmiaPages', () => {
     test('a search is read from q as an employer key, with a province, occupation and page', () => {
         expect(lmia.searchInput({ q: ' DANCHAR LTD. ', province: 'ON', occupation: '72310', page: '3' }))
             .toEqual({ q: 'DANCHAR LTD.', key: 'danchar', province: 'ON', occupation: '72310', page: 3 });
-        expect(lmia.searchInput({})).toEqual({ q: '', key: '', province: null, occupation: null, page: 1 });
+        expect(lmia.searchInput({ province: 'QC' })).toEqual({ q: '', key: '', province: 'QC', occupation: null, page: 1 });
+        for (const empty of [{}, { q: '  ' }, { q: '---' }]) {
+            expect(() => lmia.searchInput(empty)).toThrow(expect.objectContaining({ statusCode: 400, publicCode: 'INVALID_QUERY' }));
+        }
         for (const query of [{ q: 'x'.repeat(101) }, { province: 'ZZ' }, { occupation: '723' }, { page: '0' }, { page: '201' },
             { page: '1.5' }, { q: ['a', 'b'] }]) {
             expect(() => lmia.searchInput(query)).toThrow(expect.objectContaining({ statusCode: 400, publicCode: 'INVALID_QUERY' }));

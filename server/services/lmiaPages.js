@@ -42,6 +42,8 @@ function searchInput(query = {}) {
     if (province !== null && !PROVINCE_CODES.includes(province)) throw invalid('Choose a province code');
     const occupation = one('occupation');
     if (occupation !== null && !/^\d{4,5}$/.test(occupation)) throw invalid('Give an occupation as a 4- or 5-digit NOC code');
+    // Without a name, province or occupation the search would list every employer.
+    if (!employerKey(q) && province === null && occupation === null) throw invalid('Search by name, province or occupation');
     const pageText = one('page');
     const page = pageText === null ? 1 : Number(pageText);
     if (!Number.isInteger(page) || page < 1 || page > MAX_PAGE) throw invalid(`Choose a page from 1 to ${MAX_PAGE}`);
