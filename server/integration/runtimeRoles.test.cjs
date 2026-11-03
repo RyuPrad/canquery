@@ -17,6 +17,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
+    const { getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows } = require('../db/lmiaQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
@@ -58,13 +59,24 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             // Only the deployment owner writes the resource row samples.
             await assert.rejects(client.query(`INSERT INTO resource_row_samples (resource_id, origin, status, checked_version, next_check_at, failure_code)
                 VALUES ('forbidden', 'file', 'failed', 'v', now(), 'error')`), { code: '42501' });
+            // Only the deployment owner's build-lmia-history job writes the LMIA history and refreshes its view.
+            await assert.rejects(client.query(`INSERT INTO lmia_files (resource_id, period_key, period_kind, period_start, period_end)
+                VALUES ('forbidden', 190003, 'quarter', '1900-01-01', '1900-03-31')`), { code: '42501' });
+            await assert.rejects(client.query('REFRESH MATERIALIZED VIEW public.lmia_employers'), { code: '42501' });
             // Only the API reads which pages Google showed, for the noindex sitemap, and only these two columns;
-            // and only the API reads the samples a resource page shows.
+            // and only the API reads the samples a resource page shows and the LMIA history.
             if (role !== 'canquery_api') {
                 await assert.rejects(client.query('SELECT * FROM search_console_page_dates LIMIT 0'), { code: '42501' });
                 await assert.rejects(client.query('SELECT * FROM resource_row_samples LIMIT 0'), { code: '42501' });
+                for (const relation of ['lmia_files', 'lmia_positive_rows', 'lmia_employers']) {
+                    await assert.rejects(client.query(`SELECT * FROM ${relation} LIMIT 0`), { code: '42501' });
+                }
                 continue;
             }
+            const summary = await getLmiaSummary(dbFor(client));
+            assert.ok(summary === null || Array.isArray(summary.periods));
+            assert.ok(Number.isInteger((await searchLmiaEmployers({ key: 'forbidden' }, dbFor(client))).total));
+            assert.ok(Array.isArray(await getLmiaEmployerRows('forbidden', {}, dbFor(client))));
             assert.equal(await getResourceRowSample(prefix, dbFor(client)), null);
             const { fields } = await client.query('SELECT * FROM search_console_page_dates LIMIT 0');
             assert.deepEqual(fields.map(field => field.name), ['data_date', 'page']);

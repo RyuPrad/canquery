@@ -35,6 +35,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # from each publisher, paced per host; try --dry-run first, then uncomment.
 # 7,22,37,52 * * * * root /usr/local/sbin/canquery-run-job.sh sample-resource-rows
 
+# Optional: every quarter of the positive LMIA employers list for the /lmia pages
+# (see DEPLOY.md). A run downloads only files whose catalogue version changed;
+# try --dry-run first, then uncomment.
+# 17 9 * * * root /usr/local/sbin/canquery-run-job.sh build-lmia-history
+
 # Optional private Search Console reporting. Configure GSC_OAUTH_PATH,
 # GSC_SITE_URL, and GSC_REPORT_PATH, complete a durable OAuth grant, run the
 # first 90-day import, then uncomment both entries.
