@@ -1,6 +1,6 @@
 ## Choisir le trimestre avant de chercher un employeur
 
-Le jeu de données fédéral sur les EIMT positives contient des listes distinctes selon la période et la langue du fichier. Ouvrez le [jeu de données sur les employeurs du Programme des travailleurs étrangers temporaires](/datasets/90fed587-1364-4f33-a9ee-208181dc0b97), puis repérez l’année et le trimestre dans le nom de la ressource. La date de mise à jour du catalogue concerne les métadonnées : elle ne transforme pas un ancien fichier trimestriel en liste actuelle.
+Le jeu de données fédéral sur les EIMT positives contient des listes distinctes selon la période et la langue du fichier. Ouvrez le [jeu de données sur les employeurs du Programme des travailleurs étrangers temporaires](/datasets/90fed587-1364-4f33-a9ee-208181dc0b97), puis repérez l’année et le trimestre dans le nom de la ressource. La date de mise à jour du catalogue concerne les métadonnées : elle ne transforme pas un ancien fichier trimestriel en liste actuelle. Pour retrouver un employeur dans toutes les listes à la fois, utilisez la [recherche des employeurs EIMT positive](/lmia).
 
 Pour suivre un exemple précis, [ouvrez le tableau français de janvier à mars 2026](/resources/8c205edb-9a82-468e-9aa4-b82266cbaad6). Son titre indique le premier trimestre de 2026 et la Classification nationale des professions (CNP) 2021. Conservez cette période dans vos notes et vos comparaisons. L’exemple est fixe pour que les étapes restent reproductibles; ce guide ne présente pas le premier trimestre comme étant toujours le plus récent.
 

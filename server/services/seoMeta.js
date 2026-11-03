@@ -488,6 +488,12 @@ function classifyRoute(pathname) {
         const id = decodePathSegment(m[1]);
         return id == null ? { type: 'other' } : { type: 'organization', id };
     }
+    m = p.match(/^\/lmia\/employers\/([^/]+)\/?$/);
+    if (m) {
+        const id = decodePathSegment(m[1]);
+        return id == null ? { type: 'other' } : { type: 'lmia-employer', id };
+    }
+    if (/^\/lmia\/?$/.test(p)) return { type: 'lmia' };
     if (/^\/datasets\/?$/.test(p)) return { type: 'datasets' };
     if (/^\/places\/?$/.test(p)) return { type: 'places' };
     if (/^\/insights\/?$/.test(p)) return { type: 'insights' };
@@ -1156,6 +1162,57 @@ function organizationMeta(organization, datasets = []) {
     };
 }
 
+// The /lmia hub: every loaded quarter of the positive LMIA employers list. It is
+// noindex until the first list is loaded, so an empty page never gets indexed.
+function lmiaMeta(summary) {
+    const { LMIA_DATASET_ID, periodLabel } = require('../utils/lmiaLabels');
+    const crumbs = buildBreadcrumbJsonLd([
+        { name: 'Datasets', path: '/datasets' },
+        { name: 'TFWP positive LMIA employers list', path: '/datasets/' + LMIA_DATASET_ID },
+        { name: 'Positive LMIA employers', path: '/lmia' }
+    ]);
+    if (!summary) {
+        return { title: 'Positive LMIA employers list' + TITLE_SUFFIX,
+            description: 'Search employers on every positive LMIA list published by Employment and Social Development Canada.',
+            canonical: SITE_URL + '/lmia', ogType: 'website', noindex: true, jsonLd: [crumbs] };
+    }
+    const latest = summary.latest;
+    const year = String(latest.period_end).slice(0, 4);
+    const first = summary.periods[0];
+    const title = fitTitle([`Positive LMIA employers list ${year}: search every quarter`, `Positive LMIA employers list ${year}`,
+        'Positive LMIA employers list']);
+    const description = truncate(`Search ${facts.formatCount(summary.employers_total)} employers on every positive LMIA list ` +
+        `from ${String(first.period_start).slice(0, 4)} to ${periodLabel(latest)}: approved positions by employer, province, ` +
+        'occupation and program stream.', DESCRIPTION_MAX);
+    return { title: title + TITLE_SUFFIX, description, canonical: SITE_URL + '/lmia', ogType: 'website', jsonLd: [crumbs] };
+}
+
+// One employer's history on the list. Never indexed: the hub is the page to find.
+function lmiaEmployerMeta(employer) {
+    const { LMIA_DATASET_ID, periodLabel } = require('../utils/lmiaLabels');
+    const path = '/lmia/employers/' + employer.slug;
+    const name = collapse(employer.name) || 'Employer';
+    const lists = employer.periods.length;
+    const range = lists === 1 ? `on the ${periodLabel(employer.periods[0])} positive LMIA employers list`
+        : `on ${lists} positive LMIA employers lists, from ${periodLabel(employer.periods[lists - 1])} to ` +
+            periodLabel(employer.periods[0]) + ',';
+    return {
+        title: fitTitle([name + ': positive LMIA history', name + ' LMIA history', name]) + TITLE_SUFFIX,
+        description: truncate(`${name} appears ${range} with ${facts.formatCount(employer.positions)} approved ` +
+            `${employer.positions === 1 ? 'position' : 'positions'} in all.`,
+        DESCRIPTION_MAX),
+        canonical: SITE_URL + path,
+        ogType: 'website',
+        noindex: true,
+        jsonLd: [buildBreadcrumbJsonLd([
+            { name: 'Datasets', path: '/datasets' },
+            { name: 'TFWP positive LMIA employers list', path: '/datasets/' + LMIA_DATASET_ID },
+            { name: 'Positive LMIA employers', path: '/lmia' },
+            { name, path }
+        ])]
+    };
+}
+
 function notFoundMeta(pathname) {
     return {
         title: 'Not found - CanQuery',
@@ -1260,6 +1317,8 @@ module.exports = {
     siteTitle,
     compactTitle,
     fitTitle,
+    lmiaMeta,
+    lmiaEmployerMeta,
     fitTitleTiers,
     pagedMeta,
     organizationType,

@@ -1085,7 +1085,7 @@ describe('dataset page initial data', () => {
         for (const lang of ['en', 'fr']) {
             const guides = await request(app).get('/web-api/v1/blog').query({ lang, dataset: LMIA });
             expect(payload.guides[lang]).toEqual(guides.body);
-            expect(payload.guides[lang].data.map(article => article.id)).toEqual(['lmia-employer-lists']);
+            expect(payload.guides[lang].data.map(article => article.id)).toEqual(['check-employer-positive-lmia', 'lmia-employer-lists']);
         }
         expect(catalogRead.listResourcesForDataset).toHaveBeenCalledWith(LMIA);
     });

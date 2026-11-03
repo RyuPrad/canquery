@@ -7,7 +7,8 @@ const ROUTE_MODULES = Object.freeze({
     datasets: 'DatasetsPage', dataset: 'DatasetPage', resource: 'ResourcePage',
     organizations: 'OrganizationsPage', organization: 'OrganizationPage',
     places: 'PlacesPage', place: 'PlacePage', insights: 'InsightsPage',
-    docs: 'DocsPage', privacy: 'PrivacyPage', faq: 'FaqPage', about: 'AboutPage', blog: 'BlogPage'
+    docs: 'DocsPage', privacy: 'PrivacyPage', faq: 'FaqPage', about: 'AboutPage', blog: 'BlogPage',
+    lmia: 'LmiaPage', 'lmia-employer': 'LmiaEmployerPage'
 });
 let cachedDirectory;
 let cachedManifest;

@@ -1,6 +1,6 @@
 ## Choose the quarter before the employer
 
-The federal positive-LMIA dataset contains separate employer lists for reporting periods and file languages. Start with the [Temporary Foreign Worker Program employer dataset](/datasets/90fed587-1364-4f33-a9ee-208181dc0b97), then read the resource name to identify the year and quarter. The catalogue’s update date describes the metadata; it does not make an older quarterly file current.
+The federal positive-LMIA dataset contains separate employer lists for reporting periods and file languages. Start with the [Temporary Foreign Worker Program employer dataset](/datasets/90fed587-1364-4f33-a9ee-208181dc0b97), then read the resource name to identify the year and quarter. The catalogue’s update date describes the metadata; it does not make an older quarterly file current. To look one employer up on every list at once, use the [positive LMIA employer search](/lmia).
 
 For a concrete example, [open the English January–March 2026 table](/resources/4ee7a4e0-ffc3-47af-94e7-30929d1eeb67). Its title identifies 2026 Q1 and the National Occupational Classification (NOC) 2021. Use that period when describing a result or comparing it with another file. This guide uses a fixed example so its instructions remain reproducible; it does not claim that Q1 is always the newest available quarter.
 

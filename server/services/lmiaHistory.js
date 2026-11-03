@@ -11,7 +11,7 @@ const { employerKey } = require('../utils/employerKey');
 const { resourceVersion } = require('./resourceVersion');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 
-const LMIA_DATASET_ID = '90fed587-1364-4f33-a9ee-208181dc0b97';
+const { LMIA_DATASET_ID } = require('../utils/lmiaLabels');
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
 const MAX_ROWS = 200000;
 const MIN_ROWS = 100;

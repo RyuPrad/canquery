@@ -180,6 +180,7 @@ const sitemapPages = crawlFile(async (req, res) => {
             { loc: SITE_URL + '/insights', changefreq: 'daily', priority: '0.9', ...hub },
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7', ...hub },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8', ...hub },
+            { loc: SITE_URL + '/lmia', changefreq: 'weekly', priority: '0.8' },
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/faq', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/about', changefreq: 'monthly', priority: '0.5' },

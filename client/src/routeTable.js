@@ -20,6 +20,8 @@ const PlacePage = lazyPage(() => import('./pages/PlacePage.jsx'));
 const PrivacyPage = lazyPage(() => import('./pages/PrivacyPage.jsx'));
 const BlogPage = lazyPage(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazyPage(() => import('./pages/InsightsPage'));
+const LmiaPage = lazyPage(() => import('./pages/LmiaPage.jsx'));
+const LmiaEmployerPage = lazyPage(() => import('./pages/LmiaEmployerPage.jsx'));
 
 // Pages only the hosted service serves, such as pricing and the developer
 // account. A hosted route that carries `preload` is loaded before a direct
@@ -38,6 +40,8 @@ export const PAGE_ROUTES = [
   { path: '/organizations/:name', page: OrganizationPage },
   { path: '/places', page: PlacesPage },
   { path: '/places/:slug', page: PlacePage },
+  { path: '/lmia', page: LmiaPage },
+  { path: '/lmia/employers/:slug', page: LmiaEmployerPage },
   { path: '/docs', page: DocsPage },
   { path: '/faq', page: FaqPage },
   { path: '/about', page: AboutPage },

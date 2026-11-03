@@ -87,6 +87,8 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
         expect(summary.latest).toMatchObject({ resource_id: id('q2'), period_key: 299906, period_kind: 'quarter',
             period_start: '2999-04-01', period_end: '2999-06-30', row_count: 4, employers: 3, positions: 17, lmias: 5, noc_version: 2021 });
         expect(summary.periods.slice(-2).map(p => p.period_key)).toEqual([299903, 299906]);
+        expect(summary.employers_total).toBeGreaterThanOrEqual(4);
+        expect(summary.updated_at).toBeInstanceOf(Date);
         expect(summary.provinces).toEqual([{ province: 'MB', employers: 1, positions: 9 }, { province: 'ON', employers: 1, positions: 6 },
             { province: 'BC', employers: 1, positions: 2 }]);
         expect(summary.streams[0]).toEqual({ stream: 'Primary Agriculture', employers: 1, positions: 9 });
