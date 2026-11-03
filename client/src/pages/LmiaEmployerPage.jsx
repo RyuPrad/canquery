@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { fill } from '../utils/text.js';
 import { fetchLmiaEmployer } from '../api/lmia.js';
-import { LMIA_DATASET_ID, LMIA_GUIDE, formatCount, lmiaPeriodLabel, provinceName, streamName } from '../utils/lmia.js';
+import { LMIA_DATASET_ID, LMIA_GUIDE, formatCount, lmiaPeriodLabel, lmiaPeriodRange, provinceName, streamName } from '../utils/lmia.js';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import LmiaWatchSlot from '../components/LmiaWatchSlot.jsx';
@@ -49,7 +49,6 @@ function EmployerHistory({ slug }) {
 
   const employer = state.employer;
   const periods = employer.periods;
-  const first = lmiaPeriodLabel(periods[periods.length - 1], lang);
   const last = lmiaPeriodLabel(periods[0], lang);
   const latestProvince = periods[0].provinces[0] || null;
   return (
@@ -73,7 +72,8 @@ function EmployerHistory({ slug }) {
             <p className="text-base-content/70 mt-3 leading-relaxed">
               {periods.length === 1
                 ? fill(t('lmia.employer_summary_one'), { period: last })
-                : fill(t('lmia.employer_summary'), { lists: formatCount(periods.length, lang), first, last })}
+                : fill(t('lmia.employer_summary'), { lists: formatCount(periods.length, lang),
+                  range: lmiaPeriodRange(periods[periods.length - 1], periods[0], lang) })}
             </p>
             <div className="flex flex-wrap gap-2 mt-4">
               <span className="cq-chip cq-chip-mono">{t('lmia.employer_positions')} · {formatCount(employer.positions, lang)}</span>
@@ -93,6 +93,7 @@ function EmployerHistory({ slug }) {
 
       <section className="mt-8">
         <h2 className="font-display font-semibold text-xl">{t('lmia.history_heading')}</h2>
+        {lang === 'fr' && <p className="text-xs text-base-content/55 mt-1">{t('lmia.titles_note')}</p>}
         <ol className="mt-3 space-y-3">
           {periods.map(period => (
             <li key={period.period_key} className="cq-card p-5">

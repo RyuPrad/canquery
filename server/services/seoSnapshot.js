@@ -634,7 +634,7 @@ function errorSnapshot(title, summary) {
 
 // ---- The /lmia pages ----------------------------------------------------------------
 
-const { LMIA_DATASET_ID, PROVINCE_NAMES, periodLabel } = require('../utils/lmiaLabels');
+const { LMIA_DATASET_ID, PROVINCE_NAMES, periodLabel, periodRange } = require('../utils/lmiaLabels');
 // The LMIA dataset and each of its files lead to the employer search.
 const lmiaHubSection = datasetId => (datasetId === LMIA_DATASET_ID ? [{ title: 'Search every list by employer',
     links: [{ path: '/lmia', label: 'Positive LMIA employers: every list since 2014' }] }] : []);
@@ -685,7 +685,7 @@ function lmiaSnapshot(summary) {
         breadcrumbs: lmiaBreadcrumbs([{ label: 'Positive LMIA employers' }]),
         title: 'Positive LMIA employers list',
         lead: 'Search every employer on the lists of positive Labour Market Impact Assessments (LMIAs) that Employment and ' +
-            `Social Development Canada publishes each quarter, from ${periodLabel(summary.periods[0])} to ${label}. ` + LMIA_CAVEAT,
+            `Social Development Canada publishes each quarter, ${periodRange(summary.periods[0], latest)}. ` + LMIA_CAVEAT,
         facts: [
             { label: 'Latest list', value: label },
             { label: 'Employers on the latest list', value: lmiaCount(latest.employers) },
@@ -712,7 +712,7 @@ function lmiaEmployerSnapshot(employer) {
     const periods = employer.periods;
     const lists = periods.length;
     const range = lists === 1 ? `on the ${periodLabel(periods[0])} positive LMIA employers list`
-        : `on ${lists} positive LMIA employers lists, from ${periodLabel(periods[lists - 1])} to ${periodLabel(periods[0])},`;
+        : `on ${lists} positive LMIA employers lists, ${periodRange(periods[lists - 1], periods[0])},`;
     const history = lmiaTable('Approved positions by list', ['List', 'Approved positions', 'Occupations', 'Places'],
         periods.map(period => [periodLabel(period), lmiaCount(period.positions),
             period.occupations.slice(0, 5).map(item => `${item.code} ${item.title}: ${lmiaCount(item.positions)}`).join('; '),

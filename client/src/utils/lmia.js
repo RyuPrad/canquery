@@ -58,6 +58,36 @@ export function lmiaPeriodLabel(period, lang) {
   return fr ? `de ${months[startMonth - 1]} à ${months[endMonth - 1]} ${year}` : `${months[startMonth - 1]} to ${months[endMonth - 1]} ${year}`;
 }
 
+// The first and last day of a period's label, for a range: "from June 20, 2014"
+// starts a partial year, "to Q2 2026" ends at a quarter. French takes du/de and au/à.
+function periodEnd(period, which, lang) {
+  const fr = lang === 'fr';
+  const kind = period.kind || period.period_kind;
+  const date = String(which === 'start' ? period.start || period.period_start : period.end || period.period_end);
+  const [year, month, day] = date.split('-').map(Number);
+  const months = MONTHS[fr ? 'fr' : 'en'];
+  const fullYear = kind === 'year' && lmiaPeriodLabel(period, 'en') === String(year);
+  if (kind === 'quarter' || fullYear) {
+    const label = lmiaPeriodLabel(period, lang);
+    return fr ? (which === 'start' ? (kind === 'quarter' ? 'du ' : 'de ') : (kind === 'quarter' ? 'au ' : 'à ')) + label
+      : (which === 'start' ? 'from ' : 'to ') + label;
+  }
+  if (kind === 'year') {
+    return fr ? `${which === 'start' ? 'du' : 'au'} ${day === 1 ? '1er' : day} ${months[month - 1]} ${year}`
+      : `${which === 'start' ? 'from' : 'to'} ${months[month - 1]} ${day}, ${year}`;
+  }
+  return fr ? `${which === 'start' ? 'de' : 'à'} ${months[month - 1]} ${year}` : `${which === 'start' ? 'from' : 'to'} ${months[month - 1]} ${year}`;
+}
+
+/**
+ * "from June 20, 2014 to Q2 2026", "du 20 juin 2014 au T2 2026".
+ * @param {Parameters<typeof lmiaPeriodLabel>[0]} first @param {Parameters<typeof lmiaPeriodLabel>[0]} last @param {string} lang
+ */
+export function lmiaPeriodRange(first, last, lang) {
+  if (!first || !last) return '';
+  return periodEnd(first, 'start', lang) + ' ' + periodEnd(last, 'end', lang);
+}
+
 /** @param {number | null | undefined} value @param {string} lang */
 export function formatCount(value, lang) {
   return Number(value || 0).toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA');

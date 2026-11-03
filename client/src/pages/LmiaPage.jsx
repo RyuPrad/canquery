@@ -3,13 +3,19 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { fill } from '../utils/text.js';
 import { fetchLmiaSummary, searchLmiaEmployers } from '../api/lmia.js';
-import { LMIA_DATASET_ID, LMIA_GUIDE, LMIA_PROVINCES, formatCount, lmiaPeriodLabel, provinceName, streamName } from '../utils/lmia.js';
+import { LMIA_DATASET_ID, LMIA_GUIDE, LMIA_PROVINCES, formatCount, lmiaPeriodLabel, lmiaPeriodRange, provinceName, streamName } from '../utils/lmia.js';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import LmiaWatchSlot from '../components/LmiaWatchSlot.jsx';
 
 const OCCUPATION = /^\d{4,5}$/;
+
+// "12 employers · 1 position", with the singular where the count is one.
+function counts(t, lang, employers, positions) {
+  const part = (count, key) => (count === 1 ? t(key + '_one') : fill(t(key), { count: formatCount(count, lang) }));
+  return part(employers, 'lmia.count_employers') + ' · ' + part(positions, 'lmia.count_positions');
+}
 
 // A row of counts with a bar scaled to the largest value in its list.
 function BarRow({ label, value, max, detail, lang }) {
@@ -100,7 +106,7 @@ function Overview({ summary, t, lang }) {
             <ul className="mt-2">
               {summary.provinces.map(row => (
                 <BarRow key={row.province} label={provinceName(row.province, lang)} value={row.positions} max={maxProvince} lang={lang}
-                  detail={fill(t('lmia.bar_detail'), { employers: formatCount(row.employers, lang), positions: formatCount(row.positions, lang) })} />
+                  detail={counts(t, lang, row.employers, row.positions)} />
               ))}
             </ul>
           </div>
@@ -112,13 +118,14 @@ function Overview({ summary, t, lang }) {
               ))}
             </ul>
             <p className="text-xs text-base-content/55 mt-3">{t('lmia.occupation_hint')}</p>
+            {lang === 'fr' && <p className="text-xs text-base-content/55 mt-1">{t('lmia.titles_note')}</p>}
           </div>
           <div className="cq-card p-5">
             <h3 className="font-semibold">{t('lmia.by_stream')}</h3>
             <ul className="mt-2">
               {summary.streams.map(row => (
                 <BarRow key={row.stream} label={streamName(row.stream, lang)} value={row.positions} max={summary.streams[0].positions} lang={lang}
-                  detail={fill(t('lmia.bar_detail'), { employers: formatCount(row.employers, lang), positions: formatCount(row.positions, lang) })} />
+                  detail={counts(t, lang, row.employers, row.positions)} />
               ))}
             </ul>
           </div>
@@ -143,7 +150,7 @@ function Overview({ summary, t, lang }) {
             <BarRow key={period.resource_id} value={period.positions} max={maxPeriod} lang={lang}
               label={<Link to={'/resources/' + encodeURIComponent(period.resource_id)} className="link link-hover">
                 {fill(t('lmia.list_label'), { period: lmiaPeriodLabel(period, lang) })}</Link>}
-              detail={fill(t('lmia.bar_detail'), { employers: formatCount(period.employers, lang), positions: formatCount(period.positions, lang) })} />
+              detail={counts(t, lang, period.employers, period.positions)} />
           ))}
         </ul>
       </section>
@@ -245,7 +252,7 @@ export default function LmiaPage() {
           <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3">{t('lmia.title')}</h1>
           {ready ? (
             <p className="text-base-content/70 mt-3 leading-relaxed max-w-3xl">
-              {fill(t('lmia.intro'), { first: lmiaPeriodLabel(data.periods[0], lang), latest: lmiaPeriodLabel(data.latest, lang) })}
+              {fill(t('lmia.intro'), { range: lmiaPeriodRange(data.periods[0], data.latest, lang) })}
             </p>
           ) : (
             <p className="text-base-content/70 mt-3 leading-relaxed max-w-3xl">{t('lmia.unavailable')}</p>
@@ -258,8 +265,8 @@ export default function LmiaPage() {
                 <span className="cq-chip cq-chip-mono">{t('lmia.stat_all')} · {formatCount(data.employers_total, lang)}</span>
               </>
             )}
-            <Link to={LMIA_GUIDE[lang === 'fr' ? 'fr' : 'en']} className="cq-chip hover:border-primary/40">{t('lmia.guide_link')}</Link>
-            <Link to={'/datasets/' + LMIA_DATASET_ID} className="cq-chip hover:border-primary/40">{t('lmia.dataset_link')}</Link>
+            <Link to={LMIA_GUIDE[lang === 'fr' ? 'fr' : 'en']} className="cq-chip !whitespace-normal max-w-full break-words hover:border-primary/40">{t('lmia.guide_link')}</Link>
+            <Link to={'/datasets/' + LMIA_DATASET_ID} className="cq-chip !whitespace-normal max-w-full break-words hover:border-primary/40">{t('lmia.dataset_link')}</Link>
           </div>
         </div>
       </div>
@@ -267,7 +274,7 @@ export default function LmiaPage() {
       {ready && (
         <section className="mt-8" aria-labelledby="lmia-search">
           <h2 id="lmia-search" className="font-display font-semibold text-xl">{t('lmia.search_title')}</h2>
-          <div className="grid gap-3 mt-3 md:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_minmax(0,12rem)]">
+          <div className="grid gap-3 mt-3 md:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_minmax(0,14rem)]">
             <SearchBar value={draft} onChange={setDraft} placeholder={t('lmia.search_placeholder')} />
             <select className="select select-bordered w-full" aria-label={t('lmia.province_label')} value={province}
               onChange={event => update({ province: event.target.value })}>
@@ -275,7 +282,7 @@ export default function LmiaPage() {
               {LMIA_PROVINCES.map(([code]) => <option key={code} value={code}>{provinceName(code, lang)}</option>)}
             </select>
             <div>
-              <input className={'input input-bordered w-full font-mono' + (occupationInvalid ? ' input-error' : '')} inputMode="numeric"
+              <input className={'input input-bordered w-full' + (occupationInvalid ? ' input-error' : '')} inputMode="numeric"
                 aria-label={t('lmia.occupation_label')} placeholder={t('lmia.occupation_placeholder')} value={occupationDraft}
                 aria-invalid={occupationInvalid} aria-describedby={occupationInvalid ? 'lmia-occupation-error' : undefined}
                 onChange={event => setOccupationDraft(event.target.value)} maxLength={5} />

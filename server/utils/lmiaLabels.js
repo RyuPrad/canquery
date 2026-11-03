@@ -25,4 +25,19 @@ function periodLabel(period) {
     return `${MONTHS[startMonth - 1]} to ${MONTHS[endMonth - 1]} ${year}`;
 }
 
-module.exports = { LMIA_DATASET_ID, PROVINCE_NAMES, periodLabel };
+// "from June 20, 2014 to Q2 2026": the first period's start and the last one's end.
+function periodRange(first, last) {
+    if (!first || !last) return '';
+    const end = (period, which) => {
+        const kind = period.kind || period.period_kind;
+        const [year, month, day] = String(which === 'start' ? period.start || period.period_start
+            : period.end || period.period_end).split('-').map(Number);
+        const label = periodLabel(period);
+        if (kind === 'quarter' || label === String(year)) return label;
+        if (kind === 'year') return `${MONTHS[month - 1]} ${day}, ${year}`;
+        return `${MONTHS[month - 1]} ${year}`;
+    };
+    return `from ${end(first, 'start')} to ${end(last, 'end')}`;
+}
+
+module.exports = { LMIA_DATASET_ID, PROVINCE_NAMES, periodLabel, periodRange };

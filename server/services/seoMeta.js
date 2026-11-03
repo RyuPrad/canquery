@@ -1189,13 +1189,12 @@ function lmiaMeta(summary) {
 
 // One employer's history on the list. Never indexed: the hub is the page to find.
 function lmiaEmployerMeta(employer) {
-    const { LMIA_DATASET_ID, periodLabel } = require('../utils/lmiaLabels');
+    const { LMIA_DATASET_ID, periodLabel, periodRange } = require('../utils/lmiaLabels');
     const path = '/lmia/employers/' + employer.slug;
     const name = collapse(employer.name) || 'Employer';
     const lists = employer.periods.length;
     const range = lists === 1 ? `on the ${periodLabel(employer.periods[0])} positive LMIA employers list`
-        : `on ${lists} positive LMIA employers lists, from ${periodLabel(employer.periods[lists - 1])} to ` +
-            periodLabel(employer.periods[0]) + ',';
+        : `on ${lists} positive LMIA employers lists, ${periodRange(employer.periods[lists - 1], employer.periods[0])},`;
     return {
         title: fitTitle([name + ': positive LMIA history', name + ' LMIA history', name]) + TITLE_SUFFIX,
         description: truncate(`${name} appears ${range} with ${facts.formatCount(employer.positions)} approved ` +

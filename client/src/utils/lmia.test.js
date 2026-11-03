@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { formatCount, lmiaPeriodLabel, provinceName, streamName } from './lmia.js';
+import { formatCount, lmiaPeriodLabel, lmiaPeriodRange, provinceName, streamName } from './lmia.js';
 
 describe('lmia labels', () => {
   test('periods in English and French', () => {
@@ -14,6 +14,21 @@ describe('lmia labels', () => {
     expect(lmiaPeriodLabel({ kind: 'year', start: '2014-01-01', end: '2014-06-30' }, 'fr')).toBe('du 1er janvier au 30 juin 2014');
     expect(lmiaPeriodLabel(null, 'en')).toBe('');
     expect(lmiaPeriodLabel({ kind: 'quarter' }, 'en')).toBe('');
+  });
+
+  test('ranges take the start of the first period and the end of the last, with French prepositions', () => {
+    const partial = { kind: 'year', start: '2014-06-20', end: '2014-12-31' };
+    const year = { kind: 'year', start: '2015-01-01', end: '2015-12-31' };
+    const half = { kind: 'half', start: '2017-01-01', end: '2017-06-30' };
+    const q1 = { kind: 'quarter', start: '2019-01-01', end: '2019-03-31' };
+    const q2 = { kind: 'quarter', start: '2026-04-01', end: '2026-06-30' };
+    expect(lmiaPeriodRange(partial, q2, 'en')).toBe('from June 20, 2014 to Q2 2026');
+    expect(lmiaPeriodRange(partial, q2, 'fr')).toBe('du 20 juin 2014 au T2 2026');
+    expect(lmiaPeriodRange(year, q2, 'fr')).toBe('de 2015 au T2 2026');
+    expect(lmiaPeriodRange(q1, q2, 'fr')).toBe('du T1 2019 au T2 2026');
+    expect(lmiaPeriodRange(half, year, 'en')).toBe('from January 2017 to 2015');
+    expect(lmiaPeriodRange(half, partial, 'fr')).toBe('de janvier 2017 au 31 décembre 2014');
+    expect(lmiaPeriodRange(null, q2, 'en')).toBe('');
   });
 
   test('provinces, streams and counts', () => {

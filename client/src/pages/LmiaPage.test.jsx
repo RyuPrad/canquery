@@ -60,11 +60,12 @@ describe('LmiaPage', () => {
   test('shows every list, the latest by province, stream and occupation, and the top employers', async () => {
     renderAt('/lmia');
     expect(await screen.findByRole('heading', { level: 1, name: 'Positive LMIA employers list' })).toBeInTheDocument();
-    expect(screen.getByText(/from June 20 to December 31, 2014 to Q2 2026\./)).toBeInTheDocument();
+    expect(screen.getByText(/each quarter, from June 20, 2014 to Q2 2026\./)).toBeInTheDocument();
     expect(screen.getByText('Latest list · Q2 2026')).toBeInTheDocument();
     expect(screen.getByText('Employers on all lists · 150,691')).toBeInTheDocument();
     const provinces = screen.getByRole('heading', { level: 3, name: 'By province or territory' }).parentElement;
     expect(within(provinces).getByText('Head office outside Canada')).toBeInTheDocument();
+    expect(within(provinces).getByText('3 employers · 4 positions')).toBeInTheDocument();
     expect(screen.getByText('85101 – Harvesting labourers')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Les Entreprises Pitre Inc.' })).toHaveAttribute('href', '/lmia/employers/les-entreprises-pitre');
     expect(screen.getByRole('link', { name: 'June 20 to December 31, 2014 list' })).toHaveAttribute('href', '/resources/r-2014');
@@ -75,7 +76,7 @@ describe('LmiaPage', () => {
 
   test('typing a name searches after a pause, keeps it in the address and pages through results', async () => {
     renderAt('/lmia');
-    const box = await screen.findByRole('searchbox', { name: 'Employer name, for example Tim Hortons' });
+    const box = await screen.findByRole('searchbox', { name: 'Employer, e.g. Tim Hortons' });
     fireEvent.change(box, { target: { value: 'Danchar Ltd.' } });
     expect(searchLmiaEmployers).not.toHaveBeenCalled();
     await waitFor(() => expect(searchLmiaEmployers).toHaveBeenCalledWith({ q: 'Danchar Ltd.', province: '', occupation: '', page: 1 },
@@ -132,7 +133,8 @@ describe('LmiaPage', () => {
     localStorage.setItem('cq-lang', 'fr');
     renderAt('/lmia');
     expect(await screen.findByRole('heading', { level: 1, name: 'Liste des employeurs ayant obtenu une EIMT positive' })).toBeInTheDocument();
-    expect(screen.getByText(/du 20 juin au 31 décembre 2014 à T2 2026\./)).toBeInTheDocument();
+    expect(screen.getByText(/chaque trimestre, du 20 juin 2014 au T2 2026\./)).toBeInTheDocument();
+    expect(screen.getByText('Les intitulés des professions sont ceux des fichiers anglais de l’éditeur.')).toBeInTheDocument();
     const provinces = screen.getByRole('heading', { level: 3, name: 'Par province ou territoire' }).parentElement;
     expect(within(provinces).getByText('Siège social à l’extérieur du Canada')).toBeInTheDocument();
     expect(screen.getByText('Volet des talents mondiaux')).toBeInTheDocument();

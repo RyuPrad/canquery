@@ -63,7 +63,7 @@ describe('LmiaEmployerPage', () => {
   test('speaks French', async () => {
     localStorage.setItem('cq-lang', 'fr');
     renderAt('/lmia/employers/danchar');
-    expect(await screen.findByText('Sur 2 listes d’employeurs ayant obtenu une EIMT positive, de 2015 à T2 2026.')).toBeInTheDocument();
+    expect(await screen.findByText('Sur 2 listes d’employeurs ayant obtenu une EIMT positive, de 2015 au T2 2026.')).toBeInTheDocument();
     expect(screen.getByText(/Postes approuvés : 12 · EIMT approuvées : 3 · Volet des postes à haut salaire/)).toBeInTheDocument();
     expect(screen.getByText('Aussi inscrit sous : DANCHAR LTD.')).toBeInTheDocument();
   });
