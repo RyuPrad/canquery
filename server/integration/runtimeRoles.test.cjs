@@ -17,7 +17,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
-    const { getLmiaSummary, searchLmiaEmployers } = require('../db/lmiaQueries');
+    const { getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows } = require('../db/lmiaQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
@@ -76,6 +76,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             const summary = await getLmiaSummary(dbFor(client));
             assert.ok(summary === null || Array.isArray(summary.periods));
             assert.ok(Number.isInteger((await searchLmiaEmployers({ key: 'forbidden' }, dbFor(client))).total));
+            assert.ok(Array.isArray(await getLmiaEmployerRows('forbidden', {}, dbFor(client))));
             assert.equal(await getResourceRowSample(prefix, dbFor(client)), null);
             const { fields } = await client.query('SELECT * FROM search_console_page_dates LIMIT 0');
             assert.deepEqual(fields.map(field => field.name), ['data_date', 'page']);

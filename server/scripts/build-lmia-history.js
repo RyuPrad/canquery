@@ -40,16 +40,18 @@ async function main() {
             saveFile: input => queries.saveLmiaFile(input),
             saveFailure: input => queries.saveLmiaFailure(input),
             refreshEmployers: () => queries.refreshLmiaEmployers(),
+            employersBehind: () => queries.lmiaEmployersBehind(),
             wait: ms => sleep(ms)
         } });
         console.log(JSON.stringify({ dry_run: dryRun, force, ...summary }));
+        if (summary.unknown_file) throw new Error(`--file ${summary.unknown_file} is not an English file of the LMIA list`);
     } catch (err) {
         error = err;
         console.error('LMIA history build failed:', err.message);
     } finally {
         // Runs that loaded nothing and failed nothing leave no record; ops scans this table.
         const touched = summary && !dryRun && summary.loaded + summary.failed > 0;
-        if (touched || (error && lock)) {
+        if (!dryRun && (touched || (error && lock))) {
             const failures = summary ? summary.results.filter(result => result.status === 'failed') : [];
             const message = error ? error.message
                 : failures.length ? `${failures.length} file(s) failed: ` +
