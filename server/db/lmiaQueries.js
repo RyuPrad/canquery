@@ -218,7 +218,16 @@ async function getLmiaEmployerRows(key, { limit = 3000 } = {}, db = pool) {
     return rows;
 }
 
+// One employer's totals over every list, for a history too long to read whole.
+async function getLmiaEmployer(key, db = pool) {
+    const { rows } = await db.query(`
+        SELECT employer_key, provinces, first_period, last_period, periods, positions
+        FROM lmia_employers WHERE employer_key = $1
+    `, [key]);
+    return rows[0] || null;
+}
+
 module.exports = {
     inTransaction, listLmiaResources, listLmiaFiles, saveLmiaFile, saveLmiaFailure, refreshLmiaEmployers, lmiaEmployersBehind,
-    getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows
+    getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows, getLmiaEmployer
 };

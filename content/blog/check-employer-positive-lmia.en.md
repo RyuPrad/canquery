@@ -3,7 +3,7 @@
 Employment and Social Development Canada (ESDC) publishes a separate list of the employers issued a positive Labour Market Impact Assessment (LMIA) for each quarter, in the [Temporary Foreign Worker Program employer dataset](/datasets/90fed587-1364-4f33-a9ee-208181dc0b97). An employer on one quarter’s list may be absent from the next, so checking a single file can mislead you. CanQuery’s [positive LMIA employer search](/lmia) reads every English list since June 2014 and looks an employer up across all of them.
 
 1. Open [Positive LMIA employers](/lmia) and type part of the employer’s name. The search ignores capitals, accents, punctuation and endings such as “Inc.” or “Ltd”, so “Danchar Ltd.” also finds “DANCHAR LTD”.
-2. Narrow the results by province or territory, or by an occupation code from the National Occupational Classification (NOC). Codes have five digits on the lists since 2024 (NOC 2021) and four digits before (NOC 2011).
+2. Narrow the results by province or territory, or by an occupation code from the National Occupational Classification (NOC). Codes have five digits (NOC 2021) since the April to June 2024 list and four digits (NOC 2011) before; the 2014 and 2015 lists name no occupations.
 3. Open an employer to see each list it appears on: the approved positions, occupations, program streams and the addresses given on that list.
 
 ## Confirm the result in the official file
@@ -16,13 +16,13 @@ Look at the address as well as the name. Many businesses share similar names, an
 
 - A positive LMIA means Service Canada found that hiring a temporary foreign worker for a position would have a positive or neutral effect on the Canadian labour market. It is not a job offer, and it does not mean the employer is hiring now.
 - The list counts positions on LMIAs, not work permits. Immigration, Refugees and Citizenship Canada (IRCC) decides work permits, and not every approved position leads to one.
-- It includes positions that the employer later cancelled.
+- It can include positions that the employer later cancelled.
 - It is not complete. It leaves out employers whose names are personal names, such as employers of caregivers, and businesses whose names include a personal name. An employer missing from the list may still have received an LMIA.
 - From the first quarter of 2018 to the third quarter of 2023, LMIAs in support of permanent residence were left out of the published lists.
 
 ## Protect yourself from job-offer fraud
 
-IRCC warns newcomers that “No one can guarantee you a job or a visa to Canada or permanent residence.” Be wary of anyone who promises either in exchange for money, and read IRCC’s advice on [immigration fraud and scams](https://www.canada.ca/en/immigration-refugees-citizenship/services/protect-fraud.html) and [fraud targeting newcomers](https://www.canada.ca/en/immigration-refugees-citizenship/services/protect-fraud/newcomers.html) before you pay anyone.
+IRCC warns newcomers that “No one can guarantee you a job or a visa to Canada or permanent residence.” Be wary of anyone who promises any of these in exchange for money, and read IRCC’s advice on [immigration fraud and scams](https://www.canada.ca/en/immigration-refugees-citizenship/services/protect-fraud.html) and [fraud targeting newcomers](https://www.canada.ca/en/immigration-refugees-citizenship/services/protect-fraud/newcomers.html) before you pay anyone.
 
 ESDC’s page on [temporary foreign workers’ rights](https://www.canada.ca/en/employment-social-development/services/foreign-workers/protected-rights.html) says that an employer cannot make you pay to get or keep your job, or make you repay recruitment fees it paid for your position. The costs that are yours are the work permit, the medical exam and biometrics, where they are required.
 

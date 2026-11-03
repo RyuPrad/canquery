@@ -254,7 +254,8 @@ async function resolvePage(requestTarget, deps = catalogRead) {
         return { status: 200, canonicalPath: '/lmia', meta: seoMeta.lmiaMeta(summary), body: seoSnapshot.lmiaSnapshot(summary) };
     }
     if (route.type === 'lmia-employer') {
-        const employer = await (deps.lmia || lmiaPages).employer(route.id);
+        // Slugs are lower case; /lmia/employers/Danchar redirects to /lmia/employers/danchar.
+        const employer = await (deps.lmia || lmiaPages).employer(route.id.toLowerCase());
         if (!employer) return {
             status: 404,
             meta: seoMeta.notFoundMeta(reqPath),

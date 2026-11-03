@@ -49,6 +49,7 @@ function EmployerHistory({ slug }) {
 
   const employer = state.employer;
   const periods = employer.periods;
+  const lists = employer.lists ?? periods.length;
   const last = lmiaPeriodLabel(periods[0], lang);
   const latestProvince = periods[0].provinces[0] || null;
   return (
@@ -70,15 +71,18 @@ function EmployerHistory({ slug }) {
             <span className="cq-chip">{t('lmia.employer_chip')}</span>
             <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3 break-words">{employer.name}</h1>
             <p className="text-base-content/70 mt-3 leading-relaxed">
-              {periods.length === 1
+              {lists === 1
                 ? fill(t('lmia.employer_summary_one'), { period: last })
-                : fill(t('lmia.employer_summary'), { lists: formatCount(periods.length, lang),
-                  range: lmiaPeriodRange(periods[periods.length - 1], periods[0], lang) })}
+                : employer.truncated ? fill(t('lmia.employer_summary_long'), { lists: formatCount(lists, lang) })
+                  : fill(t('lmia.employer_summary'), { lists: formatCount(lists, lang),
+                    range: lmiaPeriodRange(periods[periods.length - 1], periods[0], lang) })}
             </p>
             <div className="flex flex-wrap gap-2 mt-4">
               <span className="cq-chip cq-chip-mono">{t('lmia.employer_positions')} · {formatCount(employer.positions, lang)}</span>
-              {employer.lmias !== null && <span className="cq-chip cq-chip-mono">{t('lmia.employer_lmias')} · {formatCount(employer.lmias, lang)}</span>}
-              <span className="cq-chip cq-chip-mono">{t('lmia.employer_lists')} · {formatCount(periods.length, lang)}</span>
+              {employer.lmias !== null && <span className="cq-chip cq-chip-mono !whitespace-normal">
+                {employer.lmias_since ? fill(t('lmia.employer_lmias_since'), { period: lmiaPeriodLabel(employer.lmias_since, lang) }) : t('lmia.employer_lmias')}
+                {' · '}{formatCount(employer.lmias, lang)}</span>}
+              <span className="cq-chip cq-chip-mono">{t('lmia.employer_lists')} · {formatCount(lists, lang)}</span>
             </div>
             <p className="text-sm text-base-content/65 mt-3">
               {fill(t('lmia.provinces_line'), { list: employer.provinces.map(code => provinceName(code, lang)).join(', ') })}
@@ -134,7 +138,8 @@ function EmployerHistory({ slug }) {
       </section>
 
       <div className="mt-8 rounded-xl border border-secondary/20 bg-secondary/5 px-4 py-3 text-sm text-base-content/70">
-        <p>{t('lmia.caveat')}</p>
+        <p>{t('lmia.same_name')}</p>
+        <p className="mt-2">{t('lmia.caveat')}</p>
         <p className="mt-2">
           <Link to={LMIA_GUIDE[lang === 'fr' ? 'fr' : 'en']} className="link">{t('lmia.guide_link')}</Link>
           {' · '}

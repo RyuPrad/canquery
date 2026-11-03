@@ -74,6 +74,9 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
         const { rows: [danchar] } = await db.query("SELECT * FROM lmia_employers WHERE employer_key = 'zqx danchar'");
         expect(danchar).toMatchObject({ employer: 'Zqx Danchar Ltd', province: 'ON', city: 'Toronto', provinces: ['AB', 'ON'],
             occupations: ['72310', '72311'], first_period: 299903, last_period: 299906, periods: 2, positions: 9, last_positions: 6 });
+        expect(await queries.getLmiaEmployer('zqx danchar', db)).toEqual({ employer_key: 'zqx danchar', provinces: ['AB', 'ON'],
+            first_period: 299903, last_period: 299906, periods: 2, positions: 9 });
+        expect(await queries.getLmiaEmployer('zqx nobody', db)).toBeNull();
 
         const found = await queries.searchLmiaEmployers({ key: 'zqx danchar' }, db);
         expect(found.total).toBe(2);

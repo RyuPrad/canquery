@@ -6,7 +6,8 @@ jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSear
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), readStoreRows: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 jest.mock('../db/pool', () => ({ query: jest.fn(), connect: jest.fn(), on: jest.fn(), end: jest.fn() }));
-jest.mock('../db/lmiaQueries', () => ({ getLmiaSummary: jest.fn(), searchLmiaEmployers: jest.fn(), getLmiaEmployerRows: jest.fn() }));
+jest.mock('../db/lmiaQueries', () => ({ getLmiaSummary: jest.fn(), searchLmiaEmployers: jest.fn(), getLmiaEmployerRows: jest.fn(),
+    getLmiaEmployer: jest.fn() }));
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -68,9 +69,13 @@ describe('lmiaPages', () => {
         expect(lmia.searchInput({ q: ' DANCHAR LTD. ', province: 'ON', occupation: '72310', page: '3' }))
             .toEqual({ q: 'DANCHAR LTD.', key: 'danchar', province: 'ON', occupation: '72310', page: 3 });
         expect(lmia.searchInput({ province: 'QC' })).toEqual({ q: '', key: '', province: 'QC', occupation: null, page: 1 });
-        for (const empty of [{}, { q: '  ' }, { q: '---' }]) {
+        for (const empty of [{}, { q: '  ' }, { q: '---' }, { q: 'a' }, { q: 'É.' }, { q: 'a Inc' }]) {
             expect(() => lmia.searchInput(empty)).toThrow(expect.objectContaining({ statusCode: 400, publicCode: 'INVALID_QUERY' }));
         }
+        // A single letter narrows nothing alone, but does with a province or an occupation.
+        expect(lmia.searchInput({ q: 'ab' }).key).toBe('ab');
+        expect(lmia.searchInput({ q: 'a', province: 'ON' }).key).toBe('a');
+        expect(lmia.searchInput({ q: 'a', occupation: '72310' }).key).toBe('a');
         for (const query of [{ q: 'x'.repeat(101) }, { province: 'ZZ' }, { occupation: '723' }, { page: '0' }, { page: '201' },
             { page: '1.5' }, { q: ['a', 'b'] }]) {
             expect(() => lmia.searchInput(query)).toThrow(expect.objectContaining({ statusCode: 400, publicCode: 'INVALID_QUERY' }));
@@ -80,7 +85,9 @@ describe('lmiaPages', () => {
     test('an employer history groups lines by list, newest first', async () => {
         const employer = await lmia.employer('danchar');
         expect(employer).toMatchObject({ key: 'danchar', slug: 'danchar', name: 'Danchar Ltd', names: ['Danchar Ltd', 'DANCHAR LTD.'],
-            provinces: ['AB', 'ON'], first_period: 201512, last_period: 202606, positions: 15, lmias: 3, truncated: false });
+            provinces: ['AB', 'ON'], first_period: 201512, last_period: 202606, lists: 2, positions: 15, lmias: 3, truncated: false });
+        // The 2015 list has no LMIA counts, so the total says which list it starts from.
+        expect(employer.lmias_since).toEqual({ period_key: 202606, kind: 'quarter', start: '2026-04-01', end: '2026-06-30' });
         expect(employer.periods.map(period => [period.period_key, period.positions, period.lmias, period.streams])).toEqual([
             [202606, 12, 3, ['High Wage']], [201512, 3, null, []]]);
         expect(employer.periods[0].occupations.map(item => [item.code, item.positions])).toEqual([['72311', 7], ['72310', 5]]);
@@ -88,6 +95,30 @@ describe('lmiaPages', () => {
         expect(await lmia.employer('nobody')).toBeNull();
         expect(await lmia.employer('Not-A-Slug')).toBeNull();
         expect(queries.getLmiaEmployerRows).toHaveBeenCalledTimes(2);
+    });
+
+    test('a history longer than the limit drops its oldest, possibly partial, list and takes its totals from the view', async () => {
+        const line = (period, index) => ({ ...ROWS[0], period_key: period, resource_id: 'r-' + period, line: index + 1,
+            period_start: '2026-04-01', period_end: '2026-06-30', approved_lmias: 1, approved_positions: 1 });
+        const rows = Array.from({ length: lmia.HISTORY_LIMIT + 1 }, (_, index) => line(index < 2000 ? 202606 : 202603, index));
+        queries.getLmiaEmployerRows.mockResolvedValue(rows);
+        queries.getLmiaEmployer.mockResolvedValue({ employer_key: 'danchar', provinces: ['AB', 'ON'], first_period: 201512, last_period: 202606,
+            periods: 9, positions: 9001 });
+        const employer = await lmia.employer('danchar');
+        expect(queries.getLmiaEmployerRows).toHaveBeenCalledWith('danchar', { limit: lmia.HISTORY_LIMIT + 1 });
+        expect(employer.periods.map(period => [period.period_key, period.positions])).toEqual([[202606, 2000]]);
+        expect(employer).toMatchObject({ truncated: true, lists: 9, positions: 9001, first_period: 201512, provinces: ['AB', 'ON'], lmias: 2000 });
+        expect(employer.lmias_since.period_key).toBe(202606);
+        // Exactly the limit is whole.
+        lmia.cache.clear();
+        queries.getLmiaEmployerRows.mockResolvedValue(rows.slice(0, lmia.HISTORY_LIMIT));
+        expect((await lmia.employer('danchar')).truncated).toBe(false);
+        expect(queries.getLmiaEmployer).toHaveBeenCalledTimes(1);
+    });
+
+    test('the history is not ready until a load has refreshed the employers', async () => {
+        queries.getLmiaSummary.mockResolvedValue({ ...SUMMARY, employers_total: 0 });
+        expect(await lmia.summary()).toBeNull();
     });
 
     test('answers are cached', async () => {
@@ -107,13 +138,16 @@ describe('/web-api/v1/lmia', () => {
         expect(res.body.meta.license).toBe('Open Government Licence - Canada');
     });
 
-    test('503 before the first load', async () => {
-        queries.getLmiaSummary.mockResolvedValue(null);
-        const res = await request(app).get('/web-api/v1/lmia/summary');
-        expect(res.status).toBe(503);
-        expect(res.body.code).toBe('LMIA_HISTORY_UNAVAILABLE');
-        const search = await request(app).get('/web-api/v1/lmia/employers?q=danchar');
-        expect(search.status).toBe(503);
+    test('503 before the first load, and while a first load has lists but no employers yet', async () => {
+        for (const notReady of [null, { ...SUMMARY, employers_total: 0 }]) {
+            lmia.cache.clear();
+            queries.getLmiaSummary.mockResolvedValue(notReady);
+            const res = await request(app).get('/web-api/v1/lmia/summary');
+            expect(res.status).toBe(503);
+            expect(res.body.code).toBe('LMIA_HISTORY_UNAVAILABLE');
+            const search = await request(app).get('/web-api/v1/lmia/employers?q=danchar');
+            expect(search.status).toBe(503);
+        }
     });
 
     test('employer search pages through the view by key, province and occupation', async () => {
@@ -131,6 +165,7 @@ describe('/web-api/v1/lmia', () => {
         const res = await request(app).get('/web-api/v1/lmia/employers/danchar');
         expect(res.status).toBe(200);
         expect(res.body.data.periods).toHaveLength(2);
+        expect((await request(app).get('/web-api/v1/lmia/employers/Danchar')).body.data.key).toBe('danchar');
         const missing = await request(app).get('/web-api/v1/lmia/employers/nobody');
         expect(missing.status).toBe(404);
         expect(missing.body.code).toBe('LMIA_EMPLOYER_NOT_FOUND');
@@ -183,24 +218,70 @@ describe('the /lmia pages', () => {
         expect(res.text).toContain('<link rel="canonical" href="https://canquery.com/lmia/employers/danchar"');
         expect(res.text).toContain('<h1>Danchar Ltd</h1>');
         expect(res.text).toContain('Also listed as');
-        for (const target of ['/lmia/employers/nobody', '/lmia/employers/Danchar', '/lmia/employers/%E0%A4%A']) {
+        for (const target of ['/lmia/employers/nobody', '/lmia/employers/Nobody', '/lmia/employers/%E0%A4%A']) {
             const missing = await request(spa).get(target);
             expect(missing.status).toBe(404);
             expect(missing.text).toContain('noindex');
         }
     });
 
-    test('a trailing slash redirects to the canonical address', async () => {
+    test('a trailing slash, an encoded slug or capitals redirect to the canonical address', async () => {
         const res = await request(spa).get('/lmia/');
         expect(res.status).toBe(301);
         expect(res.headers.location).toBe('/lmia');
+        for (const target of ['/lmia/employers/danchar/', '/lmia/employers/Danchar', '/lmia/employers/%64anchar']) {
+            const moved = await request(spa).get(target);
+            expect([target, moved.status, moved.headers.location]).toEqual([target, 301, '/lmia/employers/danchar']);
+        }
     });
 
-    test('the pages sitemap lists the hub', async () => {
+    test('a first load with lists but no employers keeps the hub out of the index', async () => {
+        queries.getLmiaSummary.mockResolvedValue({ ...SUMMARY, employers_total: 0 });
+        const res = await request(spa).get('/lmia');
+        expect(res.text).toContain('<meta name="robots" content="noindex, follow"');
+        expect(res.text).not.toContain('Search 0 employers');
+    });
+
+    test('employer names and addresses are shown as published and always escaped', async () => {
+        const hostile = '1. Choice <img src=x onerror=alert(1)> Café <Ouest> & Fils </script>';
+        queries.getLmiaEmployerRows.mockResolvedValue([{ ...ROWS[0], employer: hostile, address: '*Unit* 4 <b>Main</b> St' },
+            { ...ROWS[2], employer: '# Danchar' }]);
+        const res = await request(spa).get('/lmia/employers/danchar');
+        expect(res.status).toBe(200);
+        const escaped = '1. Choice &lt;img src=x onerror=alert(1)&gt; Café &lt;Ouest&gt; &amp; Fils &lt;/script&gt;';
+        expect(res.text).toContain('<h1>' + escaped + '</h1>');
+        expect(res.text).toContain('Also listed as</dt><dd># Danchar</dd>');
+        expect(res.text).toContain('<span aria-current="page">' + escaped + '</span>');
+        expect(res.text).not.toMatch(/<img|<Ouest>|<\/script> /);
+        const head = res.text.slice(0, res.text.indexOf('</head>'));
+        expect(head).toContain('<title>1. Choice &lt;img src=x onerror=alert(1)&gt; Café &lt;Ouest&gt;');
+        expect(head.match(/<\/script>/g)).toHaveLength(head.match(/<script/g).length);
+        expect(res.text).toContain('Different employers can share a name');
+    });
+
+    test('the LMIA dataset and its files link to the employer search', async () => {
+        const { datasetSnapshot, resourceSnapshot } = require('../services/seoSnapshot');
+        const dataset = { id: '90fed587-1364-4f33-a9ee-208181dc0b97', name: 'lmia', title_en: 'TFWP: Positive LMIA Employers List' };
+        expect(datasetSnapshot(dataset, [])).toContain('<a href="/lmia">Positive LMIA employers: every list since 2014</a>');
+        expect(datasetSnapshot({ ...dataset, id: 'another-dataset' }, [])).not.toContain('href="/lmia"');
+        const resource = { id: 'r-2026q2', dataset_id: dataset.id, name_en: '2026Q2 employers', format: 'XLSX', url: 'https://example.test/x.xlsx' };
+        expect(resourceSnapshot(resource, dataset)).toContain('<a href="/lmia">');
+    });
+
+    test('the pages sitemap lists the hub once its employers are loaded, dated by their refresh', async () => {
         resetSitemapCache();
         catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));
         const res = await request(app).get('/sitemap-pages.xml');
         expect(res.status).toBe(200);
-        expect(res.text).toContain('<loc>https://canquery.com/lmia</loc>');
+        expect(res.text).toMatch(/<url>\s*<loc>https:\/\/canquery\.com\/lmia<\/loc>\s*<lastmod>2026-11-03T09:00:00\.000Z<\/lastmod>/);
+        for (const notReady of [null, { ...SUMMARY, employers_total: 0 }]) {
+            resetSitemapCache();
+            lmia.cache.clear();
+            queries.getLmiaSummary.mockResolvedValue(notReady);
+            const empty = await request(app).get('/sitemap-pages.xml');
+            expect(empty.status).toBe(200);
+            expect(empty.text).toContain('<loc>https://canquery.com/datasets</loc>');
+            expect(empty.text).not.toContain('/lmia');
+        }
     });
 });

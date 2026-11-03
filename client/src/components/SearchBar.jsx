@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useLang } from '../i18n.jsx';
 import { SearchIcon } from './Icons.jsx';
 
-export default function SearchBar({ value, onChange, placeholder }) {
+export default function SearchBar({ value, onChange, placeholder, maxLength }) {
   const { t } = useLang();
   const inputRef = useRef(null);
 
@@ -38,6 +38,7 @@ export default function SearchBar({ value, onChange, placeholder }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={ph}
         aria-label={ph}
+        maxLength={maxLength}
       />
       <kbd className="cq-kbd hidden sm:block">/</kbd>
     </div>

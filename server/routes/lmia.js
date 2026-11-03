@@ -39,7 +39,7 @@ router.get('/employers', searchLimiter, catchAsync(async (req, res) => {
 }));
 
 router.get('/employers/:slug', catchAsync(async (req, res) => {
-    const employer = await lmia.employer(req.params.slug);
+    const employer = await lmia.employer(req.params.slug.toLowerCase());
     if (!employer) {
         const error = new AppError('This employer is not on any loaded LMIA list', 404);
         error.publicCode = 'LMIA_EMPLOYER_NOT_FOUND';

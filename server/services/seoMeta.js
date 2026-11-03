@@ -1192,9 +1192,11 @@ function lmiaEmployerMeta(employer) {
     const { LMIA_DATASET_ID, periodLabel, periodRange } = require('../utils/lmiaLabels');
     const path = '/lmia/employers/' + employer.slug;
     const name = collapse(employer.name) || 'Employer';
-    const lists = employer.periods.length;
-    const range = lists === 1 ? `on the ${periodLabel(employer.periods[0])} positive LMIA employers list`
-        : `on ${lists} positive LMIA employers lists, ${periodRange(employer.periods[lists - 1], employer.periods[0])},`;
+    const { periods, lists } = employer;
+    // A history too long to show whole has no first list to name.
+    const range = lists === 1 ? `on the ${periodLabel(periods[0])} positive LMIA employers list`
+        : employer.truncated ? `on ${facts.formatCount(lists)} positive LMIA employers lists`
+            : `on ${lists} positive LMIA employers lists, ${periodRange(periods[periods.length - 1], periods[0])},`;
     return {
         title: fitTitle([name + ': positive LMIA history', name + ' LMIA history', name]) + TITLE_SUFFIX,
         description: truncate(`${name} appears ${range} with ${facts.formatCount(employer.positions)} approved ` +

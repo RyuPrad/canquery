@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import { fill } from '../utils/text.js';
@@ -10,6 +10,11 @@ import SearchBar from '../components/SearchBar.jsx';
 import LmiaWatchSlot from '../components/LmiaWatchSlot.jsx';
 
 const OCCUPATION = /^\d{4,5}$/;
+// Without a province or occupation, a name searches from two letters or digits
+// (the server's rule: one letter would match most employers).
+const nameReady = value => (value.match(/[\p{L}\p{N}]/gu) || []).length >= 2;
+// Plural forms: French uses the singular for 0 and 1.
+const one = (count, lang) => (lang === 'fr' ? count < 2 : count === 1);
 
 // "12 employers · 1 position", with the singular where the count is one.
 function counts(t, lang, employers, positions) {
@@ -17,14 +22,15 @@ function counts(t, lang, employers, positions) {
   return part(employers, 'lmia.count_employers') + ' · ' + part(positions, 'lmia.count_positions');
 }
 
-// A row of counts with a bar scaled to the largest value in its list.
+// A row of counts with a bar scaled to the largest value in its list. The counts
+// move under the label when both do not fit on one line.
 function BarRow({ label, value, max, detail, lang }) {
   const width = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
   return (
     <li className="py-1.5">
-      <div className="flex items-baseline justify-between gap-3 text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
         <span className="min-w-0 break-words">{label}</span>
-        <span className="font-mono text-xs text-base-content/65 shrink-0">{detail || formatCount(value, lang)}</span>
+        <span className="ml-auto font-mono text-xs text-base-content/65">{detail || formatCount(value, lang)}</span>
       </div>
       <div className="h-1.5 mt-1 rounded-full bg-base-content/10 overflow-hidden" aria-hidden="true">
         <div className="h-full rounded-full bg-primary/70" style={{ width: width + '%' }} />
@@ -33,17 +39,19 @@ function BarRow({ label, value, max, detail, lang }) {
   );
 }
 
-function SearchResults({ results, page, onPage, t, lang }) {
+function SearchResults({ results, page, onPage, statusRef, t, lang }) {
   if (!results) return null;
   if (results.status === 'loading' && !results.data) return <LoadingSpinner label={t('lmia.searching')} />;
   if (results.status === 'error') return <div className="alert alert-error mt-4">{results.message || t('lmia.search_error')}</div>;
   const data = results.data;
   if (!data) return null;
   const pages = Math.min(data.max_page, Math.max(1, Math.ceil(data.total / data.page_size)));
+  const found = data.total === 1 ? t('lmia.results_one') : fill(t('lmia.results'), { count: formatCount(data.total, lang) });
   return (
     <div className={'mt-4' + (results.status === 'loading' ? ' opacity-60' : '')} aria-busy={results.status === 'loading'}>
-      <p className="text-sm text-base-content/65" role="status">
-        {data.total === 1 ? t('lmia.results_one') : fill(t('lmia.results'), { count: formatCount(data.total, lang) })}
+      {/* Paging moves focus here, so the new page is announced and in view. */}
+      <p ref={statusRef} tabIndex={-1} className="text-sm text-base-content/65 scroll-mt-24 focus:outline-none" role="status">
+        {pages > 1 ? fill(t('lmia.results_page'), { results: found, page: formatCount(page, lang), pages: formatCount(pages, lang) }) : found}
       </p>
       {data.total === 0 ? (
         <p className="mt-3 text-sm">{t('lmia.no_results')}</p>
@@ -60,7 +68,7 @@ function SearchResults({ results, page, onPage, t, lang }) {
                     ? fill(t('lmia.result_list_one'), { period: lmiaPeriodLabel(periodOf(row.last_period, data), lang) })
                     : fill(t('lmia.result_lists'), { count: formatCount(row.periods, lang), period: lmiaPeriodLabel(periodOf(row.last_period, data), lang) })}
                   {' · '}
-                  {fill(t('lmia.result_positions'), { count: formatCount(row.positions, lang) })}
+                  {fill(t(one(row.positions, lang) ? 'lmia.result_positions_one' : 'lmia.result_positions'), { count: formatCount(row.positions, lang) })}
                 </p>
               </div>
               <LmiaWatchSlot employer={row.employer} employerKey={row.employer_key} province={row.province} placement="search" />
@@ -167,19 +175,37 @@ export default function LmiaPage() {
   const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1);
   const [draft, setDraft] = useState(q);
   const [occupationDraft, setOccupationDraft] = useState(occupation);
+  const [occupationLeft, setOccupationLeft] = useState(false);
   const [summary, setSummary] = useState({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [results, setResults] = useState(null);
+  const statusRef = useRef(null);
+  const focusResults = useRef(false);
 
-  const update = (changes, { keepPage = false } = {}) => setParams(prev => {
-    const next = new URLSearchParams(prev);
+  // Changes start from the address as it is now, not as it was when a delayed
+  // change was scheduled: a province chosen while a typed name waits is kept.
+  const current = useRef(params);
+  useEffect(() => { current.current = params; }, [params]);
+  // What this page last wrote for the name and code, to tell Back and Forward apart.
+  const written = useRef({ q, occupation });
+  const update = (changes, { keepPage = false, push = false } = {}) => {
+    const next = new URLSearchParams(current.current);
     for (const [key, value] of Object.entries(changes)) {
       if (value) next.set(key, String(value));
       else next.delete(key);
     }
     if (!keepPage) next.delete('page');
-    return next;
-  }, { replace: true });
+    current.current = next;
+    written.current = { q: next.get('q') || '', occupation: next.get('occupation') || '' };
+    // Typing and filters replace the entry; a new page is a step Back returns from.
+    setParams(next, { replace: !push });
+  };
+  // Back and Forward change the address without typing: the boxes follow it.
+  useEffect(() => {
+    if (q !== written.current.q) setDraft(q);
+    if (occupation !== written.current.occupation) setOccupationDraft(occupation);
+    written.current = { q, occupation };
+  }, [q, occupation]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -193,20 +219,23 @@ export default function LmiaPage() {
     return () => controller.abort();
   }, [attempt]);
 
-  // The typed name and code reach the address (and the search) after a pause.
+  // The typed name and code reach the address (and the search) after a pause. A
+  // code that is not one any more leaves the search, so the results never show a
+  // filter the box does not.
   useEffect(() => {
-    if (draft === q) return undefined;
+    if (draft.trim() === q) return undefined;
     const timer = setTimeout(() => update({ q: draft.trim() }), 300);
     return () => clearTimeout(timer);
   }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const value = occupationDraft.trim();
-    if (value === occupation || (value && !OCCUPATION.test(value))) return undefined;
+    const raw = occupationDraft.trim();
+    const value = OCCUPATION.test(raw) ? raw : '';
+    if (value === occupation) return undefined;
     const timer = setTimeout(() => update({ occupation: value }), 300);
     return () => clearTimeout(timer);
   }, [occupationDraft]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const searching = Boolean(q || province || occupation);
+  const searching = Boolean(nameReady(q) || province || occupation);
   const ready = summary.status === 'ready';
   useEffect(() => {
     if (!searching || !ready) {
@@ -219,10 +248,20 @@ export default function LmiaPage() {
       .then(envelope => setResults({ status: 'ready', data: { ...envelope.data, periods: summary.data.periods } }))
       .catch(error => {
         if (controller.signal.aborted) return;
-        setResults({ status: 'error', message: error && error.status === 429 ? t('lmia.rate_limited') : null });
+        const status = error && error.status;
+        setResults({ status: 'error', message: status === 429 ? t('lmia.rate_limited') : status === 400 ? t('lmia.search_invalid') : null });
       });
     return () => controller.abort();
   }, [q, province, occupation, page, searching, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  // After Next or Previous, the new page's first line comes into view and takes focus.
+  useEffect(() => {
+    if (!focusResults.current || !results || results.status === 'loading') return;
+    focusResults.current = false;
+    const node = statusRef.current;
+    if (!node) return;
+    node.scrollIntoView?.({ block: 'start' });
+    node.focus({ preventScroll: true });
+  }, [results]);
 
   const crumbs = [
     { label: t('nav.datasets'), to: '/datasets' },
@@ -241,7 +280,10 @@ export default function LmiaPage() {
     );
   }
   const data = summary.data;
-  const occupationInvalid = occupationDraft.trim() !== '' && !OCCUPATION.test(occupationDraft.trim());
+  // A code in progress is not an error until the box is left or holds something other than digits.
+  const occupationText = occupationDraft.trim();
+  const occupationInvalid = occupationText !== '' && !OCCUPATION.test(occupationText) && (occupationLeft || /\D/.test(occupationText));
+  const nameShort = draft.trim() !== '' && !nameReady(draft) && !province && !occupation;
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
       <Breadcrumbs className="mb-5" label={t('breadcrumbs.label')} items={crumbs} />
@@ -275,7 +317,10 @@ export default function LmiaPage() {
         <section className="mt-8" aria-labelledby="lmia-search">
           <h2 id="lmia-search" className="font-display font-semibold text-xl">{t('lmia.search_title')}</h2>
           <div className="grid gap-3 mt-3 md:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_minmax(0,14rem)]">
-            <SearchBar value={draft} onChange={setDraft} placeholder={t('lmia.search_placeholder')} />
+            <div>
+              <SearchBar value={draft} onChange={setDraft} placeholder={t('lmia.search_placeholder')} maxLength={100} />
+              {nameShort && <p className="text-xs text-base-content/60 mt-1">{t('lmia.name_short')}</p>}
+            </div>
             <select className="select select-bordered w-full" aria-label={t('lmia.province_label')} value={province}
               onChange={event => update({ province: event.target.value })}>
               <option value="">{t('lmia.province_any')}</option>
@@ -285,12 +330,12 @@ export default function LmiaPage() {
               <input className={'input input-bordered w-full' + (occupationInvalid ? ' input-error' : '')} inputMode="numeric"
                 aria-label={t('lmia.occupation_label')} placeholder={t('lmia.occupation_placeholder')} value={occupationDraft}
                 aria-invalid={occupationInvalid} aria-describedby={occupationInvalid ? 'lmia-occupation-error' : undefined}
-                onChange={event => setOccupationDraft(event.target.value)} maxLength={5} />
+                onChange={event => setOccupationDraft(event.target.value)} onBlur={() => setOccupationLeft(true)} maxLength={5} />
               {occupationInvalid && <p id="lmia-occupation-error" className="text-xs text-error mt-1">{t('lmia.occupation_invalid')}</p>}
             </div>
           </div>
-          {searching && <SearchResults results={results} page={page} t={t} lang={lang}
-            onPage={value => update({ page: value > 1 ? value : '' }, { keepPage: true })} />}
+          {searching && <SearchResults results={results} page={page} statusRef={statusRef} t={t} lang={lang}
+            onPage={value => { focusResults.current = true; update({ page: value > 1 ? value : '' }, { keepPage: true, push: true }); }} />}
         </section>
       )}
 

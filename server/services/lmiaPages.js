@@ -42,18 +42,26 @@ function searchInput(query = {}) {
     if (province !== null && !PROVINCE_CODES.includes(province)) throw invalid('Choose a province code');
     const occupation = one('occupation');
     if (occupation !== null && !/^\d{4,5}$/.test(occupation)) throw invalid('Give an occupation as a 4- or 5-digit NOC code');
-    // Without a name, province or occupation the search would list every employer.
-    if (!employerKey(q) && province === null && occupation === null) throw invalid('Search by name, province or occupation');
+    // Without a province or occupation, a name must narrow the search: no name would list every
+    // employer, and a single letter would match most of them.
+    const key = employerKey(q);
+    if (province === null && occupation === null) {
+        if (!key) throw invalid('Search by name, province or occupation');
+        if (key.replace(/ /g, '').length < 2) throw invalid('Search with at least 2 letters or digits');
+    }
     const pageText = one('page');
     const page = pageText === null ? 1 : Number(pageText);
     if (!Number.isInteger(page) || page < 1 || page > MAX_PAGE) throw invalid(`Choose a page from 1 to ${MAX_PAGE}`);
-    return { q, key: employerKey(q), province, occupation, page };
+    return { q, key, province, occupation, page };
 }
 
+// null until a load has refreshed lmia_employers: the job saves each file as it
+// goes and refreshes the employers at the end, so a first run has lists but no
+// employers to search.
 async function summary(deps = queries) {
     return cache.get('summary', async () => {
         const found = await deps.getLmiaSummary();
-        if (!found) return null;
+        if (!found || !found.employers_total) return null;
         return { dataset_id: LMIA_DATASET_ID, ...found,
             top_employers: found.top_employers.map(row => ({ ...row, slug: slugOf(row.employer_key) })) };
     });
@@ -70,13 +78,16 @@ async function search(input, deps = queries) {
 }
 
 // One employer's lines grouped by period, newest first: positions, LMIAs, streams,
-// occupations with their positions, and addresses.
-function employerDetail(key, rows) {
+// occupations with their positions, and addresses. rows holds at most one line
+// more than HISTORY_LIMIT; a longer history drops its oldest list, which may be
+// cut short, and takes its totals from totals (lmia_employers).
+function employerDetail(key, rows, totals = null) {
     if (!rows.length) return null;
+    const truncated = rows.length > HISTORY_LIMIT;
     const periods = [];
     const names = [];
     const provinces = new Set();
-    for (const row of rows) {
+    for (const row of truncated ? rows.slice(0, HISTORY_LIMIT) : rows) {
         let period = periods[periods.length - 1];
         if (!period || period.period_key !== row.period_key) {
             period = { period_key: row.period_key, kind: row.period_kind, start: row.period_start, end: row.period_end,
@@ -99,22 +110,31 @@ function employerDetail(key, rows) {
             period.addresses.push({ address: row.address, city: row.city, province: row.province });
         }
     }
+    if (truncated && periods.length > 1) periods.pop();
     for (const period of periods) period.occupations.sort((a, b) => b.positions - a.positions || a.code.localeCompare(b.code));
-    const lmias = periods.filter(period => period.lmias !== null);
+    // Lists before October 2021 have no LMIA counts: a total that leaves some lists out
+    // says which list it starts from.
+    const reported = periods.filter(period => period.lmias !== null);
+    const since = reported.length && (truncated || reported.length < periods.length) ? reported[reported.length - 1] : null;
+    const whole = truncated && totals;
     return {
-        key, slug: slugOf(key), name: names[0], names, provinces: [...provinces].sort(),
-        first_period: periods[periods.length - 1].period_key, last_period: periods[0].period_key,
-        positions: periods.reduce((sum, period) => sum + period.positions, 0),
-        lmias: lmias.length ? lmias.reduce((sum, period) => sum + period.lmias, 0) : null,
-        truncated: rows.length >= HISTORY_LIMIT, periods
+        key, slug: slugOf(key), name: names[0], names, provinces: whole ? totals.provinces : [...provinces].sort(),
+        first_period: whole ? totals.first_period : periods[periods.length - 1].period_key, last_period: periods[0].period_key,
+        lists: whole ? totals.periods : periods.length,
+        positions: whole ? totals.positions : periods.reduce((sum, period) => sum + period.positions, 0),
+        lmias: reported.length ? reported.reduce((sum, period) => sum + period.lmias, 0) : null,
+        lmias_since: since && { period_key: since.period_key, kind: since.kind, start: since.start, end: since.end },
+        truncated, periods
     };
 }
 
 async function employer(slug, deps = queries) {
     const key = keyOfSlug(slug);
     if (!key) return null;
-    return cache.get('employer:' + key, async () =>
-        employerDetail(key, await deps.getLmiaEmployerRows(key, { limit: HISTORY_LIMIT })));
+    return cache.get('employer:' + key, async () => {
+        const rows = await deps.getLmiaEmployerRows(key, { limit: HISTORY_LIMIT + 1 });
+        return employerDetail(key, rows, rows.length > HISTORY_LIMIT ? await deps.getLmiaEmployer(key) : null);
+    });
 }
 
-module.exports = { PAGE_SIZE, MAX_PAGE, slugOf, keyOfSlug, searchInput, summary, search, employer, employerDetail, cache };
+module.exports = { PAGE_SIZE, MAX_PAGE, HISTORY_LIMIT, slugOf, keyOfSlug, searchInput, summary, search, employer, employerDetail, cache };
