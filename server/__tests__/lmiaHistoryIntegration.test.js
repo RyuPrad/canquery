@@ -74,6 +74,9 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
         const { rows: [danchar] } = await db.query("SELECT * FROM lmia_employers WHERE employer_key = 'zqx danchar'");
         expect(danchar).toMatchObject({ employer: 'Zqx Danchar Ltd', province: 'ON', city: 'Toronto', provinces: ['AB', 'ON'],
             occupations: ['72310', '72311'], first_period: 299903, last_period: 299906, periods: 2, positions: 9, last_positions: 6 });
+        expect(await queries.getLmiaEmployer('zqx danchar', db)).toEqual({ employer_key: 'zqx danchar', provinces: ['AB', 'ON'],
+            first_period: 299903, last_period: 299906, periods: 2, positions: 9 });
+        expect(await queries.getLmiaEmployer('zqx nobody', db)).toBeNull();
 
         const found = await queries.searchLmiaEmployers({ key: 'zqx danchar' }, db);
         expect(found.total).toBe(2);
@@ -92,6 +95,8 @@ integrationDescribe('LMIA history PostgreSQL integration', () => {
         expect(summary.latest).toMatchObject({ resource_id: id('q2'), period_key: 299906, period_kind: 'quarter',
             period_start: '2999-04-01', period_end: '2999-06-30', row_count: 4, employers: 3, positions: 17, lmias: 5, noc_version: 2021 });
         expect(summary.periods.slice(-2).map(p => p.period_key)).toEqual([299903, 299906]);
+        expect(summary.employers_total).toBeGreaterThanOrEqual(4);
+        expect(summary.updated_at).toBeInstanceOf(Date);
         expect(summary.provinces).toEqual([{ province: 'MB', employers: 1, positions: 9 }, { province: 'ON', employers: 1, positions: 6 },
             { province: 'BC', employers: 1, positions: 2 }]);
         expect(summary.streams[0]).toEqual({ stream: 'Primary Agriculture', employers: 1, positions: 9 });

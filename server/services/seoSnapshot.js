@@ -1,4 +1,5 @@
 const seo = require('./seoMeta');
+const { collapse } = require('./catalogText');
 const { listArticles } = require('./blogContent');
 
 // Guides about a dataset in both languages; the French edition is labelled.
@@ -16,12 +17,22 @@ const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const MAX_LINKS = 12;
 const MAX_SUMMARY = 1200;
 
+// Text shown as published (LMIA employer names, addresses and occupation titles):
+// never read as Markdown or HTML, so "1. Choice Farms Ltd" keeps its number and
+// "Café <Ouest> Ltée" its brackets. It is escaped like everything else.
+class Verbatim {
+    constructor(value) { this.value = String(value == null ? '' : value); }
+    toString() { return this.value; }
+}
+const verbatim = value => new Verbatim(value);
+const readable = value => (value instanceof Verbatim ? collapse(value.value) : seo.plainText(value));
+
 function text(value) {
-    return seo.escapeHtml(seo.plainText(value));
+    return seo.escapeHtml(readable(value));
 }
 
 function pathLink(path, label) {
-    const cleanLabel = seo.plainText(label);
+    const cleanLabel = readable(label);
     if (!path || !cleanLabel) return '';
     return '<a href="' + seo.escapeHtml(path) + '">' + seo.escapeHtml(cleanLabel) + '</a>';
 }
@@ -197,6 +208,7 @@ function datasetSnapshot(dataset, resources, pagination) {
         overviewHtml: overviewSnapshot(presentation, true),
         sources: sourceLinks(dataset),
         guides: dataset.id || dataset.name ? datasetGuides(dataset.id || dataset.name) : [],
+        sections: lmiaHubSection(dataset.id),
         facts: [
             organization ? {
                 label: 'Publisher',
@@ -251,6 +263,7 @@ function resourceSnapshot(resource, { sample = null } = {}) {
             originalFileLink(resource) + overviewSnapshot(presentation) + renderSampleTable(sample),
         sources: sourceLinks(resource),
         guides: resource.dataset_id || resource.dataset_name ? datasetGuides(resource.dataset_id || resource.dataset_name) : [],
+        sections: lmiaHubSection(resource.dataset_id),
         facts: [
             { label: 'Format', value: resource.format || 'File' },
             { label: 'Access', value: catalogFacts.accessLabel(capability, { mapped: info.mapped }) },
@@ -630,7 +643,120 @@ function errorSnapshot(title, summary) {
     });
 }
 
+// ---- The /lmia pages ----------------------------------------------------------------
+
+const { LMIA_DATASET_ID, PROVINCE_NAMES, periodLabel, periodRange } = require('../utils/lmiaLabels');
+// The LMIA dataset and each of its files lead to the employer search.
+const lmiaHubSection = datasetId => (datasetId === LMIA_DATASET_ID ? [{ title: 'Search every list by employer',
+    links: [{ path: '/lmia', label: 'Positive LMIA employers: every list since 2014' }] }] : []);
+const LMIA_DATASET_LINK = { path: '/datasets/' + LMIA_DATASET_ID, label: 'TFWP: Positive LMIA Employers List (every quarterly file)' };
+const LMIA_SOURCES = [
+    { path: 'https://open.canada.ca/data/en/dataset/' + LMIA_DATASET_ID,
+        label: 'Employment and Social Development Canada on the Open Government Portal' },
+    { path: 'https://open.canada.ca/en/open-government-licence-canada', label: 'Open Government Licence - Canada' }
+];
+const LMIA_CAVEAT = 'A positive LMIA means Service Canada found that hiring a temporary foreign worker would have a positive ' +
+    'or neutral effect on the Canadian labour market. It is not a job offer or a work permit. The list leaves out every ' +
+    'personal name, including business names that use one, so it is not complete: an employer missing from it may still ' +
+    'have received an LMIA.';
+const LMIA_SAME_NAME = 'Different employers can share a name: compare the addresses on each list before you rely on a match.';
+const lmiaCount = value => catalogFacts.formatCount(value);
+const lmiaPlace = row => [row.city, PROVINCE_NAMES[row.province]].filter(Boolean).join(', ');
+
+// A small table of escaped text; the first cell of each row is its header.
+function lmiaTable(caption, headers, rows) {
+    if (!rows.length) return '';
+    const cellText = value => text(verbatim(value));
+    return '<section><h2>' + cellText(caption) + '</h2><table><thead><tr>' +
+        headers.map(header => '<th scope="col">' + cellText(header) + '</th>').join('') + '</tr></thead><tbody>' +
+        rows.map(row => '<tr>' + row.map((cell, index) => (index === 0 ? '<th scope="row">' + cellText(cell) + '</th>'
+            : '<td>' + cellText(cell) + '</td>')).join('') + '</tr>').join('') + '</tbody></table></section>';
+}
+
+function lmiaBreadcrumbs(last) {
+    return [{ path: '/datasets', label: 'Datasets' }, { path: '/datasets/' + LMIA_DATASET_ID, label: 'TFWP positive LMIA employers list' },
+        ...last];
+}
+
+function lmiaSnapshot(summary) {
+    const guides = datasetGuides(LMIA_DATASET_ID);
+    if (!summary) {
+        return shell({ breadcrumbs: lmiaBreadcrumbs([{ label: 'Positive LMIA employers' }]), title: 'Positive LMIA employers list',
+            lead: 'The history of every positive LMIA employers list is being loaded. Until then, each quarterly file is on the ' +
+                'dataset page.', sources: LMIA_SOURCES, relatedTitle: 'Every quarterly file', relatedLinks: [LMIA_DATASET_LINK], guides });
+    }
+    const latest = summary.latest;
+    const label = periodLabel(latest);
+    const noc = latest.noc_version ? ' (NOC ' + latest.noc_version + ')' : '';
+    const overview =
+        lmiaTable(`Employers on the ${label} list by province or territory`, ['Province or territory', 'Employers', 'Approved positions'],
+            summary.provinces.map(row => [PROVINCE_NAMES[row.province] || row.province, lmiaCount(row.employers), lmiaCount(row.positions)])) +
+        lmiaTable(`Program streams on the ${label} list`, ['Program stream', 'Employers', 'Approved positions'],
+            summary.streams.map(row => [row.stream, lmiaCount(row.employers), lmiaCount(row.positions)])) +
+        lmiaTable(`Occupations with the most approved positions on the ${label} list`, ['Occupation' + noc, 'Employers', 'Approved positions'],
+            summary.occupations.map(row => [row.code + ' ' + row.title, lmiaCount(row.employers), lmiaCount(row.positions)]));
+    return shell({
+        breadcrumbs: lmiaBreadcrumbs([{ label: 'Positive LMIA employers' }]),
+        title: 'Positive LMIA employers list',
+        lead: 'Search every employer on the lists of positive Labour Market Impact Assessments (LMIAs) that Employment and ' +
+            `Social Development Canada publishes each quarter, ${periodRange(summary.periods[0], latest)}. ` + LMIA_CAVEAT,
+        facts: [
+            { label: 'Latest list', value: label },
+            { label: 'Employers on the latest list', value: lmiaCount(latest.employers) },
+            { label: 'Approved positions on the latest list', value: lmiaCount(latest.positions) },
+            { label: 'Lists', value: lmiaCount(summary.periods.length) },
+            { label: 'Employers across all lists', value: lmiaCount(summary.employers_total) }
+        ],
+        overviewHtml: overview,
+        sections: [{ title: `Employers with the most approved positions on the ${label} list`, links: summary.top_employers.map(row => ({
+            path: '/lmia/employers/' + row.slug, label: verbatim(row.employer),
+            detail: verbatim([lmiaPlace(row), lmiaCount(row.positions) + ' approved positions'].filter(Boolean).join(' · ')) })) }],
+        sources: LMIA_SOURCES,
+        linksTitle: 'Every list on CanQuery',
+        links: [...summary.periods].reverse().map(period => ({ path: '/resources/' + encodeURIComponent(period.resource_id),
+            label: periodLabel(period) + ' list', detail: lmiaCount(period.employers) + ' employers, ' +
+                lmiaCount(period.positions) + ' approved positions' })),
+        linksLimit: 60,
+        relatedTitle: 'Every quarterly file', relatedLinks: [LMIA_DATASET_LINK],
+        guides
+    });
+}
+
+function lmiaEmployerSnapshot(employer) {
+    const { periods, lists } = employer;
+    const range = lists === 1 ? `on the ${periodLabel(periods[0])} positive LMIA employers list`
+        : employer.truncated ? `on ${lmiaCount(lists)} positive LMIA employers lists`
+            : `on ${lists} positive LMIA employers lists, ${periodRange(periods[periods.length - 1], periods[0])},`;
+    const history = lmiaTable('Approved positions by list', ['List', 'Approved positions', 'Occupations', 'Places'],
+        periods.map(period => [periodLabel(period), lmiaCount(period.positions),
+            period.occupations.slice(0, 5).map(item => `${item.code} ${item.title}: ${lmiaCount(item.positions)}`).join('; '),
+            [...new Set(period.addresses.map(lmiaPlace).filter(Boolean))].slice(0, 5).join('; ')]));
+    return shell({
+        breadcrumbs: lmiaBreadcrumbs([{ path: '/lmia', label: 'Positive LMIA employers' }, { label: verbatim(employer.name) }]),
+        title: verbatim(employer.name),
+        lead: verbatim(`${employer.name} appears ${range} with ${lmiaCount(employer.positions)} approved ` +
+            `${employer.positions === 1 ? 'position' : 'positions'} in all. ` + LMIA_CAVEAT + ' ' + LMIA_SAME_NAME),
+        facts: [
+            { label: 'Approved positions', value: lmiaCount(employer.positions) },
+            { label: employer.lmias_since ? `Approved LMIAs since ${periodLabel(employer.lmias_since)}` : 'Approved LMIAs',
+                value: employer.lmias === null ? null : lmiaCount(employer.lmias) },
+            { label: 'Lists', value: lmiaCount(lists) },
+            { label: 'Provinces and territories', value: employer.provinces.map(code => PROVINCE_NAMES[code] || code).join(', ') },
+            { label: 'Also listed as', value: employer.names.length > 1 ? verbatim(employer.names.slice(1, 6).join('; ')) : null }
+        ],
+        overviewHtml: history,
+        sources: LMIA_SOURCES,
+        linksTitle: 'The official files', links: periods.map(period => ({ path: '/resources/' + encodeURIComponent(period.resource_id),
+            label: periodLabel(period) + ' list' })),
+        linksLimit: 60,
+        relatedTitle: 'Positive LMIA employers', relatedLinks: [{ path: '/lmia', label: 'Search every employer' }, LMIA_DATASET_LINK],
+        guides: datasetGuides(LMIA_DATASET_ID)
+    });
+}
+
 module.exports = {
+    lmiaSnapshot,
+    lmiaEmployerSnapshot,
     MAX_LINKS,
     sectionNav,
     safeHttpUrl,

@@ -36,6 +36,7 @@ import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
+import LmiaHubLink from '../components/LmiaHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -663,6 +664,7 @@ function ResourceExplorer({ id, navigationKey }) {
             </p>
           )}
           <CatalogOverview presentation={resource.presentation} />
+          <LmiaHubLink datasetId={resource.dataset?.id} />
           {resource.dataset?.id && (
             <DatasetAlertSlot
               datasetId={resource.dataset.id}

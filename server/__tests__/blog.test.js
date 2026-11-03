@@ -9,9 +9,9 @@ const { renderHtml } = require('../services/seoMeta');
 const app = require('../app');
 const template = '<!doctype html><html lang="en"><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>';
 
-test('publishes nineteen paired guides with verified resource links, keeping two drafts out', () => {
-    expect(readArticles()).toHaveLength(42);
-    expect(listArticles()).toHaveLength(19);
+test('publishes twenty paired guides with verified resource links, keeping two drafts out', () => {
+    expect(readArticles()).toHaveLength(44);
+    expect(listArticles()).toHaveLength(20);
     expect(listArticles().map(article => article.id)).not.toContain('lnhpd-natural-health-products');
     expect(listArticles({ lang: 'fr', place: 'oshawa-on' })).toHaveLength(1);
     for (const lang of ['en', 'fr']) for (const article of listArticles({ lang })) {
@@ -64,7 +64,7 @@ test('serves article APIs, geographic listing, real 404s and the blog sitemap', 
     expect((await request(app).get('/api/v1/blog/en/missing')).status).toBe(404);
     const sitemap = await request(app).get('/sitemap-blog.xml');
     expect(sitemap.status).toBe(200);
-    expect(sitemap.text.match(/<loc>/g)).toHaveLength(40);
+    expect(sitemap.text.match(/<loc>/g)).toHaveLength(42);
     expect(sitemap.text).toContain('/fr/blog/');
 });
 
@@ -131,7 +131,7 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
             for (const lang of ['en', 'fr']) {
                 const slug = draft.editions[lang].slug;
                 const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + slug;
-                expect(content.listArticles({ lang })).toHaveLength(18);
+                expect(content.listArticles({ lang })).toHaveLength(19);
                 expect(content.getArticle(lang, slug)).toBeNull();
                 expect(resolveBlogPage(articlePath).status).toBe(404);
                 expect(res.send.mock.calls[0][0]).not.toContain(articlePath);
@@ -143,18 +143,23 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
 
 test('national guides support localized resource links and dataset discovery without fictional places', async () => {
     const dataset = '90fed587-1364-4f33-a9ee-208181dc0b97';
-    const en = listArticles({ dataset })[0];
-    const fr = listArticles({ dataset, lang: 'fr' })[0];
+    // Two guides cover the LMIA list: the newer one checks an employer across every list.
+    expect(listArticles({ dataset }).map(article => article.id)).toEqual(['check-employer-positive-lmia', 'lmia-employer-lists']);
+    const en = listArticles({ dataset }).find(article => article.id === 'lmia-employer-lists');
+    const fr = listArticles({ dataset, lang: 'fr' }).find(article => article.id === 'lmia-employer-lists');
     expect(en.place).toBeUndefined();
     expect(en.explore).toContain('4ee7a4e0-ffc3-47af-94e7-30929d1eeb67');
     expect(fr.explore).toContain('8c205edb-9a82-468e-9aa4-b82266cbaad6');
+    const check = listArticles({ dataset, lang: 'fr' }).find(article => article.id === 'check-employer-positive-lmia');
+    expect(check.explore).toContain('31a8090a-05ab-496e-bea8-f68d0a0042c6');
+    expect(listArticles({ dataset })[0].explore).toContain('2b94f80d-fa27-4d2e-9b90-6f67fe69bf50');
     const html = (await resolvePage(fr.path)).body;
     expect(html).not.toContain('/places/');
     const download = listArticles({ dataset: '4f8575f0-918e-41bb-bcde-044d04caaf31', lang: 'fr' })[0];
     expect(download.view).toBe('download');
     expect((await resolvePage(download.path)).body).toContain('Consulter les détails du téléchargement');
     const response = await request(app).get('/api/v1/blog').query({ dataset, lang: 'fr' });
-    expect(response.body.data.map(item => item.id)).toEqual([fr.id]);
+    expect(response.body.data.map(item => item.id)).toEqual(['check-employer-positive-lmia', fr.id]);
     expect((await request(app).get('/api/v1/blog?dataset=a&dataset=b')).status).toBe(400);
     expect(listArticles({ dataset: 'does-not-exist' })).toEqual([]);
     expect(listArticles({ dataset: 'toronto-open-data-building-permits-active-permits' })).toEqual(

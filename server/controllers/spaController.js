@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
+const lmiaPages = require('../services/lmiaPages');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
 const { resourceInitialData } = require('../services/resourceInitialData');
@@ -247,6 +248,22 @@ async function resolvePage(requestTarget, deps = catalogRead) {
         const canonicalPath = '/organizations/' + encodeURIComponent(organization.name);
         return paginatedPage(canonicalPath, seoMeta.organizationMeta(organization, datasets), datasets, page,
             pagination => seoSnapshot.organizationSnapshot(organization, pagination.items, pagination));
+    }
+    if (route.type === 'lmia') {
+        const summary = await (deps.lmia || lmiaPages).summary();
+        return { status: 200, canonicalPath: '/lmia', meta: seoMeta.lmiaMeta(summary), body: seoSnapshot.lmiaSnapshot(summary) };
+    }
+    if (route.type === 'lmia-employer') {
+        // Slugs are lower case; /lmia/employers/Danchar redirects to /lmia/employers/danchar.
+        const employer = await (deps.lmia || lmiaPages).employer(route.id.toLowerCase());
+        if (!employer) return {
+            status: 404,
+            meta: seoMeta.notFoundMeta(reqPath),
+            body: seoSnapshot.errorSnapshot('Employer not found',
+                'This employer is not on any positive LMIA employers list that CanQuery has loaded.')
+        };
+        return { status: 200, canonicalPath: '/lmia/employers/' + employer.slug, meta: seoMeta.lmiaEmployerMeta(employer),
+            body: seoSnapshot.lmiaEmployerSnapshot(employer) };
     }
     if (route.type === 'other') {
         return {

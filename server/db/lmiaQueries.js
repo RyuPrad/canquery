@@ -132,8 +132,9 @@ async function lmiaEmployersBehind(db = pool) {
 const PERIOD_COLUMNS = `resource_id, period_key, period_kind, period_start::text AS period_start, period_end::text AS period_end,
     row_count, employers, positions, lmias, noc_version`;
 
-// Every loaded period, and for the newest one its provinces, streams, top
-// occupations and top employers by approved positions. null before the first load.
+// Every loaded period, the number of employers across them and when the last file
+// loaded, and for the newest period its provinces, streams, top occupations and top
+// employers by approved positions. null before the first load.
 async function getLmiaSummary(db = pool) {
     const { rows: periods } = await db.query(`
         SELECT ${PERIOD_COLUMNS} FROM lmia_files WHERE loaded_at IS NOT NULL ORDER BY period_key
@@ -167,8 +168,12 @@ async function getLmiaSummary(db = pool) {
         FROM lmia_positive_rows WHERE resource_id = $1
         GROUP BY employer_key ORDER BY positions DESC, employer_key LIMIT 10
     `, id);
-    return { latest, periods, provinces: provinces.rows, streams: streams.rows, occupations: occupations.rows,
-        top_employers: employers.rows };
+    const { rows: [totals] } = await db.query(`
+        SELECT (SELECT count(*)::int FROM lmia_employers) AS employers_total,
+            (SELECT max(loaded_at) FROM lmia_files) AS updated_at
+    `);
+    return { latest, periods, employers_total: totals.employers_total, updated_at: totals.updated_at,
+        provinces: provinces.rows, streams: streams.rows, occupations: occupations.rows, top_employers: employers.rows };
 }
 
 // Employers whose key contains the searched key, optionally in a province or with an
@@ -213,7 +218,16 @@ async function getLmiaEmployerRows(key, { limit = 3000 } = {}, db = pool) {
     return rows;
 }
 
+// One employer's totals over every list, for a history too long to read whole.
+async function getLmiaEmployer(key, db = pool) {
+    const { rows } = await db.query(`
+        SELECT employer_key, provinces, first_period, last_period, periods, positions
+        FROM lmia_employers WHERE employer_key = $1
+    `, [key]);
+    return rows[0] || null;
+}
+
 module.exports = {
     inTransaction, listLmiaResources, listLmiaFiles, saveLmiaFile, saveLmiaFailure, refreshLmiaEmployers, lmiaEmployersBehind,
-    getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows
+    getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows, getLmiaEmployer
 };

@@ -4,6 +4,7 @@ const catalogRead = require('../db/catalogReadQueries');
 const { listArticles } = require('../services/blogContent');
 const { SITE_URL } = require('../services/seoMeta');
 const { hostedRoutes } = require('../extensions');
+const lmiaPages = require('../services/lmiaPages');
 
 // Sitemap files cap at 50,000 URLs each; we chunk datasets well under that and
 // expose a sitemap index so the catalogue can keep growing.
@@ -169,17 +170,22 @@ const sitemapIndex = crawlFile(async (req, res) => {
 
 // GET /sitemap-pages.xml - the hub pages (home + the curated sections). The
 // catalogue hubs change whenever the catalogue does; the documentation pages
-// have no honest change date and carry none.
+// have no honest change date and carry none. The LMIA employer search is listed
+// once its employers are loaded (until then the page is noindex), dated by the
+// last refresh of its employers.
 const sitemapPages = crawlFile(async (req, res) => {
     const body = await fileCache.get('pages', async () => {
         const catalogue = await catalogueLastmod();
         const hub = catalogue ? { lastmod: catalogue } : {};
+        const lmia = await lmiaPages.summary().catch(() => null);
+        const lmiaLastmod = lmia && isoDate(lmia.updated_at);
         return urlset([
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', ...hub },
             { loc: SITE_URL + '/datasets', changefreq: 'daily', priority: '0.9', ...hub },
             { loc: SITE_URL + '/insights', changefreq: 'daily', priority: '0.9', ...hub },
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7', ...hub },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8', ...hub },
+            ...(lmia ? [{ loc: SITE_URL + '/lmia', changefreq: 'weekly', priority: '0.8', ...(lmiaLastmod ? { lastmod: lmiaLastmod } : {}) }] : []),
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/faq', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/about', changefreq: 'monthly', priority: '0.5' },

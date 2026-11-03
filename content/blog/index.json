@@ -130,6 +130,37 @@
     }
   },
   {
+    "id": "check-employer-positive-lmia",
+    "status": "published",
+    "topic": "lmia-employer-check",
+    "query": {
+      "en": "check employer positive LMIA",
+      "fr": "vérifier employeur EIMT positive"
+    },
+    "view": "table",
+    "published": "2026-11-03",
+    "updated": "2026-11-03",
+    "verified": "2026-11-03",
+    "dataset": "/datasets/90fed587-1364-4f33-a9ee-208181dc0b97",
+    "datasetId": "90fed587-1364-4f33-a9ee-208181dc0b97",
+    "explore": "/resources/2b94f80d-fa27-4d2e-9b90-6f67fe69bf50",
+    "editions": {
+      "en": {
+        "slug": "check-employer-positive-lmia",
+        "title": "How to check if an employer had a positive LMIA",
+        "description": "Search an employer on every positive LMIA list since 2014, read what the list does and does not prove, and protect yourself from job-offer fraud.",
+        "topicName": "Positive LMIA employer check"
+      },
+      "fr": {
+        "slug": "verifier-employeur-eimt-positive",
+        "title": "Vérifier si un employeur a obtenu une EIMT positive",
+        "description": "Cherchez un employeur sur toutes les listes d’EIMT positives depuis 2014, comprenez ce que la liste prouve ou non et protégez-vous de la fraude.",
+        "topicName": "Vérification d’un employeur EIMT",
+        "explore": "/resources/31a8090a-05ab-496e-bea8-f68d0a0042c6"
+      }
+    }
+  },
+  {
     "id": "statcan-csv-download",
     "status": "published",
     "topic": "statistics-canada",
