@@ -25,6 +25,7 @@ import { buildColumnFilters } from '../utils/columnFilter.js';
 import { schemaFingerprint, reconcileResourceFields } from '../utils/resourceSchema.js';
 import { takeInitialData, consumeInitialData } from '../utils/initialData.js';
 import { track } from '../utils/analytics.js';
+import { allowQuery } from '../utils/queryGate.js';
 import DataTable from '../components/DataTable.jsx';
 // Recharts is heavy and only needed on the Chart tab - split it into its own
 // chunk so the rest of the app stays lean.
@@ -36,6 +37,7 @@ import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
+import QueryGateSlot from '../components/QueryGateSlot.jsx';
 import { rememberView } from '../utils/recentlyViewed.js';
 import LmiaHubLink from '../components/LmiaHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
@@ -66,6 +68,7 @@ function ChartFallback() {
 // server can serve; an unseen page keeps the current rows while it loads.
 // While only the first rows of a file are held the total is unknown: the pager
 // then shows the page alone, and Next stays open unless the table can't grow.
+// onPage answers false when the page change was not made (a typed page stays).
 function Pager({ resourceId, page, total, onPage, lastPage = null }) {
   const { t } = useLang();
   const [draft, setDraft] = useState('');
@@ -79,10 +82,13 @@ function Pager({ resourceId, page, total, onPage, lastPage = null }) {
     const requested = Number.parseInt(draft, 10);
     if (!Number.isFinite(requested)) return;
     const target = Math.min(Math.max(requested, 1), pageCount) - 1;
+    if (target === page) {
+      setDraft('');
+      return;
+    }
+    if (!onPage(target)) return;
     setDraft('');
-    if (target === page) return;
     track('resource_page', { resource_id: resourceId, page: target + 1, direction: 'jump' });
-    onPage(target);
   };
   return (
     <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
@@ -90,8 +96,8 @@ function Pager({ resourceId, page, total, onPage, lastPage = null }) {
         className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
         disabled={page === 0}
         onClick={() => {
-          track('resource_page', { resource_id: resourceId, page: page, direction: 'previous' });
-          onPage(page - 1);
+          if (onPage(page - 1))
+            track('resource_page', { resource_id: resourceId, page: page, direction: 'previous' });
         }}
         aria-label={t('resource.prev')}
       >
@@ -105,8 +111,8 @@ function Pager({ resourceId, page, total, onPage, lastPage = null }) {
         className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
         disabled={page >= pageCount - 1}
         onClick={() => {
-          track('resource_page', { resource_id: resourceId, page: page + 2, direction: 'next' });
-          onPage(page + 1);
+          if (onPage(page + 1))
+            track('resource_page', { resource_id: resourceId, page: page + 2, direction: 'next' });
         }}
         aria-label={t('resource.next')}
       >
@@ -353,18 +359,40 @@ function ResourceExplorer({ id, navigationKey }) {
       track('resource_filter', { resource_id: id, filters: JSON.stringify(active) });
   }, [id, debouncedFilters]);
 
+  // The visitor's own table searches: the hosted service may answer false and
+  // ask for a free account instead, leaving the table and its inputs as they
+  // were. Links, Back/Forward and resets never come through here. Each change
+  // names what it replaces and the view it was made in.
+  const changeSearch = useCallback(
+    (text) => {
+      if (!allowQuery('search', { resource: id, value: text, current: q, view })) return;
+      setQ(text);
+    },
+    [id, q, view, setQ]
+  );
   const changeSort = useCallback(
     (next) => {
+      if (!allowQuery('sort', { resource: id, value: next, current: sort, view })) return;
       track('resource_sort', { resource_id: id, sort: next || '' });
       setSort(next);
     },
-    [id, setSort]
+    [id, sort, view, setSort]
   );
   const changeColumnFilter = useCallback(
     (field, text) => {
+      const current = columnFilters[field] || '';
+      if (!allowQuery('filter', { resource: id, field, value: text, current, view })) return;
       setColumnFilters((previous) => ({ ...previous, [field]: text }));
     },
-    [setColumnFilters]
+    [id, columnFilters, view, setColumnFilters]
+  );
+  const changePage = useCallback(
+    (target) => {
+      if (!allowQuery('page', { resource: id, page: target, current: page, view })) return false;
+      setPage(target);
+      return true;
+    },
+    [id, page, view, setPage]
   );
 
   // Another page, sort, search or filter shows its rows from the first one:
@@ -590,7 +618,7 @@ function ResourceExplorer({ id, navigationKey }) {
           resourceId={id}
           page={page}
           total={data ? data.total : knownTotal}
-          onPage={setPage}
+          onPage={changePage}
           lastPage={lastHeldPage}
         />
       )}
@@ -765,7 +793,7 @@ function ResourceExplorer({ id, navigationKey }) {
               placeholder={t('resource.search_placeholder')}
               aria-label={t('resource.search_placeholder')}
               value={q}
-              onChange={(e) => setQ(e.target.value)}
+              onChange={(e) => changeSearch(e.target.value)}
             />
           </div>
           {view === 'table' && knownTotal != null && (
@@ -810,6 +838,7 @@ function ResourceExplorer({ id, navigationKey }) {
                 {t('resource.download_filtered')}
               </a>
             ))}
+          <QueryGateSlot resourceId={id} datasetId={resource?.dataset?.id} />
         </div>
       )}
 
