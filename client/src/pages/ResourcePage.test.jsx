@@ -17,6 +17,9 @@ vi.mock('../api/catalog.js', () => ({
 vi.mock('../components/MapPanel.jsx', () => ({
   default: ({ resourceId }) => <div>live-map-{resourceId}</div>,
 }));
+// The hosted service may ask for an account before a table search; these tests
+// answer for it (allowed unless a test says otherwise), also in the private build.
+vi.mock('../utils/queryGate.js', () => ({ allowQuery: vi.fn(() => true) }));
 vi.mock('../components/ChartPanel.jsx', async () => {
   // Like the real panel, it tells the Chart tab's loading card when its profile is in.
   const { useChartLoadReport } = await import('../hooks/useChartLoadReport.js');
@@ -33,6 +36,7 @@ import { ApiError, NotIngestedError } from '../api/client.js';
 import * as rowPageCache from '../utils/rowPageCache.js';
 import { clearResourceHints, rememberResource } from '../utils/resourceHints.js';
 import { markEngaged } from '../utils/engagement.js';
+import { allowQuery } from '../utils/queryGate.js';
 
 // These visits have a person on the page; ResourcePage.engagement.test.jsx has none.
 markEngaged();
@@ -83,6 +87,7 @@ function ResourceHistoryNavigation() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  allowQuery.mockImplementation(() => true);
   localStorage.clear();
   rowPageCache.clear();
   // Prefetching is exercised explicitly; elsewhere it would make call counts timing-dependent.
@@ -1104,4 +1109,78 @@ test('a file whose details load joins this browser’s recently viewed list', as
   </MemoryRouter>);
   await waitFor(() => expect(JSON.parse(localStorage.getItem('cq-recent') || '[]')).toHaveLength(1));
   expect(JSON.parse(localStorage.getItem('cq-recent'))[0]).toMatchObject({ kind: 'resource', id: 'a', path: '/resources/a' });
+});
+
+describe('ResourcePage table searches and the hosted gate', () => {
+  afterEach(() => {
+    delete window.umami;
+  });
+  const searchBox = () => screen.getByPlaceholderText('Full-text search in this table...');
+
+  test('each table control asks the gate with its kind and value', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(allowQuery).toHaveBeenLastCalledWith('page', { resource: 'a', page: 1 });
+    fireEvent.change(searchBox(), { target: { value: 'Ottawa' } });
+    expect(allowQuery).toHaveBeenLastCalledWith('search', { resource: 'a', value: 'Ottawa' });
+    fireEvent.change(screen.getByRole('textbox', { name: 'name · filter...' }), { target: { value: 'row' } });
+    expect(allowQuery).toHaveBeenLastCalledWith('filter', { resource: 'a', field: 'name', value: 'row' });
+    fireEvent.click(screen.getByRole('button', { name: 'nameTEXT' }));
+    expect(allowQuery).toHaveBeenLastCalledWith('sort', { resource: 'a', value: 'name asc' });
+    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a',
+      expect.objectContaining({ q: 'Ottawa', sort: 'name asc', offset: 0 }), expect.any(Object)));
+  });
+
+  test('a refused change leaves the table, its inputs and the address as they were', async () => {
+    window.umami = { track: vi.fn() };
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <ResourceHistoryNavigation />
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByText('row-a');
+    allowQuery.mockImplementation(() => false);
+    fireEvent.change(searchBox(), { target: { value: 'Ottawa' } });
+    expect(searchBox()).toHaveValue('');
+    const filter = screen.getByRole('textbox', { name: 'name · filter...' });
+    fireEvent.change(filter, { target: { value: 'row' } });
+    expect(filter).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'nameTEXT' }));
+    expect(screen.getByRole('columnheader', { name: 'nameTEXT' })).toHaveAttribute('aria-sort', 'none');
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    // A typed page that was refused stays in its box.
+    const box = screen.getByRole('spinbutton', { name: 'Go to page' });
+    fireEvent.change(box, { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(box).toHaveValue(3);
+    expect(screen.getByText('Page 1 / 4')).toBeInTheDocument();
+    await act(async () => pause(300));
+    expect(allowQuery.mock.calls.map(([kind]) => kind)).toEqual(['search', 'filter', 'sort', 'page', 'page']);
+    expect(queryResource).not.toHaveBeenCalledWith('a', expect.objectContaining({ q: 'Ottawa' }), expect.anything());
+    expect(queryResource).not.toHaveBeenCalledWith('a', expect.objectContaining({ sort: 'name asc' }), expect.anything());
+    expect(queryResource).not.toHaveBeenCalledWith('a', expect.objectContaining({ offset: 50 }), expect.anything());
+    expect(screen.getByText('row-a')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current resource URL').textContent).toBe('');
+    const events = window.umami.track.mock.calls.map(([name]) => name);
+    expect(events).not.toContain('resource_sort');
+    expect(events).not.toContain('resource_page');
+  });
+
+  test('a shared link, a link to another view and Back never ask the gate', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a?q=first&page=1']}>
+      <ResourceHistoryNavigation />
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => expect(queryResource).toHaveBeenCalledWith('a',
+      expect.objectContaining({ q: 'first', offset: 50 }), expect.any(Object)));
+    fireEvent.click(screen.getByRole('button', { name: 'Open another resource view' }));
+    await waitFor(() => expect(queryResource).toHaveBeenCalledWith('a',
+      expect.objectContaining({ q: 'second', sort: 'name desc', offset: 100 }), expect.any(Object)));
+    fireEvent.click(screen.getByRole('button', { name: 'History back' }));
+    await waitFor(() => expect(searchBox()).toHaveValue('first'));
+    await act(async () => pause(300));
+    expect(allowQuery).not.toHaveBeenCalled();
+  });
 });
