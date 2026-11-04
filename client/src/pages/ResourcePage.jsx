@@ -361,36 +361,38 @@ function ResourceExplorer({ id, navigationKey }) {
 
   // The visitor's own table searches: the hosted service may answer false and
   // ask for a free account instead, leaving the table and its inputs as they
-  // were. Links, Back/Forward and resets never come through here.
+  // were. Links, Back/Forward and resets never come through here. Each change
+  // names what it replaces and the view it was made in.
   const changeSearch = useCallback(
     (text) => {
-      if (!allowQuery('search', { resource: id, value: text })) return;
+      if (!allowQuery('search', { resource: id, value: text, current: q, view })) return;
       setQ(text);
     },
-    [id, setQ]
+    [id, q, view, setQ]
   );
   const changeSort = useCallback(
     (next) => {
-      if (!allowQuery('sort', { resource: id, value: next })) return;
+      if (!allowQuery('sort', { resource: id, value: next, current: sort, view })) return;
       track('resource_sort', { resource_id: id, sort: next || '' });
       setSort(next);
     },
-    [id, setSort]
+    [id, sort, view, setSort]
   );
   const changeColumnFilter = useCallback(
     (field, text) => {
-      if (!allowQuery('filter', { resource: id, field, value: text })) return;
+      const current = columnFilters[field] || '';
+      if (!allowQuery('filter', { resource: id, field, value: text, current, view })) return;
       setColumnFilters((previous) => ({ ...previous, [field]: text }));
     },
-    [id, setColumnFilters]
+    [id, columnFilters, view, setColumnFilters]
   );
   const changePage = useCallback(
     (target) => {
-      if (!allowQuery('page', { resource: id, page: target })) return false;
+      if (!allowQuery('page', { resource: id, page: target, current: page, view })) return false;
       setPage(target);
       return true;
     },
-    [id, setPage]
+    [id, page, view, setPage]
   );
 
   // Another page, sort, search or filter shows its rows from the first one:

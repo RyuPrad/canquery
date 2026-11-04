@@ -7,8 +7,10 @@ import { hostedPart } from '../extensions.js';
 const gate = hostedPart(import.meta.glob('../enterprise/queryGate.js', { eager: true }), null);
 
 /**
+ * current is what the change replaces (the box's text, the filter's text, the
+ * sort or the page) and view is the tab it was made in (table or chart).
  * @param {'search' | 'filter' | 'sort' | 'page'} kind
- * @param {{ resource: string, value?: string | null, field?: string, page?: number }} detail
+ * @param {{ resource: string, value?: string | null, current?: string | number | null, field?: string, page?: number, view?: string }} detail
  * @returns {boolean} false when the change must not be applied
  */
 export function allowQuery(kind, detail) {

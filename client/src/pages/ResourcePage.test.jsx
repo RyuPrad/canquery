@@ -1123,15 +1123,30 @@ describe('ResourcePage table searches and the hosted gate', () => {
     </MemoryRouter>);
     await screen.findByText('row-a');
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-    expect(allowQuery).toHaveBeenLastCalledWith('page', { resource: 'a', page: 1 });
+    expect(allowQuery).toHaveBeenLastCalledWith('page', { resource: 'a', page: 1, current: 0, view: 'table' });
     fireEvent.change(searchBox(), { target: { value: 'Ottawa' } });
-    expect(allowQuery).toHaveBeenLastCalledWith('search', { resource: 'a', value: 'Ottawa' });
+    expect(allowQuery).toHaveBeenLastCalledWith('search', { resource: 'a', value: 'Ottawa', current: '', view: 'table' });
     fireEvent.change(screen.getByRole('textbox', { name: 'name · filter...' }), { target: { value: 'row' } });
-    expect(allowQuery).toHaveBeenLastCalledWith('filter', { resource: 'a', field: 'name', value: 'row' });
+    expect(allowQuery).toHaveBeenLastCalledWith('filter', { resource: 'a', field: 'name', value: 'row', current: '', view: 'table' });
     fireEvent.click(screen.getByRole('button', { name: 'nameTEXT' }));
-    expect(allowQuery).toHaveBeenLastCalledWith('sort', { resource: 'a', value: 'name asc' });
+    expect(allowQuery).toHaveBeenLastCalledWith('sort', { resource: 'a', value: 'name asc', current: null, view: 'table' });
+    fireEvent.change(searchBox(), { target: { value: 'Ottaw' } });
+    expect(allowQuery).toHaveBeenLastCalledWith('search', { resource: 'a', value: 'Ottaw', current: 'Ottawa', view: 'table' });
+    fireEvent.click(screen.getByRole('button', { name: 'nameTEXT' }));
+    expect(allowQuery).toHaveBeenLastCalledWith('sort', { resource: 'a', value: 'name desc', current: 'name asc', view: 'table' });
     await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('a',
-      expect.objectContaining({ q: 'Ottawa', sort: 'name asc', offset: 0 }), expect.any(Object)));
+      expect.objectContaining({ q: 'Ottaw', sort: 'name desc', offset: 0 }), expect.any(Object)));
+  });
+
+  test('a search typed on the Chart tab tells the gate so', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
+      ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'name', type: 'TEXT' }] } } });
+    render(<MemoryRouter initialEntries={['/resources/a?view=chart']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    await screen.findByTestId('chart');
+    fireEvent.change(searchBox(), { target: { value: 'Ottawa' } });
+    expect(allowQuery).toHaveBeenLastCalledWith('search', { resource: 'a', value: 'Ottawa', current: '', view: 'chart' });
   });
 
   test('a refused change leaves the table, its inputs and the address as they were', async () => {
