@@ -26,6 +26,7 @@ import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
+import { rememberView } from '../utils/recentlyViewed.js';
 import LmiaHubLink from '../components/LmiaHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
@@ -133,6 +134,21 @@ function DatasetExplorer({ idOrName }) {
   }, [dataset, fileFilter.q, matchingFiles.length]);
 
   const pick = (obj) => obj ? (contentLang === 'fr' && obj.fr ? obj.fr : obj.en || obj.fr) : null;
+
+  // The homepage's "Recently viewed" rail (this browser only).
+  const viewedId = dataset?.id;
+  useEffect(() => {
+    if (!dataset) return;
+    rememberView({
+      kind: 'dataset',
+      id: dataset.id,
+      title: {
+        en: dataset.presentation?.title?.en || dataset.title?.en || dataset.title?.fr || dataset.name || dataset.id,
+        fr: dataset.presentation?.title?.fr || dataset.title?.fr || ''
+      },
+      path: '/datasets/' + encodeURIComponent(dataset.name || dataset.id)
+    });
+  }, [viewedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (initial) {

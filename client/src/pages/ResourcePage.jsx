@@ -36,6 +36,7 @@ import Provenance from '../components/Provenance.jsx';
 import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
+import { rememberView } from '../utils/recentlyViewed.js';
 import LmiaHubLink from '../components/LmiaHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
@@ -150,6 +151,21 @@ function ResourceExplorer({ id, navigationKey }) {
     notFound,
     reload: onPrepared
   } = useResourceMetadata(id, { initial: initial?.resource ?? null });
+  // The homepage's "Recently viewed" rail (this browser only).
+  const viewedId = resource?.id;
+  useEffect(() => {
+    if (!resource) return;
+    rememberView({
+      kind: 'resource',
+      id: resource.id,
+      title: {
+        en:
+          resource.presentation?.title?.en || resource.name?.en || resource.name?.fr || resource.id,
+        fr: resource.presentation?.title?.fr || resource.name?.fr || ''
+      },
+      path: '/resources/' + encodeURIComponent(resource.id)
+    });
+  }, [viewedId]); // eslint-disable-line react-hooks/exhaustive-deps
   const {
     q,
     setQ,

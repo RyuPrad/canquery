@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach } from 'vitest';
 import { LangProvider } from '../i18n.jsx';
 import PrivacyPage from './PrivacyPage.jsx';
@@ -67,4 +67,21 @@ test('discloses Google advertising in French', () => {
   expect(screen.getByText(/Des fournisseurs tiers, dont Google, utilisent des témoins/)).toHaveTextContent(
     'mais pas le code publicitaire de Google');
   expect(screen.getByRole('link', { name: 'Paramètres des annonces Google' })).toHaveAttribute('href', 'https://www.google.com/settings/ads');
+});
+
+test('the recently viewed list can be cleared here as well', async () => {
+  const { rememberView } = await import('../utils/recentlyViewed.js');
+  rememberView({ kind: 'dataset', id: 'd1', title: { en: 'Building permits', fr: '' }, path: '/datasets/permits' });
+  render(<PrivacyPage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Clear recently viewed' }));
+  expect(localStorage.getItem('cq-recent')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Clear recently viewed' })).toBeNull();
+  const status = screen.getByText('Recently viewed list cleared.');
+  expect(status).toHaveFocus();
+});
+
+test('with nothing viewed, the page says the list is empty', () => {
+  render(<PrivacyPage />);
+  expect(screen.getByText('Your recently viewed list is empty.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Clear recently viewed' })).toBeNull();
 });

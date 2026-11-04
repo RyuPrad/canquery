@@ -154,6 +154,76 @@ async function searchDatasets({ q, org, format, keyword, place, source, mappable
         limit, offset, searchExpression(q) || null, literalPatterns(q), listParam(level), queryable || null], db);
 }
 
+// Dataset ids for what the hosted edition lets an owner follow: a catalogue
+// search, a place or a publisher. They are built from the catalogue's own SQL,
+// so a followed search reads what the catalogue lists for it. Each returns at
+// most `limit` ids, the most recently modified first; callers ask for one more
+// than they accept to tell when a target is too broad.
+function followLimit(limit) {
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new TypeError('limit must be a positive integer');
+    return limit;
+}
+const followText = value => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+// search is a catalogue search state (catalogSearchState.js): q, org, format,
+// keyword, place, source, level, mappable and queryable; sort and paging do not
+// apply. Values are cleaned as the catalogue's route cleans its parameters: text
+// is trimmed (blank text is no filter) and a flag filters only when it is true.
+async function matchingDatasetIds(search = {}, { limit = 5001 } = {}, db = pool) {
+    const { org, format, keyword, source, level } = search;
+    const q = followText(search.q), place = followText(search.place);
+    const mappable = search.mappable === true || null, queryable = search.queryable === true || null;
+    const { rows } = await db.query(`${PLACE_CTES}
+        SELECT d.id FROM datasets d
+        LEFT JOIN organizations o ON o.id = d.org_id
+        LEFT JOIN place_matches pm ON pm.dataset_id = d.id
+        WHERE ($1::text IS NULL OR ${match.search('$7')})
+          AND ($2::text[] IS NULL OR ${match.org('$2')})
+          AND ($3::text[] IS NULL OR ${match.format('$3')})
+          AND ($4::text[] IS NULL OR ${match.keyword('$4')})
+          AND ($5::text IS NULL OR pm.dataset_id IS NOT NULL)
+          AND ($6::text[] IS NULL OR ${match.source('$6')})
+          AND ($8::boolean IS NULL OR ${HAS_MAP})
+          AND ($9::text[] IS NULL OR ${match.level('$9')})
+          AND ($10::boolean IS NULL OR ${HAS_TABLE})
+        ORDER BY d.metadata_modified DESC NULLS LAST, d.id
+        LIMIT $11
+    `, [q, listParam(org), listParam(format, upper), listParam(keyword), place, listParam(source),
+        q && (searchExpression(q) || null), mappable, listParam(level), queryable, followLimit(limit)]);
+    return rows.map(row => row.id);
+}
+
+// Following a place means its own datasets and those of every place inside it
+// (a province's municipalities included), whatever their relationship. It is
+// not what the place's page lists: that page also shows wider datasets covering
+// the place (a national one covers every town), which a follower would hear
+// about from every place they follow, and it leaves out the places inside it.
+// placeIdOrSlug is a place id, slug or alias slug.
+async function placeDatasetIds(placeIdOrSlug, { limit = 30001 } = {}, db = pool) {
+    const { rows } = await db.query(`WITH RECURSIVE followed AS (
+            SELECT p.id FROM places p
+            WHERE p.id = $1 OR p.slug = $1
+               OR EXISTS (SELECT 1 FROM place_aliases pa WHERE pa.place_id = p.id AND pa.slug = $1)
+            UNION
+            SELECT child.id FROM places child JOIN followed f ON child.parent_id = f.id
+        )
+        SELECT d.id FROM datasets d
+        WHERE EXISTS (SELECT 1 FROM dataset_places dp WHERE dp.dataset_id = d.id AND dp.place_id IN (SELECT id FROM followed))
+        ORDER BY d.metadata_modified DESC NULLS LAST, d.id
+        LIMIT $2
+    `, [placeIdOrSlug, followLimit(limit)]);
+    return rows.map(row => row.id);
+}
+
+// The datasets a publishing organization (id or name) holds.
+async function organizationDatasetIds(orgIdOrName, { limit = 30001 } = {}, db = pool) {
+    const { rows } = await db.query(`SELECT d.id FROM datasets d JOIN organizations o ON o.id = d.org_id
+        WHERE o.id = $1 OR o.name = $1
+        ORDER BY d.metadata_modified DESC NULLS LAST, d.id
+        LIMIT $2`, [orgIdOrName, followLimit(limit)]);
+    return rows.map(row => row.id);
+}
+
 async function getDatasetByIdOrName(idOrName) {
     const result = await pool.query(`
         SELECT d.id, d.name, d.title_en, d.title_fr, d.notes_en, d.notes_fr, d.org_id,
@@ -829,6 +899,9 @@ async function getJobHealth() {
 
 module.exports = {
     searchDatasets,
+    matchingDatasetIds,
+    placeDatasetIds,
+    organizationDatasetIds,
     getDatasetByIdOrName,
     listResourcesForDataset,
     getResourceById,

@@ -75,11 +75,12 @@ export function writeCatalogSearch(params, state) {
   return next;
 }
 
+// Blank text is no criterion: the catalogue trims it away.
 /** @param {CatalogSearchState} state */
 export function hasCatalogCriteria(state) {
   return Boolean(
-    state.q ||
-      state.place ||
+    state.q.trim() ||
+      state.place.trim() ||
       state.mappable ||
       state.queryable ||
       CATALOG_LIST_KEYS.some((key) => state[key].length > 0)

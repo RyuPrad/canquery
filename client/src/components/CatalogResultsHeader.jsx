@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { useLang } from '../i18n.jsx';
 import { XIcon } from './Icons.jsx';
+import SaveSearchSlot from './SaveSearchSlot.jsx';
 
 // Without search text the default order is already the most recently
 // updated first, so "Best match" only appears for a search.
@@ -17,7 +18,8 @@ export default function CatalogResultsHeader({
   hasQuery,
   onSort,
   chips = [],
-  onRemove
+  onRemove,
+  search
 }) {
   const { t, lang } = useLang();
   const sortId = useId();
@@ -43,20 +45,23 @@ export default function CatalogResultsHeader({
         >
           {count}
         </p>
-        <div className="cq-sort">
-          <label htmlFor={sortId}>{t('sort.label')}</label>
-          <select
-            id={sortId}
-            className="select select-sm bg-base-200 border-base-content/10 rounded-lg"
-            value={selected}
-            onChange={(event) => onSort(event.target.value)}
-          >
-            {sortOptions(hasQuery).map((value) => (
-              <option key={value} value={value}>
-                {optionLabel(value)}
-              </option>
-            ))}
-          </select>
+        <div className="cq-results-actions">
+          <SaveSearchSlot search={search} total={stale ? null : total} />
+          <div className="cq-sort">
+            <label htmlFor={sortId}>{t('sort.label')}</label>
+            <select
+              id={sortId}
+              className="select select-sm bg-base-200 border-base-content/10 rounded-lg"
+              value={selected}
+              onChange={(event) => onSort(event.target.value)}
+            >
+              {sortOptions(hasQuery).map((value) => (
+                <option key={value} value={value}>
+                  {optionLabel(value)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
       {chips.length > 0 && (

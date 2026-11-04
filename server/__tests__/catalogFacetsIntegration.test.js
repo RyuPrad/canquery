@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { Pool } = require('pg');
-const { searchDatasets } = require('../db/catalogReadQueries');
+const { searchDatasets, matchingDatasetIds, placeDatasetIds, organizationDatasetIds } = require('../db/catalogReadQueries');
 const { readDatasetFacets } = require('../db/catalogFacetQueries');
 const { shapeDatasetFacets } = require('../services/catalogFacets');
 const url = process.env.SPATIAL_TEST_DATABASE_URL;
@@ -70,6 +70,59 @@ integrationDescribe('catalogue filters and facet counts PostgreSQL integration',
     afterAll(async () => {
         if (db) { await db.query('ROLLBACK'); db.release(); }
         if (pool) await pool.end();
+    });
+
+    test('a followed search reads what the catalogue lists; a place follows the places inside it', async () => {
+        const sorted = values => [...values].sort();
+        await db.query('SAVEPOINT follow_fixture');
+        try {
+            // A national dataset covering every place, a town alias, and a publisher whose id is not its name.
+            await db.query(`INSERT INTO datasets (id, name, title_en, org_id, metadata_modified) VALUES ($1, $1, $2, NULL, '2026-08-01')`,
+                [id('cov'), `Foxtrot ${token} coverage`]);
+            await db.query(`INSERT INTO dataset_places (source_id, dataset_id, place_id, relationship, includes_descendants, assignment_method)
+                VALUES ($1, $2, $3, 'coverage', true, 'source')`, [id('src_a'), id('cov'), id('country')]);
+            await db.query('INSERT INTO place_aliases (place_id, slug) VALUES ($1, $2)', [id('town'), id('town_alias')]);
+            await db.query(`INSERT INTO organizations (id, name, title_en) VALUES ($1, $2, 'Publisher C')`, [id('org_c'), id('org_c_name')]);
+            await db.query(`INSERT INTO datasets (id, name, title_en, org_id, metadata_modified) VALUES ($1, $1, $2, $3, '2026-07-01')`,
+                [id('pubc'), `Golf ${token} records`, id('org_c')]);
+            for (const key of ['cov', 'pubc']) {
+                await db.query('INSERT INTO dataset_sources (source_id, external_id, dataset_id) VALUES ($1, $2, $2)', [id('src_a'), id(key)]);
+            }
+
+            for (const filters of [{}, { org: [id('org_a')] }, { format: ['csv'] }, { level: ['federal'] }, { place: id('territory') },
+                { place: id('town') }, { place: id('town_alias') }, { keyword: ['parks'] }, { queryable: true }, { mappable: true },
+                { source: [id('src_a')] }]) {
+                expect(sorted(await matchingDatasetIds({ q: token, ...filters }, { limit: 100 }, db))).toEqual(sorted(await list(filters)));
+            }
+            // A town's catalogue includes the national coverage; following the town does not.
+            expect(await list({ place: id('town') })).toContain(id('cov'));
+            // Values are cleaned like the catalogue's parameters: blank text is no filter, a flag counts only when true.
+            expect(sorted(await matchingDatasetIds({ q: `  ${token} `, place: ` ${id('town')} ` }, { limit: 100 }, db)))
+                .toEqual(sorted(await list({ place: id('town') })));
+            expect(sorted(await matchingDatasetIds({ q: token, place: '  ', mappable: 'false', queryable: 1 }, { limit: 100 }, db)))
+                .toEqual(sorted(await list()));
+            expect(await matchingDatasetIds({ q: '   ' }, { limit: 1 }, db)).toHaveLength(1);
+            for (const limit of [null, 0, -1, 1.5, '10']) {
+                await expect(matchingDatasetIds({ q: token }, { limit }, db)).rejects.toThrow(TypeError);
+            }
+            await expect(placeDatasetIds(id('town'), { limit: null }, db)).rejects.toThrow(TypeError);
+            await expect(organizationDatasetIds(id('org_a'), { limit: 0 }, db)).rejects.toThrow(TypeError);
+            // Newest first, and the limit tells the caller when a search is too broad.
+            expect(await matchingDatasetIds({ q: token }, { limit: 2 }, db)).toEqual([id('fed1'), id('fed2')]);
+
+            // A place follows its own datasets, whatever their relationship, and those of the places inside it.
+            expect(sorted(await placeDatasetIds(id('country'), {}, db))).toEqual(sorted([id('mun1'), id('ter1'), id('cov')]));
+            expect(await placeDatasetIds(id('region'), {}, db)).toEqual([id('mun1')]);
+            expect(await placeDatasetIds(id('town'), {}, db)).toEqual([id('mun1')]);
+            expect(await placeDatasetIds(id('town_alias'), {}, db)).toEqual([id('mun1')]);
+            expect(await placeDatasetIds(prefix + '_nowhere', {}, db)).toEqual([]);
+            expect(await organizationDatasetIds(id('org_a'), {}, db)).toEqual([id('fed1'), id('mun1')]);
+            expect(await organizationDatasetIds(id('org_b'), { limit: 1 }, db)).toEqual([id('fed2')]);
+            expect(await organizationDatasetIds(id('org_c_name'), {}, db)).toEqual([id('pubc')]);
+            expect(await organizationDatasetIds(id('org_c'), {}, db)).toEqual([id('pubc')]);
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT follow_fixture');
+        }
     });
 
     test('counts every group, deriving levels from declarations and places', async () => {

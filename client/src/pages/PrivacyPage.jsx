@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from 'react';
 import { useLang } from '../i18n.jsx';
 import { LockIcon } from '../components/Icons.jsx';
 import { hostedPart } from '../extensions.js';
+import { clearRecentlyViewed, readRecentlyViewed, subscribeRecentlyViewed } from '../utils/recentlyViewed.js';
 
 // The hosted service adds how its developer accounts handle personal information.
 const { Sections: HostedSections } = hostedPart(import.meta.glob('../enterprise/privacy.jsx', { eager: true }), {});
@@ -14,6 +16,29 @@ const COLLECTED = [
   'privacy.collect_heatmaps',
   'privacy.collect_promotions',
 ];
+
+// The Recently viewed list can be cleared here too: a remembered place keeps the
+// homepage on its results, where the rail does not show.
+function RecentlyViewedControl() {
+  const { t } = useLang();
+  const [count, setCount] = useState(() => readRecentlyViewed().length);
+  const [cleared, setCleared] = useState(false);
+  const status = useRef(null);
+  useEffect(() => subscribeRecentlyViewed(() => setCount(readRecentlyViewed().length)), []);
+  useEffect(() => { if (cleared) status.current?.focus(); }, [cleared]);
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      {count > 0 && (
+        <button type="button" className="btn btn-outline btn-sm" onClick={() => { clearRecentlyViewed(); setCleared(true); }}>
+          {t('privacy.recent_clear')}
+        </button>
+      )}
+      <p ref={status} tabIndex={-1} role="status" className="text-sm text-base-content/65">
+        {count > 0 ? '' : t(cleared ? 'privacy.recent_cleared' : 'privacy.recent_empty')}
+      </p>
+    </div>
+  );
+}
 
 // The server adds this meta to every page when the deployment runs Google AdSense.
 const adsEnabled = () => Boolean(globalThis.document?.querySelector('meta[name="google-adsense-account"]'));
@@ -58,6 +83,8 @@ export default function PrivacyPage() {
       <section className="mt-9">
         <h2 className="text-xl font-semibold font-display">{t('privacy.control_title')}</h2>
         <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.control_body')}</p>
+        <p className="text-sm text-base-content/65 mt-3 leading-relaxed">{t('privacy.recent_body')}</p>
+        <RecentlyViewedControl />
       </section>
 
       {adsEnabled() && (
