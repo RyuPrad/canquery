@@ -422,3 +422,15 @@ describe('DatasetPage file filter', () => {
     }
   });
 });
+
+test('a dataset that loads joins this browser’s recently viewed list', async () => {
+  render(
+    <MemoryRouter initialEntries={['/datasets/dataset-a']}>
+      <Routes><Route path="/datasets/:idOrName" element={<DatasetPage />} /></Routes>
+    </MemoryRouter>
+  );
+  await waitFor(() => expect(JSON.parse(localStorage.getItem('cq-recent') || '[]')).toHaveLength(1));
+  expect(JSON.parse(localStorage.getItem('cq-recent'))[0]).toMatchObject({
+    kind: 'dataset', id: 'dataset-a', title: { en: 'Dataset A', fr: 'Jeu de données A' }, path: '/datasets/dataset-a'
+  });
+});

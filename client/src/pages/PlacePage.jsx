@@ -296,11 +296,11 @@ function PlaceExplorer({ slug }) {
             <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3">{fill(t('places.open_data_title'), { name })}</h1>
             <PlaceIntro place={place} facets={facets} lang={lang} t={t} />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <FollowSlot kind="place" target={place.id} title={name} />
             <Link
               to={'/?place=' + encodeURIComponent(place.slug)}
-              className="btn btn-sm btn-outline border-base-content/20 rounded-lg"
+              className="btn btn-sm btn-outline border-base-content/20 rounded-lg flex-1 sm:flex-none"
               onClick={() => writePlace(place.slug)}
               data-analytics-event="place_open"
               data-analytics-place-id={place.id}

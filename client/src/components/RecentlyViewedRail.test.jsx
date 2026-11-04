@@ -22,6 +22,20 @@ test('shows nothing until something was opened, then the views newest first', ()
   fireEvent.click(within(rail).getByRole('button', { name: 'Clear the recently viewed list' }));
   expect(screen.queryByRole('region', { name: 'Recently viewed' })).toBeNull();
   expect(localStorage.getItem('cq-recent')).toBeNull();
+  // Focus stays where the list was, on what happened.
+  expect(screen.getByRole('status')).toHaveTextContent('Recently viewed list cleared.');
+  expect(screen.getByRole('status')).toHaveFocus();
+});
+
+test('a view with an unknown time shows no time, and a hostile stored time cannot break the page', () => {
+  localStorage.setItem('cq-recent', JSON.stringify([
+    { kind: 'dataset', id: 'd1', title: { en: 'Far future', fr: '' }, path: '/datasets/d1', at: 1e17 },
+    { kind: 'dataset', id: 'd1', title: { en: 'Far future', fr: '' }, path: '/datasets/d1', at: 5 }
+  ]));
+  mount();
+  const links = within(screen.getByRole('region', { name: 'Recently viewed' })).getAllByRole('link');
+  expect(links).toHaveLength(1);
+  expect(links[0].textContent).toBe('DatasetFar future');
 });
 
 test('speaks French and keeps the English title when there is no French one', () => {

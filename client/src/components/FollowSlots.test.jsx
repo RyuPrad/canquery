@@ -39,6 +39,8 @@ test('nothing without a target, or for a search with no criteria', async () => {
     <FollowSlot kind="place" target="" title="Ottawa" />
     <FollowSlot kind="place" target="ottawa" title="" />
     <SaveSearchSlot search={{ ...search, q: '' }} total={64000} />
+    <SaveSearchSlot search={{ ...search, q: '  ' }} total={64000} />
+    <SaveSearchSlot search={{ ...search, q: '', place: 'ottawa' }} total={120} />
     <SaveSearchSlot total={3} />
   </>);
   expect(container).toBeEmptyDOMElement();

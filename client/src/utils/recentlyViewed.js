@@ -10,6 +10,10 @@ const PATH = /^\/(datasets|resources)\/[^/?#\s]{1,200}$/;
 
 const text = (value) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 300) : '');
 
+const DAY = 86400000;
+
+// at is when the view happened; a time that cannot be one (stored by hand, or
+// from a clock far ahead) reads as unknown (0) and the rail shows none.
 /** @param {unknown} value @returns {RecentView | null} */
 function clean(value) {
   if (!value || typeof value !== 'object') return null;
@@ -19,14 +23,17 @@ function clean(value) {
   const title = { en: text(item.title?.en), fr: text(item.title?.fr) };
   if (!title.en && !title.fr) return null;
   const at = Number(item.at);
-  return { kind: item.kind, id: item.id, title, path: item.path, at: Number.isFinite(at) ? at : 0 };
+  return { kind: item.kind, id: item.id, title, path: item.path, at: Number.isFinite(at) && at > 0 && at <= Date.now() + DAY ? at : 0 };
 }
 
 /** @returns {RecentView[]} */
 export function readRecentlyViewed() {
   try {
     const list = JSON.parse(localStorage.getItem(KEY) || '[]');
-    return Array.isArray(list) ? list.map(clean).filter(Boolean).slice(0, MAX) : [];
+    if (!Array.isArray(list)) return [];
+    // Each page once, as it was stored newest first.
+    const seen = new Set();
+    return list.map(clean).filter((item) => item && !seen.has(item.kind + ':' + item.id) && seen.add(item.kind + ':' + item.id)).slice(0, MAX);
   } catch {
     return [];
   }

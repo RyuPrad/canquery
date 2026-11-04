@@ -45,21 +45,23 @@ export default function CatalogResultsHeader({
         >
           {count}
         </p>
-        <SaveSearchSlot search={search} total={total} />
-        <div className="cq-sort">
-          <label htmlFor={sortId}>{t('sort.label')}</label>
-          <select
-            id={sortId}
-            className="select select-sm bg-base-200 border-base-content/10 rounded-lg"
-            value={selected}
-            onChange={(event) => onSort(event.target.value)}
-          >
-            {sortOptions(hasQuery).map((value) => (
-              <option key={value} value={value}>
-                {optionLabel(value)}
-              </option>
-            ))}
-          </select>
+        <div className="cq-results-actions">
+          <SaveSearchSlot search={search} total={stale ? null : total} />
+          <div className="cq-sort">
+            <label htmlFor={sortId}>{t('sort.label')}</label>
+            <select
+              id={sortId}
+              className="select select-sm bg-base-200 border-base-content/10 rounded-lg"
+              value={selected}
+              onChange={(event) => onSort(event.target.value)}
+            >
+              {sortOptions(hasQuery).map((value) => (
+                <option key={value} value={value}>
+                  {optionLabel(value)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
       {chips.length > 0 && (

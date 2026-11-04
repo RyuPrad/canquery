@@ -40,6 +40,12 @@ test('a damaged or hostile stored list reads as what is valid in it', () => {
   expect(readRecentlyViewed()).toEqual([{ ...dataset(1), at: 0 }]);
 });
 
+test('a time that cannot be a view reads as unknown, and each page is read once', () => {
+  localStorage.setItem('cq-recent', JSON.stringify([dataset(1, { at: 1e17 }), dataset(2, { at: -5 }), dataset(3, { at: 2000 }),
+    dataset(1, { at: 3000 }), dataset(3, { at: 1000 })]));
+  expect(readRecentlyViewed()).toEqual([{ ...dataset(1), at: 0 }, { ...dataset(2), at: 0 }, { ...dataset(3), at: 2000 }]);
+});
+
 test('clearing empties the list and tells the rail', () => {
   const onChange = vi.fn();
   const stop = subscribeRecentlyViewed(onChange);

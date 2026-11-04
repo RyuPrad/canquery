@@ -1097,3 +1097,11 @@ test('a keepalive detecting expiry refreshes metadata and prepares once', async 
   expect(prepareResource).toHaveBeenCalledTimes(1);
   expect(recordResourceActivity).toHaveBeenCalled();
 });
+
+test('a file whose details load joins this browser’s recently viewed list', async () => {
+  render(<MemoryRouter initialEntries={['/resources/a']}>
+    <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+  </MemoryRouter>);
+  await waitFor(() => expect(JSON.parse(localStorage.getItem('cq-recent') || '[]')).toHaveLength(1));
+  expect(JSON.parse(localStorage.getItem('cq-recent'))[0]).toMatchObject({ kind: 'resource', id: 'a', path: '/resources/a' });
+});

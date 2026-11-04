@@ -43,6 +43,9 @@ describe('catalogue search URL state', () => {
   test('summarizes criteria and toggles values', () => {
     expect(hasCatalogCriteria(EMPTY_CATALOG_SEARCH)).toBe(false);
     expect(hasCatalogCriteria({ ...EMPTY_CATALOG_SEARCH, sort: 'title' })).toBe(false);
+    // The catalogue trims blank text away, so it is no criterion.
+    expect(hasCatalogCriteria({ ...EMPTY_CATALOG_SEARCH, q: '   ', place: ' ' })).toBe(false);
+    expect(hasCatalogCriteria({ ...EMPTY_CATALOG_SEARCH, q: ' parks ' })).toBe(true);
     const state = toggleCatalogValue({ ...EMPTY_CATALOG_SEARCH, place: 'oshawa-on', mappable: true }, 'source', 'portal');
     expect(state.source).toEqual(['portal']);
     expect(hasCatalogCriteria(state)).toBe(true);
