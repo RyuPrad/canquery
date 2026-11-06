@@ -32,30 +32,65 @@ export const entryPath = (location) => location.pathname + location.search;
 const pageParam = (search) => new URLSearchParams(search).get('page');
 
 // What the window does when the address changes: 'restore' returns to the
-// saved position, 'top' starts a new page at the top, 'stay' leaves it alone.
-// A link to another page or to another catalogue page starts at the top. An
-// address a page rewrites over its own entry (a table page, a sort, a search,
-// a filter) keeps the window where it is. Back and Forward return to where the
-// visitor was. The first render returns there only after a reload or a
-// Back/Forward visit that loaded the page again.
+// saved position, 'top' starts a new page at the top, 'target' goes to the
+// element the address's fragment names once the page has drawn it, 'stay'
+// leaves it alone. A link to another page or to another catalogue page starts
+// at the top, or at its fragment's element. An address a page rewrites over
+// its own entry (a table page, a sort, a search, a filter) keeps the window
+// where it is. Back and Forward return to where the visitor was. The first
+// render returns there only after a reload or a Back/Forward visit that loaded
+// the page again; a fresh visit keeps the place the browser chose, which is
+// the top, or the passage a fragment or a search result's text fragment names
+// (Google's "Read more" links and AI Overview citations use those).
 /**
  * @param {{
  *   type: 'POP' | 'PUSH' | 'REPLACE',
  *   previous: { pathname: string, search: string } | null,
- *   next: { pathname: string, search: string },
+ *   next: { pathname: string, search: string, hash?: string },
  *   saved: boolean,
  *   documentRestored?: boolean
  * }} change
- * @returns {'restore' | 'top' | 'stay'}
+ * @returns {'restore' | 'top' | 'target' | 'stay'}
  */
 export function scrollAction({ type, previous, next, saved, documentRestored = false }) {
-  if (!previous) return saved && documentRestored ? 'restore' : 'top';
+  const start = hashId(next.hash) ? 'target' : 'top';
+  if (!previous) {
+    if (documentRestored) return saved ? 'restore' : 'top';
+    return start === 'target' ? 'target' : 'stay';
+  }
   // Only the hash or the history state changed: the browser or the page owns it.
   if (previous.pathname === next.pathname && previous.search === next.search) return 'stay';
   if (type === 'POP' && saved) return 'restore';
-  if (previous.pathname !== next.pathname) return 'top';
+  if (previous.pathname !== next.pathname) return start;
   if (type === 'REPLACE') return 'stay';
-  return pageParam(previous.search) !== pageParam(next.search) ? 'top' : 'stay';
+  return pageParam(previous.search) !== pageParam(next.search) ? start : 'stay';
+}
+
+// The element id a fragment names, or '' for none (an empty or undecodable
+// fragment). A text fragment (#:~:text=) never reaches location.hash.
+/** @param {string | undefined} hash */
+function hashId(hash) {
+  if (!hash || hash.length < 2) return '';
+  try {
+    return decodeURIComponent(hash.slice(1));
+  } catch {
+    return '';
+  }
+}
+
+// Where the browser's own fragment navigation would put the window for the
+// element `hash` names (its scroll-margin and the page's scroll-padding
+// included), or null while the page has not drawn it.
+/** @param {string} hash @returns {() => number | null} */
+export function hashTarget(hash) {
+  const id = hashId(hash);
+  return () => {
+    const element = id ? document.getElementById(id) : null;
+    if (!element) return null;
+    const margin = parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
+    const padding = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+    return Math.max(0, Math.round(element.getBoundingClientRect().top + window.scrollY - margin - padding));
+  };
 }
 
 /** @returns {Storage | null} */
@@ -135,9 +170,34 @@ export function documentWasRestored() {
 /**
  * @param {number} y
  * @param {() => void} done
- * @param {{ now?: () => number, frame?: (step: () => void) => unknown, cancelFrame?: (handle: unknown) => void }} [timing]
+ * @param {Timing} [timing]
  */
 export function restoreScroll(y, done, timing = {}) {
+  return followScroll(() => y, true, done, timing);
+}
+
+// Goes to the element a fragment names as soon as the page draws it (as far
+// as the page allows when it sits near the end), then holds it there while the
+// page settles, like restoreScroll. A page that has not drawn the element
+// after RESTORE_LIMIT_MS keeps the window where it is.
+/**
+ * @param {string} hash
+ * @param {() => void} done
+ * @param {Timing} [timing]
+ */
+export function followHash(hash, done, timing = {}) {
+  return followScroll(hashTarget(hash), false, done, timing);
+}
+
+/** @typedef {{ now?: () => number, frame?: (step: () => void) => unknown, cancelFrame?: (handle: unknown) => void }} Timing */
+
+/**
+ * @param {() => number | null} target
+ * @param {boolean} waitForRoom
+ * @param {() => void} done
+ * @param {Timing} timing
+ */
+function followScroll(target, waitForRoom, done, timing) {
   const now = timing.now || (() => performance.now());
   const frame = timing.frame || ((step) => (window.requestAnimationFrame ? window.requestAnimationFrame(step) : setTimeout(step, 16)));
   const cancelFrame = timing.cancelFrame || ((handle) => (window.cancelAnimationFrame ? window.cancelAnimationFrame(handle) : clearTimeout(handle)));
@@ -154,6 +214,15 @@ export function restoreScroll(y, done, timing = {}) {
     release();
     done();
   }
+  // Where the window should be now, or null while that cannot be reached: a
+  // saved position waits for the page to be tall enough; a fragment's element
+  // goes as far as the page allows.
+  const wanted = (room) => {
+    const y = target();
+    if (y === null) return null;
+    if (waitForRoom) return room >= y - 1 ? y : null;
+    return Math.min(y, Math.max(0, room));
+  };
   let reachedAt = null;
   let lastHeight = 0;
   let lastChange = 0;
@@ -164,13 +233,15 @@ export function restoreScroll(y, done, timing = {}) {
     const height = document.documentElement.scrollHeight;
     const room = height - window.innerHeight;
     if (reachedAt === null) {
-      if (room >= y - 1) {
+      const y = wanted(room);
+      if (y !== null) {
         window.scrollTo(0, y);
         reachedAt = lastChange = time;
         lastHeight = height;
       } else if (time - started >= RESTORE_LIMIT_MS) {
-        // The page came back shorter than it was: go as close as it allows.
-        window.scrollTo(0, Math.max(0, room));
+        // A page that came back shorter than it was goes as close as it
+        // allows; a fragment whose element never came keeps the window.
+        if (waitForRoom) window.scrollTo(0, Math.max(0, room));
         finish();
         return;
       }
@@ -180,7 +251,8 @@ export function restoreScroll(y, done, timing = {}) {
       if (height !== lastHeight) {
         lastHeight = height;
         lastChange = time;
-        if (room >= y - 1 && Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+        const y = wanted(room);
+        if (y !== null && Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
       }
       if (time - lastChange >= SETTLE_MS || time - reachedAt >= SETTLE_LIMIT_MS) {
         finish();
