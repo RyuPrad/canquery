@@ -366,23 +366,23 @@
     },
     "view": "map",
     "published": "2026-10-17",
-    "updated": "2026-10-25",
-    "verified": "2026-10-25",
-    "dataset": "/datasets/calgary-open-data-bxgr-t8xb",
-    "datasetId": "socrata-calgary-open-data-dataset-bxgr-t8xb",
-    "explore": "/resources/socrata-calgary-open-data-resource-bxgr-t8xb?view=map",
+    "updated": "2026-11-06",
+    "verified": "2026-11-06",
+    "dataset": "/datasets/calgary-open-data-tz8z-hyaz",
+    "datasetId": "socrata-calgary-open-data-dataset-tz8z-hyaz",
+    "explore": "/resources/socrata-calgary-open-data-resource-tz8z-hyaz?view=map",
     "editions": {
       "en": {
         "slug": "calgary-ward-map",
         "title": "Calgary ward map: find your ward and its boundaries",
-        "description": "Find which of Calgary’s 14 wards an address belongs to, compare wards with the attached civic census totals and choose the right boundary set.",
+        "description": "Find which of Calgary’s 14 wards an address belongs to and its councillor, compare wards with civic census totals and choose the right boundary set.",
         "topicName": "Ward boundaries",
         "placeName": "Calgary"
       },
       "fr": {
         "slug": "carte-quartiers-calgary",
         "title": "Carte des quartiers de Calgary : votre quartier électoral",
-        "description": "Trouvez le quartier électoral d’une adresse parmi les 14 de Calgary, comparez les quartiers avec le recensement municipal et choisissez le bon découpage.",
+        "description": "Trouvez le quartier électoral d’une adresse parmi les 14 de Calgary et son conseiller, comparez les quartiers avec le recensement et choisissez le découpage.",
         "topicName": "Limites des quartiers",
         "placeName": "Calgary"
       }
@@ -696,6 +696,72 @@
         "description": "Explorez les nombres et taux de maladies à déclaration obligatoire de 1924 à 2016, et les données jusqu’en 2024 sur le site de l’ASPC.",
         "topicName": "Maladies à déclaration obligatoire",
         "explore": "/resources/f3aa3a93-8091-4ae3-b4d6-2feccaf059aa"
+      }
+    }
+  },
+  {
+    "id": "ontario-ward-maps",
+    "status": "published",
+    "place": "ontario",
+    "topic": "ward-boundaries",
+    "query": {
+      "en": "ward boundaries",
+      "fr": "limites des quartiers"
+    },
+    "view": "map",
+    "published": "2026-11-06",
+    "updated": "2026-11-06",
+    "verified": "2026-11-06",
+    "dataset": "/datasets/arcgis-925dfae1c59a45f6b1f643366ce74b37-277",
+    "datasetId": "arcgis-925dfae1c59a45f6b1f643366ce74b37-277",
+    "explore": "/resources/arcgis-925dfae1c59a45f6b1f643366ce74b37-277-data?view=map",
+    "editions": {
+      "en": {
+        "slug": "ontario-ward-maps",
+        "title": "Ontario ward maps 2026: find your ward and councillor",
+        "description": "Find your ward on the ward maps of Toronto, Ottawa, Mississauga, Hamilton, London and 15 more Ontario municipalities, and see which layers name councillors.",
+        "placeName": "Ontario",
+        "topicName": "Ward boundaries"
+      },
+      "fr": {
+        "slug": "cartes-quartiers-ontario",
+        "title": "Cartes des quartiers de l’Ontario 2026 : trouver le vôtre",
+        "description": "Trouvez votre quartier sur les cartes de Toronto, Ottawa, Mississauga, Hamilton, London et 15 autres villes de l’Ontario, avec ou sans le nom des conseillers.",
+        "placeName": "Ontario",
+        "topicName": "Limites des quartiers"
+      }
+    }
+  },
+  {
+    "id": "toronto-ward-map",
+    "status": "published",
+    "place": "toronto-on",
+    "topic": "ward-boundaries",
+    "query": {
+      "en": "ward boundaries",
+      "fr": "limites des quartiers"
+    },
+    "view": "map",
+    "published": "2026-11-06",
+    "updated": "2026-11-06",
+    "verified": "2026-11-06",
+    "dataset": "/datasets/toronto-open-data-wards-and-elected-councillors",
+    "datasetId": "ckan-toronto-open-data-dataset-a2a33cd7-877e-4b68-af54-dfe8a6b53170",
+    "explore": "/resources/ckan-toronto-open-data-resource-c76c2711-9e1e-4da4-8245-9ce3bb089a4b?view=map",
+    "editions": {
+      "en": {
+        "slug": "toronto-ward-map",
+        "title": "Toronto ward map: find your ward and councillor",
+        "description": "Find which of Toronto’s 25 wards an address is in, read its councillor’s phone and email in the City’s table, and download the ward boundary files.",
+        "placeName": "Toronto",
+        "topicName": "Ward boundaries"
+      },
+      "fr": {
+        "slug": "carte-quartiers-toronto",
+        "title": "Carte des quartiers de Toronto : quartier et conseiller",
+        "description": "Trouvez dans lequel des 25 quartiers de Toronto se trouve une adresse, lisez le téléphone et le courriel de son conseiller et téléchargez les limites.",
+        "placeName": "Toronto",
+        "topicName": "Limites des quartiers"
       }
     }
   }
