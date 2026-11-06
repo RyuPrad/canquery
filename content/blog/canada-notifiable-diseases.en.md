@@ -1,4 +1,4 @@
-You want to know how many cases of measles or another notifiable disease were reported in Canada in a given year, or how a disease's rate changed over decades. The Public Health Agency of Canada (PHAC) collects these counts in the **Canadian Notifiable Disease Surveillance System (CNDSS)**, which covers about 60 nationally notifiable diseases back to 1924. CanQuery offers the open-data tables as live tables and links to PHAC's own tool for the latest years.
+You want to know how many cases of measles or another notifiable disease were reported in Canada in a given year, or how a disease's rate changed over decades. The Public Health Agency of Canada (PHAC) collects these counts in the **Canadian Notifiable Disease Surveillance System (CNDSS)**, which covers about 60 nationally notifiable diseases back to 1924. CanQuery offers the open-data tables as searchable tables and links to PHAC's own tool for the latest years.
 
 | At a glance | |
 |---|---|
@@ -7,7 +7,7 @@ You want to know how many cases of measles or another notifiable disease were re
 | Tables on CanQuery | Annual counts and rates, 1924 to 2016; and by age group and sex, 1991 to 2016 |
 | Latest years | Notifiable Diseases Online, with data up to 2024 |
 | Updated | Annually, by PHAC |
-| On CanQuery | Live tables in English and French, with search, filters, charts and CSV export of up to 10,000 rows |
+| On CanQuery | Tables in English and French, with search, filters, charts and CSV export of up to 10,000 rows |
 
 ## Explore the long series
 
@@ -17,7 +17,7 @@ You want to know how many cases of measles or another notifiable disease were re
 4. For a breakdown by age group and sex from 1991, use the [table with age-group and sex breakdown](/resources/51e30776-a6ca-4d0c-b643-d62b3dccc6a9).
 5. Export the filtered rows as CSV, up to 10,000 rows per export.
 
-CanQuery first shows a preview of PHAC's file and prepares the full table after your first interaction with the page, or when you choose to load it; later visits read the prepared copy.
+CanQuery shows the first rows of PHAC's file as the table straight away and prepares the full table after your first interaction with the page; later visits read the prepared copy.
 
 ## Get the latest years
 

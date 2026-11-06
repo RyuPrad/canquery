@@ -5,6 +5,7 @@ You have a vitamin, herbal remedy or homeopathic product and want to check that 
 | Publisher | Health Canada |
 | What it lists | Natural health products that have been issued a product licence |
 | Licence numbers | **NPN** (Natural Product Number) or **DIN-HM** (Homeopathic Medicine Number), eight digits each |
+| Market status | **Marketed** or **Not marketed**, reported voluntarily by the licence holder |
 | Updated | Nightly |
 | Not included | Products and sites still under review |
 | Bulk data | An API with JSON and XML extracts |
@@ -20,6 +21,8 @@ Health Canada explains that a licensed product has been assessed and found to be
 ## Read the status
 
 Each licence has a status: **Active**, **Discontinued**, **Stop Sale**, **Suspended** or **Cancelled**. A cancelled NPN is no longer valid. The database includes discontinued products as well as licensed ones, so read the status before treating a product as on the market.
+
+Each product also has a market status, **Marketed** or **Not marketed**. Licence holders report it voluntarily and the default is Not marketed, so a product listed as not marketed may still be sold in Canada. A product whose licence is suspended, cancelled or under stop sale cannot legally be sold in Canada. Both statuses can be used as filters in the advanced search.
 
 Products and sites that are still under review are not in the database, so it cannot tell you the status of a licence application. An ingredient can be recorded under several names: to list every product with an ingredient, run one search for each of its synonyms.
 

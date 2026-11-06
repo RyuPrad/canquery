@@ -639,16 +639,16 @@
   },
   {
     "id": "lnhpd-natural-health-products",
-    "status": "draft",
+    "status": "published",
     "topic": "natural-health-products",
     "query": {
       "en": "natural health products",
       "fr": "produits de santé naturels"
     },
     "view": "download",
-    "published": "2026-10-25",
-    "updated": "2026-10-25",
-    "verified": "2026-10-25",
+    "published": "2026-11-06",
+    "updated": "2026-11-06",
+    "verified": "2026-11-06",
     "dataset": "/datasets/1e7f1c59-794e-49df-a256-6bb8658f5058",
     "datasetId": "1e7f1c59-794e-49df-a256-6bb8658f5058",
     "explore": "/resources/cf8b1877-9cee-4429-ae92-8bea3512c0f4",
@@ -670,16 +670,16 @@
   },
   {
     "id": "canada-notifiable-diseases",
-    "status": "draft",
+    "status": "published",
     "topic": "notifiable-diseases",
     "query": {
       "en": "notifiable diseases",
       "fr": "maladies à déclaration obligatoire"
     },
     "view": "table",
-    "published": "2026-10-25",
-    "updated": "2026-10-25",
-    "verified": "2026-10-25",
+    "published": "2026-11-06",
+    "updated": "2026-11-06",
+    "verified": "2026-11-06",
     "dataset": "/datasets/f2a711f9-be80-4b98-a205-8ac9e5e0d126",
     "datasetId": "f2a711f9-be80-4b98-a205-8ac9e5e0d126",
     "explore": "/resources/211adf12-1213-4953-afda-846c33a10972",
@@ -687,7 +687,7 @@
       "en": {
         "slug": "canada-notifiable-diseases",
         "title": "Notifiable diseases in Canada: cases and rates since 1924",
-        "description": "Explore PHAC's notifiable disease counts and rates from 1924 to 2016 as live tables, and find data up to 2024 in Notifiable Diseases Online.",
+        "description": "Explore PHAC's notifiable disease counts and rates from 1924 to 2016 as searchable tables, and find data up to 2024 in Notifiable Diseases Online.",
         "topicName": "Notifiable diseases"
       },
       "fr": {
