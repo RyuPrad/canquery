@@ -129,10 +129,46 @@ describe('ScrollManager', () => {
     await waitFor(() => expect(y).toBe(6947));
   });
 
-  test('a fresh visit to an address seen before starts at the top', () => {
+  test("a fresh visit keeps the place the browser chose, such as a search result's text fragment", () => {
     const memory = createScrollMemory(null);
     memory.set('default:/datasets/a', '/datasets/a', 6947);
+    // The browser scrolled to the highlighted passage before the app drew.
+    y = 1530;
     setup({ memory, restored: false });
-    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(y).toBe(1530);
+    // That place is the one remembered for the entry.
+    act(() => navigate('/resources/r1'));
+    act(() => navigate(-1));
+    return waitFor(() => expect(y).toBe(1530));
+  });
+
+  test('a fresh visit to a fragment goes to its element once the page draws it', async () => {
+    setup({ initial: '/docs#preparation-example' });
+    const section = document.createElement('section');
+    section.id = 'preparation-example';
+    section.getBoundingClientRect = () => ({ top: 3194 - y, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 });
+    document.body.append(section);
+    try {
+      await waitFor(() => expect(y).toBe(3194));
+    } finally {
+      section.remove();
+    }
+  });
+
+  test("a link to another page's fragment starts at the top, then goes to the element", async () => {
+    setup({ initial: '/blog/toronto-building-permits' });
+    scrollWindow(2400);
+    act(() => navigate('/docs#preparation-example'));
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    const section = document.createElement('section');
+    section.id = 'preparation-example';
+    section.getBoundingClientRect = () => ({ top: 3194 - y, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0 });
+    document.body.append(section);
+    try {
+      await waitFor(() => expect(y).toBe(3194));
+    } finally {
+      section.remove();
+    }
   });
 });

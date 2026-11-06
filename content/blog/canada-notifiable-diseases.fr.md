@@ -1,4 +1,4 @@
-Vous voulez savoir combien de cas de rougeole ou d’une autre maladie à déclaration obligatoire ont été déclarés au Canada pendant une année, ou comment le taux d’une maladie a évolué au fil des décennies. L’Agence de la santé publique du Canada (ASPC) réunit ces chiffres dans le **Système canadien de surveillance des maladies à déclaration obligatoire (SCSMDO)**, qui couvre environ 60 maladies à déclaration obligatoire à l’échelle nationale depuis 1924. CanQuery propose les tables de données ouvertes comme des tables en direct et mène à l’outil de l’ASPC pour les années récentes.
+Vous voulez savoir combien de cas de rougeole ou d’une autre maladie à déclaration obligatoire ont été déclarés au Canada pendant une année, ou comment le taux d’une maladie a évolué au fil des décennies. L’Agence de la santé publique du Canada (ASPC) réunit ces chiffres dans le **Système canadien de surveillance des maladies à déclaration obligatoire (SCSMDO)**, qui couvre environ 60 maladies à déclaration obligatoire à l’échelle nationale depuis 1924. CanQuery propose les tables de données ouvertes comme des tables consultables et mène à l’outil de l’ASPC pour les années récentes.
 
 | En bref | |
 |---|---|
@@ -7,7 +7,7 @@ Vous voulez savoir combien de cas de rougeole ou d’une autre maladie à décla
 | Tables dans CanQuery | Nombres et taux annuels, de 1924 à 2016; et par groupe d’âge et sexe, de 1991 à 2016 |
 | Années récentes | Maladies à déclaration obligatoire en direct, avec des données jusqu’en 2024 |
 | Mise à jour | Chaque année, par l’ASPC |
-| Dans CanQuery | Des tables en direct en français et en anglais, avec recherche, filtres, graphiques et export CSV jusqu’à 10 000 lignes |
+| Dans CanQuery | Des tables en français et en anglais, avec recherche, filtres, graphiques et export CSV jusqu’à 10 000 lignes |
 
 ## Explorer la longue série
 
@@ -17,7 +17,7 @@ Vous voulez savoir combien de cas de rougeole ou d’une autre maladie à décla
 4. Pour une répartition par groupe d’âge et sexe depuis 1991, utilisez la [table par groupe d’âge et sexe](/resources/4900cf91-9447-4764-b72e-ef223de4b638).
 5. Exportez les lignes filtrées en CSV, jusqu’à 10 000 lignes par export.
 
-CanQuery affiche d’abord un aperçu du fichier de l’ASPC et prépare la table complète après votre première interaction avec la page, ou quand vous choisissez de la charger; les visites suivantes lisent la copie préparée.
+CanQuery affiche tout de suite les premières lignes du fichier de l’ASPC comme table et prépare la table complète après votre première interaction avec la page; les visites suivantes lisent la copie préparée.
 
 ## Obtenir les années récentes
 

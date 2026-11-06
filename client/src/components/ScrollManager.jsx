@@ -5,6 +5,7 @@ import {
   documentWasRestored,
   entryKey,
   entryPath,
+  followHash,
   restoreScroll,
   scrollAction
 } from '../utils/scrollMemory.js';
@@ -85,15 +86,19 @@ export default function ScrollManager({ memory = sharedMemory, restored = restor
       saved: saved !== null,
       documentRestored: restored
     });
-    if (action === 'restore') {
-      // Finishes at once when the page is already tall enough; otherwise the
-      // attempt stays pending, and scroll events are not recorded meanwhile.
+    if (action === 'restore' || action === 'target') {
+      // A link to a fragment of another page starts at the top until the
+      // page draws the element; a first visit keeps the browser's place.
+      if (action === 'target' && previous) window.scrollTo(0, 0);
+      // Finishes at once when the target can already be reached; otherwise
+      // the attempt stays pending, and scroll events are not recorded meanwhile.
       const attempt = { cancel: () => {}, done: false };
-      attempt.cancel = restoreScroll(saved, () => {
+      const finished = () => {
         attempt.done = true;
         if (restoring.current === attempt) restoring.current = null;
         memory.set(key, path, window.scrollY);
-      });
+      };
+      attempt.cancel = action === 'restore' ? restoreScroll(saved, finished) : followHash(location.hash, finished);
       if (!attempt.done) restoring.current = attempt;
       return;
     }

@@ -5,6 +5,7 @@ Vous avez une vitamine, un remède à base de plantes ou un produit homéopathiq
 | Producteur | Santé Canada |
 | Contenu | Les produits de santé naturels qui ont reçu une licence de mise en marché |
 | Numéros de licence | **NPN** (numéro de produit naturel) ou **DIN-HM** (numéro de médicament homéopathique), à huit chiffres chacun |
+| Statut du marché | **Commercialisé** ou **Non commercialisé**, déclaré volontairement par le titulaire de la licence |
 | Mise à jour | Chaque nuit |
 | Non inclus | Les produits et les sites encore à l’étude |
 | Données en bloc | Une API avec des extraits JSON et XML |
@@ -19,13 +20,15 @@ Santé Canada précise qu’un produit homologué a été évalué et jugé sûr
 
 ## Lire le statut
 
-Chaque licence a un statut : **actif**, **discontinué**, **arrêt de vente**, **suspendu** ou **annulé**. Un NPN annulé n’est plus valide. La base contient des produits discontinués en plus des produits homologués : lisez donc le statut avant de considérer qu’un produit est en vente.
+Chaque licence a un état : **Actif**, **Discontinué**, **Cessation de vente** (arrêt de vente), **Suspendu** ou **Annulé**. Un NPN annulé n’est plus valide. La base contient des produits discontinués en plus des produits homologués : lisez donc l’état avant de considérer qu’un produit est en vente.
+
+Chaque produit a aussi un statut du marché, **Commercialisé** ou **Non commercialisé**. Les titulaires de licence le déclarent volontairement et le statut par défaut est « non commercialisé » : un produit indiqué comme non commercialisé peut donc être vendu au Canada. Un produit dont la licence est suspendue, annulée ou en cessation de vente ne peut pas être vendu légalement au Canada. La recherche avancée permet de filtrer selon ces deux statuts.
 
 Les produits et les sites encore à l’étude ne figurent pas dans la base, qui ne peut donc pas renseigner sur l’état d’une demande de licence. Un ingrédient peut être enregistré sous plusieurs noms : pour trouver tous les produits qui le contiennent, faites une recherche pour chacun de ses synonymes.
 
 ## Utiliser les données en bloc
 
-Pour plus que quelques produits, utilisez l’[API de la BDPSNH](https://health-products.canada.ca/api/documentation/lnhpd-documentation-en.html) (documentation en anglais). Son adresse de base est `https://health-products.canada.ca/api/natural-licences/`, avec des points d’accès comme **productlicence**, **medicinalingredient**, **nonmedicinalingredient**, **productdose**, **productpurpose**, **productrisk** et **productroute**, et les paramètres `lang=en` ou `fr` et `type=json` ou `xml`. Santé Canada a abandonné l’ancien extrait CSV; l’API fournit les extraits JSON et XML à jour.
+Pour plus que quelques produits, utilisez l’[API de la BDPSNH](https://health-products.canada.ca/api/documentation/lnhpd-documentation-fr.html). Son adresse de base est `https://health-products.canada.ca/api/natural-licences/`, avec des points d’accès comme **productlicence**, **medicinalingredient**, **nonmedicinalingredient**, **productdose**, **productpurpose**, **productrisk** et **productroute**, et les paramètres `lang=en` ou `fr` et `type=json` ou `xml`. Santé Canada a abandonné l’ancien extrait CSV; l’API fournit les extraits JSON et XML à jour.
 
 Le guide d’utilisation et le guide de terminologie qui expliquent les champs de la base sont répertoriés dans CanQuery avec le [jeu de données de la BDPSNH](/datasets/1e7f1c59-794e-49df-a256-6bb8658f5058).
 

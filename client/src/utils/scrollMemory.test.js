@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
-  createScrollMemory, entryKey, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
+  createScrollMemory, entryKey, followHash, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
 } from './scrollMemory.js';
 
-const at = (pathname, search = '') => ({ pathname, search });
+const at = (pathname, search = '', hash = '') => ({ pathname, search, hash });
 
 describe('scrollAction', () => {
   test('a link to another page starts at the top', () => {
@@ -42,8 +42,29 @@ describe('scrollAction', () => {
 
   test('the first render returns only after a reload or a Back/Forward load with a saved position', () => {
     expect(scrollAction({ type: 'POP', previous: null, next: at('/datasets/a'), saved: true, documentRestored: true })).toBe('restore');
-    expect(scrollAction({ type: 'POP', previous: null, next: at('/datasets/a'), saved: true, documentRestored: false })).toBe('top');
     expect(scrollAction({ type: 'POP', previous: null, next: at('/datasets/a'), saved: false, documentRestored: true })).toBe('top');
+  });
+
+  test("a fresh visit keeps the browser's place: the top, or the passage a text fragment names", () => {
+    // A text fragment (#:~:text=, used by Google's "Read more" links and AI
+    // Overview citations) never reaches location.hash.
+    expect(scrollAction({ type: 'POP', previous: null, next: at('/datasets/a'), saved: true, documentRestored: false })).toBe('stay');
+    expect(scrollAction({ type: 'POP', previous: null, next: at('/blog/calgary-ward-map'), saved: false })).toBe('stay');
+    expect(scrollAction({ type: 'POP', previous: null, next: at('/docs', '', '#'), saved: false })).toBe('stay');
+    expect(scrollAction({ type: 'POP', previous: null, next: at('/docs', '', '#%E0%A4%A'), saved: false })).toBe('stay');
+  });
+
+  test("a fresh visit to a fragment goes to its element; a reload still returns to the saved place", () => {
+    expect(scrollAction({ type: 'POP', previous: null, next: at('/docs', '', '#preparation-example'), saved: false })).toBe('target');
+    expect(scrollAction({ type: 'POP', previous: null, next: at('/docs', '', '#preparation-example'), saved: true, documentRestored: true })).toBe('restore');
+  });
+
+  test("a link to another page's fragment goes to its element; Back still returns to the saved place", () => {
+    expect(scrollAction({ type: 'PUSH', previous: at('/blog/toronto-building-permits'), next: at('/docs', '', '#preparation-example'), saved: false })).toBe('target');
+    expect(scrollAction({ type: 'PUSH', previous: at('/datasets/a'), next: at('/datasets/a', '?page=2', '#resources'), saved: false })).toBe('target');
+    expect(scrollAction({ type: 'POP', previous: at('/resources/r1'), next: at('/docs', '', '#preparation-example'), saved: false })).toBe('target');
+    expect(scrollAction({ type: 'POP', previous: at('/resources/r1'), next: at('/docs', '', '#preparation-example'), saved: true })).toBe('restore');
+    expect(scrollAction({ type: 'REPLACE', previous: at('/resources/r1'), next: at('/resources/r1', '?page=2', '#table'), saved: false })).toBe('stay');
   });
 });
 
@@ -263,5 +284,107 @@ describe('restoreScroll', () => {
     window.dispatchEvent(new Event('wheel'));
     expect(window.scrollTo).not.toHaveBeenCalled();
     expect(done).not.toHaveBeenCalled();
+  });
+});
+
+describe('followHash', () => {
+  let height;
+  let y;
+  let frames;
+  let clock;
+  let element;
+  let top;
+  const timing = () => ({
+    now: () => clock,
+    frame: (step) => { frames.push(step); return frames.length; },
+    cancelFrame: vi.fn()
+  });
+  const runFor = (ms) => {
+    const until = clock + ms;
+    while (frames.length && clock < until) {
+      clock += 16;
+      frames.shift()?.();
+    }
+  };
+  // The element sits `top` pixels down the page and has a 96px scroll margin,
+  // like the documentation's sections under the sticky navigation.
+  const draw = () => {
+    element = document.createElement('section');
+    element.id = 'preparation-example';
+    element.getBoundingClientRect = () => ({ top: top - y, bottom: top - y + 400, left: 0, right: 0, width: 0, height: 400, x: 0, y: top - y });
+    document.body.append(element);
+  };
+
+  beforeEach(() => {
+    height = 12642;
+    y = 0;
+    top = 3194;
+    frames = [];
+    clock = 0;
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
+    window.scrollTo = vi.fn((x, to) => { y = to; });
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((node) => ({
+      scrollMarginTop: node === element ? '96px' : '0px',
+      scrollPaddingTop: 'auto'
+    }));
+  });
+  afterEach(() => {
+    element?.remove();
+    element = null;
+    vi.restoreAllMocks();
+    delete document.documentElement.scrollHeight;
+    delete window.scrollY;
+  });
+
+  test('goes to the element once the page draws it, above its scroll margin, and holds it while the page settles', () => {
+    const done = vi.fn();
+    followHash('#preparation-example', done, timing());
+    runFor(400);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    draw();
+    runFor(16);
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 3098);
+    // The endpoint reference loads above it and pushes it down.
+    top = 3394;
+    height = 12842;
+    runFor(16);
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 3298);
+    runFor(SETTLE_MS + 50);
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(frames).toHaveLength(0);
+  });
+
+  test('an element near the end goes as far as the page allows, then follows the page as it grows', () => {
+    height = 4000;
+    top = 3900;
+    draw();
+    const done = vi.fn();
+    followHash('#preparation-example', done, timing());
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 3200);
+    height = 5000;
+    runFor(16);
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 3804);
+  });
+
+  test('a fragment whose element never comes keeps the window where it is', () => {
+    y = 640;
+    const done = vi.fn();
+    followHash('#missing', done, timing());
+    runFor(RESTORE_LIMIT_MS + 50);
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(y).toBe(640);
+  });
+
+  test('a visitor who scrolls or types while it waits keeps the position they chose', () => {
+    const done = vi.fn();
+    followHash('#preparation-example', done, timing());
+    window.dispatchEvent(new Event('keydown'));
+    expect(done).toHaveBeenCalledTimes(1);
+    draw();
+    runFor(100);
+    expect(window.scrollTo).not.toHaveBeenCalled();
   });
 });
