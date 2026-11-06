@@ -114,3 +114,59 @@ test('lists related guides for the same place or topic and scopes the search lin
   expect(links).toEqual(['Oshawa permits guide', 'Toronto parks guide']);
   expect(screen.getByRole('link', { name: 'Search more Canadian open data' })).toHaveAttribute('href', '/?place=oshawa-on');
 });
+
+function embed(payload) {
+  const block = document.createElement('script');
+  block.type = 'application/json';
+  block.id = 'cq-initial';
+  block.textContent = JSON.stringify(payload);
+  document.body.append(block);
+  return block;
+}
+const otherGuide = (lang) => ({ ...article(lang), id: 'trails', slug: 'trails', path: '/blog/trails', title: 'City trails guide' });
+
+test('a direct visit draws the article its HTML carries on the first render, with no request and no loading state', () => {
+  embed({ version: 1, kind: 'guide', path: '/blog/parks', lang: 'en',
+    article: { data: { ...article('en'), slug: 'parks' } }, guides: { data: [{ ...article('en'), slug: 'parks' }, otherGuide('en')] } });
+  start('/blog/parks');
+  // Synchronously, before any effect or request: the page the server sent.
+  expect(screen.getByRole('heading', { name: 'City parks guide' })).toBeInTheDocument();
+  expect(screen.getByText('Complete instructions and source limitations.')).toBeInTheDocument();
+  expect(screen.queryByRole('status')).toBeNull();
+  expect(screen.getByRole('link', { name: 'City trails guide' })).toHaveAttribute('href', '/blog/trails');
+  expect(fetchBlogArticle).not.toHaveBeenCalled();
+  expect(fetchBlog).not.toHaveBeenCalled();
+  expect(document.getElementById('cq-initial')).toBeNull();
+});
+
+test('a direct visit to an index draws its list from the HTML block', () => {
+  embed({ version: 1, kind: 'guides', path: '/fr/blog', lang: 'fr', guides: { data: [{ ...article('fr'), slug: 'parcs' }] } });
+  start('/fr/blog');
+  expect(screen.getByRole('link', { name: 'Les parcs de la ville' })).toHaveAttribute('href', '/fr/blog/parcs');
+  expect(fetchBlog).not.toHaveBeenCalled();
+});
+
+test.each([
+  ['another page', { path: '/blog/other' }],
+  ['another language', { lang: 'fr' }],
+  ['another guide', { article: { data: { ...article('en'), slug: 'trails' } } }],
+  ['an older version', { version: 0 }],
+  ['an article without its body', { article: { data: { ...article('en'), slug: 'parks', bodyHtml: null } } }]
+])('a block for %s is removed and the page fetches as before', async (_name, change) => {
+  embed({ version: 1, kind: 'guide', path: '/blog/parks', lang: 'en',
+    article: { data: { ...article('en'), slug: 'parks' } }, guides: { data: [article('en')] }, ...change });
+  start('/blog/parks');
+  expect(await screen.findByRole('heading', { name: 'City parks guide' })).toBeInTheDocument();
+  expect(fetchBlogArticle).toHaveBeenCalledWith('en', 'parks');
+  expect(document.getElementById('cq-initial')).toBeNull();
+});
+
+test('after a direct visit, opening another guide fetches it', async () => {
+  embed({ version: 1, kind: 'guide', path: '/blog/parks', lang: 'en',
+    article: { data: { ...article('en'), slug: 'parks' } }, guides: { data: [{ ...article('en'), slug: 'parks' }, otherGuide('en')] } });
+  fetchBlogArticle.mockImplementation(async (lang, slug) => ({ data: slug === 'trails' ? otherGuide(lang) : article(lang) }));
+  start('/blog/parks');
+  fireEvent.click(screen.getByRole('link', { name: 'City trails guide' }));
+  expect(await screen.findByRole('heading', { name: 'City trails guide' })).toBeInTheDocument();
+  expect(fetchBlogArticle).toHaveBeenCalledWith('en', 'trails');
+});

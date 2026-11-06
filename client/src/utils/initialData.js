@@ -9,7 +9,8 @@ import { normalizeResource } from '../api/resourceEnvelope.js';
 // A direct visit to a resource page receives, inside its HTML, the metadata
 // envelope and (for the unfiltered table view of a prepared copy) the first
 // page of rows that the application would otherwise fetch one after the
-// other; a dataset page receives its envelope and both guide lists. The page
+// other; a dataset page receives its envelope and both guide lists; a guide
+// receives its article and its language's guide list, an index the list. The page
 // reads the block once, checks that it answers exactly this URL and record,
 // validates it like a fetched response, and removes it so a later navigation
 // never reuses stale data.
@@ -80,6 +81,38 @@ export function takeDatasetInitialData({ idOrName, location, doc = document }) {
   if (!['en', 'fr'].every((lang) => record(guides[lang]) && listResponse(guides[lang])))
     return null;
   return { dataset: payload.dataset, guides: { en: guides.en, fr: guides.fr } };
+}
+
+/**
+ * A guide page's block: the article (none on an index) and the guide list in
+ * its language, or null when it answers another URL, language or guide, or is
+ * not what the server sends.
+ * @param {{ language: string, slug?: string, location: { pathname: string, search: string }, doc?: Document }} options
+ * @returns {import('../api/contracts').GuideInitialData | null}
+ */
+export function takeGuideInitialData({ language, slug, location, doc = document }) {
+  const element = doc.getElementById(INITIAL_DATA_ID);
+  if (!element) return null;
+  let payload;
+  try {
+    payload = JSON.parse(element.textContent || '');
+  } catch {
+    return null;
+  }
+  if (
+    !record(payload) ||
+    payload.version !== VERSION ||
+    payload.kind !== (slug ? 'guide' : 'guides')
+  )
+    return null;
+  if (payload.path !== location.pathname + location.search || payload.lang !== language)
+    return null;
+  if (!record(payload.guides) || !listResponse(payload.guides)) return null;
+  if (!slug) return { article: null, guides: payload.guides.data };
+  const article = record(payload.article) ? payload.article.data : null;
+  if (!record(article) || article.slug !== slug || article.lang !== language) return null;
+  if (typeof article.bodyHtml !== 'string' || !record(article.translations)) return null;
+  return { article, guides: payload.guides.data };
 }
 
 /** Removes the block; safe to call more than once. @param {Document} [doc] */

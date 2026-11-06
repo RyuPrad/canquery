@@ -7,6 +7,7 @@ const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
 const { resourceInitialData } = require('../services/resourceInitialData');
 const { datasetInitialData } = require('../services/datasetInitialData');
+const { blogInitialData } = require('../services/blogInitialData');
 const { hostedRoutes, hostedRoute } = require('../extensions');
 const catalogRead = require('../db/catalogReadQueries');
 const queryLogQueries = require('../db/queryLogQueries');
@@ -61,8 +62,9 @@ function injectAnalytics(template, websiteId = process.env.ANALYTICS_WEBSITE_ID)
     return template.replace(ANALYTICS_MARKER, () => tag);
 }
 
-// A resource page's initial data (metadata plus the first rows) and a dataset
-// page's (its envelope and guide lists) are embedded only for a document
+// A resource page's initial data (metadata plus the first rows), a dataset
+// page's (its envelope and guide lists) and a guide's (its article and its
+// language's guide list) are embedded only for a document
 // navigation: the client's RouteHead fetch of a route's HTML (Sec-Fetch-Dest:
 // empty), HEAD requests and scripted reads never use it.
 // A browser navigation also records the popularity hit the page's first row
@@ -354,6 +356,12 @@ function serveSpa(distDir) {
                 initial = datasetInitialData(page.datasetRows.dataset, page.datasetRows.resources, { path: req.originalUrl });
             } catch (err) {
                 console.warn('Initial dataset data skipped:', err.message);
+            }
+        } else if (page.status === 200 && page.blog && wantsInitialData(req)) {
+            try {
+                initial = blogInitialData(page.blog, { path: req.originalUrl });
+            } catch (err) {
+                console.warn('Initial guide data skipped:', err.message);
             }
         }
         if (page.status === 200 && page.row && wantsInitialData(req)) {

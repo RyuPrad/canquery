@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { fetchBlog, fetchBlogArticle } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
@@ -7,19 +7,36 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import { track } from '../utils/analytics.js';
 import { relatedGuides } from '../utils/relatedGuides.js';
+import { consumeInitialData, takeGuideInitialData } from '../utils/initialData.js';
 
 export default function BlogPage({ language = 'en' }) {
   const { slug } = useParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const { t, setLang, setBlogTranslations } = useLang();
-  const [content, setContent] = useState(null);
-  const [related, setRelated] = useState([]);
+  // A direct visit's HTML carries the article (or the index's list) and the
+  // guide list, so the first render draws the page the server sent, with no
+  // loading state, and a reader who arrived at a passage stays at it.
+  const [seed] = useState(() => {
+    const data = takeGuideInitialData({ language, slug, location });
+    return data && { pathname, ...data };
+  });
+  const seedRef = useRef(seed);
+  const [content, setContent] = useState(() => (seed ? { pathname, data: slug ? seed.article : seed.guides } : null));
+  const [related, setRelated] = useState(() => (seed && slug ? relatedGuides(seed.guides, seed.article) : []));
   const [error, setError] = useState(null);
   const indexPath = language === 'fr' ? '/fr/blog' : '/blog';
 
   useEffect(() => { setLang(language); }, [language, setLang]);
+  useEffect(() => { consumeInitialData(); }, []);
   useEffect(() => {
     let cancelled = false;
+    const first = seedRef.current;
+    seedRef.current = null;
+    if (first && first.pathname === pathname) {
+      setBlogTranslations({ pathname, paths: slug ? first.article.translations : { en: '/blog', fr: '/fr/blog' } });
+      return () => { setRelated([]); setBlogTranslations(null); };
+    }
     setContent(null);
     setError(null);
     const request = slug ? fetchBlogArticle(language, slug) : fetchBlog({ lang: language });
