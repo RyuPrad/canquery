@@ -1115,3 +1115,59 @@ describe('dataset page initial data', () => {
         expect(large.text).not.toContain('cq-initial');
     });
 });
+
+describe('guide page initial data', () => {
+    let distDir;
+    let spa;
+    const readInitial = text => {
+        const match = text.match(/<script type="application\/json" id="cq-initial">(.*?)<\/script>/s);
+        return match ? JSON.parse(match[1]) : null;
+    };
+    const navigate = { 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate' };
+
+    beforeAll(() => {
+        distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-guide-initial-'));
+        fs.writeFileSync(path.join(distDir, 'index.html'),
+            '<!doctype html><html><head><!-- seo:start --><title>x</title><!-- seo:end --></head><body><div id="root"></div></body></html>');
+        spa = express();
+        spa.get(/.*/, serveSpa(distDir));
+    });
+    afterAll(() => fs.rmSync(distDir, { recursive: true, force: true }));
+
+    it.each([['en', '/blog/ontario-ward-maps', 'ontario-ward-maps'], ['fr', '/fr/blog/cartes-quartiers-ontario', 'cartes-quartiers-ontario']])(
+        'embeds the %s article and guide list the page would fetch, without a catalogue query', async (lang, route, slug) => {
+            const calls = Object.values(catalogRead).filter(fn => typeof fn?.mock?.calls?.length === 'number').map(fn => fn.mock.calls.length);
+            const res = await request(spa).get(route).set(navigate);
+            expect(res.status).toBe(200);
+            const payload = readInitial(res.text);
+            expect(payload).toMatchObject({ version: 1, kind: 'guide', path: route, lang });
+            const article = await request(app).get('/web-api/v1/blog/' + lang + '/' + slug);
+            expect(payload.article).toEqual(article.body);
+            const guides = await request(app).get('/web-api/v1/blog').query({ lang });
+            expect(payload.guides).toEqual(guides.body);
+            expect(payload.guides.data).toHaveLength(listArticles({ lang }).length);
+            // The article is still in the page's HTML for crawlers and readers without JavaScript.
+            expect(res.text).toContain('<main data-cq-blog');
+            expect(Object.values(catalogRead).filter(fn => typeof fn?.mock?.calls?.length === 'number').map(fn => fn.mock.calls.length)).toEqual(calls);
+        });
+
+    it('embeds the guide list on an index and keeps the query string in the path it answers', async () => {
+        const res = await request(spa).get('/fr/blog?utm_source=bluesky').set(navigate);
+        expect(res.status).toBe(200);
+        const payload = readInitial(res.text);
+        expect(payload).toMatchObject({ version: 1, kind: 'guides', path: '/fr/blog?utm_source=bluesky', lang: 'fr' });
+        expect(payload.article).toBeUndefined();
+        expect(payload.guides).toEqual((await request(app).get('/web-api/v1/blog').query({ lang: 'fr' })).body);
+    });
+
+    it('skips the block for in-app HTML fetches, HEAD and a missing guide', async () => {
+        expect(readInitial((await request(spa).get('/blog/toronto-ward-map')).text).article.data.id).toBe('toronto-ward-map');
+        const fetched = await request(spa).get('/blog/toronto-ward-map').set({ 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors' });
+        expect(fetched.status).toBe(200);
+        expect(fetched.text).not.toContain('cq-initial');
+        expect((await request(spa).head('/blog/toronto-ward-map')).status).toBe(200);
+        const missing = await request(spa).get('/blog/no-such-guide').set(navigate);
+        expect(missing.status).toBe(404);
+        expect(missing.text).not.toContain('cq-initial');
+    });
+});

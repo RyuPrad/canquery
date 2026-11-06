@@ -52,6 +52,11 @@ export interface DatasetInitialData {
   guides: { en: ApiEnvelope<Record<string, any>[]>; fr: ApiEnvelope<Record<string, any>[]> };
 }
 
+export interface GuideInitialData {
+  article: Record<string, any> | null;
+  guides: Record<string, any>[];
+}
+
 export type ResourceView = 'table' | 'chart' | 'map';
 export interface ResourceUrlState {
   q: string;

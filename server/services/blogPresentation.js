@@ -86,7 +86,7 @@ function resolveBlogPage(pathname) {
                 '</p><h2 class="text-xl font-semibold mt-3"><a href="' + item.path + '">' + esc(item.title) +
                 '</a></h2><p class="mt-3">' + esc(item.description) + '</p></article>').join('') + '</div>';
     }
-    return { status: 200, canonicalPath, meta, body: body + '</main>' };
+    return { status: 200, canonicalPath, meta, body: body + '</main>', blog: { lang, slug: article ? article.slug : null } };
 }
 
 module.exports = { resolveBlogPage };
