@@ -1125,10 +1125,28 @@ describe('ResourcePage and the hosted table watch', () => {
     </MemoryRouter>);
     expect(await screen.findByText('row-a')).toBeInTheDocument();
     await waitFor(() => expect(watchSlot()).toEqual({ resourceId: 'a', q: 'king', filters: { name: { op: 'eq', value: 'row-a' } }, total: 200 }));
-    // A typed search reaches it once it is applied to the table, not on every keystroke.
+    // A typed search reaches it once it is applied to the table, not on every keystroke. Until that search's own
+    // rows are on screen the count is unknown: the rows still shown belong to the search before.
+    let answer;
+    queryResource.mockImplementation((id, options) => (options.q === 'queen'
+      ? new Promise(resolve => { answer = () => resolve({ ...pageEnvelope(id, 0, 7), data: { ...pageEnvelope(id, 0, 7).data, records: [{ _id: 1, name: 'row-queen' }] } }); })
+      : Promise.resolve(pageEnvelope(id))));
     fireEvent.change(screen.getByPlaceholderText('Full-text search in this table...'), { target: { value: 'queen' } });
     expect(watchSlot().q).toBe('king');
-    await waitFor(() => expect(watchSlot().q).toBe('queen'));
+    await waitFor(() => expect(watchSlot()).toEqual({ resourceId: 'a', q: 'queen', filters: { name: { op: 'eq', value: 'row-a' } }, total: null }));
+    expect(screen.getByText('row-a')).toBeInTheDocument();
+    await act(async () => { answer(); });
+    expect(await screen.findByText('row-queen')).toBeInTheDocument();
+    await waitFor(() => expect(watchSlot().total).toBe(7));
+  });
+
+  test('nothing is offered until the table shows something', async () => {
+    queryResource.mockRejectedValue(new Error('Row query unavailable'));
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('Row query unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('watch-slot')).toBeNull();
   });
 
   test('a table with no search is offered whole, with its row count', async () => {

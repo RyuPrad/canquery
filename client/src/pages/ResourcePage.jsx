@@ -839,12 +839,15 @@ function ResourceExplorer({ id, navigationKey }) {
                 {t('resource.download_filtered')}
               </a>
             ))}
-          {view === 'table' && resource && (
+          {/* Offered once the table shows something. The count is given only when the
+              rows on screen answer the search as it is now, in full: while another
+              search loads, or with only part of a file held, it is not known. */}
+          {view === 'table' && resource && data && (
             <WatchTableSlot
               resourceId={id}
               q={debouncedQ}
               filters={exportFilters}
-              total={data ? data.total : knownTotal}
+              total={shownPageKey && !dataPartial ? data.total : null}
             />
           )}
           <QueryGateSlot resourceId={id} datasetId={resource?.dataset?.id} />
