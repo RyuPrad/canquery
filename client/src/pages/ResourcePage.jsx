@@ -38,6 +38,7 @@ import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import QueryGateSlot from '../components/QueryGateSlot.jsx';
+import WatchTableSlot from '../components/WatchTableSlot.jsx';
 import { rememberView } from '../utils/recentlyViewed.js';
 import LmiaHubLink from '../components/LmiaHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
@@ -838,6 +839,17 @@ function ResourceExplorer({ id, navigationKey }) {
                 {t('resource.download_filtered')}
               </a>
             ))}
+          {/* Offered once the table shows something. The count is given only when the
+              rows on screen answer the search as it is now, in full: while another
+              search loads, or with only part of a file held, it is not known. */}
+          {view === 'table' && resource && data && (
+            <WatchTableSlot
+              resourceId={id}
+              q={debouncedQ}
+              filters={exportFilters}
+              total={shownPageKey && !dataPartial ? data.total : null}
+            />
+          )}
           <QueryGateSlot resourceId={id} datasetId={resource?.dataset?.id} />
         </div>
       )}

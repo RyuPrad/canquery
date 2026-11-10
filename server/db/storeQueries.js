@@ -70,6 +70,44 @@ async function readStoreRows({ tableName, limit }) {
     return { records: result.rows };
 }
 
+// The rows a search matches, each with a fingerprint of its content: the md5
+// of the row's values as text, in column order, without the generated _id,
+// which is only the record's position in its file. A copy rebuilt from an
+// unchanged file gives the same fingerprints whatever its row order, and also
+// when a column's inferred type changed (a number column that became text
+// keeps the text of its numbers). A blank cell is one value whatever its
+// column's type: the loader keeps it as an empty text in a text column and as
+// NULL in a typed one, and both fingerprint alike. A number keeps the digits
+// it was written with, and a timestamp is its instant.
+// The WHERE clause is the table query's, so this matches exactly the rows the
+// table shows for the same search and filters. Rows come in _id order; a
+// caller with a cap asks for one row more than it accepts.
+async function matchingRowHashes({ tableName, knownColumns, q, filters, limit }) {
+    if (!TABLE_NAME_RE.test(tableName)) {
+        throw new AppError('invalid store table name', 500);
+    }
+    const { whereSql, params } = buildWhereAndParams({ knownColumns, q, filters });
+    const values = knownColumns.map(column => 'coalesce(' + quoteIdent(column) + '::text, \'\')').join(', ');
+    const result = await snapshotDb().query(
+        'SELECT "_id", md5(to_jsonb(ARRAY[' + values + ']::text[])::text) AS "hash" FROM store.' + quoteIdent(tableName) +
+        whereSql + ' ORDER BY "_id" ASC LIMIT $' + (params.length + 1),
+        params.concat([limit])
+    );
+    return result.rows.map(row => ({ id: String(row._id), hash: row.hash }));
+}
+
+// Rows by their _id, in _id order: the few rows a caller shows out of the ones
+// matchingRowHashes found in the same snapshot.
+async function readStoreRowsByIds({ tableName, ids }) {
+    if (!TABLE_NAME_RE.test(tableName)) {
+        throw new AppError('invalid store table name', 500);
+    }
+    if (!Array.isArray(ids) || ids.length === 0) return { records: [] };
+    const result = await snapshotDb().query(
+        'SELECT * FROM store.' + quoteIdent(tableName) + ' WHERE "_id" = ANY($1::bigint[]) ORDER BY "_id" ASC', [ids]);
+    return { records: result.rows };
+}
+
 async function aggregateStoreTable({ tableName, knownColumns, q, filters, groupBy, agg, aggColumn, bucket, sortSql, limit, offset, includeTotal = true }) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new AppError('invalid store table name', 500);
@@ -155,4 +193,5 @@ async function touchLastAccessed(resourceId, tableName) {
     return result.rowCount === 1;
 }
 
-module.exports = { queryStoreTable, readStoreRows, touchLastAccessed, TABLE_NAME_RE, aggregateStoreTable, profileStoreTable };
+module.exports = { queryStoreTable, readStoreRows, matchingRowHashes, readStoreRowsByIds, touchLastAccessed, TABLE_NAME_RE,
+    aggregateStoreTable, profileStoreTable };
