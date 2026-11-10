@@ -38,6 +38,7 @@ import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import QueryGateSlot from '../components/QueryGateSlot.jsx';
+import WatchTableSlot from '../components/WatchTableSlot.jsx';
 import { rememberView } from '../utils/recentlyViewed.js';
 import LmiaHubLink from '../components/LmiaHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
@@ -838,6 +839,14 @@ function ResourceExplorer({ id, navigationKey }) {
                 {t('resource.download_filtered')}
               </a>
             ))}
+          {view === 'table' && resource && (
+            <WatchTableSlot
+              resourceId={id}
+              q={debouncedQ}
+              filters={exportFilters}
+              total={data ? data.total : knownTotal}
+            />
+          )}
           <QueryGateSlot resourceId={id} datasetId={resource?.dataset?.id} />
         </div>
       )}

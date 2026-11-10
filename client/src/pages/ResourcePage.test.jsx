@@ -20,6 +20,11 @@ vi.mock('../components/MapPanel.jsx', () => ({
 // The hosted service may ask for an account before a table search; these tests
 // answer for it (allowed unless a test says otherwise), also in the private build.
 vi.mock('../utils/queryGate.js', () => ({ allowQuery: vi.fn(() => true) }));
+// The hosted service may offer to watch a table's search; these tests stand in
+// for it, also in the private build, and show what the page hands it.
+vi.mock('../components/WatchTableSlot.jsx', () => ({
+  default: ({ resourceId, q, filters, total }) => <output data-testid="watch-slot">{JSON.stringify({ resourceId, q, filters, total })}</output>,
+}));
 vi.mock('../components/ChartPanel.jsx', async () => {
   // Like the real panel, it tells the Chart tab's loading card when its profile is in.
   const { useChartLoadReport } = await import('../hooks/useChartLoadReport.js');
@@ -1109,6 +1114,52 @@ test('a file whose details load joins this browser’s recently viewed list', as
   </MemoryRouter>);
   await waitFor(() => expect(JSON.parse(localStorage.getItem('cq-recent') || '[]')).toHaveLength(1));
   expect(JSON.parse(localStorage.getItem('cq-recent'))[0]).toMatchObject({ kind: 'resource', id: 'a', path: '/resources/a' });
+});
+
+describe('ResourcePage and the hosted table watch', () => {
+  const watchSlot = () => JSON.parse(screen.getByTestId('watch-slot').textContent);
+
+  test('the Table tab hands it the table, the applied search and filters, and how many rows match', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a?q=king&cf=' + encodeURIComponent(JSON.stringify({ name: '=row-a', other: '  ' }))]}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('row-a')).toBeInTheDocument();
+    await waitFor(() => expect(watchSlot()).toEqual({ resourceId: 'a', q: 'king', filters: { name: { op: 'eq', value: 'row-a' } }, total: 200 }));
+    // A typed search reaches it once it is applied to the table, not on every keystroke.
+    fireEvent.change(screen.getByPlaceholderText('Full-text search in this table...'), { target: { value: 'queen' } });
+    expect(watchSlot().q).toBe('king');
+    await waitFor(() => expect(watchSlot().q).toBe('queen'));
+  });
+
+  test('a table with no search is offered whole, with its row count', async () => {
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByText('row-a')).toBeInTheDocument();
+    expect(watchSlot()).toEqual({ resourceId: 'a', q: '', filters: {}, total: 200 });
+  });
+
+  test('the Chart and Map tabs, and a file with no table, do not offer it', async () => {
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data,
+      ingestion: { ingested_at: '2026-09-01', fields: [{ id: 'name', type: 'TEXT' }] }, map: { available: true, extent: [-79, 43, -78, 44] } } });
+    const first = render(<MemoryRouter initialEntries={['/resources/a?view=chart']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByTestId('chart')).toBeInTheDocument();
+    expect(screen.queryByTestId('watch-slot')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Map' }));
+    expect(await screen.findByText('live-map-a')).toBeInTheDocument();
+    expect(screen.queryByTestId('watch-slot')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+    expect(await screen.findByTestId('watch-slot')).toBeInTheDocument();
+    first.unmount();
+    fetchResource.mockResolvedValue({ data: { ...resourceEnvelope('a').data, query_mode: 'file-only', preparation: { supported: false } } });
+    render(<MemoryRouter initialEntries={['/resources/a']}>
+      <Routes><Route path="/resources/:id" element={<ResourcePage />} /></Routes>
+    </MemoryRouter>);
+    expect(await screen.findByRole('link', { name: 'Download it here' })).toBeInTheDocument();
+    expect(screen.queryByTestId('watch-slot')).toBeNull();
+  });
 });
 
 describe('ResourcePage table searches and the hosted gate', () => {
