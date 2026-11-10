@@ -32,10 +32,11 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
     const names = COLUMNS.map(column => '"' + column.id + '"').join(', ');
     const marks = COLUMNS.map((_, index) => '$' + (index + 1)).join(', ');
 
-    async function build(rows) {
+    // types: other SQL types for some columns, as when a later copy infers a column differently.
+    async function build(rows, types = {}) {
         const tableName = 'r_' + crypto.randomBytes(8).toString('hex');
         const table = 'store."' + tableName + '"';
-        await pool.query('CREATE TABLE ' + table + ' (_id bigserial, ' + COLUMNS.map(column => '"' + column.id + '" ' + column.sql).join(', ') + ')');
+        await pool.query('CREATE TABLE ' + table + ' (_id bigserial, ' + COLUMNS.map(column => '"' + column.id + '" ' + (types[column.id] || column.sql)).join(', ') + ')');
         for (const row of rows) await pool.query('INSERT INTO ' + table + ' (' + names + ') VALUES (' + marks + ')', row);
         return tableName;
     }
@@ -78,13 +79,16 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
         const base = await build([['A', 'x', 1, '1.50', '2024-01-05', '2024-01-05 10:00+00']]);
         const digits = await build([['A', 'x', 1, '1.5', '2024-01-05', '2024-01-05 10:00+00']]);
         const zone = await build([['A', 'x', 1, '1.50', '2024-01-05', '2024-01-05 05:00:00.000-05']]);
+        // A later copy whose number columns were inferred as text, with the same written values.
+        const retyped = await build([['A', 'x', '1', '1.50', '2024-01-05', '2024-01-05 10:00+00']], { units: 'text', value: 'text' });
         try {
             const [first] = await hashes(base);
             // A number keeps the digits it was written with; an instant is the same in any zone.
             assert.notEqual((await hashes(digits))[0].hash, first.hash);
             assert.equal((await hashes(zone))[0].hash, first.hash);
+            assert.equal((await hashes(retyped))[0].hash, first.hash, 'a column that became text keeps the fingerprints of its rows');
         } finally {
-            await drop(base); await drop(digits); await drop(zone);
+            await drop(base); await drop(digits); await drop(zone); await drop(retyped);
         }
     });
 }

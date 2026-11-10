@@ -71,21 +71,24 @@ async function readStoreRows({ tableName, limit }) {
 }
 
 // The rows a search matches, each with a fingerprint of its content: the md5
-// of the row as JSON without the generated _id, which is only the record's
-// position in its file. A copy rebuilt from an unchanged file gives the same
-// fingerprints whatever its row order. NULL and an empty text stay distinct,
-// and numbers, dates and timestamps are hashed by PostgreSQL's own text for
-// their type. The WHERE clause is the table query's, so this matches exactly
-// the rows the table shows for the same search and filters. Rows come in _id
-// order; a caller with a cap asks for one row more than it accepts.
+// of the row's values as text, in column order, without the generated _id,
+// which is only the record's position in its file. A copy rebuilt from an
+// unchanged file gives the same fingerprints whatever its row order, and also
+// when a column's inferred type changed (a number column that became text
+// keeps the text of its numbers). NULL and an empty text stay distinct; a
+// number keeps the digits it was written with, and a timestamp is its instant.
+// The WHERE clause is the table query's, so this matches exactly the rows the
+// table shows for the same search and filters. Rows come in _id order; a
+// caller with a cap asks for one row more than it accepts.
 async function matchingRowHashes({ tableName, knownColumns, q, filters, limit }) {
     if (!TABLE_NAME_RE.test(tableName)) {
         throw new AppError('invalid store table name', 500);
     }
     const { whereSql, params } = buildWhereAndParams({ knownColumns, q, filters });
+    const values = knownColumns.map(column => quoteIdent(column) + '::text').join(', ');
     const result = await snapshotDb().query(
-        'SELECT cq_row."_id" AS "_id", md5((to_jsonb(cq_row.*) - \'_id\')::text) AS "hash" FROM store.' + quoteIdent(tableName) +
-        ' AS cq_row' + whereSql + ' ORDER BY cq_row."_id" ASC LIMIT $' + (params.length + 1),
+        'SELECT "_id", md5(to_jsonb(ARRAY[' + values + ']::text[])::text) AS "hash" FROM store.' + quoteIdent(tableName) +
+        whereSql + ' ORDER BY "_id" ASC LIMIT $' + (params.length + 1),
         params.concat([limit])
     );
     return result.rows.map(row => ({ id: String(row._id), hash: row.hash }));
