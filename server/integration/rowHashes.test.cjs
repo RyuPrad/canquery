@@ -60,7 +60,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
             }
             const before = await hashes(first);
             const after = await hashes(second);
-            assert.equal(new Set(before.map(row => row.hash)).size, ROWS.length, 'an empty text and NULL are different rows');
+            // The two rows that differ only by an empty text against NULL are one row twice: a blank cell is a blank cell.
+            assert.equal(new Set(before.map(row => row.hash)).size, ROWS.length - 1);
+            assert.equal(before[3].hash, before[4].hash);
             const kept = new Set(before.map(row => row.hash));
             const fresh = after.filter(row => !kept.has(row.hash));
             // Five rows kept their fingerprint although their _id changed; the changed row and the added row are new.
@@ -81,14 +83,19 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
         const zone = await build([['A', 'x', 1, '1.50', '2024-01-05', '2024-01-05 05:00:00.000-05']]);
         // A later copy whose number columns were inferred as text, with the same written values.
         const retyped = await build([['A', 'x', '1', '1.50', '2024-01-05', '2024-01-05 10:00+00']], { units: 'text', value: 'text' });
+        // A blank cell: NULL in a typed column, an empty text once the column is text (as the loader stores them).
+        const blank = await build([['A', 'x', null, null, null, null]]);
+        const blankText = await build([['A', 'x', '', '', '', '']], { units: 'text', value: 'text', issued: 'text', at: 'text' });
         try {
             const [first] = await hashes(base);
             // A number keeps the digits it was written with; an instant is the same in any zone.
             assert.notEqual((await hashes(digits))[0].hash, first.hash);
             assert.equal((await hashes(zone))[0].hash, first.hash);
             assert.equal((await hashes(retyped))[0].hash, first.hash, 'a column that became text keeps the fingerprints of its rows');
+            assert.equal((await hashes(blankText))[0].hash, (await hashes(blank))[0].hash, 'a blank cell keeps its fingerprint when its column changes type');
+            assert.notEqual((await hashes(blank))[0].hash, first.hash);
         } finally {
-            await drop(base); await drop(digits); await drop(zone); await drop(retyped);
+            await drop(base); await drop(digits); await drop(zone); await drop(retyped); await drop(blank); await drop(blankText);
         }
     });
 }

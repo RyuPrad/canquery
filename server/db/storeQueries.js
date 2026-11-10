@@ -75,8 +75,10 @@ async function readStoreRows({ tableName, limit }) {
 // which is only the record's position in its file. A copy rebuilt from an
 // unchanged file gives the same fingerprints whatever its row order, and also
 // when a column's inferred type changed (a number column that became text
-// keeps the text of its numbers). NULL and an empty text stay distinct; a
-// number keeps the digits it was written with, and a timestamp is its instant.
+// keeps the text of its numbers). A blank cell is one value whatever its
+// column's type: the loader keeps it as an empty text in a text column and as
+// NULL in a typed one, and both fingerprint alike. A number keeps the digits
+// it was written with, and a timestamp is its instant.
 // The WHERE clause is the table query's, so this matches exactly the rows the
 // table shows for the same search and filters. Rows come in _id order; a
 // caller with a cap asks for one row more than it accepts.
@@ -85,7 +87,7 @@ async function matchingRowHashes({ tableName, knownColumns, q, filters, limit })
         throw new AppError('invalid store table name', 500);
     }
     const { whereSql, params } = buildWhereAndParams({ knownColumns, q, filters });
-    const values = knownColumns.map(column => quoteIdent(column) + '::text').join(', ');
+    const values = knownColumns.map(column => 'coalesce(' + quoteIdent(column) + '::text, \'\')').join(', ');
     const result = await snapshotDb().query(
         'SELECT "_id", md5(to_jsonb(ARRAY[' + values + ']::text[])::text) AS "hash" FROM store.' + quoteIdent(tableName) +
         whereSql + ' ORDER BY "_id" ASC LIMIT $' + (params.length + 1),

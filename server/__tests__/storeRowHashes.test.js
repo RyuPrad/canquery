@@ -17,7 +17,7 @@ describe('matchingRowHashes', () => {
         expect(rows).toEqual([{ id: '4', hash: 'a'.repeat(32) }, { id: '9', hash: 'b'.repeat(32) }]);
         expect(pool.query).toHaveBeenCalledTimes(1);
         const [sql, params] = pool.query.mock.calls[0];
-        expect(sql).toBe('SELECT "_id", md5(to_jsonb(ARRAY["street"::text, "status"::text]::text[])::text) AS "hash" FROM store."r_abc"' +
+        expect(sql).toBe('SELECT "_id", md5(to_jsonb(ARRAY[coalesce("street"::text, \'\'), coalesce("status"::text, \'\')]::text[])::text) AS "hash" FROM store."r_abc"' +
             ' WHERE "status" = $1 AND ("street"::text ILIKE $2 OR "status"::text ILIKE $2) ORDER BY "_id" ASC LIMIT $3');
         expect(params).toEqual(['Issued', '%king%', 2001]);
     });
@@ -26,7 +26,7 @@ describe('matchingRowHashes', () => {
         pool.query.mockResolvedValueOnce({ rows: [] });
         expect(await matchingRowHashes({ tableName: 'r_abc', knownColumns: ['street'], q: '', filters: [], limit: 5 })).toEqual([]);
         const [sql, params] = pool.query.mock.calls[0];
-        expect(sql).toBe('SELECT "_id", md5(to_jsonb(ARRAY["street"::text]::text[])::text) AS "hash" FROM store."r_abc" ORDER BY "_id" ASC LIMIT $1');
+        expect(sql).toBe('SELECT "_id", md5(to_jsonb(ARRAY[coalesce("street"::text, \'\')]::text[])::text) AS "hash" FROM store."r_abc" ORDER BY "_id" ASC LIMIT $1');
         expect(params).toEqual([5]);
     });
 
