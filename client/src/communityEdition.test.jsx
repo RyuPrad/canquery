@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import App from './App';
 import { LangProvider, STRINGS } from './i18n.jsx';
 import QueryGateSlot from './components/QueryGateSlot.jsx';
+import WatchTableSlot from './components/WatchTableSlot.jsx';
 import { allowQuery } from './utils/queryGate.js';
 
 vi.mock('./extensions.js', () => ({ hostedPart: (_modules, fallback) => fallback }));
@@ -41,5 +42,10 @@ test('table searches are never refused, counted or followed by a sign-up prompt'
   }
   expect(localStorage.getItem('cq-query-meter')).toBeNull();
   const { container } = render(<QueryGateSlot resourceId="a" datasetId="d" />);
+  expect(container).toBeEmptyDOMElement();
+});
+
+test('a table offers nothing to watch', () => {
+  const { container } = render(<WatchTableSlot resourceId="a" q="king" filters={{ status: { op: 'eq', value: 'Issued' } }} total={3} />);
   expect(container).toBeEmptyDOMElement();
 });
