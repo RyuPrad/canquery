@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
-  createScrollMemory, entryKey, followHash, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
+  createScrollMemory, entryKey, followHash, itemOnScreen, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
 } from './scrollMemory.js';
 
 const at = (pathname, search = '', hash = '') => ({ pathname, search, hash });
@@ -386,5 +386,40 @@ describe('followHash', () => {
     draw();
     runFor(100);
     expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('itemOnScreen', () => {
+  // Items 40 px tall, the first one `first` px from the top of the window.
+  const list = (count, first) => Array.from({ length: count }, (_, index) => ({
+    getBoundingClientRect: vi.fn(() => ({ top: first + index * 40, bottom: first + index * 40 + 40 }))
+  }));
+  const win = (scrollY) => ({ scrollY, innerHeight: 800 });
+
+  test('names the last item that starts at or above the middle of the window', () => {
+    // Item 70 starts at 320, item 72 at exactly 400 (the middle), item 73 at 440.
+    expect(itemOnScreen(list(1000, 320 - 70 * 40), win(2800))).toEqual({ index: 72, top: 400 });
+    expect(itemOnScreen(list(1000, 321 - 70 * 40), win(2800))).toEqual({ index: 71, top: 361 });
+  });
+
+  test('reads a handful of items, not the whole list', () => {
+    const items = list(4000, -80000);
+    itemOnScreen(items, win(90000));
+    expect(items.filter((item) => item.getBoundingClientRect.mock.calls.length > 0).length).toBeLessThan(16);
+  });
+
+  test('names the first item when the list starts below the middle, on screen', () => {
+    expect(itemOnScreen(list(10, 600), win(300))).toEqual({ index: 0, top: 600 });
+  });
+
+  test('names the last item when the list ends above the middle, on screen', () => {
+    expect(itemOnScreen(list(10, -300), win(5000))).toEqual({ index: 9, top: 60 });
+  });
+
+  test('is null at the top of the page, for an empty list and when no item is on screen', () => {
+    expect(itemOnScreen(list(1000, 100), win(0))).toBeNull();
+    expect(itemOnScreen([], win(500))).toBeNull();
+    expect(itemOnScreen(list(10, 900), win(500))).toBeNull();
+    expect(itemOnScreen(list(10, -2000), win(5000))).toBeNull();
   });
 });

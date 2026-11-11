@@ -15,6 +15,11 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+function StateFixture() {
+  const location = useLocation();
+  return <pre data-testid="entry">{location.pathname + location.search + ' ' + JSON.stringify(location.state)}</pre>;
+}
+
 function NavigationFixture({ translations }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -159,4 +164,27 @@ test('resolved blog language switching follows the paired article URL and closes
   await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/fr/blog/parcs'));
   expect(panel).not.toBeInTheDocument();
   expect(track).toHaveBeenLastCalledWith('ui_language', { language: 'fr' });
+});
+
+test('a page with an address per language moves to its twin, keeping the query and what its history entry holds', async () => {
+  render(<MemoryRouter initialEntries={[{ pathname: '/oas/table-2', search: '?utm_source=x', state: { oas: { income: '18,000', table: 2 } } }]}>
+    <ThemeProvider><LangProvider><Navbar /><StateFixture /></LangProvider></ThemeProvider></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'FR', exact: true }));
+  await waitFor(() => expect(screen.getByTestId('entry')).toHaveTextContent('/fr/sv/tableau-2?utm_source=x {"oas":{"income":"18,000","table":2}}'));
+  expect(track).toHaveBeenLastCalledWith('ui_language', { language: 'fr' });
+  fireEvent.click(screen.getByRole('button', { name: 'EN', exact: true }));
+  await waitFor(() => expect(screen.getByTestId('entry')).toHaveTextContent('/oas/table-2?utm_source=x {"oas":{"income":"18,000","table":2}}'));
+  // Choosing the language the page is already in goes nowhere.
+  fireEvent.click(screen.getByRole('button', { name: 'EN', exact: true }));
+  expect(screen.getByTestId('entry')).toHaveTextContent('/oas/table-2?utm_source=x');
+});
+
+test('the hub moves between /oas and /fr/sv; other pages only change the interface', async () => {
+  render(<MemoryRouter initialEntries={['/oas']}><ThemeProvider><LangProvider><Navbar /><StateFixture /></LangProvider></ThemeProvider></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'FR', exact: true }));
+  await waitFor(() => expect(screen.getByTestId('entry')).toHaveTextContent('/fr/sv null'));
+  fireEvent.click(screen.getByRole('link', { name: 'Catalogue' }));
+  await waitFor(() => expect(screen.getByTestId('entry')).toHaveTextContent('/datasets null'));
+  fireEvent.click(screen.getByRole('button', { name: 'EN', exact: true }));
+  expect(screen.getByTestId('entry')).toHaveTextContent('/datasets null');
 });

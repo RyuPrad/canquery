@@ -161,6 +161,33 @@ export function documentWasRestored() {
   }
 }
 
+// A fresh visit can arrive far down a page: a search result's link to a passage (a
+// text fragment) makes the browser scroll the server's HTML to it before the
+// application draws its own page, which is laid out differently. A page that is one
+// long list keeps the passage in place: before its first draw it notes which item
+// sat nearest the middle of the window, and after it moves the window so that its
+// own item sits at the same height. `items` are in document order; null at the top
+// of the page or when no item is on screen.
+/**
+ * @param {ArrayLike<Element>} items
+ * @param {{ scrollY: number, innerHeight: number }} [win]
+ * @returns {{ index: number, top: number } | null}
+ */
+export function itemOnScreen(items, win = window) {
+  if (!(win.scrollY > 0) || !items.length) return null;
+  const middle = win.innerHeight / 2;
+  // The last item that starts at or above the middle of the window.
+  let low = 0;
+  let high = items.length - 1;
+  while (low < high) {
+    const next = (low + high + 1) >> 1;
+    if (items[next].getBoundingClientRect().top <= middle) low = next;
+    else high = next - 1;
+  }
+  const box = items[low].getBoundingClientRect();
+  return box.bottom > 0 && box.top < win.innerHeight ? { index: low, top: box.top } : null;
+}
+
 // Scrolls to `y` as soon as the page is tall enough to show it, which can take
 // a moment while a page that came back from history loads its content, then
 // holds it while the page settles. Stops when the page has settled, after

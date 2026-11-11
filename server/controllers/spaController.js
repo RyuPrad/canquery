@@ -3,6 +3,10 @@ const path = require('path');
 const seoMeta = require('../services/seoMeta');
 const seoSnapshot = require('../services/seoSnapshot');
 const lmiaPages = require('../services/lmiaPages');
+const oasPages = require('../services/oasPages');
+const oasPresentation = require('../services/oasPresentation');
+const { oasInitialData } = require('../services/oasInitialData');
+const { oasPath, oasTablePath } = require('../utils/oasLabels');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
 const { resourceInitialData } = require('../services/resourceInitialData');
@@ -121,6 +125,14 @@ function injectInitialData(html, payload) {
     if (!payload) return html;
     const tag = seoMeta.jsonScript(payload, { type: 'application/json', id: INITIAL_DATA_ID });
     return html.includes('</body>') ? html.replace('</body>', () => tag + '\n</body>') : html + tag;
+}
+
+// Which dataset hubs have data, for the application's own links to them (the footer,
+// the callout on a dataset's pages): a marker in the head, absent when none has.
+const HUBS_MARKER = 'cq-hubs';
+function injectHubs(html) {
+    if (!oasPages.available() || !html.includes('</head>')) return html;
+    return html.replace('</head>', () => '    <meta name="' + HUBS_MARKER + '" content="oas" />\n  </head>');
 }
 
 const STATIC_PATHS = Object.freeze({
@@ -267,6 +279,21 @@ async function resolvePage(requestTarget, deps = catalogRead) {
         return { status: 200, canonicalPath: '/lmia/employers/' + employer.slug, meta: seoMeta.lmiaEmployerMeta(employer),
             body: seoSnapshot.lmiaEmployerSnapshot(employer) };
     }
+    if (route.type === 'oas') {
+        const summary = await (deps.oas || oasPages).summary();
+        return { status: 200, canonicalPath: oasPath(route.lang), meta: oasPresentation.oasMeta(summary, route.lang),
+            body: oasPresentation.oasSnapshot(summary, route.lang), oas: { lang: route.lang, table: null, summary, data: null } };
+    }
+    if (route.type === 'oas-table') {
+        // Until a quarter is loaded the page says so and is not indexed, like the hub.
+        const source = deps.oas || oasPages;
+        const summary = await source.summary();
+        const data = summary ? await source.table(route.table) : null;
+        return { status: 200, canonicalPath: oasTablePath(route.lang, route.table),
+            meta: oasPresentation.oasTableMeta(route.table, data, route.lang),
+            body: oasPresentation.oasTableSnapshot(data, route.lang, { number: route.table }),
+            oas: { lang: route.lang, table: route.table, summary, data } };
+    }
     if (route.type === 'other') {
         return {
             status: 404,
@@ -363,6 +390,12 @@ function serveSpa(distDir) {
             } catch (err) {
                 console.warn('Initial guide data skipped:', err.message);
             }
+        } else if (page.status === 200 && page.oas && wantsInitialData(req)) {
+            try {
+                initial = oasInitialData(page.oas, { path: req.originalUrl });
+            } catch (err) {
+                console.warn('Initial OAS amounts data skipped:', err.message);
+            }
         }
         if (page.status === 200 && page.row && wantsInitialData(req)) {
             const sample = await snapshotSample(page.row, initial);
@@ -379,6 +412,7 @@ function serveSpa(distDir) {
         html = injectAds(html, adsClient, nonce);
         html = seoMeta.renderHtml(html, page.meta, page.body);
         html = injectAnalytics(html,privatePage ? '' : process.env.ANALYTICS_WEBSITE_ID);
+        html = injectHubs(html);
         html = injectRouteAssets(html, req.originalUrl, distDir, nonce);
         html = injectInitialData(html, initial);
         res.set('Content-Type', 'text/html; charset=utf-8');
@@ -401,4 +435,4 @@ function serveSpa(distDir) {
     };
 }
 
-module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAds, injectAnalytics, injectInitialData, snapshotSample, INITIAL_DATA_ID };
+module.exports = { serveSpa, resolvePage, resolveMeta, loadTemplate, injectAds, injectAnalytics, injectInitialData, injectHubs, snapshotSample, INITIAL_DATA_ID, HUBS_MARKER };

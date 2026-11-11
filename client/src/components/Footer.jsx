@@ -5,6 +5,8 @@ import { getJSON } from '../api/client.js';
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion.js';
 import { MapleLeaf, ExternalIcon, GithubIcon, StarIcon, ArrowUpRightIcon, XLogoIcon, BlueskyIcon } from './Icons.jsx';
 import { hostedPart } from '../extensions.js';
+import { hubHasData } from '../utils/datasetHubs.js';
+import { oasPath } from '../utils/localizedRoutes.js';
 
 const { FooterLinks } = hostedPart(import.meta.glob('../enterprise/navigation.jsx', { eager: true }), {});
 
@@ -78,7 +80,7 @@ function StarCount() {
 }
 
 export default function Footer() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   return (
     <footer className="mt-20 border-t border-base-content/8 bg-base-200/40">
       <div className="max-w-7xl mx-auto px-4 py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -171,6 +173,14 @@ export default function Footer() {
                 {t('nav.insights')}
               </Link>
             </li>
+            {/* The OAS amounts lookup, on a site whose server has the tables loaded. */}
+            {hubHasData('oas') && (
+              <li>
+                <Link to={oasPath(lang)} className="text-base-content/65 hover:text-base-content transition-colors">
+                  {t('oas.nav')}
+                </Link>
+              </li>
+            )}
             <li>
               <Link to="/docs" className="text-base-content/65 hover:text-base-content transition-colors">
                 {t('nav.docs')}

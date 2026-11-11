@@ -18,7 +18,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
     const { getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows, getLmiaEmployer } = require('../db/lmiaQueries');
-    const { listOasFiles, listOasPeriods } = require('../db/oasQueries');
+    const { listOasFiles, listOasPeriods, getOasPeriod } = require('../db/oasQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
@@ -87,6 +87,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             assert.equal(await getLmiaEmployer('forbidden', dbFor(client)), null);
             assert.ok(Array.isArray(await listOasFiles(dbFor(client))));
             assert.ok(Array.isArray(await listOasPeriods(dbFor(client))));
+            const shown = await getOasPeriod({}, dbFor(client));
+            assert.ok(shown === null || Array.isArray(shown.tables));
+            assert.equal(await getOasPeriod({ period: 190003 }, dbFor(client)), null);
             assert.equal((await client.query('SELECT count(*)::int AS rows FROM oas_rows WHERE false')).rows[0].rows, 0);
             assert.equal(await getResourceRowSample(prefix, dbFor(client)), null);
             const { fields } = await client.query('SELECT * FROM search_console_page_dates LIMIT 0');

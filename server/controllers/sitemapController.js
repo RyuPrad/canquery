@@ -5,6 +5,8 @@ const { listArticles } = require('../services/blogContent');
 const { SITE_URL } = require('../services/seoMeta');
 const { hostedRoutes } = require('../extensions');
 const lmiaPages = require('../services/lmiaPages');
+const oasPages = require('../services/oasPages');
+const { TABLE_NUMBERS, oasPath, oasTablePath } = require('../utils/oasLabels');
 
 // Sitemap files cap at 50,000 URLs each; we chunk datasets well under that and
 // expose a sitemap index so the catalogue can keep growing.
@@ -179,6 +181,12 @@ const sitemapPages = crawlFile(async (req, res) => {
         const hub = catalogue ? { lastmod: catalogue } : {};
         const lmia = await lmiaPages.summary().catch(() => null);
         const lmiaLastmod = lmia && isoDate(lmia.updated_at);
+        // The OAS benefit amounts hub and its table pages, in both languages, once a
+        // quarter is loaded (until then they are noindex), dated by that load.
+        const oas = await oasPages.summary().catch(() => null);
+        const oasLastmod = oas && isoDate(oas.updated_at);
+        const oasEntry = (path, priority) => ({ loc: SITE_URL + path, changefreq: 'monthly', priority,
+            ...(oasLastmod ? { lastmod: oasLastmod } : {}) });
         return urlset([
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', ...hub },
             { loc: SITE_URL + '/datasets', changefreq: 'daily', priority: '0.9', ...hub },
@@ -186,6 +194,8 @@ const sitemapPages = crawlFile(async (req, res) => {
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7', ...hub },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8', ...hub },
             ...(lmia ? [{ loc: SITE_URL + '/lmia', changefreq: 'weekly', priority: '0.8', ...(lmiaLastmod ? { lastmod: lmiaLastmod } : {}) }] : []),
+            ...(oas ? ['en', 'fr'].flatMap(lang => [oasEntry(oasPath(lang), '0.8'),
+                ...TABLE_NUMBERS.map(table => oasEntry(oasTablePath(lang, table), '0.6'))]) : []),
             { loc: SITE_URL + '/docs', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/faq', changefreq: 'monthly', priority: '0.5' },
             { loc: SITE_URL + '/about', changefreq: 'monthly', priority: '0.5' },

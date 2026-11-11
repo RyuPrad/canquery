@@ -2,6 +2,7 @@ const app = require('./app');
 const { createShutdown } = require('./services/apiLifecycle');
 const { startCatalogCountWarming } = require('./services/catalogService');
 const { startFeaturedWarming } = require('./services/insightsService');
+const { startOasWarming } = require('./services/oasPages');
 const { extension, assertEditionMatchesDatabase } = require('./extensions');
 const port = process.env.PORT || 3100;
 const host = process.env.HOST?.trim() || '127.0.0.1';
@@ -18,7 +19,7 @@ async function start() {
     let stopWarming = [];
     const server = app.listen(port, host, () => {
         console.log('canquery-api listening on ' + host + ':' + port);
-        if (!closing) stopWarming = [startCatalogCountWarming(), startFeaturedWarming()];
+        if (!closing) stopWarming = [startCatalogCountWarming(), startFeaturedWarming(), startOasWarming()];
     });
     const shutdown = createShutdown(server, {
         stopMaintenance: async () => {

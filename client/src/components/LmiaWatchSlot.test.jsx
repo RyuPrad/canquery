@@ -1,7 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
-import { LangProvider } from '../i18n.jsx';
 
 afterEach(() => {
   vi.doUnmock('../extensions.js');
@@ -33,13 +31,4 @@ test('renders nothing without an employer', async () => {
   const { container } = render(<LmiaWatchSlot employer="" employerKey="danchar" />);
   expect(container).toBeEmptyDOMElement();
   expect(LmiaWatch).not.toHaveBeenCalled();
-});
-
-test('the LMIA dataset and its files link to the employer search; other datasets do not', async () => {
-  const { default: LmiaHubLink } = await import('./LmiaHubLink.jsx');
-  const { container, rerender } = render(
-    <LangProvider><MemoryRouter><LmiaHubLink datasetId="90fed587-1364-4f33-a9ee-208181dc0b97" /></MemoryRouter></LangProvider>);
-  expect(screen.getByRole('link', { name: 'Search positive LMIA employers' })).toHaveAttribute('href', '/lmia');
-  rerender(<LangProvider><MemoryRouter><LmiaHubLink datasetId="something-else" /></MemoryRouter></LangProvider>);
-  expect(container).toBeEmptyDOMElement();
 });

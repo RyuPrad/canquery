@@ -106,6 +106,8 @@ app.use(['/api','/web-api'], generalLimiter);
 app.use('/web-api/v1/resources', webResourcesRouter);
 // The /lmia pages' history of the positive LMIA employers list; website only.
 app.use('/web-api/v1/lmia', require('./routes/lmia'));
+// The /oas pages' tables of OAS benefit amounts; website only.
+app.use('/web-api/v1/oas', require('./routes/oas'));
 for (const base of ['/api/v1','/web-api/v1']) {
     app.use(base+'/datasets', datasetsRouter);
     app.use(base+'/resources', resourcesRouter);

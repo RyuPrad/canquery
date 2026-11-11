@@ -25,6 +25,8 @@ export const ANALYTICS_EVENTS = new Set([
   'ui_language',
   'ui_theme',
   'outbound_link',
+  // A lookup on the OAS benefit amounts pages: the table and where, never an amount.
+  'oas_lookup',
   // Hosted account surfaces: the alert box and account links. They carry a
   // dataset id or a placement, never anything about the account itself.
   'alert_start',
