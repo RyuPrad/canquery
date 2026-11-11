@@ -1,49 +1,18 @@
 const pool = require('./pool');
 const { LMIA_DATASET_ID } = require('../services/lmiaHistory');
+const { inTransaction: transaction } = require('./transaction');
+const { listDatasetFiles } = require('./datasetFileQueries');
 
 // Writes come only from the deployment owner's build-lmia-history job; the API reads.
 
-// Runs fn(client) in a transaction. A pool client passed in (the integration tests'
+// Runs fn(client) in a transaction; a pool client passed in (the integration tests'
 // connection, already inside their transaction) gets a savepoint instead.
-async function inTransaction(db, fn) {
-    if (typeof db.release === 'function') {
-        await db.query('SAVEPOINT lmia_history');
-        try {
-            const result = await fn(db);
-            await db.query('RELEASE SAVEPOINT lmia_history');
-            return result;
-        } catch (error) {
-            await db.query('ROLLBACK TO SAVEPOINT lmia_history');
-            throw error;
-        }
-    }
-    const client = await db.connect();
-    try {
-        await client.query('BEGIN');
-        const result = await fn(client);
-        await client.query('COMMIT');
-        return result;
-    } catch (error) {
-        await client.query('ROLLBACK').catch(() => {});
-        throw error;
-    } finally {
-        client.release();
-    }
-}
+const inTransaction = (db, fn) => transaction(db, fn, 'lmia_history');
 
 // The dataset's English files with what services/resourceVersion.js needs: a narrow
 // slice of `raw`, never the whole record.
-async function listLmiaResources(db = pool) {
-    const { rows } = await db.query(`
-        SELECT r.id, r.name_en, r.name_fr, r.url, r.format, r.size_bytes, r.last_modified,
-            jsonb_build_object('record_count', r.raw->'record_count', 'field_count', r.raw->'field_count',
-                'source_hash', r.raw->'source_hash', 'hash', r.raw->'hash', 'data_processed', r.raw->'data_processed',
-                'rows_updated_at', r.raw->'rows_updated_at', 'view_last_modified', r.raw->'view_last_modified') AS raw
-        FROM resources r
-        WHERE r.dataset_id = $1 AND r.language = 'en' AND upper(r.format) IN ('CSV', 'XLS', 'XLSX') AND r.url IS NOT NULL
-        ORDER BY r.id
-    `, [LMIA_DATASET_ID]);
-    return rows;
+function listLmiaResources(db = pool) {
+    return listDatasetFiles({ datasetId: LMIA_DATASET_ID, formats: ['CSV', 'XLS', 'XLSX'], language: 'en' }, db);
 }
 
 async function listLmiaFiles(db = pool) {

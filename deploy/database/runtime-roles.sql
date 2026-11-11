@@ -88,6 +88,9 @@ GRANT SELECT ON public.resource_row_samples TO canquery_api;
 -- Every quarter of the positive LMIA employers list for the /lmia pages; the owner's
 -- build-lmia-history job writes it and refreshes the employers view.
 GRANT SELECT ON public.lmia_files, public.lmia_positive_rows, public.lmia_employers TO canquery_api;
+-- The quarterly tables of OAS benefit amounts (GIS and Allowance by income) and the
+-- quarters that are whole; the owner's load-oas-amounts job writes them.
+GRANT SELECT ON public.oas_files, public.oas_rows, public.oas_periods TO canquery_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA store TO canquery_api;
 GRANT SELECT ON map_store.features TO canquery_api;
 GRANT INSERT, UPDATE ON public.ingest_jobs TO canquery_api;

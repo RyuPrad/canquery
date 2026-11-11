@@ -18,6 +18,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
     const { getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows, getLmiaEmployer } = require('../db/lmiaQueries');
+    const { listOasFiles, listOasPeriods } = require('../db/oasQueries');
     const admin = new Pool({ connectionString: enabled });
     const prefix = 'runtime-role-' + randomUUID();
     const table = 'r_' + randomUUID().replaceAll('-', '');
@@ -63,12 +64,18 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             await assert.rejects(client.query(`INSERT INTO lmia_files (resource_id, period_key, period_kind, period_start, period_end)
                 VALUES ('forbidden', 190003, 'quarter', '1900-01-01', '1900-03-31')`), { code: '42501' });
             await assert.rejects(client.query('REFRESH MATERIALIZED VIEW public.lmia_employers'), { code: '42501' });
+            // Only the deployment owner's load-oas-amounts job writes the OAS benefit amounts.
+            await assert.rejects(client.query(`INSERT INTO oas_files (period_key, table_no, benefit_year, benefit_quarter, income_year,
+                resource_id, source_version, content_sha256, row_count)
+                VALUES (190003, 1, 1900, 1, 1899, 'forbidden', 'v', repeat('0', 64), 1)`), { code: '42501' });
+            await assert.rejects(client.query('DELETE FROM oas_rows WHERE false'), { code: '42501' });
+            await assert.rejects(client.query('UPDATE oas_files SET source_version = source_version WHERE false'), { code: '42501' });
             // Only the API reads which pages Google showed, for the noindex sitemap, and only these two columns;
-            // and only the API reads the samples a resource page shows and the LMIA history.
+            // and only the API reads the samples a resource page shows, the LMIA history and the OAS benefit amounts.
             if (role !== 'canquery_api') {
                 await assert.rejects(client.query('SELECT * FROM search_console_page_dates LIMIT 0'), { code: '42501' });
                 await assert.rejects(client.query('SELECT * FROM resource_row_samples LIMIT 0'), { code: '42501' });
-                for (const relation of ['lmia_files', 'lmia_positive_rows', 'lmia_employers']) {
+                for (const relation of ['lmia_files', 'lmia_positive_rows', 'lmia_employers', 'oas_files', 'oas_rows', 'oas_periods']) {
                     await assert.rejects(client.query(`SELECT * FROM ${relation} LIMIT 0`), { code: '42501' });
                 }
                 continue;
@@ -78,6 +85,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             assert.ok(Number.isInteger((await searchLmiaEmployers({ key: 'forbidden' }, dbFor(client))).total));
             assert.ok(Array.isArray(await getLmiaEmployerRows('forbidden', {}, dbFor(client))));
             assert.equal(await getLmiaEmployer('forbidden', dbFor(client)), null);
+            assert.ok(Array.isArray(await listOasFiles(dbFor(client))));
+            assert.ok(Array.isArray(await listOasPeriods(dbFor(client))));
+            assert.equal((await client.query('SELECT count(*)::int AS rows FROM oas_rows WHERE false')).rows[0].rows, 0);
             assert.equal(await getResourceRowSample(prefix, dbFor(client)), null);
             const { fields } = await client.query('SELECT * FROM search_console_page_dates LIMIT 0');
             assert.deepEqual(fields.map(field => field.name), ['data_date', 'page']);

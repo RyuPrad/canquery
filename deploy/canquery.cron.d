@@ -40,6 +40,12 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # try --dry-run first, then uncomment.
 # 17 9 * * * root /usr/local/sbin/canquery-run-job.sh build-lmia-history
 
+# Optional: the quarterly tables of OAS benefit amounts (GIS and Allowance by
+# income; see DEPLOY.md). A run downloads only files whose catalogue version
+# changed, so nothing between the quarterly updates; try --dry-run first, then
+# uncomment.
+# 27 * * * * root /usr/local/sbin/canquery-run-job.sh load-oas-amounts
+
 # Optional private Search Console reporting. Configure GSC_OAUTH_PATH,
 # GSC_SITE_URL, and GSC_REPORT_PATH, complete a durable OAuth grant, run the
 # first 90-day import, then uncomment both entries.

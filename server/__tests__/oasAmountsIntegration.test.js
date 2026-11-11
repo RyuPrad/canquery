@@ -1,0 +1,272 @@
+const { Pool } = require('pg');
+const queries = require('../db/oasQueries');
+const { parseAmounts, runAmounts } = require('../services/oasAmounts');
+const { OAS_DATASET_ID, OAS_TABLES } = require('../utils/oasLabels');
+const { resourceVersion } = require('../services/resourceVersion');
+const url = process.env.SPATIAL_TEST_DATABASE_URL;
+const integrationDescribe = url ? describe : describe.skip;
+
+const BASE = ['benefityear', 'benefitquarter', 'incomeyear', 'income_from', 'income_to'];
+// A table as the publisher writes it: `rows` bands of $240 from 0, each amount one even
+// step lower than the band before, down to less than a step in the last band. Table 4's
+// GIS stays $5 above its Allowance, the benefit that runs out there.
+function tableRecords(table, { rows = 100, year = 2999, quarter = 4, incomeYear = 2998, top = 113890 } = {}) {
+    const columns = [...BASE, ...OAS_TABLES[table]];
+    const drop = Math.floor(top / rows) + 1;
+    const body = [];
+    for (let position = 0; position < rows; position += 1) {
+        const amount = top - position * drop;
+        const gis = table === 4 ? amount + 500 : amount;
+        const cells = { benefityear: year, benefitquarter: quarter, incomeyear: incomeYear,
+            income_from: position * 240, income_to: (position * 24000 + 23999) / 100,
+            gistotal: gis / 100, gistotalwithoas65: (gis + 76250) / 100, gistotalwithoas75: (gis + 83875) / 100,
+            alwtotal: amount / 100, alwstotal: amount / 100 };
+        body.push(columns.map(name => String(cells[name])));
+    }
+    return [columns.map(name => 't' + table + name), ...body];
+}
+// The default table falls by this much a band (113890 over 100 bands).
+const DROP = 1139;
+
+// Quarters of the year 2999 keep these tables apart from any real quarter in the
+// database. Every test starts from the same state: the fixture resources and no table
+// of 2999 loaded.
+integrationDescribe('OAS benefit amounts PostgreSQL integration', () => {
+    let pool, db;
+    const prefix = 'oas_amounts_' + process.pid;
+    const id = name => prefix + '_' + name;
+    // Quarters of 2999 are plausible only to a run that believes it is 2999.
+    const NOW = new Date('2999-10-01T12:00:00Z');
+    const parsed = (table, options) => parseAmounts(tableRecords(table, options), { now: NOW });
+    const mine = rows => rows.filter(row => Number(row.period_key) >= 299900);
+    const save = (table, options, version = 'v1') => queries.saveOasTable({ resource_id: id('t' + table), version, table: parsed(table, options) }, db);
+    const quarters = async () => mine(await queries.listOasPeriods(db)).map(period => period.period_key);
+    // The five tables of one quarter (table 5 with its own, larger, amounts).
+    async function loadQuarter(quarter, options = {}, version = 'v1') {
+        for (const table of [1, 2, 3, 4, 5]) await save(table, { quarter, ...(table === 5 ? { top: 172618 } : {}), ...options }, version);
+    }
+    // A statement that must fail, without ending the test's transaction.
+    async function rejected(sql, params = []) {
+        await db.query('SAVEPOINT oas_rejected');
+        try {
+            await db.query(sql, params);
+        } catch (error) {
+            await db.query('ROLLBACK TO SAVEPOINT oas_rejected');
+            return error.code;
+        }
+        await db.query('ROLLBACK TO SAVEPOINT oas_rejected');
+        return 'accepted';
+    }
+
+    beforeAll(async () => {
+        pool = new Pool({ connectionString: url });
+        db = await pool.connect();
+        await db.query('BEGIN');
+        await db.query(`INSERT INTO datasets (id, name, title_en) VALUES ($1, $1, 'OAS') ON CONFLICT (id) DO NOTHING`, [OAS_DATASET_ID]);
+        await db.query(`INSERT INTO datasets (id, name, title_en) VALUES ($1, $1, 'Other')`, [id('other')]);
+        for (const [key, dataset, language, format, name, link] of [
+            ['t1', OAS_DATASET_ID, 'en, fr', 'CSV', 'Table 1 - GIS for single person who receives an OAS pension', 'https://files.example.test/t1.csv'],
+            ['t2', OAS_DATASET_ID, 'en, fr', 'csv', 'Table 2 - GIS for spouse', 'https://files.example.test/t2.csv'],
+            ['t3', OAS_DATASET_ID, 'en, fr', 'CSV', 'Table 3 - GIS for spouse of someone without an OAS pension', 'https://files.example.test/t3.csv'],
+            ['t4', OAS_DATASET_ID, 'en, fr', 'CSV', 'Table 4 - GIS and Allowance for couple', 'https://files.example.test/t4.csv'],
+            ['t5', OAS_DATASET_ID, 'fr', 'CSV', 'Table 5 - Allowance for the Survivor', 'https://files.example.test/t5.csv'],
+            ['t1_xlsx', OAS_DATASET_ID, 'en, fr', 'XLSX', 'Table 1 - GIS for single person who receives an OAS pension', 'https://files.example.test/t1.xlsx'],
+            ['pdf', OAS_DATASET_ID, 'en, fr', 'PDF', 'Table of Amounts', 'https://files.example.test/amounts.pdf'],
+            ['nourl', OAS_DATASET_ID, 'en, fr', 'CSV', 'Table 3 - not uploaded yet', null],
+            ['elsewhere', id('other'), 'en', 'CSV', 'Table 1 - another dataset', 'https://files.example.test/other.csv']
+        ]) {
+            await db.query(`INSERT INTO resources (id, dataset_id, name_en, language, format, url, size_bytes, last_modified, raw)
+                VALUES ($1, $2, $3, $4, $5, $6, 4096, '2999-09-29T14:00:00Z', $7)`,
+            [id(key), dataset, name, language, format, link, { hash: 'h-' + key, unrelated: 'x' }]);
+        }
+    });
+    beforeEach(async () => {
+        await db.query('SAVEPOINT oas_test');
+    });
+    afterEach(async () => {
+        await db.query('ROLLBACK TO SAVEPOINT oas_test');
+    });
+    afterAll(async () => {
+        if (db) { await db.query('ROLLBACK'); db.release(); }
+        if (pool) await pool.end();
+    });
+
+    test('lists the dataset’s CSV files in any language, with the slice the version and the copy check need', async () => {
+        const rows = (await queries.listOasResources(db)).filter(row => row.id.startsWith(prefix));
+        expect(rows.map(row => row.id)).toEqual([1, 2, 3, 4, 5].map(table => id('t' + table)));
+        const { rows: [full] } = await db.query('SELECT * FROM resources WHERE id = $1', [id('t1')]);
+        expect(resourceVersion(rows[0])).toBe(resourceVersion(full));
+        expect(rows[0].raw.unrelated).toBeUndefined();
+        expect(rows[0].raw.hash).toBe('h-t1');
+        expect(Number(rows[0].size_bytes)).toBe(4096);
+        expect(rows[0].last_modified).toEqual(new Date('2999-09-29T14:00:00Z'));
+        expect(rows[0].name_en).toBe('Table 1 - GIS for single person who receives an OAS pension');
+    });
+
+    test('a quarter is listed once its five tables are loaded, with every row as published', async () => {
+        expect(await quarters()).toEqual([]);
+        for (const table of [1, 2, 3, 4]) expect(await save(table, { quarter: 3 })).toBe(100);
+        expect(await quarters()).toEqual([]);
+        await save(5, { quarter: 3, top: 172618 });
+        const [period] = mine(await queries.listOasPeriods(db));
+        expect(period).toMatchObject({ period_key: 299909, benefit_year: 2999, benefit_quarter: 3, income_year: 2998 });
+        expect(period.loaded_at).toBeInstanceOf(Date);
+
+        const files = mine(await queries.listOasFiles(db));
+        expect(files.map(file => [file.period_key, file.table_no, file.income_year, file.resource_id, file.source_version, file.row_count])).toEqual(
+            [1, 2, 3, 4, 5].map(table => [299909, table, 2998, id('t' + table), 'v1', 100]));
+        expect(files[0].content_sha256).toBe(parsed(1, { quarter: 3 }).hash);
+        expect(files[0].loaded_at).toBeInstanceOf(Date);
+        const { rows } = await db.query(`SELECT * FROM oas_rows WHERE period_key = 299909 AND table_no = ANY($1::smallint[])
+            AND line IN (1, 100) ORDER BY table_no, line`, [[1, 4, 5]]);
+        const last = 113890 - 99 * DROP;
+        expect(rows.map(({ period_key: _period, ...row }) => row)).toEqual([
+            { table_no: 1, line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 113890, allowance_cents: null,
+                with_oas_65_cents: 190140, with_oas_75_cents: 197765 },
+            { table_no: 1, line: 100, income_from_cents: 2376000, income_to_cents: 2399999, amount_cents: last, allowance_cents: null,
+                with_oas_65_cents: last + 76250, with_oas_75_cents: last + 83875 },
+            { table_no: 4, line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 114390, allowance_cents: 113890,
+                with_oas_65_cents: 190640, with_oas_75_cents: 198265 },
+            { table_no: 4, line: 100, income_from_cents: 2376000, income_to_cents: 2399999, amount_cents: last + 500, allowance_cents: last,
+                with_oas_65_cents: last + 500 + 76250, with_oas_75_cents: last + 500 + 83875 },
+            { table_no: 5, line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 172618, allowance_cents: null,
+                with_oas_65_cents: null, with_oas_75_cents: null },
+            { table_no: 5, line: 100, income_from_cents: 2376000, income_to_cents: 2399999, amount_cents: 172618 - 99 * 1727, allowance_cents: null,
+                with_oas_65_cents: null, with_oas_75_cents: null }
+        ]);
+    });
+
+    test('a newer quarter replaced only in part is not listed, and the older one stays whole', async () => {
+        await loadQuarter(3);
+        for (const table of [1, 2, 3]) await save(table, { quarter: 4, top: 115000 }, 'v2');
+        expect(await quarters()).toEqual([299909]);
+        expect(mine(await queries.listOasFiles(db))).toHaveLength(8);
+        const { rows: [counts] } = await db.query(`SELECT count(*) FILTER (WHERE period_key = 299909)::int AS old,
+            count(*) FILTER (WHERE period_key = 299912)::int AS new FROM oas_rows WHERE period_key >= 299900`);
+        expect(counts).toEqual({ old: 500, new: 300 });
+        await save(4, { quarter: 4, top: 115000 }, 'v2');
+        await save(5, { quarter: 4, top: 175000 }, 'v2');
+        expect(await quarters()).toEqual([299909, 299912]);
+    });
+
+    test('a corrected file replaces its table and its date; the same rows published again keep both', async () => {
+        await loadQuarter(4);
+        // loaded_at to the microsecond, so two loads a moment apart are told apart.
+        const stamp = async () => (await db.query(`SELECT (extract(epoch FROM loaded_at) * 1000000)::bigint AS loaded,
+            resource_id, source_version, row_count FROM oas_files WHERE period_key = 299912 AND table_no = 2`)).rows[0];
+        const loaded = await stamp();
+        expect(await queries.touchOasTable({ period_key: 299912, table: 2, resource_id: id('t2_new'), version: 'v3' }, db)).toBe(1);
+        expect(await stamp()).toEqual({ ...loaded, resource_id: id('t2_new'), source_version: 'v3' });
+        expect(await queries.touchOasTable({ period_key: 299903, table: 2, resource_id: id('t2'), version: 'v9' }, db)).toBe(0);
+
+        expect(await queries.saveOasTable({ resource_id: id('t2'), version: 'v4', table: parsed(2, { quarter: 4, top: 114000, rows: 120 }) }, db)).toBe(120);
+        const corrected = await stamp();
+        expect(corrected).toMatchObject({ resource_id: id('t2'), source_version: 'v4', row_count: 120 });
+        expect(BigInt(corrected.loaded)).toBeGreaterThan(BigInt(loaded.loaded));
+        const { rows } = await db.query('SELECT count(*)::int AS rows, max(amount_cents) AS top FROM oas_rows WHERE period_key = 299912 AND table_no = 2');
+        expect(rows[0]).toEqual({ rows: 120, top: 114000 });
+        // Still one quarter of five tables.
+        expect(await quarters()).toEqual([299912]);
+    });
+
+    test('tables that disagree on the income year do not make a quarter', async () => {
+        for (const table of [1, 2, 3, 4]) await save(table, { quarter: 2, incomeYear: 2997 });
+        await save(5, { quarter: 2, incomeYear: 2998 });
+        expect(mine(await queries.listOasFiles(db)).filter(file => file.period_key === 299906)).toHaveLength(5);
+        expect(await quarters()).toEqual([]);
+        await save(5, { quarter: 2, incomeYear: 2997 }, 'v2');
+        expect(await quarters()).toEqual([299906]);
+    });
+
+    test('a run reads, places and reports as the tables then say', async () => {
+        // The job itself over this database, with the publisher's files and the job's memory held here.
+        const files = new Map([1, 2, 3, 4, 5].map(table => [id('t' + table), tableRecords(table, { quarter: 4, ...(table === 5 ? { top: 172618 } : {}) })]));
+        let memory = {};
+        const reads = [];
+        const deps = {
+            listResources: async () => (await queries.listOasResources(db)).filter(row => row.id.startsWith(prefix)),
+            listFiles: async () => mine(await queries.listOasFiles(db)),
+            getMemory: async () => memory,
+            saveMemory: async next => { memory = next; },
+            readFile: async row => { reads.push(row.id); return files.get(row.id); },
+            saveTable: input => queries.saveOasTable(input, db),
+            touchTable: input => queries.touchOasTable(input, db),
+            wait: async () => {}
+        };
+        // Table 5 names another income year: five tables, no quarter. The run and the view agree.
+        files.set(id('t5'), tableRecords(5, { quarter: 4, top: 172618, incomeYear: 2997 }));
+        const split = await runAmounts({ deps, now: NOW });
+        expect(split).toMatchObject({ files: 5, loaded: 5, failed: 0, rows: 500, displayed: null, pending: { 299912: [1, 2, 3, 4, 5] } });
+        expect(await quarters()).toEqual([]);
+        // Nothing has changed in the catalogue: the next run reads nothing.
+        expect(await runAmounts({ deps, now: NOW })).toMatchObject({ loaded: 0, unchanged: 5, displayed: null });
+        expect(reads).toHaveLength(5);
+
+        // The publisher uploads table 5 again with the right year.
+        await db.query(`UPDATE resources SET last_modified = '2999-09-30T09:00:00Z' WHERE id = $1`, [id('t5')]);
+        files.set(id('t5'), tableRecords(5, { quarter: 4, top: 172618 }));
+        const whole = await runAmounts({ deps, now: NOW });
+        expect(whole).toMatchObject({ loaded: 1, unchanged: 4, failed: 0, displayed: 299912, pending: {}, problems: [], ok: true });
+        expect(await quarters()).toEqual([299912]);
+        const { rows: [stored] } = await db.query(`SELECT count(*)::int AS rows FROM oas_rows WHERE period_key = 299912`);
+        expect(stored.rows).toBe(500);
+        // A day later the same rows again: only where they came from changes.
+        await db.query(`UPDATE resources SET last_modified = '2999-10-01T09:00:00Z' WHERE id = $1`, [id('t1')]);
+        const again = await runAmounts({ deps, now: NOW });
+        expect(again).toMatchObject({ loaded: 0, same_content: 1, unchanged: 4, displayed: 299912, ok: true });
+        expect(memory).toEqual({});
+    });
+
+    test('the tables refuse what is not a table of amounts', async () => {
+        await loadQuarter(4);
+        const file = `INSERT INTO oas_files (period_key, table_no, benefit_year, benefit_quarter, income_year, resource_id,
+            source_version, content_sha256, row_count) VALUES ($1, $2, $3, $4, $5, 'x', 'v', $6, $7)`;
+        const digest = 'a'.repeat(64);
+        expect(await rejected(file, [299803, 1, 2998, 1, 2997, digest, 1])).toBe('accepted');
+        expect(await rejected(file, [299806, 1, 2998, 1, 2997, digest, 1])).toBe('23514');
+        expect(await rejected(file, [299803, 6, 2998, 1, 2997, digest, 1])).toBe('23514');
+        expect(await rejected(file, [299803, 1, 2998, 1, 2999, digest, 1])).toBe('23514');
+        expect(await rejected(file, [299803, 1, 2998, 1, 2994, digest, 1])).toBe('23514');
+        expect(await rejected(file, [299803, 1, 2998, 1, 2997, 'not-a-digest', 1])).toBe('23514');
+        expect(await rejected(file, [299803, 1, 2998, 1, 2997, digest, 0])).toBe('23514');
+        expect(await rejected(file, [299912, 2, 2999, 4, 2998, digest, 1])).toBe('23505');
+
+        const row = `INSERT INTO oas_rows (period_key, table_no, line, income_from_cents, income_to_cents, amount_cents,
+            allowance_cents, with_oas_65_cents, with_oas_75_cents) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`;
+        expect(await rejected(row, [299912, 1, 9001, 0, 99, 500, null, 600, 700])).toBe('accepted');
+        expect(await rejected(row, [299912, 1, 1, 0, 99, 500, null, 600, 700])).toBe('23505');
+        expect(await rejected(row, [299912, 1, 9001, 100, 99, 500, null, 600, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 1, 9001, 0, 99, -1, null, 600, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 1, 9001, 0, 99, 500, 100, 600, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 1, 9001, 0, 99, 500, null, null, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 1, 9001, 0, 99, 500, null, 499, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 4, 9001, 0, 99, 500, null, 600, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 5, 9001, 0, 99, 500, null, 600, 700])).toBe('23514');
+        expect(await rejected(row, [299912, 5, 9001, 0, 99, 500, null, null, null])).toBe('accepted');
+        expect(await rejected(row, [299812, 1, 1, 0, 99, 500, null, 600, 700])).toBe('23503');
+        expect(await rejected(row, [299912, 1, 0, 0, 99, 500, null, 600, 700])).toBe('23514');
+    });
+
+    test('deleting a table deletes its rows', async () => {
+        await loadQuarter(3);
+        await db.query('DELETE FROM oas_files WHERE period_key = 299909 AND table_no = 3');
+        const { rows: [left] } = await db.query('SELECT count(*)::int AS rows FROM oas_rows WHERE period_key = 299909 AND table_no = 3');
+        expect(left.rows).toBe(0);
+        expect(await quarters()).toEqual([]);
+    });
+
+    test('the job’s memory is kept between runs', async () => {
+        await db.query('DELETE FROM sync_progress WHERE key = $1', [queries.MEMORY_KEY]);
+        expect(await queries.getOasMemory(db)).toEqual({});
+        const memory = {
+            [id('t3')]: { version: 'v7', state: 'failed', failure: 'band_gap', at: '2999-07-01T00:00:00.000Z' },
+            [id('t9')]: { version: 'v2', state: 'superseded', by: id('t1'), by_version: 'v1', at: '2999-07-01T00:00:00.000Z' }
+        };
+        await queries.saveOasMemory(memory, db);
+        expect(await queries.getOasMemory(db)).toEqual(memory);
+        await queries.saveOasMemory({}, db);
+        expect(await queries.getOasMemory(db)).toEqual({});
+        await db.query(`UPDATE sync_progress SET value = '{"files": []}' WHERE key = $1`, [queries.MEMORY_KEY]);
+        expect(await queries.getOasMemory(db)).toEqual({});
+    });
+});
