@@ -1135,6 +1135,8 @@ describe('ResourcePage and the hosted table watch', () => {
     expect(watchSlot().q).toBe('king');
     await waitFor(() => expect(watchSlot()).toEqual({ resourceId: 'a', q: 'queen', filters: { name: { op: 'eq', value: 'row-a' } }, total: null }));
     expect(screen.getByText('row-a')).toBeInTheDocument();
+    // The search is applied a moment before its request starts: answer it once it is out.
+    await waitFor(() => expect(answer).toBeInstanceOf(Function));
     await act(async () => { answer(); });
     expect(await screen.findByText('row-queen')).toBeInTheDocument();
     await waitFor(() => expect(watchSlot().total).toBe(7));
