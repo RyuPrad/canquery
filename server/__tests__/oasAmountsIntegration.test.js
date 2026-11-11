@@ -7,7 +7,7 @@ const url = process.env.SPATIAL_TEST_DATABASE_URL;
 const integrationDescribe = url ? describe : describe.skip;
 
 const BASE = ['benefityear', 'benefitquarter', 'incomeyear', 'income_from', 'income_to'];
-// A table as the publisher writes it: `rows` bands of $24 from 0, each amount one even
+// A table as the publisher writes it: `rows` bands of $240 from 0, each amount one even
 // step lower than the band before, down to less than a step in the last band. Table 4's
 // GIS stays $5 above its Allowance, the benefit that runs out there.
 function tableRecords(table, { rows = 100, year = 2999, quarter = 4, incomeYear = 2998, top = 113890 } = {}) {
@@ -18,7 +18,7 @@ function tableRecords(table, { rows = 100, year = 2999, quarter = 4, incomeYear 
         const amount = top - position * drop;
         const gis = table === 4 ? amount + 500 : amount;
         const cells = { benefityear: year, benefitquarter: quarter, incomeyear: incomeYear,
-            income_from: position * 24, income_to: (position * 2400 + 2399) / 100,
+            income_from: position * 240, income_to: (position * 24000 + 23999) / 100,
             gistotal: gis / 100, gistotalwithoas65: (gis + 76250) / 100, gistotalwithoas75: (gis + 83875) / 100,
             alwtotal: amount / 100, alwstotal: amount / 100 };
         body.push(columns.map(name => String(cells[name])));
@@ -121,17 +121,17 @@ integrationDescribe('OAS benefit amounts PostgreSQL integration', () => {
             AND line IN (1, 100) ORDER BY table_no, line`, [[1, 4, 5]]);
         const last = 113890 - 99 * DROP;
         expect(rows.map(({ period_key: _period, ...row }) => row)).toEqual([
-            { table_no: 1, line: 1, income_from_cents: 0, income_to_cents: 2399, amount_cents: 113890, allowance_cents: null,
+            { table_no: 1, line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 113890, allowance_cents: null,
                 with_oas_65_cents: 190140, with_oas_75_cents: 197765 },
-            { table_no: 1, line: 100, income_from_cents: 237600, income_to_cents: 239999, amount_cents: last, allowance_cents: null,
+            { table_no: 1, line: 100, income_from_cents: 2376000, income_to_cents: 2399999, amount_cents: last, allowance_cents: null,
                 with_oas_65_cents: last + 76250, with_oas_75_cents: last + 83875 },
-            { table_no: 4, line: 1, income_from_cents: 0, income_to_cents: 2399, amount_cents: 114390, allowance_cents: 113890,
+            { table_no: 4, line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 114390, allowance_cents: 113890,
                 with_oas_65_cents: 190640, with_oas_75_cents: 198265 },
-            { table_no: 4, line: 100, income_from_cents: 237600, income_to_cents: 239999, amount_cents: last + 500, allowance_cents: last,
+            { table_no: 4, line: 100, income_from_cents: 2376000, income_to_cents: 2399999, amount_cents: last + 500, allowance_cents: last,
                 with_oas_65_cents: last + 500 + 76250, with_oas_75_cents: last + 500 + 83875 },
-            { table_no: 5, line: 1, income_from_cents: 0, income_to_cents: 2399, amount_cents: 172618, allowance_cents: null,
+            { table_no: 5, line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 172618, allowance_cents: null,
                 with_oas_65_cents: null, with_oas_75_cents: null },
-            { table_no: 5, line: 100, income_from_cents: 237600, income_to_cents: 239999, amount_cents: 172618 - 99 * 1727, allowance_cents: null,
+            { table_no: 5, line: 100, income_from_cents: 2376000, income_to_cents: 2399999, amount_cents: 172618 - 99 * 1727, allowance_cents: null,
                 with_oas_65_cents: null, with_oas_75_cents: null }
         ]);
     });

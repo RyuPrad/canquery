@@ -277,8 +277,9 @@ labelled with a quarter that can be right:
   cache is a failed download;
 - an unknown layout, a blank or non-numeric cell, a second quarter in one file,
   income bands that do not follow one another from 0, an amount that rises with
-  income, a pension lower from age 75 than before, amounts that are all 0 or a
-  table that stops before its benefit has run out refuse the file;
+  income, a pension lower from age 75 than before, amounts that are all 0, a
+  table that stops before its benefit has run out or amounts out of scale with
+  the incomes (a decimal point lost) refuse the file;
 - the quarter a file names is the one its upload falls in or the one after it,
   and is not older than the quarter the dataset's other files hold now: once
   the publisher has moved on, an earlier quarter is never rewritten.

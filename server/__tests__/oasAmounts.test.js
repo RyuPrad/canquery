@@ -9,12 +9,12 @@ const BASE = ['benefityear', 'benefitquarter', 'incomeyear', 'income_from', 'inc
 // Dollars as the publisher writes them: "1138.9", "23.99", "0".
 const money = value => String(value / 100);
 
-// A table as the publisher writes it: income bands of `step` dollars from 0, each
+// A table as the publisher writes it: income bands of `step` cents ($240) from 0, each
 // amount one even step (DROP for the default table) lower than the band before, down
 // to less than a step in the last band, where the benefit runs out. In table 4 that
 // benefit is the Allowance; its GIS stays $5 above it. `edit(cells, line)` changes one line.
 const DROP = 950;
-function tableRecords(table, { rows = 120, year = 2026, quarter = 4, incomeYear = 2025, top = 113890, step = 2400,
+function tableRecords(table, { rows = 120, year = 2026, quarter = 4, incomeYear = 2025, top = 113890, step = 24000,
     oas65 = 76250, oas75 = 83875, edit = null } = {}) {
     const header = [...BASE, ...OAS_TABLES[table]].map(name => 't' + table + name);
     const drop = Math.floor(top / rows) + 1;
@@ -107,11 +107,11 @@ describe('parseAmounts', () => {
         const parsed = parseAmounts(tableRecords(1), { now: NOW });
         expect(parsed).toMatchObject({ table: 1, year: 2026, quarter: 4, income_year: 2025, period_key: 202612 });
         expect(parsed.rows).toHaveLength(120);
-        expect(parsed.rows[0]).toEqual({ line: 1, income_from_cents: 0, income_to_cents: 2399, amount_cents: 113890,
+        expect(parsed.rows[0]).toEqual({ line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 113890,
             allowance_cents: null, with_oas_65_cents: 190140, with_oas_75_cents: 197765 });
-        expect(parsed.rows[119]).toMatchObject({ line: 120, income_from_cents: 285600, income_to_cents: 287999, amount_cents: 113890 - 119 * DROP });
+        expect(parsed.rows[119]).toMatchObject({ line: 120, income_from_cents: 2856000, income_to_cents: 2879999, amount_cents: 113890 - 119 * DROP });
         expect(parsed.figures).toEqual({ row_count: 120, max_amount_cents: 113890, max_allowance_cents: null,
-            ends_at_cents: 288000, oas_65_cents: 76250, oas_75_cents: 83875 });
+            ends_at_cents: 2880000, oas_65_cents: 76250, oas_75_cents: 83875 });
         expect(parsed.hash).toMatch(/^[0-9a-f]{64}$/);
     });
     test('table 4 carries the partner’s Allowance and table 5 only the survivor’s', () => {
@@ -119,7 +119,7 @@ describe('parseAmounts', () => {
         expect(couple.rows[0]).toMatchObject({ amount_cents: 114390, allowance_cents: 113890, with_oas_65_cents: 190640 });
         expect(couple.figures).toMatchObject({ max_amount_cents: 114390, max_allowance_cents: 113890 });
         const survivor = parseAmounts(tableRecords(5, { top: 172618 }), { now: NOW });
-        expect(survivor.rows[0]).toEqual({ line: 1, income_from_cents: 0, income_to_cents: 2399, amount_cents: 172618,
+        expect(survivor.rows[0]).toEqual({ line: 1, income_from_cents: 0, income_to_cents: 23999, amount_cents: 172618,
             allowance_cents: null, with_oas_65_cents: null, with_oas_75_cents: null });
         expect(survivor.figures).toMatchObject({ oas_65_cents: null, oas_75_cents: null, max_allowance_cents: null });
     });
@@ -199,6 +199,25 @@ describe('parseAmounts', () => {
             Object.assign(cells, { gistotal: '0', gistotalwithoas65: '762.5', gistotalwithoas75: '838.75' });
         } }))).toBe('no_amounts');
     });
+    test('refuses amounts that are out of scale with the incomes', () => {
+        // The default table: $1,138.90 a month for incomes up to $28,800 a year.
+        expect(refusal(tableRecords(1))).toBe('accepted');
+        // Cents written as dollars, in the amounts or in the incomes; a decimal point lost either way.
+        expect(refusal(tableRecords(1, { top: 11389000 }))).toBe('wrong_scale');
+        expect(refusal(tableRecords(1, { top: 1138900 }))).toBe('wrong_scale');
+        expect(refusal(tableRecords(1, { top: 11389 }))).toBe('wrong_scale');
+        expect(refusal(tableRecords(5, { top: 172618, step: 240000 }))).toBe('wrong_scale');
+        expect(refusal(tableRecords(5, { top: 172618, step: 2400 }))).toBe('wrong_scale');
+        // A year of the maximum is at most the income where the table ends, and at least a tenth of it.
+        expect(refusal(tableRecords(1, { top: 240000 }))).toBe('accepted');
+        expect(refusal(tableRecords(1, { top: 240001 }))).toBe('wrong_scale');
+        expect(refusal(tableRecords(1, { top: 24000 }))).toBe('accepted');
+        expect(refusal(tableRecords(1, { top: 23999 }))).toBe('wrong_scale');
+        // Table 4 is judged by its Allowance, the benefit that runs out there.
+        expect(refusal(tableRecords(4, { top: 239500 }))).toBe('accepted');
+        const message = (() => { try { parseAmounts(tableRecords(1, { top: 11389000 }), { now: NOW }); } catch (error) { return error.message; } return ''; })();
+        expect(message).toBe('wrong_scale: a maximum of 11389000 cents a month for incomes up to 2880000 cents a year');
+    });
     test('last lines of nothing but separators or spaces are not rows', () => {
         const base = parseAmounts(tableRecords(1), { now: NOW });
         const padded = [...tableRecords(1), ['', '', '', '', '', '', '', ''], [' '], ['']];
@@ -225,11 +244,11 @@ describe('parseAmounts', () => {
     test('refuses income bands that do not follow one another from 0', () => {
         const edit = change => tableRecords(1, { edit: (cells, line) => { if (line === 30) change(cells); } });
         expect(refusal(tableRecords(1, { edit: (cells, line) => { if (line === 1) cells.income_from = '1'; } }))).toBe('band_gap');
-        expect(refusal(edit(cells => { cells.income_from = money(29 * 2400 + 1); }))).toBe('band_gap');
-        expect(refusal(edit(cells => { cells.income_from = money(29 * 2400 - 1); }))).toBe('band_gap');
-        expect(refusal(edit(cells => { cells.income_to = money(29 * 2400 - 100); }))).toBe('band_gap');
+        expect(refusal(edit(cells => { cells.income_from = money(29 * 24000 + 1); }))).toBe('band_gap');
+        expect(refusal(edit(cells => { cells.income_from = money(29 * 24000 - 1); }))).toBe('band_gap');
+        expect(refusal(edit(cells => { cells.income_to = money(29 * 24000 - 100); }))).toBe('band_gap');
         // A band cut short leaves a gap before the next one.
-        expect(refusal(edit(cells => { cells.income_to = money(30 * 2400 - 2); }))).toBe('band_gap');
+        expect(refusal(edit(cells => { cells.income_to = money(30 * 24000 - 2); }))).toBe('band_gap');
         const dropped = tableRecords(1);
         dropped.splice(50, 1);
         expect(refusal(dropped)).toBe('band_gap');
@@ -419,7 +438,7 @@ describe('runAmounts', () => {
         expect(state.saved).toEqual(['r1:202612:1', 'r2:202612:2', 'r3:202612:3', 'r4:202612:4', 'r5:202612:5']);
         expect(state.waits).toEqual([2000, 2000, 2000, 2000]);
         expect(first.results[0]).toMatchObject({ resource_id: 'r1', table: 1, period_key: 202612, income_year: 2025, status: 'loaded',
-            row_count: 120, max_amount_cents: 113890, ends_at_cents: 288000 });
+            row_count: 120, max_amount_cents: 113890, ends_at_cents: 2880000 });
         expect(state.files.find(file => file.table_no === 3).source_version).toBe(resourceVersion(state.resources.find(row => row.id === 'r3')));
         expect(state.memorySaves).toBe(0);
 

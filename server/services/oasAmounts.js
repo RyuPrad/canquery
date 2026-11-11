@@ -63,8 +63,8 @@ function tableLayout(header) {
 // The rows of one table, from the file's records (header first). Refuses anything
 // that is not one whole table of one quarter: a blank or non-numeric cell, a second
 // quarter, income bands that do not follow one another from 0, an amount that rises
-// with income, a table that stops before its benefit has run out. Returns the rows in
-// cents, a digest of them and the table's figures.
+// with income, a table that stops before its benefit has run out, amounts out of scale
+// with the incomes. Returns the rows in cents, a digest of them and the table's figures.
 function parseAmounts(records, { now = new Date() } = {}) {
     if (!Array.isArray(records) || !records.length) throw new OasFileError('unrecognized_layout');
     const { table, index } = tableLayout(records[0]);
@@ -128,6 +128,16 @@ function parseAmounts(records, { now = new Date() } = {}) {
     for (let at = rows.length - 1; at > 0 && step === 0; at -= 1) step = rows[at - 1][fading] - rows[at][fading];
     if (rows[rows.length - 1][fading] >= step) {
         throw new OasFileError('table_cut', `the last band still holds ${rows[rows.length - 1][fading]} cents`);
+    }
+    // The benefit fades by somewhere between a dime and a dollar for each dollar of
+    // income, so a year of its maximum lies between a tenth of the income at which the
+    // table ends and all of it (the five tables sit between a quarter and two thirds).
+    // Outside that, the amounts or the incomes are in another unit: cents written as
+    // dollars, a decimal point lost.
+    const yearly = rows[0][fading] * 12;
+    const end = rows[rows.length - 1].income_to_cents + 1;
+    if (yearly > end || yearly * 10 < end) {
+        throw new OasFileError('wrong_scale', `a maximum of ${rows[0][fading]} cents a month for incomes up to ${end} cents a year`);
     }
     // The full OAS pension the publisher added to the GIS, when it is one amount on
     // every row; otherwise the table is kept as published and no pension is named.
