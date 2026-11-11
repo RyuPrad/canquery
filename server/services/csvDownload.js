@@ -663,7 +663,23 @@ function assertCsvContent(bytes, text) {
     }
 }
 
+// Why a download through this guard failed, as a stable code the owner jobs
+// record: a blocked address or redirect, a file over its cap, the publisher's
+// status, a stall or timeout, or anything else.
+function downloadFailureCode(error) {
+    const status = error && (error.upstreamStatus || error.httpStatus);
+    if (error && (error.code === 'DOWNLOAD_URL_BLOCKED' || error.code === 'DOWNLOAD_REDIRECT')) return 'blocked';
+    if (error && error.code === 'CAP_FILE') return 'too_large';
+    if (status === 429) return 'rate_limited';
+    if (status === 404 || status === 410) return 'gone';
+    if (status) return 'upstream_http';
+    if (error && (error.name === 'AbortError' || error.name === 'TimeoutError' ||
+        error.code === 'DOWNLOAD_RESPONSE_STALL' || error.code === 'DOWNLOAD_BODY_STALL')) return 'timeout';
+    return 'error';
+}
+
 module.exports = {
+    downloadFailureCode,
     downloadToTempFile,
     downloadHead,
     sniffCsvMeta,
