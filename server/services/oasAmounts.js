@@ -11,14 +11,21 @@ const { createHash } = require('node:crypto');
 const { parse } = require('csv-parse/sync');
 const { resourceVersion } = require('./resourceVersion');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
-const { OAS_DATASET_ID, OAS_TABLES, periodKey } = require('../utils/oasLabels');
+const { OAS_DATASET_ID, OAS_TABLES, periodKey, periodOf } = require('../utils/oasLabels');
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MIN_ROWS = 100;
 const MAX_ROWS = 5000;
 const BASE_COLUMNS = Object.freeze(['benefityear', 'benefitquarter', 'incomeyear', 'income_from', 'income_to']);
 // Failures of the download, not of the file: the next run tries the same version again.
-const RETRYABLE = new Set(['rate_limited', 'upstream_http', 'timeout', 'error']);
+const RETRYABLE = new Set(['rate_limited', 'upstream_http', 'timeout', 'error', 'gone', 'content_mismatch']);
+// Any other failure is tried again this long after its last attempt: the publisher can
+// repair a file, or take a notice page down, without the catalogue showing a change.
+const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
+// How long after a quarter ends the run starts saying that the next one has not come,
+// and how long a later quarter may stay incomplete before the run says so.
+const OVERDUE_MS = 7 * 24 * 60 * 60 * 1000;
+const INCOMPLETE_MS = 24 * 60 * 60 * 1000;
 
 class OasFileError extends Error {
     constructor(code, detail = '', cause = undefined) {
@@ -56,11 +63,14 @@ function tableLayout(header) {
 // The rows of one table, from the file's records (header first). Refuses anything
 // that is not one whole table of one quarter: a blank or non-numeric cell, a second
 // quarter, income bands that do not follow one another from 0, an amount that rises
-// with income. Returns the rows in cents, a digest of them and the table's figures.
+// with income, a table that stops before its benefit has run out. Returns the rows in
+// cents, a digest of them and the table's figures.
 function parseAmounts(records, { now = new Date() } = {}) {
     if (!Array.isArray(records) || !records.length) throw new OasFileError('unrecognized_layout');
     const { table, index } = tableLayout(records[0]);
     const body = records.slice(1);
+    // Last lines of nothing but separators or spaces are not rows.
+    while (body.length && Array.isArray(body[body.length - 1]) && body[body.length - 1].every(cell => String(cell).trim() === '')) body.pop();
     if (body.length < MIN_ROWS) throw new OasFileError('too_few_rows', String(body.length));
     if (body.length > MAX_ROWS) throw new OasFileError('too_many_rows', String(body.length));
     const width = records[0].length;
@@ -91,8 +101,9 @@ function parseAmounts(records, { now = new Date() } = {}) {
             with_oas_65_cents: table === 5 ? null : values.gistotalwithoas65,
             with_oas_75_cents: table === 5 ? null : values.gistotalwithoas75
         };
-        // A combined OAS and GIS amount below the GIS alone is not a table to show.
-        if (table !== 5 && (row.with_oas_65_cents < row.amount_cents || row.with_oas_75_cents < row.amount_cents)) {
+        // A combined OAS and GIS amount below the GIS alone, or a pension that is lower
+        // from age 75 than before it, is not a table to show.
+        if (table !== 5 && (row.with_oas_65_cents < row.amount_cents || row.with_oas_75_cents < row.with_oas_65_cents)) {
             throw new OasFileError('bad_value', 'line ' + line);
         }
         const previous = rows[rows.length - 1];
@@ -106,6 +117,17 @@ function parseAmounts(records, { now = new Date() } = {}) {
     if (period.year < 2000 || period.year > now.getUTCFullYear() + 1 ||
         period.incomeYear > period.year || period.incomeYear < period.year - 3) {
         throw new OasFileError('implausible_period', `${period.year} Q${period.quarter}, income ${period.incomeYear}`);
+    }
+    // A whole table starts with a benefit and ends where it runs out: its last band
+    // holds less than the last step down. The benefit that runs out is the partner's
+    // Allowance in table 4 (the GIS beside it stays level) and the table's own amount
+    // in the others. A file cut short, or with its amounts blanked to 0, stops here.
+    const fading = table === 4 ? 'allowance_cents' : 'amount_cents';
+    if (rows[0].amount_cents === 0 || rows[0][fading] === 0) throw new OasFileError('no_amounts');
+    let step = 0;
+    for (let at = rows.length - 1; at > 0 && step === 0; at -= 1) step = rows[at - 1][fading] - rows[at][fading];
+    if (rows[rows.length - 1][fading] >= step) {
+        throw new OasFileError('table_cut', `the last band still holds ${rows[rows.length - 1][fading]} cents`);
     }
     // The full OAS pension the publisher added to the GIS, when it is one amount on
     // every row; otherwise the table is kept as published and no pension is named.
@@ -156,6 +178,21 @@ function decodeAmounts(buffer) {
     }
 }
 
+// The bytes downloaded must be the file the catalogue describes: the publisher's portal
+// records each file's size and MD5 when it is uploaded, and both are checked when the
+// catalogue has them. A short copy, or an old one served from a cache, is a failed
+// download (tried again on the next run), never a table.
+function checkCopy(row, buffer) {
+    const size = row.size_bytes == null ? null : Number(row.size_bytes);
+    if (Number.isSafeInteger(size) && size > 0 && buffer.length !== size) {
+        throw new OasFileError('content_mismatch', `${buffer.length} bytes downloaded, the catalogue says ${size}`);
+    }
+    const md5 = String((row.raw && row.raw.hash) || '').trim().toLowerCase();
+    if (/^[0-9a-f]{32}$/.test(md5) && createHash('md5').update(buffer).digest('hex') !== md5) {
+        throw new OasFileError('content_mismatch', 'the MD5 of the download is not the catalogue’s');
+    }
+}
+
 // Download one file through the ingest download guard and read its records.
 async function readOasFile(row, { signal } = {}) {
     const { downloadToTempFile } = require('./csvDownload');
@@ -165,7 +202,9 @@ async function readOasFile(row, { signal } = {}) {
         signal
     });
     try {
-        return decodeAmounts(await fs.promises.readFile(filePath));
+        const buffer = await fs.promises.readFile(filePath);
+        checkCopy(row, buffer);
+        return decodeAmounts(buffer);
     } finally {
         await fs.promises.unlink(filePath).catch(() => {});
     }
@@ -190,56 +229,171 @@ function modified(row) {
     return Number.isFinite(time) ? time : -Infinity;
 }
 
-// Load every CSV of the dataset whose catalogue version is not the one loaded, one at
-// a time with a pause between downloads, the least recently changed first. Each file
-// goes under the quarter it names, so the tables of a new quarter arrive one by one
-// and public.oas_periods lists the quarter once all five are in. A file that fails
-// keeps the rows already loaded; a failed download is tried again on the next run,
-// while a file that was refused waits for a new version (or force, or --file). What
-// each resource is waiting for is remembered between runs through deps.getMemory and
-// deps.saveMemory. A file with the same rows as the ones loaded only records its new
-// version, so loaded_at keeps saying when the amounts last changed.
+// The publisher uploads a quarter's tables in the days before it starts and corrects
+// them while it runs, so a file names the quarter its upload falls in or the one after.
+// Any other quarter is a mislabelled file. The upload time is the catalogue's; the
+// run's when the catalogue has none. Quarters are counted in UTC.
+function fitsItsUpload(table, row, now) {
+    const time = Number.isFinite(modified(row)) ? new Date(modified(row)) : now;
+    const uploaded = time.getUTCFullYear() * 4 + Math.floor(time.getUTCMonth() / 3);
+    const named = table.year * 4 + table.quarter - 1;
+    return named === uploaded || named === uploaded + 1;
+}
+
+// Whether a remembered failure is due another attempt.
+function retryDue(known, now) {
+    if (RETRYABLE.has(known.failure)) return true;
+    const last = Date.parse(known.at);
+    return !Number.isFinite(last) || now.getTime() - last >= RETRY_AFTER_MS;
+}
+
+// The quarters whose five tables are loaded and agree on the income year: the rule of
+// the view public.oas_periods, applied to the tables as a run leaves them (a dry run
+// writes nothing, and says what a real one would show).
+function wholeQuarters(files) {
+    const quarters = new Map();
+    for (const file of files) {
+        if (!quarters.has(file.period_key)) quarters.set(file.period_key, []);
+        quarters.get(file.period_key).push(file);
+    }
+    return [...quarters].filter(([, tables]) => new Set(tables.map(file => file.table_no)).size === Object.keys(OAS_TABLES).length &&
+        new Set(tables.map(file => file.income_year)).size === 1).map(([key]) => key).sort((a, b) => a - b);
+}
+
+// What is wrong after a run even when no file failed in it: the run is not a success
+// while any of these holds, so a quarter that is stuck keeps being reported. `live`
+// says whether a loaded table still comes from its resource's present version.
+function problemsOf(summary, stored, now, live) {
+    const problems = [];
+    if (summary.files < Object.keys(OAS_TABLES).length) problems.push(`the catalogue lists ${summary.files} CSV file(s) of the dataset, not five`);
+    if (summary.waiting) problems.push(`${summary.waiting} file(s) failed earlier and wait for their next attempt`);
+    if (summary.unknown.length) problems.push('a table this site does not show: ' + summary.unknown.join(', '));
+    if (summary.memory_error) problems.push('what the run remembers could not be saved: ' + summary.memory_error);
+    if (summary.displayed === null) problems.push('no quarter has its five tables');
+    else {
+        const { end } = periodOf(summary.displayed);
+        if (now.getTime() - Date.parse(end + 'T23:59:59Z') > OVERDUE_MS) {
+            problems.push(`the quarter shown (${summary.displayed}) ended on ${end} and no later quarter has its five tables`);
+        }
+    }
+    for (const [period, tables] of Object.entries(summary.pending)) {
+        const files = stored.filter(file => file.period_key === Number(period));
+        // Tables left behind by versions the publisher has since replaced are not a quarter in progress.
+        if (!files.some(live)) continue;
+        const first = Math.min(...files.map(file => new Date(file.loaded_at).getTime()));
+        if (now.getTime() - first <= INCOMPLETE_MS) continue;
+        const years = [...new Set(files.map(file => file.income_year))].sort();
+        problems.push(`quarter ${period} is not whole: it has table(s) ${tables.join(', ')}` +
+            (years.length > 1 ? ', which name the income years ' + years.join(' and ') : ''));
+    }
+    return problems;
+}
+
+// Read every CSV of the dataset whose catalogue version is not the one loaded (one at
+// a time with a pause between downloads, the least recently changed first), then place
+// each file under the quarter it names. The tables of a new quarter arrive one by one
+// and public.oas_periods lists the quarter once all five are in.
+//
+// A file is placed only when its quarter fits its upload date and is not older than
+// the quarter the dataset's other files hold now: a quarter the publisher has moved on
+// from is never rewritten. A file with the same rows as the ones loaded only records
+// its new version, so loaded_at keeps saying when the amounts last changed. When two
+// resources hold the same table of the same quarter, the one the catalogue changed
+// last is loaded.
+//
+// A file that fails keeps the rows already loaded. A failed download is tried again on
+// the next run and any other failure RETRY_AFTER_MS after its last attempt, or at once
+// with force or --file. What each resource is waiting for is remembered between runs
+// through deps.getMemory and deps.saveMemory.
 async function runAmounts({ dryRun = false, force = false, only = null, deps, gapMs = 2000, timeoutMs = 120000, now = new Date() } = {}) {
     const resources = [...await deps.listResources()].sort((a, b) => modified(a) - modified(b) || (a.id < b.id ? -1 : 1));
-    const stored = (await deps.listFiles()).map(file => ({ ...file, period_key: Number(file.period_key), table_no: Number(file.table_no) }));
+    const stored = (await deps.listFiles()).map(file => ({ ...file, period_key: Number(file.period_key), table_no: Number(file.table_no),
+        income_year: Number(file.income_year) }));
     const before = await deps.getMemory() || {};
     const memory = { ...before };
     const byId = new Map(resources.map(row => [row.id, row]));
+    const versions = new Map(resources.map(row => [row.id, resourceVersion(row)]));
     const summary = { files: resources.length, loaded: 0, same_content: 0, unchanged: 0, failed: 0, waiting: 0, rows: 0,
         unknown: [], superseded: [], orphaned: [...new Set(stored.map(file => file.resource_id))].filter(id => !byId.has(id)),
         results: [] };
     if (only && !byId.has(only)) summary.unknown_file = only;
     const remember = (id, entry) => { memory[id] = { ...entry, at: now.toISOString() }; };
-    let downloads = 0;
+    // The loaded table a resource's present version is the source of, if any.
+    const sourceOf = id => stored.find(file => file.resource_id === id && file.source_version === versions.get(id));
+
+    // 1. The files to read: a version that is neither loaded nor waiting.
+    const due = [];
     for (const row of resources) {
         if (only && row.id !== only) continue;
-        const version = resourceVersion(row);
-        if (!force && stored.some(file => file.resource_id === row.id && file.source_version === version)) {
+        const version = versions.get(row.id);
+        if (!force && sourceOf(row.id)) {
             summary.unchanged += 1;
             continue;
         }
         const known = memory[row.id];
-        if (!force && !only && known && known.version === version && !(known.state === 'failed' && RETRYABLE.has(known.failure))) {
-            if (known.state === 'unknown_table') summary.unknown.push(row.id);
-            else if (known.state === 'superseded') summary.superseded.push(row.id);
-            else summary.waiting += 1;
-            continue;
-        }
-        if (downloads > 0) await deps.wait(gapMs);
-        downloads += 1;
-        try {
-            const table = parseAmounts(await deps.readFile(row, { signal: AbortSignal.timeout(timeoutMs) }), { now });
-            const named = namedTable(row);
-            if (named !== null && named !== table.table) throw new OasFileError('table_mismatch', `named table ${named}, holds table ${table.table}`);
-            const current = stored.find(file => file.period_key === table.period_key && file.table_no === table.table);
-            const holder = current && current.resource_id !== row.id ? byId.get(current.resource_id) : null;
-            // Two resources hold the same table of the same quarter: the one the catalogue changed last wins.
-            if (holder && (modified(holder) > modified(row) || (modified(holder) === modified(row) && holder.id > row.id))) {
-                summary.superseded.push(row.id);
-                remember(row.id, { version, state: 'superseded' });
+        if (!force && !only && known && known.version === version) {
+            if (known.state === 'unknown_table') {
+                summary.unknown.push(row.id);
                 continue;
             }
+            // Superseded for as long as the resource that won still holds that table.
+            const winner = known.state === 'superseded' ? sourceOf(known.by) : null;
+            if (winner && winner.source_version === known.by_version) {
+                summary.superseded.push(row.id);
+                continue;
+            }
+            if (known.state === 'failed' && !retryDue(known, now)) {
+                summary.waiting += 1;
+                summary.results.push({ resource_id: row.id, status: 'waiting', failure: known.failure, since: known.at });
+                continue;
+            }
+        }
+        due.push({ row, version });
+    }
+
+    // 2. Read them.
+    for (const [position, item] of due.entries()) {
+        if (position > 0) await deps.wait(gapMs);
+        try {
+            item.table = parseAmounts(await deps.readFile(item.row, { signal: AbortSignal.timeout(timeoutMs) }), { now });
+            const named = namedTable(item.row);
+            if (named !== null && named !== item.table.table) {
+                throw new OasFileError('table_mismatch', `named table ${named}, holds table ${item.table.table}`);
+            }
+            item.fits = fitsItsUpload(item.table, item.row, now);
+        } catch (error) {
+            item.error = error;
+        }
+    }
+
+    // 3. Place them. The newest quarter the dataset's files hold now: the quarter of
+    // every loaded table whose resource has not changed since, and of every file just
+    // read whose quarter fits its upload.
+    const newest = Math.max(-Infinity, ...resources.map(row => sourceOf(row.id)).filter(Boolean).map(file => file.period_key),
+        ...due.filter(item => item.table && item.fits).map(item => item.table.period_key));
+    for (const { row, version, table, fits, error: readError } of due) {
+        try {
+            if (readError) throw readError;
+            const current = stored.find(file => file.period_key === table.period_key && file.table_no === table.table);
             const same = !force && current && current.content_sha256 === table.hash;
+            if (!same) {
+                if (!fits) {
+                    throw new OasFileError('implausible_period', `names ${table.year} Q${table.quarter}, ` +
+                        (Number.isFinite(modified(row)) ? 'uploaded ' + new Date(modified(row)).toISOString().slice(0, 10) : 'no upload date'));
+                }
+                if (table.period_key < newest) {
+                    throw new OasFileError('older_period', `names ${table.period_key}, the dataset’s files hold ${newest}`);
+                }
+            }
+            // Two resources hold the same table of the same quarter: the one the catalogue
+            // changed last wins. A resource that has changed or left since its table was
+            // loaded no longer holds it.
+            const holder = current && current.resource_id !== row.id && sourceOf(current.resource_id) === current ? byId.get(current.resource_id) : null;
+            if (holder && (modified(holder) > modified(row) || (modified(holder) === modified(row) && holder.id > row.id))) {
+                summary.superseded.push(row.id);
+                remember(row.id, { version, state: 'superseded', by: holder.id, by_version: current.source_version });
+                continue;
+            }
             const result = { resource_id: row.id, table: table.table, period_key: table.period_key, income_year: table.income_year,
                 status: dryRun ? (same ? 'same_content' : 'parsed') : same ? 'same_content' : 'loaded', ...table.figures };
             if (!dryRun && same) await deps.touchTable({ period_key: table.period_key, table: table.table, resource_id: row.id, version });
@@ -249,8 +403,8 @@ async function runAmounts({ dryRun = false, force = false, only = null, deps, ga
                 summary.loaded += dryRun ? 0 : 1;
                 summary.rows += table.rows.length;
             }
-            const entry = { period_key: table.period_key, table_no: table.table, resource_id: row.id, source_version: version,
-                content_sha256: table.hash };
+            const entry = { period_key: table.period_key, table_no: table.table, income_year: table.income_year, resource_id: row.id,
+                source_version: version, content_sha256: table.hash, ...(same ? {} : { loaded_at: now }) };
             if (current) Object.assign(current, entry);
             else stored.push(entry);
             delete memory[row.id];
@@ -274,18 +428,33 @@ async function runAmounts({ dryRun = false, force = false, only = null, deps, ga
         await deps.saveMemory(memory).catch(error => { summary.memory_error = String(error.message || error).slice(0, 200); });
     }
     // The quarter the pages show, and the tables of any later quarter that is not whole yet.
-    const complete = (await deps.listPeriods()).map(period => Number(period.period_key));
-    summary.displayed = complete.length ? Math.max(...complete) : null;
+    const whole = wholeQuarters(stored);
+    summary.displayed = whole.length ? whole[whole.length - 1] : null;
     summary.pending = {};
     for (const file of stored) {
-        if (complete.includes(file.period_key) || (summary.displayed !== null && file.period_key < summary.displayed)) continue;
+        if (whole.includes(file.period_key) || (summary.displayed !== null && file.period_key < summary.displayed)) continue;
         (summary.pending[file.period_key] ||= []).push(file.table_no);
     }
     for (const tables of Object.values(summary.pending)) tables.sort((a, b) => a - b);
+    summary.problems = problemsOf(summary, stored, now, file => sourceOf(file.resource_id) === file);
+    summary.ok = summary.failed === 0 && summary.problems.length === 0 && !summary.unknown_file;
     return summary;
 }
 
+// What a run leaves in the run log (sync_runs) and whether it succeeded: one line that
+// stays the same from run to run while nothing changes, so the job can record a
+// standing failure once a day instead of every hour.
+function runOutcome(summary) {
+    const failures = summary.results.filter(result => result.status === 'failed');
+    const parts = [
+        failures.length ? `${failures.length} file(s) failed: ` + failures.map(result => `${result.resource_id} ${result.failure}`).join(', ') : '',
+        summary.unknown_file ? `--file ${summary.unknown_file} is not a CSV file of the OAS benefit amounts` : '',
+        ...summary.problems
+    ].filter(Boolean);
+    return { ok: summary.ok, message: parts.length ? parts.join('; ').slice(0, 500) : null };
+}
+
 module.exports = {
-    OAS_DATASET_ID, MAX_FILE_BYTES, MIN_ROWS, MAX_ROWS, RETRYABLE, OasFileError,
-    cents, tableLayout, parseAmounts, decodeAmounts, readOasFile, failureCode, namedTable, runAmounts
+    OAS_DATASET_ID, MAX_FILE_BYTES, MIN_ROWS, MAX_ROWS, RETRYABLE, RETRY_AFTER_MS, OVERDUE_MS, INCOMPLETE_MS, OasFileError,
+    cents, tableLayout, parseAmounts, decodeAmounts, checkCopy, readOasFile, failureCode, namedTable, wholeQuarters, runAmounts, runOutcome
 };

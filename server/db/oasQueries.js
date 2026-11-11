@@ -15,7 +15,7 @@ function listOasResources(db = pool) {
 // Every loaded table of every quarter: which resource and version it came from.
 async function listOasFiles(db = pool) {
     const { rows } = await db.query(`
-        SELECT period_key, table_no, resource_id, source_version, content_sha256, row_count, loaded_at
+        SELECT period_key, table_no, income_year, resource_id, source_version, content_sha256, row_count, loaded_at
         FROM oas_files ORDER BY period_key, table_no
     `);
     return rows;
@@ -65,7 +65,8 @@ async function listOasPeriods(db = pool) {
 }
 
 // What the job remembers between runs about resources it did not load: the version
-// that failed (and why), was superseded by another resource or holds an unknown table.
+// that failed (why, and when it was last tried), was superseded by another resource
+// (which one, at which version) or holds an unknown table.
 const MEMORY_KEY = 'oas-amounts';
 async function getOasMemory(db = pool) {
     const value = await getProgress(db, MEMORY_KEY);

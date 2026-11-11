@@ -269,15 +269,42 @@ the `oas_periods` view lists a quarter once its five tables are in: a quarter
 replaced only in part is never shown. A file whose catalogue version is the one
 loaded is skipped, so the hourly run downloads nothing between the quarterly
 updates (five files of about 50 KB when there is one). A file is loaded only
-when it is exactly the table expected: an unknown layout, a blank or non-numeric
-cell, a second quarter in one file, income bands that do not follow one another
-from 0 or an amount that rises with income refuse it, the loaded quarter stays,
-and the refusal is recorded in `sync_runs` (kind `oas-amounts`) and remembered in
-`sync_progress` (`oas-amounts`) until the publisher changes the file. A download
-that fails is tried again on the next run. Run
+when it is exactly the table expected, the copy the catalogue describes and
+labelled with a quarter that can be right:
+
+- the download has the size and the MD5 the catalogue records for the file (the
+  publisher's portal records both at upload); a short copy or an old one from a
+  cache is a failed download;
+- an unknown layout, a blank or non-numeric cell, a second quarter in one file,
+  income bands that do not follow one another from 0, an amount that rises with
+  income, a pension lower from age 75 than before, amounts that are all 0 or a
+  table that stops before its benefit has run out refuse the file;
+- the quarter a file names is the one its upload falls in or the one after it,
+  and is not older than the quarter the dataset's other files hold now: once
+  the publisher has moved on, an earlier quarter is never rewritten.
+
+A refused file leaves the loaded quarter as it is. The refusal is remembered in
+`sync_progress` (`oas-amounts`): a failed download (the publisher unreachable, a
+missing file, a copy that is not the catalogue's) is tried again on the next
+run, any other refusal six hours after its last attempt, and a new version of
+the file at once.
+
+The run exits 1, and writes a failed row to `sync_runs` (kind `oas-amounts`),
+while anything is wrong, not only when a file fails in that run: a file waiting
+for its next attempt, a later quarter that has stayed incomplete for a day (or
+whose five tables do not agree on the income year), a quarter still shown a week
+after it ended, fewer than five CSV files in the catalogue, or a table the site
+does not know. A failure that stands unchanged is written once a day; the run's
+JSON output always lists it under `problems`. `/api/v1/ops` does not report this
+job, so read its output or `sync_runs` around each quarter's start.
+
+Migration 054 creates the tables without granting them: apply
+`deploy/database/runtime-roles.sql` again after it (see `deploy/database/README.md`),
+or the API's role cannot read them. Run
 `node scripts/load-oas-amounts.js --dry-run` first: it downloads and reads the
-changed files and writes nothing. `--force` reloads every file and
-`--file=RESOURCE_ID` handles one (and retries a version that was refused).
+changed files, writes nothing, and names the quarter a real run would show.
+`--force` reloads every file and `--file=RESOURCE_ID` handles one; both try a
+refused version again at once.
 
 The two Search Console entries are intentionally commented out in the generic
 cron template. Before enabling them, create a Google Desktop OAuth client owned
