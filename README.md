@@ -58,8 +58,9 @@ questions to verified maps and tables: Oshawa park boundaries, Toronto active
 building permits and business licences, Montréal parks and public spaces,
 Uxbridge ward boundaries, Calgary building permits, traffic volumes, flood zones
 and ward boundaries, Regina zoning, and national tables such as LMIA employer
-lists, the CRA list of charities, federal election results by riding and
-Corporations Canada's federal corporations. French editions have
+lists, the CRA list of charities, federal election results by riding,
+Corporations Canada's federal corporations and the Guaranteed Income Supplement
+amounts by income. French editions have
 separate URLs under `/fr/blog` and reciprocal language links. Articles include
 source attribution, coverage limits, and independently labelled publication,
 article-update, and link-verification dates.

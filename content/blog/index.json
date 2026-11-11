@@ -764,5 +764,35 @@
         "topicName": "Limites des quartiers"
       }
     }
+  },
+  {
+    "id": "guaranteed-income-supplement-amounts",
+    "status": "published",
+    "topic": "oas-gis-amounts",
+    "query": {
+      "en": "guaranteed income supplement amounts",
+      "fr": "montant supplément de revenu garanti"
+    },
+    "view": "table",
+    "published": "2026-11-11",
+    "updated": "2026-11-11",
+    "verified": "2026-11-11",
+    "dataset": "/datasets/dfa4daf1-669e-4514-82cd-982f27707ed0",
+    "datasetId": "dfa4daf1-669e-4514-82cd-982f27707ed0",
+    "explore": "/resources/0a7918f0-6e8a-433b-9ea2-60e2b8674cb5",
+    "editions": {
+      "en": {
+        "slug": "guaranteed-income-supplement-amounts",
+        "title": "How much is the Guaranteed Income Supplement? The 5 tables",
+        "description": "Find the monthly Guaranteed Income Supplement or Allowance for your income in the five official tables, which quarter they cover and which income counts.",
+        "topicName": "OAS and GIS amounts"
+      },
+      "fr": {
+        "slug": "supplement-revenu-garanti-tableau-montants",
+        "title": "Supplément de revenu garanti : lire le tableau des montants",
+        "description": "Trouvez le montant mensuel du Supplément de revenu garanti ou de l’Allocation selon votre revenu dans les cinq tableaux officiels, et quel revenu compte.",
+        "topicName": "Montants de la SV et du SRG"
+      }
+    }
   }
 ]

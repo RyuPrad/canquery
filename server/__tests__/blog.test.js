@@ -9,11 +9,12 @@ const { renderHtml } = require('../services/seoMeta');
 const app = require('../app');
 const template = '<!doctype html><html lang="en"><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>';
 
-test('publishes twenty-four paired guides with verified resource links', () => {
-    expect(readArticles()).toHaveLength(48);
-    expect(listArticles()).toHaveLength(24);
+test('publishes twenty-five paired guides with verified resource links', () => {
+    expect(readArticles()).toHaveLength(50);
+    expect(listArticles()).toHaveLength(25);
     expect(listArticles().map(article => article.id)).toEqual(expect.arrayContaining([
-        'lnhpd-natural-health-products', 'canada-notifiable-diseases', 'ontario-ward-maps', 'toronto-ward-map'
+        'lnhpd-natural-health-products', 'canada-notifiable-diseases', 'ontario-ward-maps', 'toronto-ward-map',
+        'guaranteed-income-supplement-amounts'
     ]));
     expect(listArticles({ lang: 'fr', place: 'oshawa-on' })).toHaveLength(1);
     for (const lang of ['en', 'fr']) for (const article of listArticles({ lang })) {
@@ -66,7 +67,7 @@ test('serves article APIs, geographic listing, real 404s and the blog sitemap', 
     expect((await request(app).get('/api/v1/blog/en/missing')).status).toBe(404);
     const sitemap = await request(app).get('/sitemap-blog.xml');
     expect(sitemap.status).toBe(200);
-    expect(sitemap.text.match(/<loc>/g)).toHaveLength(50);
+    expect(sitemap.text.match(/<loc>/g)).toHaveLength(52);
     expect(sitemap.text).toContain('/fr/blog/');
 });
 
@@ -133,7 +134,7 @@ test('excludes draft editions from listings, pages and sitemaps', () => {
             for (const lang of ['en', 'fr']) {
                 const slug = draft.editions[lang].slug;
                 const articlePath = (lang === 'fr' ? '/fr' : '') + '/blog/' + slug;
-                expect(content.listArticles({ lang })).toHaveLength(23);
+                expect(content.listArticles({ lang })).toHaveLength(24);
                 expect(content.getArticle(lang, slug)).toBeNull();
                 expect(resolveBlogPage(articlePath).status).toBe(404);
                 expect(res.send.mock.calls[0][0]).not.toContain(articlePath);
