@@ -27,6 +27,27 @@ describe('ops API', () => {
         expect(res.headers['cache-control']).toBe('no-store');
     });
 
+    it('owner jobs with tables of their own are not catalogue jobs: a failed load leaves ops alone', async () => {
+        const now = new Date();
+        const failed = { last_ok_at: new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString(),
+            latest_finished_at: now.toISOString(), latest_ok: false, source_id: null };
+        catalogReadQueries.getJobHealth.mockResolvedValue({
+            syncRows: [
+                { kind: 'full', last_ok_at: now.toISOString() },
+                { kind: 'incremental', last_ok_at: now.toISOString() },
+                { kind: 'query-log-prune', last_ok_at: now.toISOString() },
+                { kind: 'oas-amounts', ...failed },
+                { kind: 'lmia-history', ...failed },
+                { kind: 'row-samples', ...failed }
+            ],
+            evictLastOkAt: now.toISOString()
+        });
+        const res = await request(app).get('/api/v1/ops');
+        expect(res.status).toBe(200);
+        expect(res.body.data.ok).toBe(true);
+        for (const kind of ['oas-amounts', 'lmia-history', 'row-samples']) expect(res.body.data.jobs[kind]).toBeUndefined();
+    });
+
     it('a stale incremental flips the endpoint to 503', async () => {
         const now = new Date();
         catalogReadQueries.getJobHealth.mockResolvedValue({

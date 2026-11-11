@@ -258,6 +258,27 @@ changed files and writes nothing. `--force` reloads every file and
 `--file=RESOURCE_ID` handles one (and retries a version that failed). The database needs the `pg_trgm` extension
 (PostgreSQL contrib), which migration 050 creates.
 
+`load-oas-amounts` is optional and commented out too. It reads the five CSV
+tables of the federal dataset "Old Age Security (OAS) - Table of Benefit Amounts
+by marital status and income level" (`dfa4daf1-669e-4514-82cd-982f27707ed0`:
+the Guaranteed Income Supplement and the Allowances by yearly income) through
+the same download guard as preparation and loads each one into `oas_rows`
+(migration 054) under the quarter the file names. The publisher replaces the
+files in place every quarter, so every quarter loaded stays in the tables, and
+the `oas_periods` view lists a quarter once its five tables are in: a quarter
+replaced only in part is never shown. A file whose catalogue version is the one
+loaded is skipped, so the hourly run downloads nothing between the quarterly
+updates (five files of about 50 KB when there is one). A file is loaded only
+when it is exactly the table expected: an unknown layout, a blank or non-numeric
+cell, a second quarter in one file, income bands that do not follow one another
+from 0 or an amount that rises with income refuse it, the loaded quarter stays,
+and the refusal is recorded in `sync_runs` (kind `oas-amounts`) and remembered in
+`sync_progress` (`oas-amounts`) until the publisher changes the file. A download
+that fails is tried again on the next run. Run
+`node scripts/load-oas-amounts.js --dry-run` first: it downloads and reads the
+changed files and writes nothing. `--force` reloads every file and
+`--file=RESOURCE_ID` handles one (and retries a version that was refused).
+
 The two Search Console entries are intentionally commented out in the generic
 cron template. Before enabling them, create a Google Desktop OAuth client owned
 by the site operator, enable the Search Console API, and set the OAuth app to a
