@@ -8,7 +8,7 @@ const ROUTE_MODULES = Object.freeze({
     organizations: 'OrganizationsPage', organization: 'OrganizationPage',
     places: 'PlacesPage', place: 'PlacePage', insights: 'InsightsPage',
     docs: 'DocsPage', privacy: 'PrivacyPage', faq: 'FaqPage', about: 'AboutPage', blog: 'BlogPage',
-    lmia: 'LmiaPage', 'lmia-employer': 'LmiaEmployerPage'
+    lmia: 'LmiaPage', 'lmia-employer': 'LmiaEmployerPage', oas: 'OasPage', 'oas-table': 'OasPage'
 });
 let cachedDirectory;
 let cachedManifest;

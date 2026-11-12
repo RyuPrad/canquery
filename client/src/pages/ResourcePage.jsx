@@ -40,7 +40,7 @@ import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import QueryGateSlot from '../components/QueryGateSlot.jsx';
 import WatchTableSlot from '../components/WatchTableSlot.jsx';
 import { rememberView } from '../utils/recentlyViewed.js';
-import LmiaHubLink from '../components/LmiaHubLink.jsx';
+import DatasetHubLink from '../components/DatasetHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -709,7 +709,7 @@ function ResourceExplorer({ id, navigationKey }) {
             </p>
           )}
           <CatalogOverview presentation={resource.presentation} />
-          <LmiaHubLink datasetId={resource.dataset?.id} />
+          <DatasetHubLink datasetId={resource.dataset?.id} />
           {resource.dataset?.id && (
             <DatasetAlertSlot
               datasetId={resource.dataset.id}

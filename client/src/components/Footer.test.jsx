@@ -148,3 +148,33 @@ describe('Footer information and support links', () => {
     await waitFor(() => expect(screen.getByText(lang === 'fr' ? 'Étoilez-le !' : 'Star here!')).toBeInTheDocument());
   });
 });
+
+describe('Footer link to the OAS amounts lookup', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(envelopeRepo(null))));
+  });
+  afterEach(() => {
+    document.querySelector('meta[name="cq-hubs"]')?.remove();
+  });
+  const mark = () => {
+    const meta = document.createElement('meta');
+    meta.name = 'cq-hubs';
+    meta.content = 'oas';
+    document.head.appendChild(meta);
+  };
+
+  test('is absent on a site whose server has not loaded the tables', () => {
+    render(<MemoryRouter><LangProvider><Footer /></LangProvider></MemoryRouter>);
+    expect(screen.queryByRole('link', { name: 'OAS and GIS amounts' })).not.toBeInTheDocument();
+  });
+
+  test('leads to the page in the interface’s language once the server says the tables are there', () => {
+    mark();
+    const english = render(<MemoryRouter><LangProvider><Footer /></LangProvider></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'OAS and GIS amounts' })).toHaveAttribute('href', '/oas');
+    english.unmount();
+    localStorage.setItem('cq-lang', 'fr');
+    render(<MemoryRouter><LangProvider><Footer /></LangProvider></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'Montants de la SV et du SRG' })).toHaveAttribute('href', '/fr/sv');
+  });
+});

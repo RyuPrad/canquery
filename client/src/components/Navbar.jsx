@@ -5,6 +5,7 @@ import { useTheme } from '../theme.jsx';
 import { MapleLeaf, ExternalIcon, SparklesIcon, SunIcon, MoonIcon, XIcon } from './Icons.jsx';
 import { track } from '../utils/analytics.js';
 import { hostedPart } from '../extensions.js';
+import { translatedPath } from '../utils/localizedRoutes.js';
 
 // The hosted edition adds account links; TopLink is its sign-in or account link,
 // in the top row on wide screens and first in the menu panel on phones.
@@ -33,7 +34,10 @@ export default function Navbar() {
 
   const chooseLanguage = language => {
     track('ui_language', { language });
-    if (isBlog && blogTranslations?.pathname === pathname) navigate(blogTranslations.paths[language]);
+    // A page with an address per language moves to its twin, keeping what its entry holds and the part of the page its address names.
+    const twin = translatedPath(pathname, language);
+    if (twin && twin !== pathname) navigate(twin + location.search + location.hash, { state: location.state });
+    else if (isBlog && blogTranslations?.pathname === pathname) navigate(blogTranslations.paths[language]);
     else if (isBlog) navigate(language === 'fr' ? '/fr/blog' : '/blog');
     setLang(language);
   };

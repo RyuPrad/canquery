@@ -13,6 +13,9 @@ const { adsenseClient } = require('./adsense');
 const { renderSampleTable } = require('./rowSamples');
 
 const { PAGE_SIZE, pagePath } = require('./catalogPagination');
+const { hubAvailable } = require('../utils/hubAvailability');
+const { hubSections } = require('../utils/datasetHubs');
+const oas = require('../utils/oasLabels');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const MAX_LINKS = 12;
 const MAX_SUMMARY = 1200;
@@ -21,11 +24,17 @@ const MAX_SUMMARY = 1200;
 // never read as Markdown or HTML, so "1. Choice Farms Ltd" keeps its number and
 // "Café <Ouest> Ltée" its brackets. It is escaped like everything else.
 class Verbatim {
-    constructor(value) { this.value = String(value == null ? '' : value); }
+    constructor(value, exact = false) {
+        this.value = String(value == null ? '' : value);
+        this.exact = exact;
+    }
     toString() { return this.value; }
 }
 const verbatim = value => new Verbatim(value);
-const readable = value => (value instanceof Verbatim ? collapse(value.value) : seo.plainText(value));
+// Text of the site's own that is already as it must be printed, such as a formatted
+// amount: its no-break spaces stay ("1 138,90 $" must not break or lose them).
+const exact = value => new Verbatim(value, true);
+const readable = value => (value instanceof Verbatim ? (value.exact ? value.value.trim() : collapse(value.value)) : seo.plainText(value));
 
 function text(value) {
     return seo.escapeHtml(readable(value));
@@ -51,15 +60,21 @@ const SECTION_LINKS = [
     ['/datasets', 'Datasets'], ['/places', 'Places'], ['/organizations', 'Organizations'], ['/insights', 'Insights'],
     ['/blog', 'Data guides'], ['/fr/blog', 'Guides des données'], ['/docs', 'API docs'], ['/about', 'About']
 ];
+// A dataset hub joins them, after Insights, only while it has data to show.
+function sectionLinks() {
+    if (!hubAvailable('oas')) return SECTION_LINKS;
+    const hubs = [[oas.oasPath('en'), oas.copy('en').hub], [oas.oasPath('fr'), oas.copy('fr').hub]];
+    return [...SECTION_LINKS.slice(0, 4), ...hubs, ...SECTION_LINKS.slice(4)];
+}
 function sectionNav() {
     return '<nav aria-label="CanQuery sections" data-cq-sections="true"><ul>' +
-        SECTION_LINKS.map(([path, label]) => '<li>' + pathLink(path, label) + '</li>').join('') + '</ul></nav>';
+        sectionLinks().map(([path, label]) => '<li>' + pathLink(path, label) + '</li>').join('') + '</ul></nav>';
 }
 
-function breadcrumb(items) {
+function breadcrumb(items, label = 'Breadcrumb') {
     const entries = (items || []).filter(item => item && item.label);
     if (!entries.length) return '';
-    return '<nav aria-label="Breadcrumb"><ol>' + entries.map((item, index) => {
+    return '<nav aria-label="' + seo.escapeHtml(label) + '"><ol>' + entries.map((item, index) => {
         const content = item.path && index < entries.length - 1
             ? pathLink(item.path, item.label)
             : '<span aria-current="page">' + text(item.label) + '</span>';
@@ -99,18 +114,19 @@ function paginationLinks(pagination) {
 // paginated list name their page in the heading so no two pages read alike.
 // `sections` are extra link lists placed before the main list (a hub's
 // publishers, portals and tables); `relatedTitle` names the related list.
+// `labels` gives the fixed headings in another language (a French page).
 function shell({ breadcrumbs, title, lead = '', summary, facts, linksTitle, links, linksLimit, sections = [],
-    relatedTitle = 'Related open data', relatedLinks, overviewHtml = '', sources = [], guides = [], pagination }) {
+    relatedTitle = 'Related open data', relatedLinks, overviewHtml = '', sources = [], guides = [], pagination, labels = {} }) {
     const heading = pagination && pagination.page > 1 ? title + ' (page ' + pagination.page + ')' : title;
     return '<main class="cq-seo-snapshot max-w-5xl mx-auto px-4 py-8" data-cq-seo-snapshot="true">' + sectionNav() +
-        breadcrumb(breadcrumbs) + '<article><h1>' + text(heading) + '</h1>' +
+        breadcrumb(breadcrumbs, labels.breadcrumb) + '<article><h1>' + text(heading) + '</h1>' +
         (lead ? '<p data-cq-lead="true">' + text(lead) + '</p>' : '') +
         (summary ? '<p>' + text(seo.truncate(summary, MAX_SUMMARY)) + '</p>' : '') +
         factList(facts) + overviewHtml +
         sections.map(section => linkList(section.title, section.links, section.limit || MAX_LINKS)).join('') +
-        linkList('Official sources and licences', sources) +
+        linkList(labels.sources || 'Official sources and licences', sources) +
         linkList(linksTitle, links, linksLimit || (pagination ? PAGE_SIZE : MAX_LINKS)) + paginationLinks(pagination) +
-        linkList(relatedTitle, relatedLinks) + linkList('Data guides', guides) + '</article></main>';
+        linkList(relatedTitle, relatedLinks) + linkList(labels.guides || 'Data guides', guides) + '</article></main>';
 }
 
 function sourceLinks(row) {
@@ -208,7 +224,7 @@ function datasetSnapshot(dataset, resources, pagination) {
         overviewHtml: overviewSnapshot(presentation, true),
         sources: sourceLinks(dataset),
         guides: dataset.id || dataset.name ? datasetGuides(dataset.id || dataset.name) : [],
-        sections: lmiaHubSection(dataset.id),
+        sections: hubSections(dataset.id),
         facts: [
             organization ? {
                 label: 'Publisher',
@@ -263,7 +279,7 @@ function resourceSnapshot(resource, { sample = null } = {}) {
             originalFileLink(resource) + overviewSnapshot(presentation) + renderSampleTable(sample),
         sources: sourceLinks(resource),
         guides: resource.dataset_id || resource.dataset_name ? datasetGuides(resource.dataset_id || resource.dataset_name) : [],
-        sections: lmiaHubSection(resource.dataset_id),
+        sections: hubSections(resource.dataset_id),
         facts: [
             { label: 'Format', value: resource.format || 'File' },
             { label: 'Access', value: catalogFacts.accessLabel(capability, { mapped: info.mapped }) },
@@ -646,9 +662,6 @@ function errorSnapshot(title, summary) {
 // ---- The /lmia pages ----------------------------------------------------------------
 
 const { LMIA_DATASET_ID, PROVINCE_NAMES, periodLabel, periodRange } = require('../utils/lmiaLabels');
-// The LMIA dataset and each of its files lead to the employer search.
-const lmiaHubSection = datasetId => (datasetId === LMIA_DATASET_ID ? [{ title: 'Search every list by employer',
-    links: [{ path: '/lmia', label: 'Positive LMIA employers: every list since 2014' }] }] : []);
 const LMIA_DATASET_LINK = { path: '/datasets/' + LMIA_DATASET_ID, label: 'TFWP: Positive LMIA Employers List (every quarterly file)' };
 const LMIA_SOURCES = [
     { path: 'https://open.canada.ca/data/en/dataset/' + LMIA_DATASET_ID,
@@ -758,6 +771,9 @@ module.exports = {
     lmiaSnapshot,
     lmiaEmployerSnapshot,
     MAX_LINKS,
+    shell,
+    verbatim,
+    exact,
     sectionNav,
     safeHttpUrl,
     faqExplanation,

@@ -494,6 +494,17 @@ function classifyRoute(pathname) {
         return id == null ? { type: 'other' } : { type: 'lmia-employer', id };
     }
     if (/^\/lmia\/?$/.test(p)) return { type: 'lmia' };
+    // The OAS benefit amounts: a hub and one page per official table (1 to 5), in English
+    // (/oas, /oas/table-N) and in French (/fr/sv, /fr/sv/tableau-N). Capitals are read
+    // as lower case, so the canonical path decides a redirect.
+    m = p.match(/^\/(oas|fr\/sv)(?:\/([^/]+))?\/?$/i);
+    if (m) {
+        const lang = m[1].toLowerCase() === 'oas' ? 'en' : 'fr';
+        if (m[2] === undefined) return { type: 'oas', lang };
+        const segment = decodePathSegment(m[2]);
+        const table = segment == null ? null : (lang === 'fr' ? /^tableau-([1-5])$/i : /^table-([1-5])$/i).exec(segment);
+        return table ? { type: 'oas-table', lang, table: Number(table[1]) } : { type: 'other' };
+    }
     if (/^\/datasets\/?$/.test(p)) return { type: 'datasets' };
     if (/^\/places\/?$/.test(p)) return { type: 'places' };
     if (/^\/insights\/?$/.test(p)) return { type: 'insights' };

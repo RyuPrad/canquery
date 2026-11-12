@@ -1,6 +1,7 @@
 import { analyticsOptedOut } from './utils/analytics.js';
 import { startPerformanceCollection } from './utils/performance.js';
 import { hostedPart } from './extensions.js';
+import { isQuietPath, markRecorderLoaded } from './utils/quietPages.js';
 export { analyticsOptedOut } from './utils/analytics.js';
 
 // Pages that never load analytics, such as the hosted service's account pages.
@@ -20,13 +21,18 @@ export function startAnalytics(doc = globalThis.document, nav = globalThis.navig
   tracker.setAttribute('data-website-id', websiteId);
   tracker.setAttribute('data-performance', 'false');
   tracker.setAttribute('data-do-not-track', 'true');
-  tracker.addEventListener('load', () => {
-    const recorder = doc.createElement('script');
-    recorder.async = true;
-    recorder.src = '/heatmaps.js';
-    recorder.setAttribute('data-website-id', websiteId);
-    doc.head.append(recorder);
-  }, { once: true });
+  // The heatmap recorder stays out of a document that opens on a page where a click or the
+  // scroll position would say something about the visitor (utils/quietPages.js).
+  if (!isQuietPath(win.location?.pathname || '')) {
+    tracker.addEventListener('load', () => {
+      const recorder = doc.createElement('script');
+      recorder.async = true;
+      recorder.src = '/heatmaps.js';
+      recorder.setAttribute('data-website-id', websiteId);
+      doc.head.append(recorder);
+      markRecorderLoaded(win);
+    }, { once: true });
+  }
   doc.head.append(tracker);
   void startPerformanceCollection({ websiteId, doc, nav, win });
   return true;

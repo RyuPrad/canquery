@@ -64,6 +64,30 @@ async function listOasPeriods(db = pool) {
     return rows;
 }
 
+// ---- Reads for the /oas pages ------------------------------------------------------
+
+// One quarter that can be shown, with its five tables and every income band, read in
+// one statement so a load in progress is never seen half-applied: the newest complete
+// quarter, or the complete quarter with the given key. null when there is none. Each
+// band is [income_from, income_to, amount, allowance, with_oas_65, with_oas_75] in cents.
+async function getOasPeriod({ period = null } = {}, db = pool) {
+    const { rows } = await db.query(`
+        WITH chosen AS (
+            SELECT period_key, benefit_year, benefit_quarter, income_year, loaded_at FROM oas_periods
+            WHERE $1::int IS NULL OR period_key = $1 ORDER BY period_key DESC LIMIT 1
+        )
+        SELECT c.period_key, c.benefit_year, c.benefit_quarter, c.income_year, c.loaded_at,
+            (SELECT jsonb_agg(jsonb_build_object('table', f.table_no, 'resource_id', f.resource_id, 'loaded_at', f.loaded_at,
+                    'rows', (SELECT jsonb_agg(jsonb_build_array(r.income_from_cents, r.income_to_cents, r.amount_cents,
+                            r.allowance_cents, r.with_oas_65_cents, r.with_oas_75_cents) ORDER BY r.line)
+                        FROM oas_rows r WHERE r.period_key = f.period_key AND r.table_no = f.table_no))
+                    ORDER BY f.table_no)
+                FROM oas_files f WHERE f.period_key = c.period_key) AS tables
+        FROM chosen c
+    `, [period]);
+    return rows[0] || null;
+}
+
 // What the job remembers between runs about resources it did not load: the version
 // that failed (why, and when it was last tried), was superseded by another resource
 // (which one, at which version) or holds an unknown table.
@@ -77,5 +101,5 @@ async function saveOasMemory(files, db = pool) {
 }
 
 module.exports = {
-    MEMORY_KEY, listOasResources, listOasFiles, saveOasTable, touchOasTable, listOasPeriods, getOasMemory, saveOasMemory
+    MEMORY_KEY, listOasResources, listOasFiles, saveOasTable, touchOasTable, listOasPeriods, getOasPeriod, getOasMemory, saveOasMemory
 };

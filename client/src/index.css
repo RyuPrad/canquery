@@ -1228,3 +1228,145 @@ a.cq-card:hover,
 /* Cells keep whole words (anywhere would let a narrow screen split a label mid-word). */
 .cq-article th, .cq-article td { border: 1px solid var(--color-base-300); padding: .55rem .8rem; text-align: left; vertical-align: top; overflow-wrap: break-word; }
 .cq-article th { background: var(--color-base-200); font-weight: 600; }
+
+/* ------------------------------------------------- OAS benefit amounts */
+
+/* The tables of amounts on the OAS pages: figures line up on the right in
+   tabular numerals, the income range stays on the left. */
+.cq-oas-table {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+.cq-oas-table th,
+.cq-oas-table td {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  padding: 0.4rem 0.75rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.cq-oas-table tbody tr:last-child th,
+.cq-oas-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.cq-oas-table thead th {
+  color: var(--cq-muted-text);
+  font-weight: 600;
+  vertical-align: bottom;
+  white-space: normal;
+}
+.cq-oas-table th:first-child {
+  font-weight: 500;
+  text-align: left;
+}
+.cq-oas-table td {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+/* A table of names and figures (the key figures): names may wrap. */
+.cq-oas-table-wrap th:first-child {
+  white-space: normal;
+}
+.cq-oas-table tr:focus {
+  outline: none;
+}
+.cq-oas-table tr.cq-oas-found th,
+.cq-oas-table tr.cq-oas-found td {
+  background: color-mix(in oklab, var(--color-primary) 16%, transparent);
+  font-weight: 600;
+}
+/* The marked row names its figures: the column headings are far above it by then. */
+.cq-oas-table tr.cq-oas-found td[data-label]::before {
+  color: var(--cq-muted-text);
+  content: attr(data-label);
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.25;
+  white-space: normal;
+}
+@media (max-width: 640px) {
+  .cq-oas-table {
+    font-size: 0.8125rem;
+  }
+  .cq-oas-table th,
+  .cq-oas-table td {
+    padding: 0.35rem 0.5rem;
+  }
+  /* A wide table scrolls sideways under its income column. */
+  .cq-oas-table tbody th:first-child {
+    background: var(--color-base-200);
+    left: 0;
+    position: sticky;
+  }
+  .cq-oas-table tr.cq-oas-found th:first-child {
+    background: color-mix(in oklab, var(--color-primary) 16%, var(--color-base-200));
+  }
+}
+
+/* The key figures on a phone: one block per table, each figure beside its name. Three
+   columns there would leave the table's long name a word wide. */
+@media (max-width: 640px) {
+  .cq-oas-key thead {
+    clip: rect(0 0 0 0);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    width: 1px;
+  }
+  .cq-oas-key,
+  .cq-oas-key tbody,
+  .cq-oas-key tr,
+  .cq-oas-key tbody th,
+  .cq-oas-key td {
+    display: block;
+  }
+  .cq-oas-key tr {
+    border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+    padding: 0.6rem 0.75rem;
+  }
+  .cq-oas-key tr:last-child {
+    border-bottom: 0;
+  }
+  .cq-oas-key tbody th:first-child,
+  .cq-oas-key td {
+    background: none;
+    border: 0;
+    padding: 0.15rem 0;
+    position: static;
+    white-space: normal;
+  }
+  .cq-oas-key td {
+    align-items: baseline;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+  }
+  /* The name takes what the figure leaves, so a figure stays on one line where it can. */
+  .cq-oas-key td::before {
+    color: var(--cq-muted-text);
+    content: attr(data-label);
+    flex: 1 1 40%;
+    font-family: var(--font-sans);
+    min-width: 0;
+    text-align: left;
+  }
+}
+
+/* The same tables in the page the server renders before the application starts. */
+.cq-seo-snapshot table[data-cq-amounts] {
+  font-variant-numeric: tabular-nums;
+}
+.cq-seo-snapshot table[data-cq-amounts] td,
+.cq-seo-snapshot table[data-cq-amounts] thead th:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+.cq-seo-snapshot nav[data-cq-jump] ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  list-style: none;
+  padding-left: 0;
+}

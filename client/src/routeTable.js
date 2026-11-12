@@ -22,6 +22,7 @@ const BlogPage = lazyPage(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazyPage(() => import('./pages/InsightsPage'));
 const LmiaPage = lazyPage(() => import('./pages/LmiaPage.jsx'));
 const LmiaEmployerPage = lazyPage(() => import('./pages/LmiaEmployerPage.jsx'));
+const OasPage = lazyPage(() => import('./pages/OasPage.jsx'));
 
 // Pages only the hosted service serves, such as pricing and the developer
 // account. A hosted route that carries `preload` is loaded before a direct
@@ -42,6 +43,12 @@ export const PAGE_ROUTES = [
   { path: '/places/:slug', page: PlacePage },
   { path: '/lmia', page: LmiaPage },
   { path: '/lmia/employers/:slug', page: LmiaEmployerPage },
+  // The OAS benefit amounts: a hub and one page per official table, at an English
+  // and a French address each. Static paths, so any other table number is not found.
+  { path: '/oas', page: OasPage, props: { language: 'en', table: null } },
+  ...[1, 2, 3, 4, 5].map((table) => ({ path: '/oas/table-' + table, page: OasPage, props: { language: 'en', table } })),
+  { path: '/fr/sv', page: OasPage, props: { language: 'fr', table: null } },
+  ...[1, 2, 3, 4, 5].map((table) => ({ path: '/fr/sv/tableau-' + table, page: OasPage, props: { language: 'fr', table } })),
   { path: '/docs', page: DocsPage },
   { path: '/faq', page: FaqPage },
   { path: '/about', page: AboutPage },

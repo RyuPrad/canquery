@@ -42,6 +42,12 @@ if ! curl -fsS "$base/api/v1/datasets?facets=1" | grep -q '"facets":{'; then
 fi
 expect /api/v1/openapi.json 200
 expect /docs 200
+# The OAS benefit amounts pages answer before their tables are loaded (the owner job
+# is optional); their JSON says the tables are not there yet.
+expect /oas 200
+expect /fr/sv/tableau-2 200
+expect /oas/table-6 404
+expect /web-api/v1/oas/summary 503
 expect /pricing 404
 expect /account 404
 expect /api/account/plans 404

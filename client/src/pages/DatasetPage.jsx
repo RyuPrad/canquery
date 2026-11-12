@@ -27,7 +27,7 @@ import CatalogOverview from '../components/CatalogOverview.jsx';
 import LocalGuides from '../components/LocalGuides.jsx';
 import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import { rememberView } from '../utils/recentlyViewed.js';
-import LmiaHubLink from '../components/LmiaHubLink.jsx';
+import DatasetHubLink from '../components/DatasetHubLink.jsx';
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import { useLang } from '../i18n.jsx';
 import {
@@ -389,7 +389,7 @@ function DatasetExplorer({ idOrName }) {
 
       <Provenance provenance={dataset.provenance} />
 
-      <LmiaHubLink datasetId={dataset.id} />
+      <DatasetHubLink datasetId={dataset.id} />
 
       <DatasetAlertSlot
         datasetId={dataset.id}
