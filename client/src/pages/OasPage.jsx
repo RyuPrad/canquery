@@ -14,6 +14,7 @@ import {
 import Breadcrumbs from '../components/Breadcrumbs.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import OasLookup from '../components/oas/OasLookup.jsx';
+import DatasetAlertSlot from '../components/DatasetAlertSlot.jsx';
 import OasAmountsTable, { BandTable } from '../components/oas/OasAmountsTable.jsx';
 
 // The OAS benefit amounts pages: the hub (/oas, /fr/sv) with the lookup, the quarter's
@@ -112,6 +113,7 @@ function Hub({ summary, lang, t }) {
       </Hero>
 
       <OasLookup summary={summary} lang={lang} t={t} />
+      <DatasetAlertSlot datasetId={OAS_DATASET_ID} datasetTitle={t('oas.hub_long')} variant="hub" />
 
       <section className="mt-10">
         <h2 className="font-display font-semibold text-xl">{fill(t('oas.key_title'), { period: long })}</h2>
@@ -248,6 +250,7 @@ function TablePage({ summary, data, table, lang, t, passage = null }) {
       </Hero>
 
       <OasLookup summary={summary} lang={lang} t={t} table={table} onFound={markRow} onShowRow={showRow} />
+      <DatasetAlertSlot datasetId={OAS_DATASET_ID} datasetTitle={t('oas.hub_long')} variant="hub" />
 
       <div ref={body}>
         <OasAmountsTable table={table} rows={data.rows} lang={lang} t={t} />
