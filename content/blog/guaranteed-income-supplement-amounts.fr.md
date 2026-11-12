@@ -15,7 +15,7 @@ Le Supplément de revenu garanti (SRG) est un paiement mensuel non imposable pou
 2. Entrez votre revenu annuel. Pour une personne seule, c’est votre propre revenu; pour un couple, ce sont les deux revenus ensemble. N’y comptez ni la pension de la SV ni le SRG.
 3. Lisez le montant mensuel. Pour les tableaux du SRG, la page indique aussi le total avec la pleine pension de la SV, de 65 à 74 ans et à 75 ans et plus.
 
-La recherche se fait dans votre navigateur : le revenu que vous entrez n’est pas envoyé à CanQuery.
+La recherche se fait dans votre navigateur : le revenu que vous entrez n’est envoyé ni à CanQuery ni à personne, et les pages de recherche n’affichent aucune publicité.
 
 Par exemple, dans les tableaux d’octobre à décembre 2026, une personne seule dont le revenu annuel est de 18 000 $ se trouve dans la tranche de 18 000,00 $ à 18 023,99 $ : le SRG est de 212,49 $ par mois, ou de 974,99 $ par mois avec la pleine pension de la SV de 65 à 74 ans.
 

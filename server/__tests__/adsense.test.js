@@ -15,6 +15,8 @@ jest.mock('../db/catalogReadQueries', () => ({
     listRecentlyIngested: jest.fn(),
     getJobHealth: jest.fn(),
 }));
+// The OAS amounts pages read their quarter here: none loaded, unless a test holds one.
+jest.mock('../db/oasQueries', () => ({ getOasPeriod: jest.fn(async () => null), listOasPeriods: jest.fn(async () => []) }));
 jest.mock('../services/catalogFacets', () => ({ datasetFacets: jest.fn(), refreshDatasetFacets: jest.fn(), startFacetWarming: jest.fn() }));
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
 
@@ -218,6 +220,36 @@ describe('ad pages', () => {
         expect(res.text).not.toContain('<script>alert(1)</script>');
         // Theme script, entry module and loader, the csp-nonce meta and one modulepreload.
         expect(res.text.split(nonce).length - 1).toBe(5);
+    });
+
+    it('keeps the OAS amounts pages, where a visitor types an income, free of ads', async () => {
+        process.env.ADSENSE_CLIENT = CLIENT;
+        const oasPages = require('../services/oasPages');
+        const oasQueries = require('../db/oasQueries');
+        const band = (table, from) => [from, from + 2399, 113890 - from, table === 4 ? 113890 - from : null,
+            table === 5 ? null : 190140 - from, table === 5 ? null : 197765 - from];
+        const loaded = { period_key: 202612, benefit_year: 2026, benefit_quarter: 4, income_year: 2025, loaded_at: new Date('2026-11-11T12:00:00Z'),
+            tables: [1, 2, 3, 4, 5].map(table => ({ table, resource_id: 'r' + table, rows: [band(table, 0), band(table, 2400)] })) };
+        // Before a quarter is loaded, and with one: the page is a 200 either way and never an ad page.
+        for (const held of [null, loaded]) {
+            oasQueries.getOasPeriod.mockResolvedValue(held);
+            oasQueries.listOasPeriods.mockResolvedValue(held ? [held] : []);
+            oasPages.cache.clear();
+            for (const address of ['/oas', '/oas/table-4', '/fr/sv', '/fr/sv/tableau-1']) {
+                const res = await request(spa).get(address).set('Sec-Fetch-Dest', 'document').set('Sec-Fetch-Mode', 'navigate');
+                expect([address, res.status]).toEqual([address, 200]);
+                expect(res.text).not.toMatch(/adsbygoogle|pagead2|nonce=/);
+                expect(res.headers['content-security-policy']).toBe(SITE_POLICY);
+                expect(res.headers['referrer-policy']).toBe('no-referrer');
+                expect(res.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
+                // The account meta is on every page; it loads nothing.
+                expect(res.text).toContain('<meta name="google-adsense-account" content="' + CLIENT + '" />');
+                expect(Boolean(held)).toBe(!res.text.includes('noindex'));
+            }
+        }
+        // Every other public page still is one.
+        const faq = await request(spa).get('/faq');
+        expect(faq.text).toContain(LOADER + nonceOf(faq) + '"></script>');
     });
 
     it('keeps 404s, 503s and RouteHead fetches free of ads', async () => {

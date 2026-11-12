@@ -522,8 +522,20 @@ describe('a table’s page', () => {
     delete window.__cqHeatmaps;
     reloadDocument.mockClear();
     embed(tableBlock());
-    renderAt('/oas/table-2');
+    renderAt('/oas/table-2').unmount();
     expect(reloadDocument).not.toHaveBeenCalled();
+    // The ad loader of an earlier page does the same: no third party's script beside the lookup.
+    const loader = document.createElement('script');
+    loader.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1234567890123456';
+    loader.type = 'text/plain';
+    document.head.appendChild(loader);
+    try {
+      renderAt('/oas');
+      expect(reloadDocument).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    } finally {
+      loader.remove();
+    }
   });
 
   test('a summary that is no longer fresh still draws the page, and is read again behind it', async () => {
