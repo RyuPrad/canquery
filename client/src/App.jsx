@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import ScrollManager from './components/ScrollManager.jsx'
+import QuietPageGuard from './components/QuietPageGuard.jsx'
 import Footer from './components/Footer'
 import AnalyticsBridge from './components/AnalyticsBridge.jsx'
 import PageLoadBoundary from './components/PageLoadBoundary.jsx'
@@ -28,6 +29,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col text-base-content">
       <ScrollManager />
+      <QuietPageGuard />
       <RouteHead />
       <AnalyticsBridge />
       <Navbar />

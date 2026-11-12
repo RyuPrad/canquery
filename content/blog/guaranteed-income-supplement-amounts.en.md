@@ -15,7 +15,7 @@ The Guaranteed Income Supplement (GIS) is a monthly, tax-free payment for people
 2. Type your yearly income. For a single person it is your own income; for a couple it is the two incomes together. Leave out the OAS pension and the GIS themselves.
 3. Read the monthly amount. For the GIS tables the page also shows the total with the full OAS pension, for ages 65 to 74 and for 75 and over.
 
-The lookup works in your browser: the income you type is not sent to CanQuery.
+The lookup works in your browser: the income you type is not sent to CanQuery or to anyone else, and the lookup pages carry no ads.
 
 For example, in the tables for October to December 2026, a single person with a yearly income of $18,000 is in the band from $18,000.00 to $18,023.99: the GIS is $212.49 a month, or $974.99 a month together with the full OAS pension at ages 65 to 74.
 

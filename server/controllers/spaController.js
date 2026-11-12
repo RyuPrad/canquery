@@ -405,8 +405,9 @@ function serveSpa(distDir) {
         }
         const privatePage = isPrivatePage(req.path);
         const adsClient = adsense.adsenseClient();
-        // Account and sign-in pages, 404s and 503s never carry ads.
-        const adPage = Boolean(adsClient) && page.status === 200 && !privatePage && isDocumentRequest(req);
+        // Account and sign-in pages, 404s and 503s never carry ads. Neither do the OAS amounts
+        // pages: a visitor types an income there, and no third party's script runs beside it.
+        const adPage = Boolean(adsClient) && page.status === 200 && !privatePage && !page.oas && isDocumentRequest(req);
         // The nonce replaces the template's placeholder before any catalogue
         // text joins the page, so page content can never carry it.
         const nonce = adPage ? adsense.createNonce() : null;

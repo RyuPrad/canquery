@@ -6,7 +6,7 @@ import { consumeInitialData } from '../utils/initialData.js';
 import { loadOasSummary, loadOasTable, peekOasSummary, peekOasTable, takeOasInitialData } from '../utils/oasData.js';
 import { oasPath } from '../utils/localizedRoutes.js';
 import { documentWasRestored, itemOnScreen, layoutTop } from '../utils/scrollMemory.js';
-import { recorderLoaded, reloadDocument } from '../utils/quietPages.js';
+import { carriesTrackers, reloadDocument } from '../utils/quietPages.js';
 import {
   OAS_DATASET_ID, OAS_GUIDE, OAS_OFFICIAL_LINKS, OAS_TABLES, amountKind, dateLabel, formatChange, formatCount, formatDollars,
   formatMoney, hasAllowance, hasPension, periodLabel, periodState, today
@@ -288,9 +288,9 @@ function OasView({ language, table }) {
   const [attempt, setAttempt] = useState(0);
   // Read while the server's HTML is still on the page (the first draw replaces it).
   const [passage] = useState(() => (table ? bandOnScreen(location) : null));
-  // The heatmap recorder came with an earlier page of this visit: this page starts again as its
-  // own document, which never loads it (utils/quietPages.js).
-  const [restarting] = useState(() => recorderLoaded());
+  // The heatmap recorder or the ad loader came with an earlier page of this visit: this page
+  // starts again as its own document, which has neither (utils/quietPages.js).
+  const [restarting] = useState(() => carriesTrackers());
 
   useEffect(() => { if (restarting) reloadDocument(); }, [restarting]);
   useEffect(() => { setLang(language); }, [language, setLang]);
