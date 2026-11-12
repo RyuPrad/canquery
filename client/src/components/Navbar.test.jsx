@@ -17,7 +17,7 @@ beforeEach(() => {
 
 function StateFixture() {
   const location = useLocation();
-  return <pre data-testid="entry">{location.pathname + location.search + ' ' + JSON.stringify(location.state)}</pre>;
+  return <pre data-testid="entry">{location.pathname + location.search + location.hash + ' ' + JSON.stringify(location.state)}</pre>;
 }
 
 function NavigationFixture({ translations }) {
@@ -177,6 +177,13 @@ test('a page with an address per language moves to its twin, keeping the query a
   // Choosing the language the page is already in goes nowhere.
   fireEvent.click(screen.getByRole('button', { name: 'EN', exact: true }));
   expect(screen.getByTestId('entry')).toHaveTextContent('/oas/table-2?utm_source=x');
+});
+
+test('the twin of an address that names a part of the page names it too', async () => {
+  render(<MemoryRouter initialEntries={['/oas/table-1#income-18000']}>
+    <ThemeProvider><LangProvider><Navbar /><StateFixture /></LangProvider></ThemeProvider></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'FR', exact: true }));
+  await waitFor(() => expect(screen.getByTestId('entry')).toHaveTextContent('/fr/sv/tableau-1#income-18000 null'));
 });
 
 test('the hub moves between /oas and /fr/sv; other pages only change the interface', async () => {

@@ -5,7 +5,8 @@ import { fill } from '../utils/text.js';
 import { consumeInitialData } from '../utils/initialData.js';
 import { loadOasSummary, loadOasTable, peekOasSummary, peekOasTable, takeOasInitialData } from '../utils/oasData.js';
 import { oasPath } from '../utils/localizedRoutes.js';
-import { documentWasRestored, itemOnScreen } from '../utils/scrollMemory.js';
+import { documentWasRestored, itemOnScreen, layoutTop } from '../utils/scrollMemory.js';
+import { recorderLoaded, reloadDocument } from '../utils/quietPages.js';
 import {
   OAS_DATASET_ID, OAS_GUIDE, OAS_OFFICIAL_LINKS, OAS_TABLES, amountKind, dateLabel, formatChange, formatCount, formatDollars,
   formatMoney, hasAllowance, hasPension, periodLabel, periodState, today
@@ -50,8 +51,8 @@ function Hero({ chip, heading, intro, note, lang, t, table, children }) {
         <div className="flex flex-wrap gap-2 mt-4">
           {children}
           <Link to={OAS_GUIDE[lang === 'fr' ? 'fr' : 'en']} className="cq-chip !whitespace-normal max-w-full break-words hover:border-primary/40">{t('oas.guide_link')}</Link>
-          {/* The other language's page keeps what was typed here. */}
-          <Link to={oasPath(other, table)} hrefLang={other} lang={other} state={location.state}
+          {/* The other language's page keeps what was typed here, and the range the address names. */}
+          <Link to={{ pathname: oasPath(other, table), hash: location.hash }} hrefLang={other} lang={other} state={location.state}
             className="cq-chip !whitespace-normal max-w-full break-words hover:border-primary/40">{t('oas.twin')}</Link>
         </div>
       </div>
@@ -89,7 +90,6 @@ function Sources({ summary, lang, t, table = null }) {
 function Hub({ summary, lang, t }) {
   const { period, previous } = summary;
   const long = periodLabel(period, lang);
-  const upcoming = periodState(period, today()) === 'upcoming';
   const changes = [];
   if (previous) {
     for (const entry of summary.tables) {
@@ -111,21 +111,25 @@ function Hub({ summary, lang, t }) {
         {summary.oas && <span className="cq-chip cq-chip-mono !whitespace-normal">{t('oas.oas75')} · {monthly(summary.oas.age_75_cents, lang, t)}</span>}
       </Hero>
 
-      <OasLookup summary={summary} lang={lang} t={t} upcoming={upcoming} />
+      <OasLookup summary={summary} lang={lang} t={t} />
 
       <section className="mt-10">
         <h2 className="font-display font-semibold text-xl">{fill(t('oas.key_title'), { period: long })}</h2>
         <div className="overflow-x-auto cq-card mt-3">
-          {/* On a phone each table is a block with its figures beside their names (index.css). */}
-          <table className="cq-oas-table cq-oas-table-wrap cq-oas-key">
-            <thead>
-              <tr><th scope="col">{t('oas.table_word')}</th><th scope="col">{t('oas.key_max')}</th><th scope="col">{t('oas.key_ends')}</th></tr>
+          {/* On a phone each table is a block with its figures beside their names (index.css); the
+              roles keep it a table for assistive technology when its boxes are no longer table boxes. */}
+          <table className="cq-oas-table cq-oas-table-wrap cq-oas-key" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">{t('oas.table_word')}</th><th scope="col" role="columnheader">{t('oas.key_max')}</th>
+                <th scope="col" role="columnheader">{t('oas.key_ends')}</th>
+              </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {summary.tables.map((entry) => (
-                <tr key={entry.table}>
-                  <th scope="row"><Link className="link link-hover" to={oasPath(lang, entry.table)}>{tableTitle(entry.table, lang, t)}</Link></th>
-                  <td data-label={t('oas.key_max')}>
+                <tr key={entry.table} role="row">
+                  <th scope="row" role="rowheader"><Link className="link link-hover" to={oasPath(lang, entry.table)}>{tableTitle(entry.table, lang, t)}</Link></th>
+                  <td role="cell" data-label={t('oas.key_max')}>
                     {hasAllowance(entry.table) ? (
                       <span>
                         <span className="block">{t('oas.word_gis')} {monthly(entry.max_amount_cents, lang, t)}</span>
@@ -133,7 +137,7 @@ function Hub({ summary, lang, t }) {
                       </span>
                     ) : monthly(entry.max_amount_cents, lang, t)}
                   </td>
-                  <td data-label={t('oas.key_ends')}>{formatDollars(entry.ends_at_cents, lang)}</td>
+                  <td role="cell" data-label={t('oas.key_ends')}>{formatDollars(entry.ends_at_cents, lang)}</td>
                 </tr>
               ))}
             </tbody>
@@ -202,21 +206,33 @@ function TablePage({ summary, data, table, lang, t, passage = null }) {
   const title = tableTitle(table, lang, t);
   const income = t('oas.income_' + table);
   const body = useRef(null);
-  // Finding a row marks it in the table that is already drawn; nothing is drawn again.
-  const showRow = useCallback((line) => {
-    const root = body.current;
-    if (!root) return;
-    root.querySelector('tr.cq-oas-found')?.classList.remove('cq-oas-found');
-    const row = root.querySelector('tr[data-line="' + line + '"]');
+  // The row of the income in the lookup is marked in the table that is already drawn (nothing is
+  // drawn again), for as long as the lookup gives that row: another income moves the mark, no
+  // income removes it. The marked row carries its column names, which are far above it by then.
+  const marked = useRef(null);
+  const markRow = useCallback((line) => {
+    const previous = marked.current;
+    if (previous) {
+      previous.classList.remove('cq-oas-found');
+      for (const cell of previous.children) cell.removeAttribute('data-label');
+    }
+    const row = line && body.current ? body.current.querySelector('tr[data-line="' + line + '"]') : null;
+    marked.current = row;
     if (!row) return;
     row.classList.add('cq-oas-found');
+    const names = row.closest('table').querySelectorAll('thead th');
+    Array.from(row.children).forEach((cell, index) => { if (index > 0 && names[index]) cell.setAttribute('data-label', names[index].textContent); });
+  }, []);
+  const showRow = useCallback(() => {
+    const row = marked.current;
+    if (!row) return;
     row.scrollIntoView?.({ block: 'center' });
     row.focus({ preventScroll: true });
   }, []);
   // The band a visit arrived at sits at the same height in the table drawn here.
   useLayoutEffect(() => {
     const row = passage ? body.current?.querySelector('tr[data-line="' + (passage.index + 1) + '"]') : null;
-    if (row) window.scrollBy(0, row.getBoundingClientRect().top - passage.top);
+    if (row) window.scrollBy(0, layoutTop(row) - passage.top);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
@@ -231,7 +247,7 @@ function TablePage({ summary, data, table, lang, t, passage = null }) {
         {hasPension(table) && data.oas && <span className="cq-chip cq-chip-mono !whitespace-normal">{t('oas.oas75')} · {monthly(data.oas.age_75_cents, lang, t)}</span>}
       </Hero>
 
-      <OasLookup summary={summary} lang={lang} t={t} table={table} onShowRow={showRow} />
+      <OasLookup summary={summary} lang={lang} t={t} table={table} onFound={markRow} onShowRow={showRow} />
 
       <div ref={body}>
         <OasAmountsTable table={table} rows={data.rows} lang={lang} t={t} />
@@ -260,39 +276,37 @@ function OasView({ language, table }) {
     const strings = STRINGS[language] || STRINGS.en;
     return (key) => (strings[key] !== undefined ? strings[key] : STRINGS.en[key] !== undefined ? STRINGS.en[key] : key);
   }, [language]);
-  // A direct visit carries its answers in the HTML; anything read earlier in the visit is kept.
-  const [summary, setSummary] = useState(() => {
+  // A direct visit carries its answers in the HTML, and anything read earlier in the visit is kept:
+  // the page draws at once from either, even from a summary that is no longer fresh, which is then
+  // asked for again behind the page. The summary and a table's rows change together.
+  const [page, setPage] = useState(() => {
     takeOasInitialData({ language, table, location });
-    const known = peekOasSummary();
-    return known ? { status: 'ready', data: known } : { status: 'loading' };
-  });
-  const [rows, setRows] = useState(() => {
-    const known = table && summary.status === 'ready' ? peekOasTable(summary.data.period.key, table) : null;
-    return known ? { status: 'ready', data: known } : { status: 'loading' };
+    const summary = peekOasSummary(Date.now(), { stale: true });
+    const rows = summary && table ? peekOasTable(summary.period.key, table) : null;
+    return summary && (!table || rows) ? { status: 'ready', summary, rows } : { status: 'loading' };
   });
   const [attempt, setAttempt] = useState(0);
-  const first = useRef(true);
   // Read while the server's HTML is still on the page (the first draw replaces it).
   const [passage] = useState(() => (table ? bandOnScreen(location) : null));
+  // The heatmap recorder came with an earlier page of this visit: this page starts again as its
+  // own document, which never loads it (utils/quietPages.js).
+  const [restarting] = useState(() => recorderLoaded());
 
+  useEffect(() => { if (restarting) reloadDocument(); }, [restarting]);
   useEffect(() => { setLang(language); }, [language, setLang]);
   useEffect(() => { consumeInitialData(); }, []);
   useEffect(() => {
-    const seeded = first.current && summary.status === 'ready' && (!table || rows.status === 'ready');
-    first.current = false;
-    if (seeded) return undefined;
+    if (restarting || (page.status === 'ready' && attempt === 0 && peekOasSummary())) return undefined;
     let cancelled = false;
-    setSummary((current) => (current.status === 'ready' ? current : { status: 'loading' }));
+    setPage((current) => (current.status === 'ready' ? current : { status: 'loading' }));
     loadOasSummary()
-      .then(async (data) => {
-        const found = table ? await loadOasTable(data.period.key, table) : null;
-        if (cancelled) return;
-        setSummary({ status: 'ready', data });
-        if (table) setRows({ status: 'ready', data: found });
+      .then(async (summary) => {
+        const rows = table ? await loadOasTable(summary.period.key, table) : null;
+        if (!cancelled) setPage({ status: 'ready', summary, rows });
       })
       .catch((error) => {
-        if (cancelled) return;
-        setSummary({ status: error && error.status === 503 ? 'unavailable' : 'error' });
+        // What is on the page stays when a newer copy cannot be read.
+        if (!cancelled) setPage((current) => (current.status === 'ready' ? current : { status: error && error.status === 503 ? 'unavailable' : 'error' }));
       });
     return () => { cancelled = true; };
   }, [attempt]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -303,10 +317,8 @@ function OasView({ language, table }) {
     table ? { label: t('oas.nav'), to: oasPath(language) } : { label: t('oas.nav') },
     table ? { label: t('oas.table_word') + ' ' + table } : null
   ];
-  if (summary.status === 'loading' || (summary.status === 'ready' && table && rows.status !== 'ready')) {
-    return <LoadingSpinner label={t('oas.loading')} />;
-  }
-  if (summary.status === 'error') {
+  if (restarting || page.status === 'loading') return <LoadingSpinner label={t('oas.loading')} />;
+  if (page.status === 'error') {
     return (
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="alert alert-error flex flex-wrap justify-between gap-3">
@@ -319,7 +331,7 @@ function OasView({ language, table }) {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade" lang={language}>
       <Breadcrumbs className="mb-5" label={t('breadcrumbs.label')} items={crumbs} />
-      {summary.status === 'unavailable' ? (
+      {page.status === 'unavailable' ? (
         <div className="cq-card p-6 sm:p-8">
           <span className="cq-chip">{t('oas.chip')}</span>
           <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3 break-words">
@@ -329,9 +341,9 @@ function OasView({ language, table }) {
           <p className="mt-4"><Link className="btn btn-sm btn-outline" to={'/datasets/' + OAS_DATASET_ID}>{t('oas.dataset_link')}</Link></p>
         </div>
       ) : table ? (
-        <TablePage summary={summary.data} data={rows.data} table={table} lang={language} t={t} passage={passage} />
+        <TablePage summary={page.summary} data={page.rows} table={table} lang={language} t={t} passage={passage} />
       ) : (
-        <Hub summary={summary.data} lang={language} t={t} />
+        <Hub summary={page.summary} lang={language} t={t} />
       )}
       <p className="text-xs text-base-content/55 mt-10">{t('oas.source')}</p>
     </div>

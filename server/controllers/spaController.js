@@ -360,6 +360,8 @@ function serveSpa(distDir) {
             };
         }
         const query = new URLSearchParams(querySuffix(req));
+        // The address the page's embedded data answers: the browser reads "/oas?" as "/oas".
+        const visited = req.originalUrl.replace(/\?$/, '');
         const normalizeFirst = page.paginated && query.get('page') === '1';
         if (page.status === 200 && page.canonicalPath && (requestPath(req) !== page.canonicalPath || normalizeFirst)) {
             let suffix = querySuffix(req);
@@ -374,25 +376,25 @@ function serveSpa(distDir) {
         if (page.status === 200 && page.row && wantsInitialData(req)) {
             try {
                 initial = await resourceInitialData(page.row,
-                    { path: req.originalUrl, params: query, signal: req.signal, log: isNavigation(req) });
+                    { path: visited, params: query, signal: req.signal, log: isNavigation(req) });
             } catch (err) {
                 console.warn('Initial resource data skipped:', err.message);
             }
         } else if (page.status === 200 && page.datasetRows && wantsInitialData(req)) {
             try {
-                initial = datasetInitialData(page.datasetRows.dataset, page.datasetRows.resources, { path: req.originalUrl });
+                initial = datasetInitialData(page.datasetRows.dataset, page.datasetRows.resources, { path: visited });
             } catch (err) {
                 console.warn('Initial dataset data skipped:', err.message);
             }
         } else if (page.status === 200 && page.blog && wantsInitialData(req)) {
             try {
-                initial = blogInitialData(page.blog, { path: req.originalUrl });
+                initial = blogInitialData(page.blog, { path: visited });
             } catch (err) {
                 console.warn('Initial guide data skipped:', err.message);
             }
         } else if (page.status === 200 && page.oas && wantsInitialData(req)) {
             try {
-                initial = oasInitialData(page.oas, { path: req.originalUrl });
+                initial = oasInitialData(page.oas, { path: visited });
             } catch (err) {
                 console.warn('Initial OAS amounts data skipped:', err.message);
             }

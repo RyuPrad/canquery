@@ -6,7 +6,7 @@ Le Supplément de revenu garanti (SRG) est un paiement mensuel non imposable pou
 | Ce que donnent les tableaux | Le montant mensuel du SRG, de l’Allocation ou de l’Allocation au survivant pour chaque tranche de revenu annuel |
 | Tableaux | Cinq, selon l’état matrimonial : un pour une personne seule, trois pour les couples, un pour un survivant |
 | Mise à jour | Chaque trimestre : janvier, avril, juillet et octobre |
-| Revenu considéré | Le revenu net de l’année civile précédente, recalculé chaque année en juillet |
+| Revenu considéré | Le revenu net de l’année civile qui précède le recalcul de juillet (2025 pour juillet 2026 à juin 2027) |
 | Licence | Licence du gouvernement ouvert – Canada |
 
 ## Trouver votre montant
@@ -15,7 +15,7 @@ Le Supplément de revenu garanti (SRG) est un paiement mensuel non imposable pou
 2. Entrez votre revenu annuel. Pour une personne seule, c’est votre propre revenu; pour un couple, ce sont les deux revenus ensemble. N’y comptez ni la pension de la SV ni le SRG.
 3. Lisez le montant mensuel. Pour les tableaux du SRG, la page indique aussi le total avec la pleine pension de la SV, de 65 à 74 ans et à 75 ans et plus.
 
-La recherche se fait dans votre navigateur : le revenu que vous entrez n’est envoyé ni à CanQuery ni à personne.
+La recherche se fait dans votre navigateur : le revenu que vous entrez n’est pas envoyé à CanQuery.
 
 Par exemple, dans les tableaux d’octobre à décembre 2026, une personne seule dont le revenu annuel est de 18 000 $ se trouve dans la tranche de 18 000,00 $ à 18 023,99 $ : le SRG est de 212,49 $ par mois, ou de 974,99 $ par mois avec la pleine pension de la SV de 65 à 74 ans.
 
@@ -31,7 +31,7 @@ Pour un couple, les tableaux utilisent le revenu combiné des deux conjoints, et
 
 ## Quel revenu compte
 
-Les tableaux se lisent avec votre revenu net de l’année civile précédente : les tableaux d’octobre à décembre 2026 reposent sur le revenu de 2025. La pension de la SV et le SRG n’y sont pas comptés; dans le tableau 4, l’Allocation ne l’est pas non plus, ni l’Allocation au survivant dans le tableau 5. EDSC recalcule les paiements du SRG et de l’Allocation chaque année en juillet avec la nouvelle année de revenu : un paiement peut donc changer en juillet parce que votre revenu a changé, et pas seulement parce que les montants ont changé.
+Chaque année en juillet, EDSC recalcule les paiements du SRG et de l’Allocation à partir de votre revenu net de l’année civile précédente, et ce revenu sert jusqu’au mois de juin suivant : les tableaux de juillet 2026 à juin 2027 reposent tous sur le revenu de 2025. Un paiement peut donc changer en juillet parce que votre revenu a changé, et pas seulement parce que les montants ont changé. La pension de la SV et le SRG ne sont pas comptés dans ce revenu; dans le tableau 4, l’Allocation ne l’est pas non plus, ni l’Allocation au survivant dans le tableau 5.
 
 C’est Service Canada qui détermine le revenu utilisé pour votre prestation. Si vous n’êtes pas certain de ce qui compte, utilisez son [Estimateur des prestations de la Sécurité de la vieillesse](https://estimateursv-oasestimator.digital.service.canada.ca/fr) ou communiquez avec Service Canada.
 

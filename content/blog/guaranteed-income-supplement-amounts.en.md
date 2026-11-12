@@ -6,7 +6,7 @@ The Guaranteed Income Supplement (GIS) is a monthly, tax-free payment for people
 | What the tables give | The monthly GIS, Allowance or Allowance for the Survivor for each range of yearly income |
 | Tables | Five, by marital status: one for a single person, three for couples, one for a survivor |
 | Updated | Every quarter: January, April, July and October |
-| Income used | Net income of the previous calendar year, recalculated each July |
+| Income used | Net income of the calendar year before each July’s recalculation (2025 for July 2026 to June 2027) |
 | Licence | Open Government Licence – Canada |
 
 ## Find your amount
@@ -15,7 +15,7 @@ The Guaranteed Income Supplement (GIS) is a monthly, tax-free payment for people
 2. Type your yearly income. For a single person it is your own income; for a couple it is the two incomes together. Leave out the OAS pension and the GIS themselves.
 3. Read the monthly amount. For the GIS tables the page also shows the total with the full OAS pension, for ages 65 to 74 and for 75 and over.
 
-The lookup works in your browser: the income you type is not sent to CanQuery or to anyone else.
+The lookup works in your browser: the income you type is not sent to CanQuery.
 
 For example, in the tables for October to December 2026, a single person with a yearly income of $18,000 is in the band from $18,000.00 to $18,023.99: the GIS is $212.49 a month, or $974.99 a month together with the full OAS pension at ages 65 to 74.
 
@@ -31,7 +31,7 @@ For a couple, the tables use the combined income of the two partners, and each G
 
 ## Which income counts
 
-The tables are read with your net income for the previous calendar year: the tables for October to December 2026 use income for 2025. The OAS pension and the GIS are not counted; in Table 4 the Allowance is not counted either, and in Table 5 the Allowance for the Survivor is not. ESDC recalculates GIS and Allowance payments each July with the new income year, so a payment can change in July because your income changed, not only because the amounts did.
+Each July, ESDC recalculates GIS and Allowance payments from your net income of the previous calendar year, and that income is used until the next June: the tables for July 2026 to June 2027 all use income for 2025. So a payment can change in July because your income changed, not only because the amounts did. The OAS pension and the GIS are not counted in that income; in Table 4 the Allowance is not counted either, and in Table 5 the Allowance for the Survivor is not.
 
 Service Canada determines the income used for your own benefit. If you are not sure what counts, use its [Old Age Security Benefits Estimator](https://estimateursv-oasestimator.digital.service.canada.ca/en) or contact Service Canada.
 

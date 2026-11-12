@@ -188,6 +188,16 @@ export function itemOnScreen(items, win = window) {
   return box.bottom > 0 && box.top < win.innerHeight ? { index: low, top: box.top } : null;
 }
 
+// Where an element's box starts in the window, from layout alone: a transform on an
+// ancestor (a page that is still fading in) is not counted, as it is by
+// getBoundingClientRect.
+/** @param {HTMLElement} element @param {{ scrollY: number }} [win] */
+export function layoutTop(element, win = window) {
+  let y = 0;
+  for (let node = element; node; node = /** @type {HTMLElement | null} */ (node.offsetParent)) y += node.offsetTop;
+  return y - win.scrollY;
+}
+
 // Scrolls to `y` as soon as the page is tall enough to show it, which can take
 // a moment while a page that came back from history loads its content, then
 // holds it while the page settles. Stops when the page has settled, after

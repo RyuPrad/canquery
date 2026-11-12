@@ -4,7 +4,7 @@
 // application draws the same content over it; crawlers and visitors without
 // JavaScript read this. Amounts come from services/oasPages.js in whole cents.
 const seo = require('./seoMeta');
-const { shell, verbatim } = require('./seoSnapshot');
+const { shell, exact } = require('./seoSnapshot');
 const { listArticles } = require('./blogContent');
 const {
     OAS_DATASET_ID, TABLE_NUMBERS, periodLabel, dateLabel, periodState, todayInCanada, formatMoney, formatDollars, formatBand,
@@ -12,7 +12,7 @@ const {
 } = require('../utils/oasLabels');
 
 const [FROM, TO, AMOUNT, ALLOWANCE, WITH_65, WITH_75] = [0, 1, 2, 3, 4, 5];
-// A table's page shows its bands in this many sections, each under its income range.
+// A table's page shows its bands in at most this many sections, each under its income range.
 const SECTIONS = 12;
 const escape = seo.escapeHtml;
 const language = lang => (lang === 'fr' ? 'fr' : 'en');
@@ -34,7 +34,7 @@ const TEXT = {
             5: short => `Allowance for the Survivor amounts (Table 5): ${short}`
         },
         heading: long => `Guaranteed Income Supplement, Allowance and OAS pension amounts, ${long}`,
-        headingPlain: 'Guaranteed Income Supplement, Allowance and OAS pension amounts by income',
+        headingPlain: 'Guaranteed Income Supplement, Allowance and OAS pension amounts',
         descriptions: long => [
             `Guaranteed Income Supplement (GIS), Allowance and OAS pension amounts by yearly income: look up the official ${long} tables.`,
             `Monthly GIS, Allowance and OAS pension amounts by yearly income, from the official ${long} tables.`
@@ -88,7 +88,7 @@ const TEXT = {
             5: short => `Allocation au survivant, Tableau 5 : ${short}`
         },
         heading: long => `Montants du Supplément de revenu garanti, de l’Allocation et de la pension de la Sécurité de la vieillesse, ${long}`,
-        headingPlain: 'Montants du Supplément de revenu garanti, de l’Allocation et de la pension de la Sécurité de la vieillesse selon le revenu',
+        headingPlain: 'Montants du Supplément de revenu garanti, de l’Allocation et de la pension de la Sécurité de la vieillesse',
         descriptions: long => [
             `Supplément de revenu garanti (SRG), Allocation et pension de vieillesse : montants mensuels selon le revenu, tableaux officiels pour ${long}.`,
             `Montants mensuels du SRG, de l’Allocation et de la pension de la SV selon le revenu annuel, tableaux officiels pour ${long}.`
@@ -204,7 +204,7 @@ function periodNote(period, lang, now) {
     return '';
 }
 const twinLink = (path, lang) => '<p><a href="' + escape(path(language(lang) === 'fr' ? 'en' : 'fr')) + '" hreflang="' +
-    copy(lang).twinLang + '">' + escape(copy(lang).twin) + '</a></p>';
+    copy(lang).twinLang + '" lang="' + copy(lang).twinLang + '">' + escape(copy(lang).twin) + '</a></p>';
 const paragraph = value => (value ? '<p>' + escape(value) + '</p>' : '');
 
 // A table's largest amounts, as the key figures show them.
@@ -234,8 +234,8 @@ function oasSnapshot(summary, lang, { now = new Date() } = {}) {
     const shared = copy(lang);
     const datasetLink = { path: '/datasets/' + OAS_DATASET_ID, label: words.datasetLink };
     if (!summary) {
-        return shell({ breadcrumbs: breadcrumbs(lang, [{ label: shared.hub }]), title: verbatim(words.headingPlain),
-            lead: verbatim(shared.loading), overviewHtml: twinLink(oasPath, lang), sources: officialLinks(lang),
+        return shell({ breadcrumbs: breadcrumbs(lang, [{ label: shared.hub }]), title: exact(words.headingPlain),
+            lead: exact(shared.loading), overviewHtml: twinLink(oasPath, lang), sources: officialLinks(lang),
             relatedTitle: words.filesTitle, relatedLinks: [datasetLink], guides: guides(lang), labels: words.shell });
     }
     const { period, previous } = summary;
@@ -267,15 +267,15 @@ function oasSnapshot(summary, lang, { now = new Date() } = {}) {
         '</a></p></section>').join('');
     return shell({
         breadcrumbs: breadcrumbs(lang, [{ label: shared.hub }]),
-        title: verbatim(words.heading(long)),
-        lead: verbatim(words.lead(long, period.income_year) + ' ' + shared.caveat),
+        title: exact(words.heading(long)),
+        lead: exact(words.lead(long, period.income_year) + ' ' + shared.caveat),
         facts: [
-            { label: words.facts.quarter, value: verbatim(long) },
+            { label: words.facts.quarter, value: exact(long) },
             { label: words.facts.incomeYear, value: period.income_year },
-            summary.oas ? { label: words.facts.oas65, value: verbatim(words.monthly(formatMoney(summary.oas.age_65_cents, lang))) } : null,
-            summary.oas ? { label: words.facts.oas75, value: verbatim(words.monthly(formatMoney(summary.oas.age_75_cents, lang))) } : null,
-            { label: words.facts.publisher, value: verbatim(words.publisher) },
-            { label: words.facts.loaded, value: verbatim(dateLabel(summary.updated_at, lang)) }
+            summary.oas ? { label: words.facts.oas65, value: exact(words.monthly(formatMoney(summary.oas.age_65_cents, lang))) } : null,
+            summary.oas ? { label: words.facts.oas75, value: exact(words.monthly(formatMoney(summary.oas.age_75_cents, lang))) } : null,
+            { label: words.facts.publisher, value: exact(words.publisher) },
+            { label: words.facts.loaded, value: exact(dateLabel(summary.updated_at, lang)) }
         ],
         overviewHtml: twinLink(oasPath, lang) + paragraph(periodNote(period, lang, now)) +
             // Names and figures that may wrap, unlike the tables of bands.
@@ -283,8 +283,8 @@ function oasSnapshot(summary, lang, { now = new Date() } = {}) {
             change + short,
         sources: officialLinks(lang),
         linksTitle: words.tablesTitle,
-        links: summary.tables.map(entry => ({ path: oasTablePath(lang, entry.table), label: verbatim(tableTitle(entry.table, lang)),
-            detail: verbatim(words.bands(count(entry.row_count, lang))) })),
+        links: summary.tables.map(entry => ({ path: oasTablePath(lang, entry.table), label: exact(tableTitle(entry.table, lang)),
+            detail: exact(words.bands(count(entry.row_count, lang))) })),
         relatedTitle: words.filesTitle,
         relatedLinks: [datasetLink, ...summary.tables.map(entry => ({ path: '/resources/' + encodeURIComponent(entry.resource_id),
             label: words.fileLink(entry.table) }))],
@@ -311,14 +311,27 @@ function oasTableMeta(number, table, lang) {
         jsonLd: [crumbs, webPage({ lang, path, name: title, description, summary: { updated_at: table.period.loaded_at } })] };
 }
 
-// The bands of a table in SECTIONS groups of equal length, each with the income it
-// starts at (its anchor is "income-" and that many dollars).
+// The bands of a table in sections of one round span of income (whole thousands of
+// dollars, at most SECTIONS of them). A section is named by the income it starts at
+// (its anchor is "income-" and that many dollars), so a link to "#income-18000" keeps
+// its meaning from one quarter to the next; the band that holds that income opens the
+// section. client/src/utils/oas.js makes the same sections.
 function bandSections(rows) {
-    const size = Math.max(1, Math.ceil(rows.length / SECTIONS));
+    if (!rows.length) return [];
+    const end = rows[rows.length - 1][TO] + 1;
+    const span = Math.max(1, Math.ceil(end / SECTIONS / 100000)) * 100000;
     const groups = [];
-    for (let start = 0; start < rows.length; start += size) {
-        const part = rows.slice(start, start + size);
-        groups.push({ id: 'income-' + Math.floor(part[0][FROM] / 100), from: part[0][FROM], to: part[part.length - 1][TO], rows: part });
+    for (const row of rows) {
+        // The first round income the band holds, or the one before it when it holds none.
+        const held = Math.ceil(row[FROM] / span) * span;
+        const start = held <= row[TO] ? held : Math.floor(row[FROM] / span) * span;
+        const last = groups[groups.length - 1];
+        if (last && last.start === start) {
+            last.rows.push(row);
+            last.to = row[TO];
+        } else {
+            groups.push({ id: 'income-' + start / 100, start, from: row[FROM], to: row[TO], rows: [row] });
+        }
     }
     return groups;
 }
@@ -331,8 +344,8 @@ function oasTableSnapshot(table, lang, { now = new Date(), number = null } = {})
     const datasetLink = { path: '/datasets/' + OAS_DATASET_ID, label: words.datasetLink };
     if (!table) {
         const path = code => (number ? oasTablePath(code, number) : oasPath(code));
-        return shell({ breadcrumbs: breadcrumbs(lang, [hubCrumb, { label: number ? verbatim(tableTitle(number, lang)) : shared.hub }]),
-            title: verbatim(number ? tableTitle(number, lang) : words.headingPlain), lead: verbatim(shared.loading),
+        return shell({ breadcrumbs: breadcrumbs(lang, [hubCrumb, { label: number ? exact(tableTitle(number, lang)) : shared.hub }]),
+            title: exact(number ? tableTitle(number, lang) : words.headingPlain), lead: exact(shared.loading),
             overviewHtml: twinLink(path, lang), sources: officialLinks(lang), relatedTitle: words.filesTitle, relatedLinks: [datasetLink],
             guides: guides(lang), labels: words.shell });
     }
@@ -347,24 +360,24 @@ function oasTableSnapshot(table, lang, { now = new Date(), number = null } = {})
     const sections = groups.map(group => '<section id="' + group.id + '"><h2>' + escape(words.range(formatBand(group.from, group.to, lang))) +
         '</h2>' + htmlTable({ headers, rows: group.rows.map(row => bandCells(own, row, lang)) }) + '</section>').join('');
     return shell({
-        breadcrumbs: breadcrumbs(lang, [hubCrumb, { label: verbatim(shared.table + ' ' + own) }]),
-        title: verbatim(name + ', ' + long),
-        lead: verbatim(words.tableLead(name, long, lowerFirst(shared.income[own]), table.period.income_year) + ' ' + shared.caveat),
+        breadcrumbs: breadcrumbs(lang, [hubCrumb, { label: exact(shared.table + ' ' + own) }]),
+        title: exact(name + ', ' + long),
+        lead: exact(words.tableLead(name, long, lowerFirst(shared.income[own]), table.period.income_year) + ' ' + shared.caveat),
         facts: [
-            { label: words.facts.quarter, value: verbatim(long) },
+            { label: words.facts.quarter, value: exact(long) },
             { label: words.facts.incomeYear, value: table.period.income_year },
-            { label: words.maximum[kind(own)], value: verbatim(words.monthly(formatMoney(entry.max_amount_cents, lang))) },
-            hasAllowance(own) ? { label: words.maximum.allowance, value: verbatim(words.monthly(formatMoney(entry.max_allowance_cents, lang))) } : null,
-            { label: words.endsAt, value: verbatim(formatDollars(entry.ends_at_cents, lang)) },
-            { label: words.facts.bands, value: verbatim(count(entry.row_count, lang)) },
-            hasPension(own) && table.oas ? { label: words.facts.oas65, value: verbatim(words.monthly(formatMoney(table.oas.age_65_cents, lang))) } : null,
-            hasPension(own) && table.oas ? { label: words.facts.oas75, value: verbatim(words.monthly(formatMoney(table.oas.age_75_cents, lang))) } : null
+            { label: words.maximum[kind(own)], value: exact(words.monthly(formatMoney(entry.max_amount_cents, lang))) },
+            hasAllowance(own) ? { label: words.maximum.allowance, value: exact(words.monthly(formatMoney(entry.max_allowance_cents, lang))) } : null,
+            { label: words.endsAt, value: exact(formatDollars(entry.ends_at_cents, lang)) },
+            { label: words.facts.bands, value: exact(count(entry.row_count, lang)) },
+            hasPension(own) && table.oas ? { label: words.facts.oas65, value: exact(words.monthly(formatMoney(table.oas.age_65_cents, lang))) } : null,
+            hasPension(own) && table.oas ? { label: words.facts.oas75, value: exact(words.monthly(formatMoney(table.oas.age_75_cents, lang))) } : null
         ],
         overviewHtml: twinLink(code => oasTablePath(code, own), lang) + paragraph(periodNote(table.period, lang, now)) + jump + sections,
         sources: officialLinks(lang),
         linksTitle: words.othersTitle,
         links: [...TABLE_NUMBERS.filter(other => other !== own).map(other => ({ path: oasTablePath(lang, other),
-            label: verbatim(tableTitle(other, lang)) })), { path: oasPath(lang), label: shared.hubLong }],
+            label: exact(tableTitle(other, lang)) })), { path: oasPath(lang), label: shared.hubLong }],
         relatedTitle: words.filesTitle,
         relatedLinks: [{ path: '/resources/' + encodeURIComponent(entry.resource_id), label: words.fileLink(own) }, datasetLink],
         guides: guides(lang),

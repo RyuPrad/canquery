@@ -5,7 +5,9 @@ import { INITIAL_DATA_ID } from './initialData.js';
 // quarter shown and each table asked for. A direct visit starts from the block in
 // its HTML (the same answers the JSON routes give), so the page draws at once; moving
 // between the hub, a table and the other language then reuses what is here instead
-// of loading again. A summary is asked for again after five minutes.
+// of loading again. A summary older than five minutes is still shown, and asked for
+// again behind the page; when the new one says the amounts were loaded again (a new
+// quarter, a corrected file), the tables read before it are dropped.
 
 const FRESH_MS = 5 * 60 * 1000;
 const VERSION = 1;
@@ -17,9 +19,12 @@ const tableRequests = new Map();
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const tableKey = (period, table) => period + ':' + table;
 
-/** The summary already here and still fresh, or null. @param {number} [now] */
-export function peekOasSummary(now = Date.now()) {
-  return summary && now - summary.at < FRESH_MS ? summary.data : null;
+/**
+ * The summary already here, or null: only while it is fresh, unless `stale` allows an older one.
+ * @param {number} [now] @param {{ stale?: boolean }} [options]
+ */
+export function peekOasSummary(now = Date.now(), { stale = false } = {}) {
+  return summary && (stale || now - summary.at < FRESH_MS) ? summary.data : null;
 }
 
 /** The summary, from here when fresh, otherwise from the server (one request at a time). */
@@ -29,6 +34,8 @@ export function loadOasSummary() {
   if (!summaryRequest) {
     summaryRequest = fetchOasSummary()
       .then((envelope) => {
+        // Amounts loaded again since the tables here were read: those tables may be old.
+        if (summary && (summary.data.updated_at !== envelope.data.updated_at || summary.data.period.key !== envelope.data.period.key)) tables.clear();
         summary = { data: envelope.data, at: Date.now() };
         return envelope.data;
       })

@@ -140,21 +140,32 @@ export function periodState(period, day) {
 
 // ---- Income -------------------------------------------------------------------
 
-const SPACES = new RegExp('[\\s' + NBSP + String.fromCharCode(0x202f) + ']', 'g');
+// A gap that groups thousands: a space, a no-break space or a narrow no-break space.
+const GAP = '[ ' + NBSP + String.fromCharCode(0x202f) + ']';
+const INCOME_FORMS = [
+  /^(\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/, // 18,000.50
+  new RegExp('^(\\d{1,3}(?:' + GAP + '\\d{3})+)(?:[.,](\\d{1,2}))?$'), // 18 000,50
+  /^(\d+)(?:[.,](\d{1,2}))?$/ // 18000.50 and 18000,50
+];
 /**
  * The yearly income a visitor typed, in cents. Accepts "18000", "18,000", "18,000.50",
  * "18 000", "18000,50" and a "$" on either side; anything else is invalid, including
- * "18.000", which could be read two ways. An empty box is not an error.
+ * "18.000", which could be read two ways, and two numbers pasted together. A separator
+ * typed last ("18,000.") is the amount so far, and an empty box is not an error.
  * @param {string} text
  * @returns {{ cents: number } | { empty: true } | { invalid: true }}
  */
 export function parseIncome(text) {
-  const value = String(text == null ? '' : text).replace(SPACES, '').replace(/^\$|\$$/g, '');
+  // Spaces around the amount and around its "$" are not part of it; inside it a gap only groups thousands.
+  const value = String(text == null ? '' : text).trim().replace(/^\$/, '').replace(/\$$/, '').trim().replace(/[.,]$/, '');
   if (value === '') return { empty: true };
-  // Commas that group thousands, with a point before the cents; or no grouping, with a point or a comma.
-  const match = /^(\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/.exec(value) || /^(\d+)(?:[.,](\d{1,2}))?$/.exec(value);
+  let match = null;
+  for (const form of INCOME_FORMS) {
+    match = form.exec(value);
+    if (match) break;
+  }
   if (!match) return { invalid: true };
-  const whole = match[1].replace(/,/g, '');
+  const whole = match[1].replace(/\D/g, '');
   const fraction = match[2] || '';
   if (whole.replace(/^0+(?=\d)/, '').length > 9) return { invalid: true };
   return { cents: Number(whole) * 100 + Number(fraction.padEnd(2, '0')) };
@@ -176,17 +187,29 @@ export function findBand(rows, cents) {
   return null;
 }
 
-// A table's page shows its bands in this many sections, each under its income range
-// (the server's HTML has the same sections, so the page keeps its shape when the
-// application draws over it).
+// A table's page shows its bands in sections of one round span of income (whole
+// thousands of dollars, at most BAND_SECTIONS of them). A section is named by the
+// income it starts at, so a link to "#income-18000" keeps its meaning from one quarter
+// to the next; the band that holds that income opens the section. The server's HTML
+// has the same sections, so the page keeps its shape when the application draws over it.
 export const BAND_SECTIONS = 12;
 /** @param {number[][]} rows */
 export function bandSections(rows) {
-  const size = Math.max(1, Math.ceil(rows.length / BAND_SECTIONS));
+  if (!rows.length) return [];
+  const end = rows[rows.length - 1][TO] + 1;
+  const span = Math.max(1, Math.ceil(end / BAND_SECTIONS / 100000)) * 100000;
   const groups = [];
-  for (let start = 0; start < rows.length; start += size) {
-    const part = rows.slice(start, start + size);
-    groups.push({ id: 'income-' + Math.floor(part[0][FROM] / 100), from: part[0][FROM], to: part[part.length - 1][TO], first: start + 1, rows: part });
-  }
+  rows.forEach((row, index) => {
+    // The first round income the band holds, or the one before it when it holds none.
+    const held = Math.ceil(row[FROM] / span) * span;
+    const start = held <= row[TO] ? held : Math.floor(row[FROM] / span) * span;
+    const last = groups[groups.length - 1];
+    if (last && last.start === start) {
+      last.rows.push(row);
+      last.to = row[TO];
+    } else {
+      groups.push({ id: 'income-' + start / 100, start, from: row[FROM], to: row[TO], first: index + 1, rows: [row] });
+    }
+  });
   return groups;
 }

@@ -24,11 +24,17 @@ const MAX_SUMMARY = 1200;
 // never read as Markdown or HTML, so "1. Choice Farms Ltd" keeps its number and
 // "Café <Ouest> Ltée" its brackets. It is escaped like everything else.
 class Verbatim {
-    constructor(value) { this.value = String(value == null ? '' : value); }
+    constructor(value, exact = false) {
+        this.value = String(value == null ? '' : value);
+        this.exact = exact;
+    }
     toString() { return this.value; }
 }
 const verbatim = value => new Verbatim(value);
-const readable = value => (value instanceof Verbatim ? collapse(value.value) : seo.plainText(value));
+// Text of the site's own that is already as it must be printed, such as a formatted
+// amount: its no-break spaces stay ("1 138,90 $" must not break or lose them).
+const exact = value => new Verbatim(value, true);
+const readable = value => (value instanceof Verbatim ? (value.exact ? value.value.trim() : collapse(value.value)) : seo.plainText(value));
 
 function text(value) {
     return seo.escapeHtml(readable(value));
@@ -767,6 +773,7 @@ module.exports = {
     MAX_LINKS,
     shell,
     verbatim,
+    exact,
     sectionNav,
     safeHttpUrl,
     faqExplanation,

@@ -318,7 +318,7 @@ describe('the /oas pages', () => {
         expect(res.text.match(/<table data-cq-amounts="true">/g)).toHaveLength(5);
         expect(res.text).toContain('<section id="table-5"><h2>Table 5: Allowance for the Survivor</h2>');
         expect(res.text).toContain('<a href="/oas/table-3">All 120 income bands of Table 3</a>');
-        expect(res.text).toContain('<a href="/fr/sv" hreflang="fr">Lire en français</a>');
+        expect(res.text).toContain('<a href="/fr/sv" hreflang="fr" lang="fr">Lire en français</a>');
         expect(res.text).toContain('<a href="/resources/res-2">Table 2 as a CSV table</a>');
         expect(res.text).toContain('href="https://www.canada.ca/en/services/benefits/publicpensions/old-age-security/payments.html"');
         expect(res.text).not.toContain('Change from');
@@ -339,10 +339,12 @@ describe('the /oas pages', () => {
         expect(res.text).toContain('<h1>Montants du Supplément de revenu garanti, de l’Allocation et de la pension de la Sécurité de la vieillesse, octobre à décembre 2026</h1>');
         expect(res.text).toContain('<nav aria-label="Fil d’Ariane">');
         expect(res.text).toContain('<h2>Sources officielles et licences</h2>');
-        expect(res.text).toContain('<dt>Pleine pension de la SV, 65 à 74 ans</dt><dd>762,50 $ par mois</dd>');
+        // Amounts keep their no-break spaces wherever the page prints them.
+        expect(res.text).toContain('<dt>Pleine pension de la SV, 65 à 74 ans</dt><dd>762,50' + NBSP + '$ par mois</dd>');
+        expect(res.text).not.toMatch(/\d \$/);
         expect(res.text).toContain('<td>1' + NBSP + '138,90' + NBSP + '$ par mois</td><td>2' + NBSP + '880' + NBSP + '$</td>');
         expect(res.text).toContain('<a href="/fr/sv/tableau-4">Tableau 4 : SRG et Allocation pour un couple</a>');
-        expect(res.text).toContain('<a href="/oas" hreflang="en">Read in English</a>');
+        expect(res.text).toContain('<a href="/oas" hreflang="en" lang="en">Read in English</a>');
         expect(res.text).toContain('CanQuery n’est pas un site du gouvernement.');
         expect(res.text).toContain('"inLanguage":"fr-CA"');
         expect(res.text).not.toContain('Official sources and licences');
@@ -361,17 +363,19 @@ describe('the /oas pages', () => {
         expect(res.text).toContain('<dt>Income bands</dt><dd>1,140</dd>');
         expect(res.text).toContain('<dt>Maximum monthly GIS</dt><dd>$1,138.90 a month</dd>');
         const body = res.text.slice(res.text.indexOf('<div id="root">'), res.text.indexOf('<script type="application/json" id="cq-initial">'));
-        expect(body.match(/<section id="income-\d+">/g)).toHaveLength(12);
+        // The table ends at $23,107.80: twelve sections of $2,000, each opened by the band that holds its round income.
+        expect(body.match(/<section id="income-\d+">/g)).toEqual(Array.from({ length: 12 }, (_, index) => `<section id="income-${index * 2000}">`));
         expect(body.match(/<tr><th scope="row">\$/g)).toHaveLength(1140);
         expect(body).toContain('<nav aria-label="Income ranges" data-cq-jump="true">');
-        expect(body).toContain('<li><a href="#income-0">$0.00 to $1,925.64</a></li>');
-        expect(body).toContain('<section id="income-0"><h2>Yearly income $0.00 to $1,925.64</h2>');
+        expect(body).toContain('<li><a href="#income-0">$0.00 to $1,986.45</a></li>');
+        expect(body).toContain('<section id="income-0"><h2>Yearly income $0.00 to $1,986.45</h2>');
+        expect(body).toContain('<section id="income-2000"><h2>Yearly income $1,986.46 to $3,993.18</h2>');
         expect(body).toContain('<th scope="col">Yearly income</th><th scope="col">Monthly GIS</th><th scope="col">OAS pension and GIS, age 65 to 74</th>' +
             '<th scope="col">OAS pension and GIS, age 75 and over</th>');
         expect(body).toContain('<tr><th scope="row">$0.00 to $20.26</th><td>$1,138.90</td><td>$1,901.40</td><td>$1,977.65</td></tr>');
         expect(body).toContain('<a href="/oas/table-5">Table 5: Allowance for the Survivor</a>');
         expect(body).toContain('<a href="/oas">OAS and GIS amounts by income</a>');
-        expect(body).toContain('<a href="/fr/sv/tableau-1" hreflang="fr">Lire en français</a>');
+        expect(body).toContain('<a href="/fr/sv/tableau-1" hreflang="fr" lang="fr">Lire en français</a>');
         expect(body).not.toContain('href="/oas/table-1"');
     });
 
@@ -381,7 +385,8 @@ describe('the /oas pages', () => {
         expect(couple).toContain('<th scope="col">Revenu annuel</th><th scope="col">SRG mensuel</th><th scope="col">Allocation mensuelle</th>' +
             '<th scope="col">Pension de la SV et SRG, 65 à 74 ans</th><th scope="col">Pension de la SV et SRG, 75 ans et plus</th>');
         expect(couple).toContain('<dt>Allocation mensuelle maximale</dt>');
-        expect(couple).toContain('<h2>Revenu annuel de 0,00' + NBSP + '$ à 239,99' + NBSP + '$</h2>');
+        expect(couple).toContain('<h2>Revenu annuel de 0,00' + NBSP + '$ à 983,99' + NBSP + '$</h2>');
+        expect(couple).toContain('<dt>Indiqué pour les revenus annuels inférieurs à</dt><dd>2' + NBSP + '880' + NBSP + '$</dd>');
         const survivor = (await request(spa).get('/oas/table-5')).text;
         expect(survivor).toContain('<th scope="col">Yearly income</th><th scope="col">Monthly Allowance for the Survivor</th></tr>');
         expect(survivor).toContain('<dt>Maximum monthly Allowance for the Survivor</dt>');
@@ -446,6 +451,9 @@ describe('the /oas pages', () => {
         expect(block).toMatchObject({ kind: 'oas', path: '/fr/sv/tableau-3?x=1', lang: 'fr', table: 3 });
         expect(block.rows).toEqual((await request(app).get('/web-api/v1/oas/tables/3')).body);
         expect(block.summary.data.period.key).toBe(block.rows.data.period.key);
+        // An address that ends in a bare "?" is the address without it to the browser: the block says the same.
+        expect(initial((await request(spa).get('/oas?')).text).path).toBe('/oas');
+        expect(initial((await request(spa).get('/oas/table-2?')).text).path).toBe('/oas/table-2');
         // A fetch from the application itself (the head for a route change) gets none.
         expect((await request(spa).get('/oas').set('Sec-Fetch-Dest', 'empty')).text).not.toContain('cq-initial');
         expect(oasInitialData({ lang: 'en', table: null, summary: null, data: null }, { path: '/oas' })).toBeNull();
@@ -463,7 +471,7 @@ describe('the /oas pages', () => {
         expect(presentation.oasTableSnapshot(table, 'fr', { now: new Date('2026-09-29T15:00:00Z') }))
             .toContain('<p>Ces montants s’appliquent à compter du 1er octobre 2026.</p>');
         expect(presentation.oasTableSnapshot(table, 'fr', { now: new Date('2027-02-01T15:00:00Z') }))
-            .toContain('<p>Ce sont les montants de octobre à décembre 2026.');
+            .toContain('<p>Ce sont les montants pour octobre à décembre 2026.');
     });
 
     test('once two quarters are loaded the hub shows what changed', async () => {
@@ -574,6 +582,34 @@ describe('wording shared with the application', () => {
                 expect([link.label, links.includes(link.label)]).toEqual([link.label, true]);
                 const address = link.path.replace('dfa4daf1-669e-4514-82cd-982f27707ed0', '');
                 expect([address, links.includes(address)]).toEqual([address, true]);
+            }
+        }
+    });
+    test('the application makes the same sections and prints the same characters', async () => {
+        // The application's own module, as the browser runs it.
+        const app = await import('../../client/src/utils/oas.js');
+        const tables = [bands(1, { rows: 963 }), bands(1, { rows: 1140, width: 2027 }), bands(2, { rows: 686, width: 4800 }), bands(5, { rows: 1220 }),
+            bands(4, { rows: 7 }), [[0, 409599, 113890, null, 190140, 197765], ...bands(3, { rows: 300, width: 4800 }).map(([from, to, ...rest]) => [from + 409600, to + 409600, ...rest])]];
+        for (const rows of tables) {
+            const mine = presentation.bandSections(rows).map(group => [group.id, group.from, group.to, group.rows.length]);
+            expect(app.bandSections(rows).map(group => [group.id, group.from, group.to, group.rows.length])).toEqual(mine);
+            expect(mine.length).toBeLessThanOrEqual(12);
+        }
+        expect(presentation.bandSections(bands(1, { rows: 963 })).map(group => group.id)).toEqual(
+            Array.from({ length: 12 }, (_, index) => 'income-' + index * 2000));
+        for (const lang of ['en', 'fr']) {
+            for (const cents of [0, 1, 49, 99, 100, 999, 1000, 76250, 99999, 100000, 113890, 2311199, 2311200, 123456789, 99999999999]) {
+                expect(app.formatMoney(cents, lang)).toBe(labels.formatMoney(cents, lang));
+                expect(app.formatDollars(cents, lang)).toBe(labels.formatDollars(cents, lang));
+                expect(app.formatBand(cents, cents + 2399, lang)).toBe(labels.formatBand(cents, cents + 2399, lang));
+                expect(app.formatChange(cents + 1500, cents || 1, lang)).toBe(labels.formatChange(cents + 1500, cents || 1, lang));
+            }
+            for (const key of [202603, 202606, 202609, 202612, 202703]) {
+                const period = labels.periodOf(key);
+                expect(app.periodLabel(period, lang)).toBe(labels.periodLabel(period, lang));
+                expect(app.periodLabel(period, lang, { short: true })).toBe(labels.periodLabel(period, lang, { short: true }));
+                expect(app.dateLabel(period.start, lang)).toBe(labels.dateLabel(period.start, lang));
+                for (const day of ['2026-09-30', '2026-10-01', '2026-12-31', '2027-01-01']) expect(app.periodState(period, day)).toBe(labels.periodState(period, day));
             }
         }
     });

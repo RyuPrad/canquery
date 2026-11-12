@@ -70,11 +70,22 @@ describe('parseIncome', () => {
   });
   test('an empty box is not an error', () => {
     // A lone dollar sign is someone about to type the amount.
-    for (const text of ['', '   ', NBSP, '$', ' $ ', null, undefined]) expect(parseIncome(text)).toEqual({ empty: true });
+    for (const text of ['', '   ', NBSP, '$', ' $ ', '.', ',', null, undefined]) expect(parseIncome(text)).toEqual({ empty: true });
+  });
+  test('a separator typed last is the amount so far', () => {
+    for (const [text, cents] of [['18,', 1800], ['18.', 1800], ['18,000.', 1800000], ['18 000,', 1800000], ['1,234,', 123400], ['$5.', 500]]) {
+      expect([text, parseIncome(text)]).toEqual([text, { cents }]);
+    }
+  });
+  test('a gap only groups thousands: two numbers pasted together are not an amount', () => {
+    for (const text of ['18000\t212', '18000 212', '1 8000', '18 00', '18  000', '18\n000', '1,234 567', '18 000 000 0']) {
+      expect([text, parseIncome(text)]).toEqual([text, { invalid: true }]);
+    }
+    expect(parseIncome('1 234 567,8')).toEqual({ cents: 123456780 });
   });
   test('refuses what could be read two ways or is not an amount', () => {
     for (const text of ['18.000', '18,0000', '1,23,456', '18.000,50', '-5', '+5', '1e5', 'abc', '18k', '18 000 CAD', '$$5', '5$$',
-      '18..5', '18,000,5', '.5', '5.', '1234567890', '１２３']) {
+      '18..5', '18,000,5', '.5', '5..', '18.000.', '1234567890', '１２３']) {
       expect([text, parseIncome(text)]).toEqual([text, { invalid: true }]);
     }
   });
@@ -92,16 +103,31 @@ describe('bands', () => {
     expect(findBand([], 5)).toBeNull();
     for (let cents = 0; cents < 288000; cents += 997) expect(findBand(rows, cents).row[0]).toBe(Math.floor(cents / 2400) * 2400);
   });
-  test('a table is shown in twelve sections of equal length, each named by its first income', () => {
-    const groups = bandSections(bands(1140, 2027));
-    expect(groups).toHaveLength(12);
-    expect(groups.map((group) => group.rows.length)).toEqual([95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95]);
-    expect(groups[0]).toMatchObject({ id: 'income-0', from: 0, to: 192564, first: 1 });
-    expect(groups[1]).toMatchObject({ id: 'income-1925', from: 192565, first: 96 });
-    expect(groups[11].first).toBe(1046);
-    expect(groups.flatMap((group) => group.rows)).toHaveLength(1140);
-    expect(bandSections(bands(686)).map((group) => group.rows.length)).toEqual([58, 58, 58, 58, 58, 58, 58, 58, 58, 58, 58, 48]);
-    expect(bandSections(bands(5))).toHaveLength(5);
+  test('a table is shown in sections of one round span of income, each named by the income it starts at', () => {
+    // 963 bands of $24 end at $23,112, as the single person's table does: twelve sections of $2,000.
+    const single = bandSections(bands(963));
+    expect(single.map((group) => group.id)).toEqual(['income-0', 'income-2000', 'income-4000', 'income-6000', 'income-8000', 'income-10000',
+      'income-12000', 'income-14000', 'income-16000', 'income-18000', 'income-20000', 'income-22000']);
+    // The band that holds a round income opens its section.
+    expect(single[1]).toMatchObject({ start: 200000, from: 199200, first: 84 });
+    expect(single[1].rows[0]).toEqual(bands(963)[83]);
+    expect(single[0]).toMatchObject({ from: 0, to: 199199, first: 1 });
+    expect(single[11].to).toBe(2311199);
+    expect(single.flatMap((group) => group.rows)).toEqual(bands(963));
+    expect(single.map((group) => group.first)).toEqual(single.map((group, index) => single.slice(0, index).reduce((sum, item) => sum + item.rows.length, 0) + 1));
+    // The same income names the same section in the next quarter's slightly longer table.
+    expect(bandSections(bands(980)).slice(0, 12).map((group) => group.id)).toEqual(single.map((group) => group.id));
+    // A wider table takes a wider span, and never more than twelve sections: $5,000 for one that ends at $55,392.
+    const couple = bandSections(bands(1154, 4800));
+    expect(couple).toHaveLength(12);
+    expect(couple.map((group) => group.id).slice(0, 3)).toEqual(['income-0', 'income-5000', 'income-10000']);
+    for (const rows of [bands(120), bands(686, 4800), bands(1220, 2400), bands(5000, 2400), bands(1)]) {
+      expect(bandSections(rows).length).toBeLessThanOrEqual(12);
+      expect(bandSections(rows).flatMap((group) => group.rows)).toEqual(rows);
+    }
+    // A first band wider than the span (the couple's table starts with one of $4,096) stays one band in the first section.
+    const wide = [[0, 409599, 113890, null, 190140, 197765], ...bands(40, 4800).map(([from, to, ...rest]) => [from + 409600, to + 409600, ...rest])];
+    expect(bandSections(wide)[0]).toMatchObject({ id: 'income-0', from: 0, first: 1 });
     expect(bandSections([])).toEqual([]);
   });
 });

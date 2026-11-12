@@ -147,7 +147,7 @@ const COPY = {
         caveat: 'These are the amounts Employment and Social Development Canada publishes for people who receive the full ' +
             'Old Age Security pension. Your own payment can differ, for example with a partial pension or a change in your ' +
             'situation, and Service Canada decides it. CanQuery is not a government website.',
-        private: 'The lookup runs in your browser: the income you type is never sent to CanQuery or anyone else.',
+        private: 'The lookup runs in your browser: the income you type is never sent to CanQuery.',
         loading: 'The tables of OAS benefit amounts are being loaded. Until then, each official file is on the dataset page.',
         upcoming: 'These amounts apply from {date}.',
         ended: 'These are the amounts for {period}. Newer amounts may have been published since; CanQuery shows them as soon as Employment and Social Development Canada publishes its files.',
@@ -189,10 +189,10 @@ const COPY = {
             'pleine pension de la Sécurité de la vieillesse. Votre paiement peut différer, par exemple avec une pension ' +
             'partielle ou un changement de situation, et c’est Service Canada qui le détermine. CanQuery n’est pas un site ' +
             'du gouvernement.',
-        private: 'La recherche se fait dans votre navigateur : le revenu que vous entrez n’est jamais envoyé à CanQuery ni à personne.',
+        private: 'La recherche se fait dans votre navigateur : le revenu que vous entrez n’est jamais envoyé à CanQuery.',
         loading: 'Les tableaux des montants des prestations de la SV sont en cours de chargement. D’ici là, chaque fichier officiel se trouve sur la page du jeu de données.',
         upcoming: 'Ces montants s’appliquent à compter du {date}.',
-        ended: 'Ce sont les montants de {period}. De nouveaux montants ont peut-être été publiés depuis; CanQuery les affiche dès qu’Emploi et Développement social Canada publie ses fichiers.',
+        ended: 'Ce sont les montants pour {period}. De nouveaux montants ont peut-être été publiés depuis; CanQuery les affiche dès qu’Emploi et Développement social Canada publie ses fichiers.',
         twin: 'Read in English',
         twinLang: 'en'
     }

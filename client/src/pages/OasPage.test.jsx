@@ -9,8 +9,10 @@ import { NBSP } from '../utils/oas.js';
 
 vi.mock('../api/oas.js', async (original) => ({ ...(await original()), fetchOasSummary: vi.fn(), fetchOasTable: vi.fn() }));
 vi.mock('../utils/analytics.js', () => ({ track: vi.fn() }));
+vi.mock('../utils/quietPages.js', async (original) => ({ ...(await original()), reloadDocument: vi.fn() }));
 import { fetchOasSummary, fetchOasTable } from '../api/oas.js';
 import { track } from '../utils/analytics.js';
+import { reloadDocument } from '../utils/quietPages.js';
 
 // A table's bands: $24 wide from 0, a dollar less per band; table 4 has the partner's
 // Allowance and table 5 no OAS pension columns.
@@ -82,6 +84,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(2026, 10, 11, 12));
   localStorage.clear();
+  delete window.__cqHeatmaps;
   resetOasData();
   document.getElementById('cq-initial')?.remove();
   fetchOasSummary.mockResolvedValue(envelope(SUMMARY));
@@ -172,8 +175,53 @@ describe('the OAS amounts hub', () => {
     expect(fetchOasTable).toHaveBeenCalledTimes(1);
     await pause(1000);
     expect(track).toHaveBeenCalledTimes(1);
-    expect(track).toHaveBeenCalledWith('oas_lookup', { table: 1, language: 'en', placement: 'hub', outcome: 'amount' });
+    expect(track).toHaveBeenCalledWith('oas_lookup', { table: 1, language: 'en', placement: 'hub', outcome: 'answer' });
     expect(JSON.stringify(track.mock.calls)).not.toMatch(/2,?[56]00/);
+  });
+
+  test('the box is saved at once when it is left, so a link used straight after typing does not lose it', async () => {
+    embed(hubBlock());
+    renderAt('/oas');
+    fireEvent.change(income(), { target: { value: '2,500' } });
+    expect(screen.getByTestId('location')).toHaveTextContent('/oas null');
+    fireEvent.blur(income());
+    expect(screen.getByTestId('location')).toHaveTextContent('/oas {"oas":{"income":"2,500","table":1}}');
+    // Nothing more to save afterwards.
+    await pause(400);
+    expect(screen.getByTestId('location')).toHaveTextContent('/oas {"oas":{"income":"2,500","table":1}}');
+  });
+
+  test('a separator typed last is the amount so far; pasted text that is not one amount is refused', async () => {
+    embed(hubBlock());
+    renderAt('/oas');
+    for (const [typed, read] of [['2,', '$2.00'], ['2,5', '$2.50'], ['2,500', '$2,500.00'], ['2,500.', '$2,500.00'], ['  2 500,5 $', '$2,500.50']]) {
+      fireEvent.change(income(), { target: { value: typed } });
+      await waitFor(() => expect(answer()).toHaveTextContent('For a yearly income of ' + read));
+      expect(income()).toHaveAttribute('aria-invalid', 'false');
+    }
+    // Leading spaces are not kept in the box.
+    expect(income()).toHaveValue('2 500,5 $');
+    for (const pasted of ['2500\t212', '2500 212', '2 5000']) {
+      fireEvent.change(income(), { target: { value: pasted } });
+      expect(income()).toHaveAttribute('aria-invalid', 'true');
+      expect(answer()).not.toHaveTextContent('a month');
+    }
+    expect(income()).toHaveAttribute('spellcheck', 'false');
+    expect(income()).toHaveAttribute('autocomplete', 'off');
+  });
+
+  test('the space for the longest answer is kept out of sight, outside what is read aloud', () => {
+    embed(hubBlock());
+    renderAt('/oas');
+    const reserve = document.querySelector('[data-oas-reserve]');
+    expect(reserve).toHaveAttribute('aria-hidden', 'true');
+    expect(reserve).toHaveClass('invisible');
+    expect(reserve).toHaveTextContent('Monthly GIS$1,138.90 a month');
+    expect(reserve.querySelector('a, button')).toBeNull();
+    expect(answer()).not.toContainElement(reserve);
+    expect(reserve.parentElement).toContainElement(answer());
+    // The line for a wrong amount keeps its place too.
+    expect(screen.getByText('Enter an amount in dollars, such as 18,000 or 18000.50.')).toHaveClass('invisible');
   });
 
   test('each situation reads its own table and shows its own amounts', async () => {
@@ -210,15 +258,16 @@ describe('the OAS amounts hub', () => {
     await waitFor(() => expect(answer()).toHaveTextContent('Monthly GIS$1,138.90 a month'));
     await pause(900);
     fireEvent.change(income(), { target: { value: '18.000' } });
-    expect(await screen.findByText('Enter an amount in dollars, such as 18,000 or 18000.50.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Enter an amount in dollars, such as 18,000 or 18000.50.')).not.toHaveClass('invisible'));
     expect(income()).toHaveAttribute('aria-invalid', 'true');
     expect(answer()).not.toHaveTextContent('a month');
     await pause(900);
     fireEvent.change(income(), { target: { value: '' } });
     expect(income()).toHaveAttribute('aria-invalid', 'false');
     expect(answer()).toHaveTextContent('Type a yearly income');
-    // Each outcome is counted once, after a pause, and never with what was typed.
-    expect(track.mock.calls.map(([, properties]) => properties.outcome)).toEqual(['above', 'amount', 'invalid']);
+    // Each outcome is counted once, after a pause, never with what was typed, and without saying
+    // whether the table lists the income.
+    expect(track.mock.calls.map(([, properties]) => properties.outcome)).toEqual(['answer', 'invalid']);
     expect(track.mock.calls.every(([name, properties]) => name === 'oas_lookup' && Object.keys(properties).sort().join() === 'language,outcome,placement,table')).toBe(true);
   });
 
@@ -245,6 +294,17 @@ describe('the OAS amounts hub', () => {
     expect(screen.getByText('another page')).toBeInTheDocument();
   });
 
+  test('an income that came back with the history entry is not counted as a new lookup', async () => {
+    embed(hubBlock());
+    renderAt({ pathname: '/oas', state: { oas: { income: '1,200', table: 1 } } });
+    await waitFor(() => expect(answer()).toHaveTextContent('For a yearly income of $1,200.00'));
+    await pause(1000);
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.change(income(), { target: { value: '1,300' } });
+    await pause(1000);
+    expect(track).toHaveBeenCalledTimes(1);
+  });
+
   test('a quarter that has not started says from when it applies and answers for the quarter in effect too', async () => {
     vi.setSystemTime(new Date(2026, 8, 29, 12));
     fetchOasSummary.mockResolvedValue(envelope(WITH_PREVIOUS));
@@ -260,6 +320,60 @@ describe('the OAS amounts hub', () => {
     expect(answer()).toHaveTextContent('Monthly GIS$1,138.90 a month');
     expect(answer()).toHaveTextContent('Monthly GIS$1,123.17 a month');
     expect(fetchOasTable.mock.calls).toEqual(expect.arrayContaining([[1, 202612], [1, 202609]]));
+    // Both quarters read the same income year here, so the heading names none.
+    expect(answer()).not.toHaveTextContent('if your income for');
+  });
+
+  test('the amount until then names its income year when that is another one', async () => {
+    vi.setSystemTime(new Date(2026, 8, 29, 12));
+    const earlier = { ...Q3, income_year: 2024 };
+    fetchOasSummary.mockResolvedValue(envelope({ ...WITH_PREVIOUS, periods: [earlier, Q4], previous: { ...WITH_PREVIOUS.previous, period: earlier } }));
+    renderAt('/oas');
+    await screen.findByRole('heading', { level: 1 });
+    fireEvent.change(income(), { target: { value: '0' } });
+    await waitFor(() => expect(answer()).toHaveTextContent('Until then (July to September 2026), if your income for 2024 was the same'));
+  });
+
+  test('the amount until then says so when it cannot be read or when that table does not list the income', async () => {
+    vi.setSystemTime(new Date(2026, 8, 29, 12));
+    // The table in effect ends at $1,440; the coming one at $2,880.
+    const shorter = WITH_PREVIOUS.previous.tables.map((entry) => ({ ...entry, row_count: 60, ends_at_cents: 144000 }));
+    fetchOasSummary.mockResolvedValue(envelope({ ...WITH_PREVIOUS, previous: { ...WITH_PREVIOUS.previous, tables: shorter } }));
+    fetchOasTable.mockImplementation(async (table, period) => {
+      if (period !== Q3.key) return envelope(tableData(table));
+      const data = tableData(table, Q3, 112317);
+      return envelope({ ...data, table: shorter[table - 1], rows: data.rows.slice(0, 60) });
+    });
+    fetchOasTable.mockImplementationOnce(async (table) => envelope(tableData(table)));
+    fetchOasTable.mockRejectedValueOnce(new ApiError('Too many requests', 429));
+    renderAt('/oas');
+    await screen.findByRole('heading', { level: 1 });
+    fireEvent.change(income(), { target: { value: '2000' } });
+    await waitFor(() => expect(answer()).toHaveTextContent('The amount in effect until then could not be loaded.'));
+    expect(answer()).toHaveTextContent('From October 1, 2026');
+    expect(answer()).toHaveTextContent('Monthly GIS$1,055.90 a month');
+    fireEvent.click(within(answer()).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(answer()).toHaveTextContent(
+      'The table in effect until then lists no amount for this income: it lists yearly incomes below $1,440.'));
+    // And the other way round: listed until then, not from the coming quarter on.
+    fireEvent.change(income(), { target: { value: '1000' } });
+    await waitFor(() => expect(answer()).toHaveTextContent('Monthly GIS$1,082.17 a month'));
+    expect(answer()).toHaveTextContent('Monthly GIS$1,097.90 a month');
+  });
+
+  test('a quarter that has not started stands alone when the loaded quarter before it is not the one running', async () => {
+    // October to December is the newest loaded and has not started; the one before it loaded is January to March.
+    vi.setSystemTime(new Date(2026, 8, 29, 12));
+    const old = { ...Q3, key: 202603, quarter: 1, start: '2026-01-01', end: '2026-03-31' };
+    fetchOasSummary.mockResolvedValue(envelope({ ...WITH_PREVIOUS, periods: [old, Q4], previous: { ...WITH_PREVIOUS.previous, period: old } }));
+    renderAt('/oas');
+    expect(await screen.findByText('These amounts apply from October 1, 2026.')).toBeInTheDocument();
+    fireEvent.change(income(), { target: { value: '0' } });
+    await waitFor(() => expect(answer()).toHaveTextContent('Monthly GIS$1,138.90 a month'));
+    expect(answer()).not.toHaveTextContent('Until then');
+    expect(fetchOasTable).toHaveBeenCalledTimes(1);
+    // The change table still names the quarter it compares with.
+    expect(screen.getByRole('heading', { name: 'Change from January to March 2026' })).toBeInTheDocument();
   });
 
   test('a quarter that has ended says newer amounts may exist; with two quarters loaded and the newest in effect, one answer', async () => {
@@ -293,7 +407,7 @@ describe('a table’s page', () => {
   const tableBlock = (overrides = {}) => ({ version: 1, kind: 'oas', path: '/oas/table-2', lang: 'en', table: 2,
     summary: envelope(SUMMARY), rows: envelope(tableData(2)), ...overrides });
 
-  test('a direct visit draws every band from the block, in twelve sections, with no request', () => {
+  test('a direct visit draws every band from the block, in sections of a round span of income, with no request', () => {
     embed(tableBlock());
     renderAt('/oas/table-2');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
@@ -301,11 +415,13 @@ describe('a table’s page', () => {
     expect(fetchOasSummary).not.toHaveBeenCalled();
     expect(fetchOasTable).not.toHaveBeenCalled();
     expect(document.querySelectorAll('tr[data-line]')).toHaveLength(120);
-    expect(document.querySelectorAll('section[id^="income-"]')).toHaveLength(12);
-    expect(document.getElementById('income-0')).toContainElement(screen.getByRole('heading', { name: 'Yearly income $0.00 to $239.99' }));
+    // The table ends at $2,880: sections of $1,000, each opened by the band that holds its round income.
+    expect([...document.querySelectorAll('section[id^="income-"]')].map((section) => section.id)).toEqual(['income-0', 'income-1000', 'income-2000']);
+    expect(document.getElementById('income-0')).toContainElement(screen.getByRole('heading', { name: 'Yearly income $0.00 to $983.99' }));
+    expect(document.getElementById('income-1000').querySelector('tr[data-line]')).toHaveAttribute('data-line', '42');
     const jump = screen.getByRole('navigation', { name: 'Income ranges' });
-    expect(within(jump).getAllByRole('link')).toHaveLength(12);
-    expect(within(jump).getByRole('link', { name: '$240.00 to $479.99' })).toHaveAttribute('href', '#income-240');
+    expect(within(jump).getAllByRole('link')).toHaveLength(3);
+    expect(within(jump).getByRole('link', { name: '$984.00 to $1,991.99' })).toHaveAttribute('href', '#income-1000');
     expect(screen.getByText(/combined yearly income of the couple \(excluding OAS pension and GIS\), for 2025/)).toBeInTheDocument();
     expect(screen.getByText('Maximum monthly GIS · $1,138.90 a month')).toBeInTheDocument();
     expect(screen.getByText('120 income bands')).toBeInTheDocument();
@@ -313,6 +429,12 @@ describe('a table’s page', () => {
     expect(screen.getByRole('link', { name: 'OAS and GIS amounts by income' })).toHaveAttribute('href', '/oas');
     expect(screen.getByRole('link', { name: 'Lire en français' })).toHaveAttribute('href', '/fr/sv/tableau-2');
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  });
+
+  test('the link to the other language names the same part of the page', () => {
+    embed(tableBlock({ path: '/oas/table-2' }));
+    renderAt('/oas/table-2#income-1000');
+    expect(screen.getByRole('link', { name: 'Lire en français' })).toHaveAttribute('href', '/fr/sv/tableau-2#income-1000');
   });
 
   test('a block whose table is of another quarter than its summary is not used', async () => {
@@ -338,18 +460,103 @@ describe('a table’s page', () => {
     fireEvent.change(income(), { target: { value: '100' } });
     await waitFor(() => expect(answer()).toHaveTextContent('Income band $96.00 to $119.99'));
     expect(fetchOasTable).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Show this row in the table' }));
+    // The row is marked as soon as the lookup answers, and names its figures.
     const found = document.querySelector('tr.cq-oas-found');
     expect(found).toHaveAttribute('data-line', '5');
-    expect(found).toHaveFocus();
     expect(within(found).getByRole('rowheader')).toHaveTextContent('$96.00 to $119.99');
+    expect([...found.children].map((cell) => cell.getAttribute('data-label'))).toEqual(
+      [null, 'Monthly GIS', 'OAS pension and GIS, age 65 to 74', 'OAS pension and GIS, age 75 and over']);
+    expect(found).not.toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Show this row in the table' }));
+    expect(found).toHaveFocus();
+    // Another income moves the mark; the old row loses it and its labels.
     fireEvent.change(income(), { target: { value: '2000' } });
     await waitFor(() => expect(answer()).toHaveTextContent('Income band $1,992.00 to $2,015.99'));
-    fireEvent.click(screen.getByRole('button', { name: 'Show this row in the table' }));
     expect(document.querySelectorAll('tr.cq-oas-found')).toHaveLength(1);
     expect(document.querySelector('tr.cq-oas-found')).toHaveAttribute('data-line', '84');
+    expect(found.querySelector('[data-label]')).toBeNull();
+    // An income the table does not list, an amount that is not one, and an empty box leave no row marked.
+    for (const typed of ['5000', '18.000', '']) {
+      fireEvent.change(income(), { target: { value: '2000' } });
+      await waitFor(() => expect(document.querySelectorAll('tr.cq-oas-found')).toHaveLength(1));
+      fireEvent.change(income(), { target: { value: typed } });
+      await waitFor(() => expect(document.querySelectorAll('tr.cq-oas-found')).toHaveLength(0));
+      expect(screen.queryByRole('button', { name: 'Show this row in the table' })).not.toBeInTheDocument();
+    }
+    fireEvent.change(income(), { target: { value: '2000' } });
     await pause(1000);
-    expect(track).toHaveBeenCalledWith('oas_lookup', { table: 2, language: 'en', placement: 'table', outcome: 'amount' });
+    expect(track).toHaveBeenCalledWith('oas_lookup', { table: 2, language: 'en', placement: 'table', outcome: 'answer' });
+  });
+
+  test('the row is marked again when the page comes back with its income', async () => {
+    embed(tableBlock());
+    renderAt({ pathname: '/oas/table-2', state: { oas: { income: '2000', table: 2 } } });
+    await waitFor(() => expect(document.querySelector('tr.cq-oas-found')).toHaveAttribute('data-line', '84'));
+    expect(income()).toHaveValue('2000');
+  });
+
+  test('a quarter that has not started: the table page answers for the quarter in effect too', async () => {
+    vi.setSystemTime(new Date(2026, 8, 29, 12));
+    embed(tableBlock({ summary: envelope(WITH_PREVIOUS) }));
+    renderAt('/oas/table-2');
+    expect(screen.getByText('These amounts apply from October 1, 2026.')).toBeInTheDocument();
+    fireEvent.change(income(), { target: { value: '0' } });
+    await waitFor(() => expect(answer()).toHaveTextContent('Until then (July to September 2026)'));
+    expect(answer()).toHaveTextContent('From October 1, 2026');
+    expect(answer()).toHaveTextContent('Monthly GIS$1,138.90 a month');
+    expect(answer()).toHaveTextContent('Monthly GIS$1,123.17 a month');
+    // Only the quarter in effect had to be read; the table on the page is the coming quarter's.
+    expect(fetchOasTable.mock.calls).toEqual([[2, 202609]]);
+    expect(document.querySelector('tr.cq-oas-found')).toHaveAttribute('data-line', '1');
+  });
+
+  test('a page reached after the heatmap recorder was loaded starts again as its own document', async () => {
+    window.__cqHeatmaps = true;
+    renderAt('/oas/table-2');
+    expect(reloadDocument).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Loading the benefit amounts…')).toBeInTheDocument();
+    await pause(50);
+    expect(fetchOasSummary).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    // Without the recorder nothing is reloaded.
+    delete window.__cqHeatmaps;
+    reloadDocument.mockClear();
+    embed(tableBlock());
+    renderAt('/oas/table-2');
+    expect(reloadDocument).not.toHaveBeenCalled();
+  });
+
+  test('a summary that is no longer fresh still draws the page, and is read again behind it', async () => {
+    embed(tableBlock());
+    const first = renderAt('/oas/table-2');
+    expect(document.querySelectorAll('tr[data-line]')).toHaveLength(120);
+    first.unmount();
+    // Six minutes later, on the hub: no loading state, one request behind the page.
+    vi.setSystemTime(new Date(2026, 10, 11, 12, 6));
+    const reloaded = { ...SUMMARY, updated_at: '2026-11-11T17:05:00.000Z' };
+    fetchOasSummary.mockResolvedValue(envelope(reloaded));
+    const hub = renderAt('/oas');
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText('Loading the benefit amounts…')).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchOasSummary).toHaveBeenCalledTimes(1));
+    hub.unmount();
+    // The amounts were loaded again since: the table read before is asked for again.
+    await pause(20);
+    renderAt('/oas/table-2');
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(fetchOasTable).toHaveBeenCalledWith(2, 202612);
+  });
+
+  test('a summary that cannot be read again leaves the page as it is', async () => {
+    embed(hubBlock());
+    renderAt('/oas').unmount();
+    vi.setSystemTime(new Date(2026, 10, 11, 12, 6));
+    fetchOasSummary.mockRejectedValue(new Error('offline'));
+    renderAt('/oas');
+    await waitFor(() => expect(fetchOasSummary).toHaveBeenCalledTimes(1));
+    await pause(20);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('October to December 2026');
+    expect(screen.queryByText('The benefit amounts could not be loaded.')).not.toBeInTheDocument();
   });
 });
 
@@ -368,9 +575,15 @@ describe('a visit that arrives at a band of the table', () => {
     const served = [...snapshot.querySelectorAll('tr')];
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function rect() {
       const index = served.indexOf(this);
-      const top = index >= 0 ? 380 + (index - 72) * 40 : this.dataset.line ? 1000 + (Number(this.dataset.line) - 73) * 30 : 0;
+      // A rectangle read from the application's rows would be 12 px off while the page fades in.
+      const top = index >= 0 ? 380 + (index - 72) * 40 : this.dataset.line ? 1012 + (Number(this.dataset.line) - 73) * 30 : 0;
       return { top, bottom: top + 30, left: 0, right: 0, width: 0, height: 30, x: 0, y: top, toJSON: () => ({}) };
     });
+    // Their layout offsets say where they are: 1000 px down the window for the 73rd band.
+    vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function offset() {
+      return this.dataset.line ? scrollY + 1000 + (Number(this.dataset.line) - 73) * 30 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockReturnValue(null);
     vi.spyOn(window, 'scrollY', 'get').mockReturnValue(scrollY);
     scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {});
   }
@@ -455,6 +668,6 @@ describe('the French pages', () => {
     expect(screen.getByRole('link', { name: 'Tableau 5 : Allocation au survivant' })).toHaveAttribute('href', '/fr/sv/tableau-5');
     expect(screen.getByRole('link', { name: 'Montants de la SV et du SRG selon le revenu' })).toHaveAttribute('href', '/fr/sv');
     expect(screen.getByRole('link', { name: 'Read in English' })).toHaveAttribute('href', '/oas/table-2');
-    expect(screen.getByRole('heading', { name: 'Revenu annuel de 0,00' + NBSP + '$ à 239,99' + NBSP + '$' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Revenu annuel de 0,00' + NBSP + '$ à 983,99' + NBSP + '$' })).toBeInTheDocument();
   });
 });

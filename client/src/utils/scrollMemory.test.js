@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
-  createScrollMemory, entryKey, followHash, itemOnScreen, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
+  createScrollMemory, entryKey, followHash, itemOnScreen, layoutTop, RESTORE_LIMIT_MS, restoreScroll, scrollAction, SETTLE_LIMIT_MS, SETTLE_MS
 } from './scrollMemory.js';
 
 const at = (pathname, search = '', hash = '') => ({ pathname, search, hash });
@@ -421,5 +421,14 @@ describe('itemOnScreen', () => {
     expect(itemOnScreen([], win(500))).toBeNull();
     expect(itemOnScreen(list(10, 900), win(500))).toBeNull();
     expect(itemOnScreen(list(10, -2000), win(5000))).toBeNull();
+  });
+});
+
+describe('layoutTop', () => {
+  test('adds the offsets up to the page and takes the scroll away, whatever is transformed', () => {
+    const table = { offsetTop: 2200, offsetParent: { offsetTop: 300, offsetParent: null } };
+    const row = { offsetTop: 31000, offsetParent: table };
+    expect(layoutTop(row, { scrollY: 33000 })).toBe(500);
+    expect(layoutTop({ offsetTop: 40, offsetParent: null }, { scrollY: 0 })).toBe(40);
   });
 });

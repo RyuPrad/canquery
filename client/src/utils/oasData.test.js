@@ -50,6 +50,43 @@ describe('what the OAS pages have read', () => {
     expect(fetchOasSummary).toHaveBeenCalledTimes(2);
   });
 
+  test('an older summary can still be had while a new one is fetched', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-11T12:00:00Z'));
+    const first = await loadOasSummary();
+    vi.setSystemTime(new Date('2026-11-11T12:10:00Z'));
+    expect(peekOasSummary()).toBeNull();
+    expect(peekOasSummary(Date.now(), { stale: true })).toBe(first);
+    // A new one that cannot be read leaves the old one in place.
+    fetchOasSummary.mockRejectedValueOnce(new Error('offline'));
+    await expect(loadOasSummary()).rejects.toThrow('offline');
+    expect(peekOasSummary(Date.now(), { stale: true })).toBe(first);
+  });
+
+  test('tables read before the amounts were loaded again are dropped with the new summary', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-11T12:00:00Z'));
+    fetchOasSummary.mockResolvedValue(envelope({ ...summary(), updated_at: '2026-11-11T09:00:00.000Z' }));
+    await loadOasSummary();
+    await loadOasTable(202612, 2);
+    expect(peekOasTable(202612, 2)).not.toBeNull();
+    // The same summary again keeps them.
+    vi.setSystemTime(new Date('2026-11-11T12:06:00Z'));
+    await loadOasSummary();
+    expect(peekOasTable(202612, 2)).not.toBeNull();
+    // A corrected file: the summary says the amounts were loaded again.
+    vi.setSystemTime(new Date('2026-11-11T12:12:00Z'));
+    fetchOasSummary.mockResolvedValue(envelope({ ...summary(), updated_at: '2026-11-11T12:10:00.000Z' }));
+    await loadOasSummary();
+    expect(peekOasTable(202612, 2)).toBeNull();
+    // And a new quarter.
+    await loadOasTable(202612, 2);
+    vi.setSystemTime(new Date('2026-11-11T12:18:00Z'));
+    fetchOasSummary.mockResolvedValue(envelope({ ...summary(202703), updated_at: '2026-11-11T12:10:00.000Z' }));
+    await loadOasSummary();
+    expect(peekOasTable(202612, 2)).toBeNull();
+  });
+
   test('a table is kept by quarter and number; a failed request is not kept', async () => {
     expect(peekOasTable(202612, 2)).toBeNull();
     const [first, second] = await Promise.all([loadOasTable(202612, 2), loadOasTable(202612, 2)]);

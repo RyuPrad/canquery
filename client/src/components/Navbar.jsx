@@ -34,9 +34,9 @@ export default function Navbar() {
 
   const chooseLanguage = language => {
     track('ui_language', { language });
-    // A page with an address per language moves to its twin, keeping what its entry holds.
+    // A page with an address per language moves to its twin, keeping what its entry holds and the part of the page its address names.
     const twin = translatedPath(pathname, language);
-    if (twin && twin !== pathname) navigate(twin + location.search, { state: location.state });
+    if (twin && twin !== pathname) navigate(twin + location.search + location.hash, { state: location.state });
     else if (isBlog && blogTranslations?.pathname === pathname) navigate(blogTranslations.paths[language]);
     else if (isBlog) navigate(language === 'fr' ? '/fr/blog' : '/blog');
     setLang(language);
