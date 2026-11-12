@@ -31,12 +31,15 @@ test('no-progress timeout returns504 and cancels upstream work', async () => {
     expect(completed).toBe(true);
 });
 
+// The stream lasts longer than the idle deadline (six writes 100 ms apart against 500 ms),
+// so it only completes when each write resets the deadline. The deadline is five times a
+// step: a write that a busy runner delays by a few hundred milliseconds does not end it.
 test('stream writes reset the progress deadline and completion clears it', async () => {
     const app = express();
-    app.use(requestLifetime({ idleMs: 60 }));
+    app.use(requestLifetime({ idleMs: 500 }));
     app.get('/', catchAsync(async (req, res) => {
-        for (let i = 0; i < 5; i++) {
-            await new Promise(resolve => setTimeout(resolve, 20));
+        for (let i = 0; i < 6; i++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
             req.signal.throwIfAborted();
             res.write('row\n');
         }
@@ -44,7 +47,7 @@ test('stream writes reset the progress deadline and completion clears it', async
     }));
     const result = await request(app).get('/');
     expect(result.status).toBe(200);
-    expect(result.text).toBe('row\n'.repeat(5));
+    expect(result.text).toBe('row\n'.repeat(6));
 });
 
 test('client disconnect cancels ongoing work before the idle deadline', async () => {
