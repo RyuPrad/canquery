@@ -10,6 +10,12 @@ import { NBSP } from '../utils/oas.js';
 vi.mock('../api/oas.js', async (original) => ({ ...(await original()), fetchOasSummary: vi.fn(), fetchOasTable: vi.fn() }));
 vi.mock('../utils/analytics.js', () => ({ track: vi.fn() }));
 vi.mock('../utils/quietPages.js', async (original) => ({ ...(await original()), reloadDocument: vi.fn() }));
+// The hosted edition fills this slot with its alert box; here it shows only what the page hands it.
+vi.mock('../components/DatasetAlertSlot.jsx', () => ({
+  default: ({ datasetId, datasetTitle, variant, ...others }) => (
+    <div data-testid="alert-slot" data-dataset={datasetId} data-title={datasetTitle} data-variant={variant} data-others={Object.keys(others).join(',')} />
+  )
+}));
 import { fetchOasSummary, fetchOasTable } from '../api/oas.js';
 import { track } from '../utils/analytics.js';
 import { reloadDocument } from '../utils/quietPages.js';
@@ -681,5 +687,51 @@ describe('the French pages', () => {
     expect(screen.getByRole('link', { name: 'Montants de la SV et du SRG selon le revenu' })).toHaveAttribute('href', '/fr/sv');
     expect(screen.getByRole('link', { name: 'Read in English' })).toHaveAttribute('href', '/oas/table-2');
     expect(screen.getByRole('heading', { name: 'Revenu annuel de 0,00' + NBSP + '$ à 983,99' + NBSP + '$' })).toBeInTheDocument();
+  });
+});
+
+describe('the place for the hosted alert box', () => {
+  const slot = () => screen.getByTestId('alert-slot');
+  const follows = (first, second) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  test('the hub offers the dataset’s alert under the lookup, and hands it nothing about the visitor', async () => {
+    embed(hubBlock());
+    renderAt('/oas');
+    expect(slot()).toHaveAttribute('data-dataset', 'dfa4daf1-669e-4514-82cd-982f27707ed0');
+    expect(slot()).toHaveAttribute('data-title', 'OAS and GIS amounts by income');
+    expect(slot()).toHaveAttribute('data-variant', 'hub');
+    expect(slot()).toHaveAttribute('data-others', '');
+    expect(follows(income(), slot())).toBe(true);
+    expect(follows(slot(), screen.getByRole('heading', { name: 'Maximum monthly amounts, October to December 2026' }))).toBe(true);
+    // What is typed into the lookup never reaches the slot.
+    const before = slot().outerHTML;
+    fireEvent.change(income(), { target: { value: '2,500' } });
+    await waitFor(() => expect(answer()).toHaveTextContent('For a yearly income of $2,500.00'));
+    await pause(450);
+    expect(slot().outerHTML).toBe(before);
+    expect(screen.getAllByTestId('alert-slot')).toHaveLength(1);
+  });
+
+  test('a table’s page offers it between the lookup and the table', () => {
+    embed({ version: 1, kind: 'oas', path: '/oas/table-2', lang: 'en', table: 2, summary: envelope(SUMMARY), rows: envelope(tableData(2)) });
+    renderAt('/oas/table-2');
+    expect(slot()).toHaveAttribute('data-dataset', 'dfa4daf1-669e-4514-82cd-982f27707ed0');
+    expect(slot()).toHaveAttribute('data-variant', 'hub');
+    expect(slot()).toHaveAttribute('data-others', '');
+    expect(follows(income(), slot())).toBe(true);
+    expect(follows(slot(), document.querySelector('tr[data-line="1"]'))).toBe(true);
+  });
+
+  test('in French it carries the French name', () => {
+    embed(hubBlock({ path: '/fr/sv', lang: 'fr' }));
+    renderAt('/fr/sv');
+    expect(slot()).toHaveAttribute('data-title', 'Montants de la SV et du SRG selon le revenu');
+  });
+
+  test('a page with no quarter to show offers no alert', async () => {
+    fetchOasSummary.mockRejectedValueOnce(new ApiError('not loaded', 503));
+    renderAt('/oas');
+    expect(await screen.findByText(/The tables of OAS benefit amounts are being loaded\./)).toBeInTheDocument();
+    expect(screen.queryByTestId('alert-slot')).not.toBeInTheDocument();
   });
 });
