@@ -20,7 +20,9 @@ test.each(['/api/v1', '/web-api/v1', '/API/V1', '/WEB-API/V1'])('%s keeps API re
     const malformed = await request(app).post(base + '/resources/fixture/prepare').set('Content-Type', 'application/json').send('{');
     expect(malformed.status).toBe(400);
     expect(malformed.headers['x-robots-tag']).toBe('noindex');
-});
+// The first case pays for the application's first requests (the guides are read and rendered), which took more
+// than Jest's five seconds on a busy CI runner once; the checks themselves are quick.
+}, 20000);
 
 test('does not extend the header to similar prefixes or public crawl files', async () => {
     for (const path of ['/api/v10/blog', '/web-api/v10/blog', '/robots.txt', '/sitemap-pages.xml']) {
