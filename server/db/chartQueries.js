@@ -71,7 +71,7 @@ async function readSample({ tableName, columns, plan }, options) {
 const MAX_SETS = 12;
 const MAX_MEASURES = 48;
 const KEY_CUT = 200;
-const RANK_ALIAS = { sum: 's', avg: 'a', max: 'x', min: 'l' };
+const RANK_ALIAS = { sum: 's', avg: 'a', max: 'x', min: 'l', abs: 'b' };
 // Groups are ordered by the bytes of their key: the same order on every
 // database, whatever its language settings, and the cheapest comparison.
 const BY_KEY = 'fk COLLATE "C"';
@@ -146,7 +146,13 @@ function buildBatchSql({ tableName, where, scope = null, excluded = [], totals =
         }
         if (key.kind === 'date') {
             const text = key.column.type === 'TEXT';
-            return 'coalesce(' + sqlDateKey(text ? 'btrim(' + stored(key.column) + ')' : stored(key.column), text ? 'iso_date' : key.column.type, key.grain) + ', \'\')';
+            const value = text ? 'btrim(' + stored(key.column) + ')' : stored(key.column);
+            const bucketed = 'coalesce(' + sqlDateKey(value, text ? 'iso_date' : key.column.type, key.grain) + ', \'\')';
+            if (!Array.isArray(key.skip) || !key.skip.length) return bucketed;
+            // Dates that stand for "no date" (1900-01-01) belong to no period.
+            const day = text ? 'replace(left(' + value + ', 10), \'/\', \'-\')'
+                : key.column.type === 'TIMESTAMPTZ' ? 'to_char(' + value + ' AT TIME ZONE \'UTC\', \'YYYY-MM-DD\')' : 'to_char(' + value + ', \'YYYY-MM-DD\')';
+            return '(CASE WHEN coalesce(' + day + ' = ANY(' + param(key.skip) + '::text[]), false) THEN \'\' ELSE ' + bucketed + ' END)';
         }
         if (key.kind === 'text') return 'coalesce(' + asText(key.column) + ', \'\')';
         if (key.kind === 'day_first') return 'coalesce(' + sqlDayFirstKey('btrim(' + asText(key.column) + ')', key.order, key.grain, param) + ', \'\')';
@@ -250,8 +256,8 @@ function buildBatchSql({ tableName, where, scope = null, excluded = [], totals =
             else if (Object.hasOwn(RANK_ALIAS, rank.by) && Number.isInteger(rank.measure) && rank.measure >= 0 && rank.measure < measures.length) {
                 const j = rank.measure;
                 name = 'rn_' + RANK_ALIAS[rank.by] + j;
-                orders.set(name, (rank.by === 'sum' ? 's' + j : rank.by === 'max' ? 'hi' + j : rank.by === 'min' ? 'lo' + j
-                    : '(s' + j + ' / nullif(c' + j + ', 0))') + ' DESC NULLS LAST, ' + BY_KEY);
+                orders.set(name, (rank.by === 'sum' ? 's' + j : rank.by === 'abs' ? 'abs(s' + j + ')' : rank.by === 'max' ? 'hi' + j
+                    : rank.by === 'min' ? 'lo' + j : '(s' + j + ' / nullif(c' + j + ', 0))') + ' DESC NULLS LAST, ' + BY_KEY);
             } else throw new AppError('invalid chart ranking', 500);
             any.push(name + ' <= ' + rank.limit);
         }

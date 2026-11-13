@@ -61,9 +61,12 @@ function trimLabel(label) {
 // place or of everything is one in any table.
 const TOTAL_OF_RE = /^(?:(?:grand|sub|sous)[ -]?)?(?:totals?|totaux)\s+(?:(?:for|of|de|des|du|pour)\s+)?(.+)$/i;
 
+// "TOTALZONE 2", "SOUSTOTAL": a total written in capitals and run into its name.
+const TOTAL_CAPS_RE = /^(?:SOUS-?|SUB-?|GRAND ?)?TOTAL(?=[A-Z0-9])/;
+
 function isTotalLabel(label) {
     const text = trimLabel(label);
-    if (TOTAL_RE.test(text)) return true;
+    if (TOTAL_RE.test(text) || TOTAL_CAPS_RE.test(text)) return true;
     const rest = TOTAL_OF_RE.exec(text);
     if (!rest) return false;
     const place = rest[1].replace(/^(?:the|la|le|les|l['’])\s*/i, '');
@@ -285,7 +288,9 @@ const HINTS = {
         // Sizes of one thing: a rink's width, a valve's diameter.
         'length', 'longueur', 'width', 'largeur', 'diameter', 'diametre', 'thickness', 'epaisseur', 'radius', 'rayon',
         // A moment, not an amount: the day or hour of a timestamp.
-        'day', 'jour', 'hour', 'heure', 'minute', 'second', 'seconde', 'weekday', 'timestamp', 'datetime']),
+        'day', 'jour', 'hour', 'heure', 'minute', 'second', 'seconde', 'weekday', 'timestamp', 'datetime',
+        // Rates of one thing: miles per gallon, kilometres per hour.
+        'mpg', 'kph', 'mph']),
     // A column whose values say what another column's numbers are.
     measureName: words(['measure', 'measures', 'mesure', 'mesures', 'indicator', 'indicators', 'indicateur', 'indicateurs',
         'variable', 'variables', 'metric', 'metrics', 'statistic', 'statistics', 'statistique', 'statistiques',
@@ -376,7 +381,9 @@ function readName(name) {
     // "n" heads a column of counts in statistical tables.
     const countName = COUNT_NAME_RE.test(normal + ' ') || normal === 'n';
     const percentName = /%/.test(String(name ?? ''));
-    const nonAdditive = has('nonAdditive') || percentName;
+    // A unit per something ("(g/km)", "(L/100 km)", "($/hour)") is a rate.
+    const rateUnit = /[([][^()[\]]*\/[^()[\]]*[)\]]/.test(String(name ?? ''));
+    const nonAdditive = has('nonAdditive') || percentName || rateUnit;
     const lastWord = normal.split(' ').pop();
     return {
         normal,

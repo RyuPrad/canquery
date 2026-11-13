@@ -180,10 +180,10 @@ describe('cells that hold no figure', () => {
     });
 
     test('a sum leaves the placeholder figures out, typed or written as text', async () => {
-        const rows = range(60).map(i => ['Sector ' + (i % 4), i % 6 === 0 ? '99999.9' : String(100 + (i % 5) * 10)]);
-        const expected = rows.filter(row => row[1] !== '99999.9').reduce((sum, row) => sum + Number(row[1]), 0);
+        const rows = range(60).map(i => ['Firm ' + (i + 1), 'Sector ' + (i % 4), i % 6 === 0 ? '99999.9' : String(100 + (i % 5) * 10)]);
+        const expected = rows.filter(row => row[2] !== '99999.9').reduce((sum, row) => sum + Number(row[2]), 0);
         for (const type of [numeric('Total assets'), text('Total assets')]) {
-            const analysis = await analyze('sentinel-' + type.type, table([text('Sector'), type], rows));
+            const analysis = await analyze('sentinel-' + type.type, table([text('Firm'), text('Sector'), type], rows));
             const chart = analysis.charts.find(entry => entry.y.column === 'Total assets' && entry.x.type === 'category');
             expect(chart.points.reduce((sum, point) => sum + point.value, 0)).toBe(expected);
             expect(chart.notes.find(note => note.code === 'placeholders_left_out')).toMatchObject({ cells: 10 });
@@ -289,8 +289,10 @@ describe('periods a table barely covers', () => {
 
 describe('one chart per finding', () => {
     test('the same groups in the same proportions are one chart: hectares beside square metres', async () => {
-        const rows = range(120).map(i => ['Zone ' + (i % 6), 10 + (i % 6) * 3 + scatter(i, 7)]).map(([zone, hectares]) => [zone, String(hectares), String(hectares * 10000)]);
-        const analysis = await analyze('proportional', table([text('Zone'), integer('Fire area in hectares'), integer('Fire area (m2)')], rows));
+        // One row per zone and year: a table of figures.
+        const rows = range(120).map(i => ['Zone ' + (i % 6), String(2001 + Math.floor(i / 6)), 10 + (i % 6) * 3 + scatter(i, 7)])
+            .map(([zone, year, hectares]) => [zone, year, String(hectares), String(hectares * 10000)]);
+        const analysis = await analyze('proportional', table([text('Zone'), integer('Year'), integer('Fire area in hectares'), integer('Fire area (m2)')], rows));
         const byZone = analysis.charts.filter(chart => chart.x.column === 'Zone');
         expect(byZone).toHaveLength(1);
         expect(analysis.skipped.map(skip => skip.reason)).toContain('same_as_other_chart');
@@ -301,5 +303,159 @@ describe('one chart per finding', () => {
         const analysis = await analyze('span', table([text('Type'), date('Issued'), integer('Number of units'), text('Permit')], rows));
         const share = analysis.charts.find(chart => chart.x.column === 'Type');
         expect(share.span).toEqual({ grain: 'year', first: '2019-01-01', last: '2023-01-01' });
+    });
+});
+
+describe('third reading: files that are not one table, and figures that move for other reasons', () => {
+    test('blocks stacked without a column that names them are not added up: an all-ages block over its age groups', async () => {
+        const items = ['Number of taxable returns', 'Employment income', 'Net income', 'Total income assessed'];
+        const rows = [];
+        // The same lines once for all ages, then once per age group, with nothing that says which.
+        for (let block = 0; block < 4; block += 1) items.forEach((item, line) => rows.push([item, String(line + 1), String(2010), String(1000 * (4 - block) + line)]));
+        const { model, profile } = await read(table([text('Item'), integer('Line'), integer('Year'), integer('Amount')], rows));
+        expect(profile.groups.duplicate_keys).toBe(1);
+        expect(model.shape).toBe('stacked');
+        expect(listCandidates(model)).toEqual([]);
+    });
+
+    test('a breakdown with a member named for a total on many rows makes the rows figures, whatever key they carry', async () => {
+        const places = ['Canada', 'Nova Scotia', 'New Brunswick', 'Ontario', 'Halifax County', 'Kings County', 'Ottawa'];
+        const rows = [];
+        places.forEach((place, p) => ['Female', 'Male', 'Total'].forEach((sex, s) => rows.push(['G' + p, place, sex, String(1000 + p * 10 + (s === 2 ? 1000 : s))])));
+        const { model } = await read(table([text('GeoCode'), text('GeogName'), text('Sex'), integer('Count of persons')], rows));
+        expect(model.records).toBe(false);
+        expect(reasons(model, 'GeogName')).toContain('mixed_levels');
+    });
+
+    test('rates by their unit, totals run into their name, and totals past the most frequent values are found', async () => {
+        for (const name of ['CO2 Emissions (g/km)', 'Fuel Consumption City (L/100 km)', 'Combined (mpg)', 'Cost ($/hour)']) {
+            expect([name, nameEvidence(name).nonAdditive]).toEqual([name, true]);
+        }
+        expect([isTotalLabel('TOTALZONE 2'), isTotalLabel('SOUSTOTAL'), isTotalLabel('Totally Spies')]).toEqual([true, true, false]);
+        // "Total Expenditures" in 8 of 11 years, beneath payees that recur more often.
+        const rows = [];
+        for (let year = 0; year < 11; year += 1) {
+            range(40).forEach(p => rows.push([String(2014 + year), 'Payee ' + p, String(1000 + p)]));
+            if (year < 8) rows.push([String(2014 + year), 'Total Expenditures', String(99999)]);
+        }
+        const { model } = await read(table([integer('Year'), text('Payee'), integer('Amount')], rows));
+        expect(column(model, 'Payee').category.total_members).toContain('total expenditures');
+    });
+
+    test('a column written once per block and blank below it groups nothing in a table of figures', async () => {
+        const rows = [['Nova Scotia', 'Maritimes', '5195'], ['', 'Gulf', '796'], ['New Brunswick', 'Maritimes', '898'], ['', 'Gulf', '2023'],
+            ['P.E.I.', 'Gulf', '2486'], ['Quebec', 'Quebec', '1278'], ['Newfoundland', 'Newfoundland', '3409']];
+        const { model } = await read(table([text('Province'), text('Region'), integer('Total licences')], rows));
+        expect(reasons(model, 'Province')).toContain('fill_down');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Province')).toBe(false);
+        expect(listCandidates(model).some(spec => spec.x.column === 'Region')).toBe(true);
+    });
+
+    test('a date that stands for "no date" has no period, in SQL as in the profile', async () => {
+        const rows = range(120).map(i => ['P-' + (1000 + i), i % 10 === 0 ? '1900-01-01' : (2015 + (i % 8)) + '-0' + (1 + (i % 9)) + '-1' + (i % 9), 'Type ' + (i % 3)]);
+        const input = table([text('Permit'), date('Issued'), text('Type')], rows);
+        const { model } = await read(input);
+        expect(column(model, 'Issued').time).toMatchObject({ placeholders: ['1900-01-01'] });
+        const analysis = await analyze('placeholder-dates', input);
+        const line = analysis.charts.find(chart => chart.x.type === 'time');
+        expect(line.points[0].start.slice(0, 4)).toBe('2015');
+        expect(line.notes.find(note => note.code === 'rows_without_period')).toMatchObject({ rows: 12 });
+    });
+
+    test('a year still in progress is left out of a line even with all its rows; so is a thin last year', () => {
+        const axis = { id: 't:year', kind: 'year_number', columns: ['year'] };
+        const year = { id: 'year', label: 'year', type: 'INTEGER', role: 'time', time: { kind: 'year_number', grain: 'year' } };
+        const amount = { id: 'Claims', label: 'Claims', type: 'INTEGER', role: 'measure', measure: { additive: 'yes', integer: true, text: false, clean: null, percent: false,
+            currency: false, ambiguous: false, unit: null } };
+        const groups = pairs => pairs.map(([key, n, sum]) => ({ key: String(key), label: String(key), spellings: 1, n, nx: 0, groups: pairs.length,
+            measures: [{ sum, n, min: 0, max: sum, blank: 0, missing: 0, other: 0 }] }));
+        const spec = { id: 'c_y', template: 'measure_over_time', kind: 'line', x: { type: 'time', axis: 't:year', grain: 'year' }, y: { agg: 'sum', column: 'Claims' },
+            limit: 60, score: 60 };
+        const run = pairs => { const set = groups(pairs); return shapeTime(spec, set, { n: set.reduce((sum, g) => sum + g.n, 0), nx: 0,
+            measures: [{ sum: set.reduce((sum, g) => sum + g.measures[0].sum, 0), n: set.reduce((sum, g) => sum + g.n, 0), min: 0, max: null, blank: 0, missing: 0,
+                other: 0 }] }, { axis, columns: [year], measure: amount, j: 0, ordered: true, now: Date.parse('2026-11-12T00:00:00Z') }); };
+        const result = run([[2021, 12, 90000], [2022, 12, 95000], [2023, 12, 99000], [2024, 12, 104000], [2025, 12, 113005], [2026, 12, 37745]]);
+        expect(result.chart.points.map(point => point.start.slice(0, 4))).toEqual(['2021', '2022', '2023', '2024', '2025']);
+        const thin = run([[2018, 600, 9000], [2019, 520, 9500], [2020, 610, 9900], [2021, 69, 570]]);
+        expect(thin.chart.points.map(point => point.start.slice(0, 4))).toEqual(['2018', '2019', '2020']);
+        expect(thin.chart.notes.map(note => note.code)).toContain('sparse_periods_left_out');
+    });
+
+    test('a sum over time whose suppressed cells come and go is no trend; a steady share of them is', () => {
+        const axis = { id: 't:year', kind: 'year_number', columns: ['year'] };
+        const year = { id: 'year', label: 'year', type: 'INTEGER', role: 'time', time: { kind: 'year_number', grain: 'year' } };
+        const amount = { id: 'Spending', label: 'Spending', type: 'TEXT', role: 'measure', measure: { additive: 'yes', integer: true, text: true,
+            clean: { core: 'plain', missing: ['x'] }, percent: false, currency: false, ambiguous: false, unit: null } };
+        const spec = { id: 'c_s', template: 'measure_over_time', kind: 'line', x: { type: 'time', axis: 't:year', grain: 'year' }, y: { agg: 'sum', column: 'Spending' },
+            limit: 60, score: 60 };
+        const run = missing => {
+            const set = missing.map((m, i) => ({ key: String(1998 + i), label: String(1998 + i), spellings: 1, n: 100, nx: 0, groups: missing.length,
+                measures: [{ sum: 1000 * (100 - m), n: 100 - m, min: 1, max: 9, blank: 0, missing: m, other: 0 }] }));
+            const total = set.reduce((sum, g) => sum + g.measures[0].missing, 0);
+            const parsed = set.reduce((sum, g) => sum + g.measures[0].n, 0);
+            return shapeTime(spec, set, { n: 100 * set.length, nx: 0, measures: [{ sum: 1, n: parsed, min: 1, max: 9, blank: 0, missing: total, other: 0 }] },
+                { axis, columns: [year], measure: amount, j: 0, ordered: true, now: Date.parse('2026-11-12T00:00:00Z') });
+        };
+        expect(run([5, 40, 6, 5, 7]).reason).toBe('suppressed_trend');
+        expect(run([60, 62, 61, 63, 60]).ok).toBe(true);
+    });
+
+    test('a measure with figures below zero shows the largest either way', async () => {
+        const rows = range(48).map(i => ['Item ' + (i + 1), 'Service ' + (i % 24), String(i % 2 ? 1000 * (i + 1) : -2000 * (i + 1))]);
+        const analysis = await analyze('signed', table([text('Project'), text('Service'), integer('Capital budget ($)')], rows));
+        const chart = analysis.charts.find(entry => entry.x.column === 'Service' && entry.y.agg === 'sum');
+        expect(chart.points.some(point => point.value < 0)).toBe(true);
+        expect(chart.points.map(point => point.value)).toEqual([...chart.points.map(point => point.value)].sort((a, b) => b - a));
+    });
+
+    test('a measure that is zero on nearly every row, segments of map lines, and lists of things are not charted', async () => {
+        const rows = range(200).map(i => ['Seg-' + i, ['Bike lane', 'Path', 'Shared'][i % 3], String(10 + scatter(i, 900)), i < 4 ? String(5000 + i * 100) : '0',
+            ['English ; French', 'English', 'French ; Spanish'][i % 3]]);
+        const { model } = await read(table([text('Segment'), text('Type'), numeric('Shape__Length'), integer('Number of repairs'), text('Languages')], rows));
+        expect(column(model, 'Number of repairs').measure.sparse).toBe(true);
+        expect(model.lines).toBe(true);
+        expect(column(model, 'Languages').category.flags).toContain('list_labels');
+        const specs = listCandidates(model);
+        expect(specs.some(spec => spec.y.agg === 'count' || spec.y.column === 'Number of repairs' || spec.x.column === 'Languages')).toBe(false);
+    });
+
+    test('a hierarchy flattened into one column, with figures by month, is a stack of blocks', async () => {
+        const rows = [];
+        ['Newfoundland and Labrador', 'Prince Edward Island', 'Nova Scotia', 'New Brunswick', 'Quebec'].forEach((province, p) => {
+            const months = range(6).map(m => 100 + p * 40 + m * 3);
+            rows.push([province, ...months.map(String)]);
+            rows.push(['Bankruptcies/Faillites', ...months.map(value => String(Math.round(value * 0.2)))]);
+            rows.push(['Proposals/Propositions', ...months.map(value => String(value - Math.round(value * 0.2)))]);
+        });
+        const columns = [text('column_1'), ...['jan/janv', 'feb/fév', 'mar', 'apr/avr', 'may/mai', 'jun/juin'].map(integer)];
+        const { model } = await read(table(columns, rows));
+        expect(model.shape).toBe('stacked');
+    });
+
+    test('a wide table whose rows are the lines of a report is not added up per period; map lines stored as text are segments', async () => {
+        const lines = ['Formal requests received under the Privacy Act', 'Requests processed during the reporting period', 'Processed within 30 calendar days',
+            'Processed in 31 to 60 calendar days', 'Complaints sent to the Office of the Privacy Commissioner'];
+        const report = await read(table([text('Line'), integer('2008-2009'), integer('2009-2010'), integer('2010-2011'), integer('2011-2012')],
+            lines.map((line, i) => [line, ...range(4).map(year => String(8000 / (i + 1) + year * 300))])));
+        expect(report.model.wide_groups.length).toBe(1);
+        expect(listCandidates(report.model).some(spec => spec.template === 'wide_totals_per_period')).toBe(false);
+
+        const rows = range(200).map(i => ['Seg-' + i, ['Bike lane', 'Path', 'Shared'][i % 3], String(10 + scatter(i, 900)), 'LINESTRING(' + i + ' 0, ' + (i + 1) + ' 1)']);
+        const { model } = await read(table([text('Segment'), text('Type'), numeric('LONGUEUR'), text('GEOM')], rows));
+        expect(model.lines).toBe(true);
+        expect(column(model, 'LONGUEUR').measure.additive).toBe('yes');
+        const specs = listCandidates(model);
+        expect(specs.some(spec => spec.y.agg === 'count')).toBe(false);
+        expect(specs.some(spec => spec.y.column === 'LONGUEUR' && spec.x.column === 'Type')).toBe(true);
+    });
+
+    test('the years a chart of records counts are all its years, unless few rows have one', async () => {
+        const type = i => 'Type ' + (i % 7 < 3 ? 0 : i % 7 < 5 ? 1 : i % 7 < 6 ? 2 : 3);
+        const rows = range(240).map(i => ['P-' + (1000 + i), type(i), (2019 + (i % 5)) + '-0' + (1 + (i % 9)) + '-1' + (i % 9)]);
+        const analysis = await analyze('span-full', table([text('Permit'), text('Type'), date('Issued')], rows));
+        expect(analysis.charts.find(chart => chart.x.column === 'Type').span).toEqual({ grain: 'year', first: '2019-01-01', last: '2023-01-01' });
+        const sparse = range(240).map(i => ['P-' + (1000 + i), type(i), i % 4 === 0 ? (2019 + (i % 5)) + '-01-15' : null]);
+        const few = await analyze('span-few', table([text('Permit'), text('Type'), date('Updated on')], sparse));
+        expect(few.charts.find(chart => chart.x.column === 'Type').span).toBeUndefined();
     });
 });
