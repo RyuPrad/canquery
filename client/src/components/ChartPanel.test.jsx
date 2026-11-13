@@ -71,7 +71,18 @@ describe('the Chart tab', () => {
     expect(screen.getByText(/^“Measure Value” is a different measure for each “Data Point Label”/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Net income/ }));
     expect(onPin).toHaveBeenCalledWith('Data Point Label', 'Net income');
+    // A ratio is charted under no filter: it is not offered.
+    expect(screen.queryByRole('button', { name: /Capital ratio/ })).toBeNull();
     expect(screen.getByText('No chart of this table would say something reliable.')).toBeInTheDocument();
+  });
+
+  test('when no value leads to a chart, the tab says so and offers none', async () => {
+    const block = { ...BLOCKED.blocked[0], values: BLOCKED.blocked[0].values.map((entry) => ({ ...entry, charts: false })), charts: false };
+    fetchResourceCharts.mockImplementation(() => answer({ ...BLOCKED, blocked: [block] }));
+    render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" onPin={vi.fn()} />);
+    await screen.findByText('Some figures in this table cannot be added up together');
+    expect(screen.getByText('“Measure Value” is not charted: its figures cannot be added up across “Data Point Label”, nor one “Data Point Label” at a time. The Table tab shows them as published.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Net income|Capital ratio/ })).toBeNull();
   });
 
   test('a busy engine says so and offers to try again', async () => {

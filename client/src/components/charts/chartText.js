@@ -128,6 +128,7 @@ export function noteText(note, t, lang) {
     tokens: Array.isArray(note.tokens) && note.tokens.length ? note.tokens.map((token) => '“' + token + '”').join(', ') : '…',
     by: note.by ? humanize(note.by) : undefined, kept: note.kept,
     period: typeof note.start === 'string' ? fmtPeriod(note.start, note.grain, lang) : undefined,
+    date: typeof note.date === 'string' ? fmtPeriod(note.date, 'day', lang) : undefined,
   });
 }
 
@@ -168,7 +169,8 @@ export function skipReason(reason, t) {
 }
 
 const READING_REASONS = new Set(['code_labels', 'garbled_text', 'period_labels', 'one_value_dominates', 'measure_names', 'mixed_levels',
-  'repeated_partitions', 'maintenance_date', 'date_numbers', 'person_names', 'fill_down', 'list_labels']);
+  'repeated_partitions', 'maintenance_date', 'date_numbers', 'person_names', 'fill_down', 'list_labels', 'overlapping_bands', 'question_code',
+  'paradata', 'mixed_languages', 'period_end_date', 'statement_lines']);
 
 /** What a column was read as, and what that means for charts. */
 export function columnReading(column, t) {
@@ -194,9 +196,17 @@ export function columnReading(column, t) {
 
 /** The sentence above the values a blocked measure can be filtered to. */
 export function blockedText(block, t) {
+  const words = { measure: humanize(block.measure_label || ''), column: humanize(block.column_label || block.column) };
+  // No value of the column leads to a chart of the measure (a rate, a measure named by a code).
+  if (block.charts === false && block.measure_label) return fill(t('chart.blocked_none'), words);
   const key = { units: 'chart.blocked_units', mixed_levels: 'chart.blocked_levels', levels: 'chart.blocked_kinds', breakdowns: 'chart.blocked_breakdowns',
     periods: 'chart.blocked_periods' }[block.why] || 'chart.blocked_mixed';
-  return fill(t(key), { measure: humanize(block.measure_label || ''), column: humanize(block.column_label || block.column) });
+  return fill(t(key), words);
+}
+
+/** The values of a blocked column worth offering as filters: those that lead to a chart. */
+export function blockedValues(block) {
+  return (block.values || []).filter((entry) => entry.charts !== false);
 }
 
 /** A KPI tile: value, label and the small line under it. */

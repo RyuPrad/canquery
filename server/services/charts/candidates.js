@@ -39,6 +39,26 @@ function cardinalityFit(distinct) {
  * @param {object} model from buildTableModel()
  * @param {{ lang?: 'en' | 'fr', pinned?: string[] }} [options] pinned: columns that an equality filter holds to one value
  */
+// The other language's twin is left out, and a code whose wording has a
+// column of its own that can be charted in its place.
+function visibleIn(model, column, lang, byId) {
+    const chartable = entry => Boolean(entry) && ['category', 'code', 'label'].includes(entry.role) && !hiddenTwin(entry, lang);
+    return !hiddenTwin(column, lang) && !(column.label_columns || []).some(id => chartable(byId.get(id)));
+}
+
+/**
+ * Is this measure one the engine charts on its own initiative? Only
+ * quantities that add up are: an average of rows that are themselves
+ * figures, or of a table's attributes, is rarely what a reader takes it for
+ * (the builder averages). A measure with no name of its own ("(#)",
+ * "column_7") says nothing on a chart.
+ */
+function automaticMeasure(model, column, { lang = 'en', byId = new Map(model.columns.map(entry => [entry.id, entry])) } = {}) {
+    return Boolean(column) && column.role === 'measure' && !column.wide && visibleIn(model, column, lang, byId) && column.confidence !== 'low' &&
+        !column.measure.doubtful && !(column.generic_name && !nameEvidence(column.header || column.label).additive) && !column.measure.sparse &&
+        summable(column, model);
+}
+
 function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
     // A data dictionary describes another table, and a file of stacked blocks
     // no column names cannot be added up: nothing in either is charted.
@@ -48,19 +68,11 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
     // A pin on either column of a twin pair holds both.
     const isHeld = id => held.has(id) || (byId.get(id)?.twin && held.has(byId.get(id).twin.of));
     const sums = column => summable(column, model);
-    // The other language's twin is left out, and a code whose wording has a
-    // column of its own that can be charted in its place.
-    const chartable = column => Boolean(column) && ['category', 'code', 'label'].includes(column.role) && !hiddenTwin(column, lang);
-    const visible = column => !hiddenTwin(column, lang) && !(column.label_columns || []).some(id => chartable(byId.get(id)));
+    const visible = column => visibleIn(model, column, lang, byId);
     const blockers = column => column.measure.blocked_by.filter(block => !isHeld(block.column)).map(block => block.column);
 
-    // Only quantities that add up are charted on the engine's own initiative:
-    // an average of rows that are themselves figures, or of a table's
-    // attributes, is rarely what a reader takes it for. (The builder averages.)
-    // A measure with no name of its own ("(#)", "column_7") says nothing on a chart.
     const measures = model.columns
-        .filter(column => column.role === 'measure' && !column.wide && visible(column) && column.confidence !== 'low' && !column.measure.doubtful &&
-            !(column.generic_name && !nameEvidence(column.header || column.label).additive) && !column.measure.sparse && sums(column))
+        .filter(column => automaticMeasure(model, column, { lang, byId }))
         // Measures that can be added up across the whole table come before those that cannot.
         .sort((a, b) => Math.min(1, blockers(a).length) - Math.min(1, blockers(b).length) ||
             ADDITIVE_RANK[b.measure.additive] - ADDITIVE_RANK[a.measure.additive] ||
@@ -147,7 +159,7 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
         if (group.additive !== 'yes' && group.additive !== 'probable') continue;
         const members = group.columns.map(entry => byId.get(entry.id)).filter(Boolean);
         if (members.some(column => blockers(column).length > 0)) continue;
-        if (rowNames && rowNames.label_length > 40) continue;
+        if (rowNames && (rowNames.label_length > 40 || ((rowNames.category || {}).flags || []).includes('statement_lines'))) continue;
         const agg = 'sum';
         add('wide_totals_per_period', 'line', { type: 'wide', group: group.id, grain: group.grain }, { agg, group: group.id }, 58, [],
             { bonus: 8, limit: LIMITS.periods });
@@ -210,4 +222,4 @@ function pickDiverse(charts, { limit = 6 } = {}) {
     return picked;
 }
 
-module.exports = { listCandidates, pickDiverse, specId, LIMITS };
+module.exports = { listCandidates, pickDiverse, automaticMeasure, specId, LIMITS };

@@ -103,7 +103,7 @@ export const BLOCKED = {
   charts: [],
   skipped: [],
   blocked: [{ measure: 'Measure Value', measure_label: 'Measure Value', column: 'Data Point Label', column_label: 'Data Point Label', why: 'mixed_measures',
-    values: [{ value: 'Net income', rows: 40 }, { value: 'Capital ratio', rows: 40 }] }],
+    values: [{ value: 'Net income', rows: 40, charts: true }, { value: 'Capital ratio', rows: 40, charts: false }], charts: true }],
   model: {
     ...MODEL,
     shape: 'long_measures',

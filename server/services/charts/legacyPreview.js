@@ -53,9 +53,13 @@ function timePreview(chart, axis, column) {
     const first = window[0].start;
     const points = window.map(point => ({ key: periodKey(point.start, bucket), label: periodLabel(point.start, bucket), value: point.value }));
     const missing = (chart.time.missing || []).filter(start => start > first).map(start => periodKey(start, bucket));
-    // Rows without a period were a group of their own in the old previews.
+    // Rows without a period were a group of their own in the old previews, and
+    // periods left out (thin edges, a period in progress or cut short, dates
+    // after today) are groups not shown.
     const undated = chart.notes.some(note => note.code === 'rows_without_period' && note.rows > 0);
-    return { kind: 'line', points, totalGroups: chart.time.periods_total + (undated ? 1 : 0), bucket, missing };
+    const leftOut = chart.notes.reduce((sum, note) => sum + (note.code === 'sparse_periods_left_out' || note.code === 'future_periods_left_out' ? note.periods || 0
+        : note.code === 'partial_period_left_out' || note.code === 'cut_period_left_out' ? 1 : 0), 0);
+    return { kind: 'line', points, totalGroups: chart.time.periods_total + (undated ? 1 : 0) + leftOut, bucket, missing };
 }
 
 /**

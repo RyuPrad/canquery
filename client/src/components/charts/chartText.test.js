@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STRINGS } from '../../i18n.jsx';
-import { chartTitle, chartSubtitle, chartNotes, noteText, chartSummary, skipReason, columnReading, blockedText, kpiText, specTitle, pointLabel, chartRows,
+import { chartTitle, chartSubtitle, chartNotes, noteText, chartSummary, skipReason, columnReading, blockedText, blockedValues, kpiText, specTitle, pointLabel, chartRows,
   chartRecords, cardView } from './chartText.js';
 import { fmtPeriod } from './theme.js';
 import { ANALYSIS, SHARE, LINE, MODEL, BLOCKED } from '../../test/chartAnalysis.js';
@@ -131,6 +131,13 @@ describe('words for the chart engine\'s answers', () => {
     expect(specTitle({ x: { type: 'time', axis: 't:EN_YEAR+EN_MONTH' }, y: { agg: 'count' } }, MODEL, en)).toBe('Records over time');
     expect(blockedText(BLOCKED.blocked[0], en)).toBe('“Measure Value” is a different measure for each “Data Point Label”, so it is not added up or averaged across them. Choose one:');
     expect(blockedText({ column: 'level', column_label: 'Level', why: 'mixed_levels' }, en)).toMatch(/^“Level” lists totals together with their parts/);
+    expect(blockedText({ ...BLOCKED.blocked[0], charts: false }, fr)).toBe('« Measure Value » n’est pas mis en graphique : ses chiffres ne s’additionnent ni entre les « Data Point Label », ni pour une seule à la fois. L’onglet Tableau les présente tels que publiés.');
+    expect(blockedValues(BLOCKED.blocked[0]).map((entry) => entry.value)).toEqual(['Net income']);
+    expect(noteText({ code: 'cut_period_left_out', start: '2026-01-01', grain: 'month', date: '2026-01-18', rows: 1728 }, en, 'en'))
+      .toBe('Jan 2026 is left out: the table’s dates stop on Jan 18, 2026, before it ends.');
+    expect(noteText({ code: 'future_periods_left_out', periods: 2, rows: 40 }, fr, 'fr'))
+      .toBe('2 périodes postérieures à aujourd’hui sont exclues : des enregistrements datés dans le futur.');
+    expect(blockedValues({ values: [{ value: 'A', rows: 1 }] }).map((entry) => entry.value)).toEqual(['A']);
   });
 });
 

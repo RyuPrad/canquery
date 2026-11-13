@@ -5,7 +5,7 @@
 // Values decide. A column's name only raises or lowers confidence, except
 // where values cannot tell: what a period column is called, which language a
 // twin column speaks, and whether a quantity adds up.
-const { nameEvidence, isTotalLabel, isAggregateLabel, isGenericName, isMissingToken, TABLE_BLANK_TOKENS, codeLabels, labelKind, isMeasureLabel, isGarbled,
+const { nameEvidence, isTotalLabel, isAggregateLabel, isAllLabel, bandOf, isParadata, mixedLanguages, CATEGORY_LABEL_LIMIT, isGenericName, isMissingToken, TABLE_BLANK_TOKENS, codeLabels, labelKind, isMeasureLabel, isGarbled,
     isNationalLabel, isRegionLabel, isProvinceName } = require('./tokens');
 const { numericLike } = require('./profile');
 
@@ -14,6 +14,11 @@ const DATE_TYPES = new Set(['DATE', 'TIMESTAMPTZ']);
 const DAY_MS = 86400000;
 
 const AUTO_CATEGORY_MAX = 60;
+// The profile keeps a column's 30 most frequent values: a rule that needs all
+// of them reads only columns with no more.
+const TOP_VALUES_READ = 30;
+// Answers chosen from a list: at most this many.
+const OPTIONS_MAX = 12;
 // A unit that this share of the rows are in is the table's unit.
 const DOMINANT_SHARE = 0.9;
 // The most groups a chart labelled with bare numbers may have.
@@ -124,6 +129,28 @@ function additivity(stat, name, verifiedTotal, repeatedBy, doubtful, sameLength)
     return { additive: 'unknown', reason: 'none' };
 }
 
+// Whole numbers from 0 or 1 up, one after the other, closed by an open band
+// ("10 et plus", "5+"): bands of a count, not a quantity.
+function countBands(stat) {
+    if (!stat.top.length || stat.est_distinct > TOP_VALUES_READ || stat.top.length < stat.est_distinct) return false;
+    const whole = new Set();
+    let open = null;
+    for (const { v: value } of stat.top) {
+        if (value === '' || isMissingToken(value)) continue;
+        if (/^[0-9]{1,3}$/.test(value.trim())) {
+            whole.add(Number(value.trim()));
+            continue;
+        }
+        const band = bandOf(value);
+        if (!band || band[1] !== Infinity || open !== null) return false;
+        open = band[0];
+    }
+    if (open === null || whole.size < 2) return false;
+    const sorted = [...whole].sort((a, b) => a - b);
+    const last = sorted[sorted.length - 1];
+    return sorted[0] <= 1 && last - sorted[0] + 1 === sorted.length && open === last + 1;
+}
+
 /**
  * The role of one column. First match wins.
  * @returns {{ role: string, confidence: 'high' | 'medium' | 'low', reasons: object[], time?: object, part?: string }}
@@ -222,6 +249,8 @@ function decideRole(stat, context) {
     // People's first or last names repeat, but a group of every "John" is no group.
     if (name.personName && !stat.number) return decide('text', 'high', 'person_names');
 
+    // Shapes on a map written as text are neither names nor groups.
+    if (share(stat.patterns.shapes || 0, stat.filled) >= 0.9) return decide('geometry', 'high', 'shape_text');
     const contact = stat.patterns.url + stat.patterns.email + stat.patterns.phone + stat.patterns.postal;
     if (share(contact, stat.filled) >= 0.8) return decide('identifier', 'high', 'contact_values');
     const nearUnique = ratio >= 0.9 && stat.filled >= 20;
@@ -235,7 +264,10 @@ function decideRole(stat, context) {
         const fixed = stat.number && !quantityName && !context.series &&
             (stat.number.fixed_width >= 7 || (stat.number.fixed_width >= 5 && stat.filled >= 200));
         const padded = stat.number && stat.number.leading_zero_share >= 0.05;
-        const wordless = share(stat.patterns.spaces, stat.filled) <= 0.05 && share(stat.patterns.digits, stat.filled) >= 0.8 &&
+        // Digits and letters run together are a key, unless the letters are flags
+        // after numbers the column's format reads ("635E", "1,204p").
+        const flagged = Boolean(stat.number) && reading.clean && share(stat.number.parsed, real) >= 0.9;
+        const wordless = !flagged && share(stat.patterns.spaces, stat.filled) <= 0.05 && share(stat.patterns.digits, stat.filled) >= 0.8 &&
             share(stat.patterns.letters, stat.filled) >= 0.5;
         if (fixed || padded || wordless || (integers && (name.identifier || (name.code && !name.additive)))) return decide('identifier', 'high', 'unique_values');
     }
@@ -273,6 +305,10 @@ function decideRole(stat, context) {
         return decide('code', 'low', 'few_whole_numbers');
     }
 
+    // "1", "2", … "9", "10 et plus": a number of things in bands is what the
+    // rows are broken down by ("holders by number of accounts held").
+    if (countBands(stat)) return decide('code', 'medium', 'count_bands');
+
     // Text is a number column when what is not blank or a missing-value token
     // parses, with enough cells to tell (two will do when nothing is stray).
     const enough = stat.number && (stat.number.parsed >= 5 || (stat.number.parsed >= 2 && reading.unreadable === 0));
@@ -282,7 +318,11 @@ function decideRole(stat, context) {
             typedNumber ? 'numeric_typed' : 'numeric_text');
     }
 
-    if (stat.length.avg > 60 || share(stat.patterns.cut, stat.filled) >= 0.2 || (name.freeText && stat.length.avg > 30)) {
+    // Answers chosen from a short list ("My institution has full capacity to
+    // process …"): long, but the same few row after row, they are groups.
+    const options = distinctReal >= 2 && stat.est_distinct <= OPTIONS_MAX && ratio <= 0.1 && stat.filled >= 20 &&
+        share(stat.patterns.cut, stat.filled) < 0.2 && stat.length.avg <= CATEGORY_LABEL_LIMIT;
+    if (!options && (stat.length.avg > 60 || share(stat.patterns.cut, stat.filled) >= 0.2 || (name.freeText && stat.length.avg > 30))) {
         return decide('text', 'high', 'long_text');
     }
     if (nearUnique) return decide(share(stat.patterns.letters, stat.filled) >= 0.8 ? 'label' : 'identifier', 'medium', 'unique_names');
@@ -389,13 +429,22 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             const numeric = Boolean(stat.number) && share(stat.number.parsed, stat.real_cells) >= 0.5;
             const reason = decided.reasons[0].code;
             const readable = !numeric || (stat.est_distinct <= NUMERIC_LABELS_MAX &&
-                (name.countDimension || name.nominal || reason === 'period_part' || reason === 'year_like'));
+                (name.countDimension || name.nominal || reason === 'period_part' || reason === 'year_like' || reason === 'count_bands'));
             const flags = [];
             // Codes need a legend the table does not give ("U", "ESSF", "*GD").
             if (!numeric && codeLabels(values, { sex: name.sex })) flags.push('code_labels');
             if (stat.labels ? stat.labels.garbled > 0 : values.some(isGarbled)) flags.push('garbled_text');
             // "English ; French": lists of things, not one group each.
             if (stat.labels && stat.labels.lists >= Math.max(1, stat.labels.distinct * 0.3)) flags.push('list_labels');
+            // The lines of a statement, each once, several worked out from others
+            // ("Employment income" … "Total income assessed", "Net income"): no group of one whole.
+            if (stat.labels && stat.labels.derived >= 3 && stat.labels.distinct >= stat.labels.cells * 0.8) flags.push('statement_lines');
+            // The number of a question whose wording is not in the table ("Q1 DropIn").
+            if (name.questionCode) flags.push('question_code');
+            // The respondent's system or device, logged by a survey tool.
+            if (name.paradata || (stat.est_distinct <= TOP_VALUES_READ && isParadata(values))) flags.push('paradata');
+            // "Yes" and "Oui" as two groups.
+            if (stat.est_distinct <= TOP_VALUES_READ && mixedLanguages(values)) flags.push('mixed_languages');
             // Years or dates inside the labels: periods that were not read as a time axis.
             const dated = stat.labels ? share(stat.labels.dated_cells, stat.labels.cells)
                 : share(stat.top.filter(entry => DATED_LABEL_RE.test(entry.v)).reduce((sum, entry) => sum + entry.n, 0), stat.top.reduce((sum, entry) => sum + entry.n, 0));
@@ -419,6 +468,7 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             const values = stat.top.map(entry => entry.v);
             const flags = [];
             if (codeLabels(values)) flags.push('code_labels');
+            if (stat.labels && stat.labels.derived >= 3) flags.push('statement_lines');
             if (stat.labels ? stat.labels.garbled > 0 : values.some(isGarbled)) flags.push('garbled_text');
             for (const flag of flags) column.reasons.push({ code: flag });
             column.category = { distinct: stat.est_distinct, total_members: [], strip_code_prefix: false, variants: false,
@@ -527,9 +577,11 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     const timeAxes = [];
     for (const column of columns) {
         // When a record was last edited or published is not when anything happened.
-        if (column.role === 'time' && nameEvidence(column.label).maintenance) {
+        // Nor is the day a reporting period ends (a charity's fiscal year end).
+        const kept = column.role === 'time' ? nameEvidence(column.label) : null;
+        if (kept && (kept.maintenance || kept.periodEnd)) {
             column.time.maintenance = true;
-            column.reasons.push({ code: 'maintenance_date' });
+            column.reasons.push({ code: kept.maintenance ? 'maintenance_date' : 'period_end_date' });
             continue;
         }
         if (column.role === 'time') timeAxes.push({ id: 't:' + column.id, columns: [column.id], kind: column.time.kind, grain: column.time.grain,
@@ -538,6 +590,10 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     for (const pair of profile.groups.composite_time) {
         const year = columnOf.get(pair.year);
         const part = columnOf.get(pair.part);
+        // Years that lack some of their quarters or months are not whole years.
+        if (year && year.role === 'time' && pair.incomplete) year.time.incomplete = pair.incomplete;
+        // Fiscal quarters make no calendar axis.
+        if (pair.fiscal) continue;
         // One year throughout still dates its months.
         if (!year || !part || (year.role !== 'time' && year.role !== 'constant') || part.role !== 'time_part') continue;
         timeAxes.push({ id: 't:' + pair.year + '+' + pair.part, columns: [pair.year, pair.part], kind: 'composite', grain: pair.grain,
@@ -647,6 +703,9 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             if ((kindCount >= 2 && read.place + read.sex + read.age >= 3) || nested) {
                 column.reasons.push({ code: 'mixed_levels' });
                 block(column.id, 'levels');
+            } else if (read.overlapping_bands) {
+                column.reasons.push({ code: 'overlapping_bands' });
+                block(column.id, 'levels');
             } else if ((column.category.flags || []).includes('period_labels')) block(column.id, 'periods');
         }
     }
@@ -663,7 +722,7 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     {
         for (const column of columns) {
             const stat = byId.get(column.id);
-            if (!column.category || !stat.fill_down) continue;
+            if (!column.category || !(stat.fill_down || (records && stat.sparse_fill_down))) continue;
             const flags = column.category.flags || (column.category.flags = []);
             if (flags.includes('fill_down')) continue;
             flags.push('fill_down');
@@ -687,9 +746,11 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     if (!records) {
         for (const column of columns) {
             if (!column.category || (column.role !== 'category' && column.role !== 'label')) continue;
+            const stat = byId.get(column.id);
             const labels = new Set(column.category.total_members);
             for (const label of (profile.rows.aggregate_labels || {})[column.id] || []) labels.add(label);
-            for (const entry of byId.get(column.id).top) if (isAggregateLabel(entry.v)) labels.add(entry.v.toLowerCase());
+            for (const label of (stat.labels && stat.labels.alls) || []) labels.add(label);
+            for (const entry of stat.top) if (isAggregateLabel(entry.v) || isAllLabel(entry.v)) labels.add(entry.v.toLowerCase());
             column.category.total_members = [...labels].slice(0, 12);
         }
     }

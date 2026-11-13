@@ -11,7 +11,7 @@ const chartQueries = require('../../db/chartQueries');
 const { buildWhereAndParams } = require('../../db/storeQueries');
 const { samplePlan, profileSample } = require('./profile');
 const { buildTableModel, publicModel, hiddenTwin, pinnedModel } = require('./model');
-const { listCandidates, pickDiverse } = require('./candidates');
+const { listCandidates, pickDiverse, automaticMeasure } = require('./candidates');
 const { shapeCategory, shapeTime, shapeWide, detectTotalMembers, latestPeriod, periodRange } = require('./validate');
 const { validateSpec, asMeasure } = require('./spec');
 const { periodStart } = require('./periods');
@@ -376,7 +376,7 @@ function shapeUse(use, result, model, { gates, filtered }) {
     if (use.type === 'wide') shaped = shapeWide(spec, grand, { group: use.group, columns: use.columns, indexes: use.indexes, filtered, gates });
     else if (use.type === 'time') {
         shaped = shapeTime(spec, result.sets[use.set], grand, { axis: use.axis, columns: use.columns, measure: use.measure, j: use.j,
-            ordered: use.ordered, filtered, gates });
+            ordered: use.ordered, filtered, gates, records: model.records });
     } else {
         const groups = result.sets[use.set];
         // Every group came back: their rows must add up to the rows in scope.
@@ -455,8 +455,15 @@ function blockedOf(model, lang, pinned, values, levels) {
             // A twin pair is offered once, in the reader's language; a pin on either holds it.
             if (by.twin && (held.has(by.twin.of) || hiddenTwin(by, lang))) continue;
             seen.add(column.id + '|' + block.column);
+            // Whether a filter on each value leads to charts of the measure: a
+            // rate, or a measure named by a code, is charted under no filter.
+            const offered = valuesOf(block.column).map(entry => {
+                // The model already holds the visitor's pins; this adds one more.
+                const pinnedTo = pinnedModel(model, [{ column: block.column, op: 'eq', value: entry.value }]);
+                return { ...entry, charts: automaticMeasure(pinnedTo, pinnedTo.columns.find(other => other.id === column.id), { lang }) };
+            });
             out.push({ measure: column.id, measure_label: column.label, column: block.column, column_label: byId.get(block.column).label, why: block.why,
-                values: valuesOf(block.column) });
+                values: offered, ...(offered.length ? { charts: offered.some(entry => entry.charts) } : {}) });
         }
     }
     for (const id of levels) {

@@ -48,10 +48,15 @@ describe('members that add the others up', () => {
         expect(detect(groups, { records: true }).totals).toEqual([]);
     });
 
-    test('an aggregate name needs the numbers to agree within half a percent', () => {
+    test('"Both sexes" is a total in a table of figures whatever its numbers; in a table of things they must agree within half a percent', () => {
         const sexes = both => [group('Both sexes', 10, [both]), group('Males', 10, [5200]), group('Females', 10, [4810])];
         expect(detect(sexes(10000)).totals).toEqual([{ key: 'both sexes', label: 'Both sexes', by: 'sum_of_others' }]);
-        expect(detect(sexes(11000)).totals).toEqual([]);
+        // Suppressed cells or a group not listed: still the total beside its parts.
+        expect(detect(sexes(11000)).totals).toEqual([{ key: 'both sexes', label: 'Both sexes', by: 'name' }]);
+        expect(detect(sexes(10000), { records: true }).totals).toEqual([{ key: 'both sexes', label: 'Both sexes', by: 'sum_of_others' }]);
+        expect(detect(sexes(11000), { records: true }).totals).toEqual([]);
+        // What is left once the others are named is a member.
+        expect(detect([group('All other countries', 10, [900]), group('France', 10, [500]), group('Italy', 10, [450])]).totals).toEqual([]);
     });
 
     test('without a name to go by, only an exact sum of the others counts, and not among small numbers', () => {
@@ -75,7 +80,10 @@ describe('members that add the others up', () => {
     test('a total, subtotals and their parts in one column are reported as mixed levels', () => {
         const groups = [group('All regions', 1, [1200]), group('East', 1, [800]), group('West', 1, [400]), group('Halifax', 1, [500]), group('Moncton', 1, [300]),
             group('Calgary', 1, [250]), group('Regina', 1, [150])];
-        expect(detect(groups)).toEqual({ totals: [], levels: true });
+        // Named for all of them, and its subtotals beneath it are found as well.
+        expect(detect(groups)).toEqual({ totals: [{ key: 'all regions', label: 'All regions', by: 'name' }], levels: true });
+        const unnamed = [group('Every region', 1, [1200]), ...groups.slice(1)];
+        expect(detect(unnamed)).toEqual({ totals: [], levels: true });
     });
 
     test('blank groups and groups already set aside are not members', () => {
