@@ -4,7 +4,8 @@
 // the whole table.
 const { prep, detectNumberRule, parseNumber } = require('./numberFormats');
 const { decidePeriodFormat, parsePeriodName, parsePart } = require('./periods');
-const { isMissingToken, isTotalLabel, isFootnoteLabel, isMarkedNote, nameEvidence, cleanLabel } = require('./tokens');
+const { isMissingToken, isTotalLabel, isFootnoteLabel, isMarkedNote, nameEvidence, cleanLabel, labelKind, isNationalLabel, isProvinceName, isRegionLabel,
+    isMeasureLabel, isGarbled } = require('./tokens');
 
 const MAX_ROWS = 20000;
 const CELL_TARGET = 240000;
@@ -82,6 +83,32 @@ function hash32(text) {
     return hash >>> 0;
 }
 
+// Codes for "no figure" written as figures: all nines (999, 99999.9) far above
+// every real value, or a small negative (-9, -999) in a column of positives.
+const SENTINEL_RE = /^(?:9{3,}(?:\.9+)?|-9{1,4}(?:\.0+)?|-9{3,}(?:\.9+)?)$/;
+function sentinelValues(real) {
+    const out = new Set();
+    const candidates = real.filter(([value, count]) => count >= 2 && SENTINEL_RE.test(value));
+    if (!candidates.length) return out;
+    const others = [];
+    let negative = 0;
+    for (const [value] of real) {
+        if (SENTINEL_RE.test(value)) continue;
+        const number = Number(value.replace(/[,\s$%]/g, ''));
+        if (!Number.isFinite(number)) continue;
+        if (number < 0) negative += 1;
+        others.push(Math.abs(number));
+    }
+    if (others.length < 5) return out;
+    others.sort((a, b) => a - b);
+    const high = others[Math.min(others.length - 1, Math.floor(others.length * 0.95))];
+    for (const [value] of candidates) {
+        const number = Number(value);
+        if (number > 0 ? high > 0 && number >= high * 10 : negative === 0) out.add(value);
+    }
+    return out;
+}
+
 function profileColumn(column, values, raw, { complete }) {
     const cells = values.length;
     const counts = new Map();
@@ -126,13 +153,24 @@ function profileColumn(column, values, raw, { complete }) {
     }
     const distinct = folded.size + beyond.size;
 
-    const missing = { cells: 0, tokens: {} };
-    const real = [];
+    const missing = { cells: 0, tokens: {}, sentinels: [] };
+    let real = [];
     for (const [value, count] of counts) {
         if (isMissingToken(value)) {
             missing.cells += count;
             missing.tokens[value.toLowerCase()] = (missing.tokens[value.toLowerCase()] || 0) + count;
         } else real.push([value, count]);
+    }
+    // "99999.9" or "-999" among ordinary figures: a code for "no figure".
+    const sentinels = sentinelValues(real);
+    if (sentinels.size) {
+        real = real.filter(([value, count]) => {
+            if (!sentinels.has(value)) return true;
+            missing.cells += count;
+            missing.tokens[value.toLowerCase()] = (missing.tokens[value.toLowerCase()] || 0) + count;
+            missing.sentinels.push(Number(value));
+            return false;
+        });
     }
     const realCells = filled - missing.cells - overflow;
 
@@ -207,6 +245,7 @@ function profileColumn(column, values, raw, { complete }) {
 
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, TOP_VALUES)
         .map(([value, count]) => ({ v: value.slice(0, 80), n: count }));
+    const labels = labelReading(counts);
 
     return {
         id: column.id,
@@ -229,8 +268,38 @@ function profileColumn(column, values, raw, { complete }) {
         other,
         period: period && { ...period },
         patterns,
+        labels,
         sequence: null
     };
+}
+
+// What a column's values say as labels, read over every distinct value (up
+// to a few hundred): a column that lists "0 à 14 ans" and "Femmes" lists two
+// kinds of breakdown however far down the second one sorts.
+const LABEL_READ_MAX = 500;
+const DATED_RE = /(?:^|[^0-9])(?:1[89]|20)[0-9]{2}(?:[^0-9]|$)/;
+function labelReading(counts) {
+    if (counts.size === 0 || counts.size > LABEL_READ_MAX) return null;
+    const out = { distinct: 0, place: 0, sex: 0, age: 0, national: 0, province: 0, region: 0, others: 0, measure: 0, dated: 0, dated_cells: 0,
+        cells: 0, garbled: 0 };
+    for (const [value, count] of counts) {
+        if (isMissingToken(value)) continue;
+        out.distinct += 1;
+        out.cells += count;
+        const kind = labelKind(value);
+        if (kind) out[kind] += 1;
+        if (isNationalLabel(value)) out.national += 1;
+        else if (isProvinceName(value)) out.province += 1;
+        else if (isRegionLabel(value)) out.region += 1;
+        else if (!kind && !isTotalLabel(value)) out.others += 1;
+        if (isMeasureLabel(value)) out.measure += 1;
+        if (DATED_RE.test(value)) {
+            out.dated += 1;
+            out.dated_cells += count;
+        }
+        if (isGarbled(value)) out.garbled += 1;
+    }
+    return out;
 }
 
 // A measure-like column: typed as a number, or text that is nearly all numbers.
@@ -751,6 +820,45 @@ function repeatedFigures(stats, matrix, numbersOf) {
     return out;
 }
 
+// A column whose every value splits the same people or things another way:
+// "Age", "Sex" and "Region" as values of one "Characteristic" column, each
+// adding up to the same total. Adding a measure across that column counts
+// everything once per way of splitting. Read only from a whole table, where
+// the sums are exact.
+function repeatedPartitions(stats, matrix, numbersOf, complete) {
+    if (!complete) return [];
+    const rows = matrix.length ? matrix[0].length : 0;
+    const measures = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => numericLike(stat) && stat.number.distinct > 2 &&
+        !stat.number.percent).slice(0, 8);
+    const categories = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => categoryLike(stat) && stat.distinct >= 3 && stat.distinct <= 30);
+    const out = [];
+    for (const category of categories) {
+        const c = matrix[category.index];
+        for (const measure of measures) {
+            const m = numbersOf(measure.index);
+            const sums = new Map();
+            const sizes = new Map();
+            for (let r = 0; r < rows; r += 1) {
+                if (c[r] === '' || Number.isNaN(m[r])) continue;
+                const key = c[r].toLowerCase();
+                sums.set(key, (sums.get(key) || 0) + m[r]);
+                sizes.set(key, (sizes.get(key) || 0) + 1);
+            }
+            const values = [...sums.values()].filter(value => value > 0).sort((a, b) => a - b);
+            if (values.length < 3) continue;
+            const mid = median(values);
+            const close = [...sums.entries()].filter(([, value]) => value > 0 && Math.abs(value - mid) <= mid * 0.01).map(([key]) => sizes.get(key));
+            // Each way of splitting has its own number of parts (two sexes, six
+            // age bands): a balanced panel, with the same rows under every value, is not this.
+            if (close.length >= 3 && close.length >= values.length * 0.6 && Math.max(...close) >= Math.min(...close) * 1.5) {
+                out.push({ by: category.stat.id, measure: measure.stat.id, groups: values.length });
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 /**
  * Profiles a sample of a prepared table.
  * @param {{ columns: Array<{ id: string, type: string, original_label?: string, cast_failed?: boolean }>,
@@ -796,6 +904,17 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
         }
     };
     setAside(noteRows(matrix, count), 'note');
+    // A row with nothing in it is not a record. Known exactly only when the
+    // whole table was read.
+    if (plan.complete) {
+        const empty = [];
+        for (let r = 0; r < count; r += 1) {
+            let filled = false;
+            for (let c = 0; c < used.length && !filled; c += 1) filled = matrix[c][r] !== '';
+            if (!filled) empty.push(r);
+        }
+        setAside(empty, 'blank');
+    }
     const read = async () => {
         const out = [];
         for (let c = 0; c < used.length; c += 1) {
@@ -864,6 +983,8 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
     const mixes = scaleMixes(stats, matrix, numbersOf);
     await pause();
     const repeated = repeatedFigures(stats, matrix, numbersOf);
+    await pause();
+    const partitions = repeatedPartitions(stats, matrix, numbersOf, plan.complete);
 
     return {
         v: 1,
@@ -875,6 +996,7 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
             notes: excluded.filter(row => row.reason === 'note').length,
             headers: excluded.filter(row => row.reason === 'header' || row.reason === 'second_header').length,
             unit_rows: excluded.filter(row => row.reason === 'unit').length,
+            blank_rows: excluded.filter(row => row.reason === 'blank').length,
             units: found.units || {},
             total_rows: found.total_rows,
             total_labels: found.total_labels
@@ -886,7 +1008,8 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
             derived_totals: totals,
             composite_time: composite,
             scale_mixed: mixes,
-            repeated
+            repeated,
+            partitions
         }
     };
 }

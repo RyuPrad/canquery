@@ -112,10 +112,11 @@ function twins() {
     for (let i = 0; i < 160; i += 1) {
         const [en, fr] = PROVINCES[i % 6];
         const region = regions[(i * 5) % 4];
-        rows.push([en, fr, ['Yes', 'No', 'Maybe'][i % 3], ['Oui', 'Non', 'Peut-être'][i % 3], region[0], region[1], region[2], String(20 + (i % 30))]);
+        rows.push([en, fr, ['Yes', 'No', 'Maybe'][i % 3], ['Oui', 'Non', 'Peut-être'][i % 3], region[0], region[1], region[2], String(20 + (i % 30)),
+            String(3 + ((i * 7) % 40))]);
     }
     return { columns: [text('EN_PROVINCE/TERRITORY'), text('FR_PROVINCE/TERRITOIRE'), text('answer_e'), text('answer_f'), text('ER_Code'), text('ER_Name'),
-        text('Nom_RE'), numeric('Median_Wage')], rows: withIds(rows) };
+        text('Nom_RE'), numeric('Median_Wage'), integer('Number of vacancies')], rows: withIds(rows) };
 }
 
 // 9. A report-style table: French second header, a unit row, notes, a repeated
@@ -166,7 +167,7 @@ function twoCurrencies() {
 // 12. Rates, ratios and indexes beside a count.
 function ratesAndCounts() {
     const rows = [];
-    for (let i = 0; i < 100; i += 1) rows.push([['A', 'B', 'C', 'D', 'E'][i % 5], String(50 + scatter(i, 400)), String(scatter(i, 100) / 10), String(0.25 + (i % 4) / 10), String(95 + scatter(i, 30))]);
+    for (let i = 0; i < 100; i += 1) rows.push([['Retail', 'Mining', 'Finance', 'Health', 'Transport'][i % 5], String(50 + scatter(i, 400)), String(scatter(i, 100) / 10), String(0.25 + (i % 4) / 10), String(95 + scatter(i, 30))]);
     return { columns: [text('Sector'), integer('Employees'), numeric('Unemployment rate'), numeric('Male ratio'), numeric('Price index')], rows: withIds(rows) };
 }
 

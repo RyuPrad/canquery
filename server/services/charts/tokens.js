@@ -57,8 +57,18 @@ function trimLabel(label) {
     return text.slice(0, end);
 }
 
+// "Total Atlantic", "Total Canada", "Total, all provinces": a total of a
+// place or of everything is one in any table.
+const TOTAL_OF_RE = /^(?:(?:grand|sub|sous)[ -]?)?(?:totals?|totaux)\s+(?:(?:for|of|de|des|du|pour)\s+)?(.+)$/i;
+
 function isTotalLabel(label) {
-    return TOTAL_RE.test(trimLabel(label));
+    const text = trimLabel(label);
+    if (TOTAL_RE.test(text)) return true;
+    const rest = TOTAL_OF_RE.exec(text);
+    if (!rest) return false;
+    const place = rest[1].replace(/^(?:the|la|le|les|l['’])\s*/i, '');
+    return isProvinceName(place) || isRegionLabel(place) || isNationalLabel(place) || /^(?:all|tous|toutes|ensemble)\b/i.test(place) ||
+        /^(?:the |les )?(?:provinces|territories|territoires)(?: (?:and|et) (?:territories|territoires))?$/i.test(place);
 }
 
 // "Total expenditures", "Ontario Total", "Sous-total des revenus": in a table
@@ -88,9 +98,14 @@ const PROVINCES = new Set(['alberta', 'british columbia', 'colombie-britannique'
     'yukon territory', 'ab', 'bc', 'mb', 'nb', 'nl', 'ns', 'nt', 'nu', 'on', 'pe', 'pei', 'qc', 'sk', 'yt']);
 const NATIONAL_RE = /^(?:canada|total canada|canada total|canada, total|ensemble du canada|national|nationale|all provinces|toutes les provinces)$/;
 const plain = label => String(label ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+// Abbreviations as they are also written: "B.C.", "N.S.", "Que.", "Qu\u00e9", "Nfld.".
+const PROVINCE_FORMS = new Set(['que', 'ont', 'alta', 'sask', 'man', 'nfld', 'nwt', 'tno', 'yk', 'yuk', 'p e i', 'ipe', 'tnl']);
 
 function isProvinceName(label) {
-    return PROVINCES.has(plain(label));
+    const text = plain(label);
+    if (PROVINCES.has(text)) return true;
+    const bare = text.replace(/\./g, '').replace(/\s+/g, ' ').trim();
+    return PROVINCES.has(bare) || PROVINCE_FORMS.has(bare);
 }
 
 function isNationalLabel(label) {
@@ -98,10 +113,83 @@ function isNationalLabel(label) {
 }
 
 // Groups of provinces that statistical tables list beside the provinces.
-const REGION_RE = /^(?:atlantic|atlantique|atlantic provinces|provinces de l atlantique|provinces atlantiques|maritimes|maritime provinces|prairies|prairie provinces|provinces des prairies|territories|territoires|the territories|les territoires|western canada|eastern canada|central canada|northern canada|ouest canadien|est du canada|nord canadien|pacific|pacifique|the north|le nord)$/;
+const REGION_RE = /^(?:atlantic|atlantique|atlantic canada|canada atlantique|l atlantique|atlantic provinces|provinces de l atlantique|provinces atlantiques|maritimes|maritime provinces|prairies|prairie provinces|provinces des prairies|territories|territoires|the territories|les territoires|western canada|eastern canada|central canada|northern canada|ouest canadien|est du canada|nord canadien|pacific|pacifique|the north|le nord)$/;
 
 function isRegionLabel(label) {
     return REGION_RE.test(plain(label).replace(/['’]/g, ' '));
+}
+
+// --- What a category's labels say ----------------------------------------
+
+// A code a reader cannot decode without a legend: "U", "3", "ESSF", "*GD",
+// "J0K", "381A", "dnd-mdn", "T.Q.C". Short, without a space, and made of
+// capitals, digits or symbols (or a short lower-case slug). Words, however
+// short, are not codes when they are written as words ("West", "Rural").
+// Spelled out, yes and no read; a lone "N" may be a code ("N": not applicable).
+const YES_NO = new Set(['yes', 'no', 'oui', 'non']);
+/**
+ * How surely a label is a code: 2 surely ("U", "3", "*GD", "J0K", "dnd-mdn",
+ * "ML", "MLSn"), 1 perhaps (four or five capitals: "ESSF" is a code, "RURAL"
+ * a word; a column of many of them is codes), 0 not.
+ */
+function codeLevel(label, { sex = false } = {}) {
+    const text = String(label ?? '').trim();
+    if (!text || text.length > 8 || /\s/.test(text)) return 0;
+    if (/^(?:1[89]|20)\d{2}$/.test(text)) return 0;
+    const lower = text.toLowerCase();
+    if (YES_NO.has(lower) || isProvinceName(text)) return 0;
+    if (sex && /^(?:m|f|x|h)$/.test(lower)) return 0;
+    if (/[0-9*#/_.\\|+]/.test(text)) return 2;
+    if (/^[A-Z]{1,3}$/.test(text)) return 2;
+    if (/^[a-z]{1,3}$/.test(text) || /^[a-z]{1,6}(?:-[a-z]{1,6})+$/.test(text)) return 2;
+    if (/^[A-Z]{4,5}$/.test(text)) return 1;
+    // Mixed case with two capitals or more and no lower-case vowel: "MLSn", "MLn".
+    return /^[A-Za-z]{2,6}$/.test(text) && (text.match(/[A-Z]/g) || []).length >= 2 && !/[aeiouy]/.test(text.replace(/[A-Z]/g, '')) ? 2 : 0;
+}
+
+/** Are these labels, together, codes rather than words? */
+function codeLabels(labels, options) {
+    const named = labels.filter(label => String(label ?? '').trim() !== '');
+    if (!named.length) return false;
+    let sure = 0;
+    let maybe = 0;
+    for (const label of named) {
+        const level = codeLevel(label, options);
+        if (level === 2) sure += 1;
+        else if (level === 1) maybe += 1;
+    }
+    // A few capitals ("URBAN", "RURAL") are words; many short ones are a code list.
+    return sure / named.length >= 0.5 || (named.length >= 5 && (sure + maybe) / named.length >= 0.8);
+}
+
+// Which kind of breakdown a label belongs to, when that can be told: a place,
+// a sex, or an age band. A column that lists several kinds lists the same
+// people several times.
+const SEX_LABEL_RE = /^(?:men|women|male|males|female|females|man|woman|boys|girls|hommes?|femmes?|garcons|filles|both sexes|les deux sexes|total[ ,-]+both sexes|sexes confondus|men\+|women\+|hommes\+|femmes\+)$/;
+const AGE_LABEL_RE = /(?:^|\s)\d{1,3}\s*(?:to|-|–|à|a)\s*\d{1,3}(?:\s*(?:years?|yrs|ans))?(?:\s|$)|\d{1,3}\s*(?:years?|ans)\s*(?:and|et)\s*(?:over|older|plus)|^(?:under|less than|moins de)\s+\d{1,3}\s*(?:years?|ans)?|^\d{1,3}\s*\+$|^\d{1,3}\s*(?:years?|ans)\s*(?:\+|and over|et plus)$/;
+function labelKind(label) {
+    const text = plain(label).replace(/['’]/g, ' ');
+    if (!text) return null;
+    if (isProvinceName(text) || isNationalLabel(text) || isRegionLabel(text)) return 'place';
+    if (SEX_LABEL_RE.test(text)) return 'sex';
+    if (AGE_LABEL_RE.test(text)) return 'age';
+    return null;
+}
+
+// A label that names a quantity, not a group: "Number of returns", "Total
+// income", "Average wage", "Taux de chômage", "Revenue ($)". A column of them
+// says what another column's numbers are, row by row.
+const MEASURE_LABEL_RE = /^(?:number|numbers|nombre|nombres|nb|nbre|no\.?|#|count|counts|total|totals|amount|amounts|montant|montants|average|avg|mean|moyenne|median|mediane|rate|rates|taux|percent|percentage|pourcentage|proportion|ratio|share|part|index|indice|value|valeur|sum|somme|dollars|value of|valeur de)(?:\s|$|\s*\()/;
+function isMeasureLabel(label) {
+    const text = plain(label);
+    if (!text || text.length > 120) return false;
+    return MEASURE_LABEL_RE.test(text) || /\((?:\$|%|#|k\$|m\$|\$000|000\s*\$|dollars|number|nombre|nbre|per cent|pour cent)\)\s*$/.test(text);
+}
+
+// Text decoded with the wrong character set: "privÃ©e", "privŽe", "â€™".
+const GARBLED_RE = /\u00C3[\u0080-\u00BF]|\u00C2[\u00A0-\u00BF]|\u00E2\u20AC|[a-z\u00E9][\u017D\u0192\u02C6\u2122\u0152\u0153][a-z]|\uFFFD/;
+function isGarbled(label) {
+    return GARBLED_RE.test(String(label ?? ''));
 }
 
 // Notes and sources that publishers keep inside their tables. These openings
@@ -178,7 +266,9 @@ const HINTS = {
         'captures', 'landings', 'debarquements', 'production', 'exports', 'exportations', 'imports', 'importations',
         'emissions', 'hectares', 'acres', 'gifts', 'dons', 'donations', 'lmias', 'eimt', 'incidents', 'accidents',
         'collisions', 'injuries', 'blesses', 'fatalities', 'tickets', 'licences', 'licenses', 'registrations',
-        'inscriptions', 'enrolment', 'enrollment', 'effectif', 'effectifs', 'hunters', 'chasseurs', 'days', 'jours']),
+        'inscriptions', 'enrolment', 'enrollment', 'effectif', 'effectifs', 'hunters', 'chasseurs', 'days', 'jours',
+        // Money by another name: "Crédit établi (dollars)", "Benefits paid".
+        'dollars', 'dollar', 'credit', 'credits', 'benefits', 'prestations', 'refunds', 'remboursements', 'versements', 'allocations']),
     // Quantities that must never be added up.
     nonAdditive: words(['rate', 'rates', 'taux', 'ratio', 'ratios', 'percent', 'percentage', 'pourcentage', 'pct', 'proportion',
         'average', 'avg', 'moyenne', 'moyen', 'mean', 'median', 'mediane', 'index', 'indice', 'score', 'scores',
@@ -188,7 +278,14 @@ const HINTS = {
         'magnitude', 'ph', 'pressure', 'pression', 'grade', 'level', 'niveau', 'min', 'max', 'minimum', 'maximum',
         'minium', 'maximal', 'quartile', 'quartile1', 'quartile3', 'percentile', 'yield', 'rendement', 'growth',
         'croissance', 'change', 'variation', 'margin', 'marge', 'factor', 'facteur', 'coefficient', 'intensity',
-        'intensite']),
+        'intensite',
+        // Limits, bounds and quantiles: "Nombre minimal d'administrateurs", "LL", "Upper CI".
+        'minimal', 'minimale', 'minimaux', 'maximale', 'maximaux', 'mini', 'maxi', 'lower', 'upper', 'll', 'ul', 'lcl', 'ucl', 'ci',
+        'confidence', 'bound', 'bounds', 'borne', 'bornes', 'decile', 'p10', 'p25', 'p50', 'p75', 'p90', 'p95',
+        // Sizes of one thing: a rink's width, a valve's diameter.
+        'length', 'longueur', 'width', 'largeur', 'diameter', 'diametre', 'thickness', 'epaisseur', 'radius', 'rayon',
+        // A moment, not an amount: the day or hour of a timestamp.
+        'day', 'jour', 'hour', 'heure', 'minute', 'second', 'seconde', 'weekday', 'timestamp', 'datetime']),
     // A column whose values say what another column's numbers are.
     measureName: words(['measure', 'measures', 'mesure', 'mesures', 'indicator', 'indicators', 'indicateur', 'indicateurs',
         'variable', 'variables', 'metric', 'metrics', 'statistic', 'statistics', 'statistique', 'statistiques',
@@ -208,6 +305,22 @@ const HINTS = {
     label: words(['name', 'names', 'nom', 'noms', 'title', 'titre', 'address', 'adresse', 'street', 'rue', 'email', 'courriel',
         'url', 'website', 'site web', 'phone', 'telephone', 'tel', 'employer', 'employeur', 'organization', 'organisme']),
     total: words(['total', 'totals', 'totaux', 'tot', 'somme', 'sum', 'ytd', 'cumul', 'cumulatif', 'ensemble', 'all']),
+    // People's names: never something to group by ("John" is many people).
+    personName: words(['first name', 'firstname', 'given name', 'given names', 'prenom', 'prenoms', 'last name', 'lastname', 'surname',
+        'family name', 'nom de famille', 'middle name', 'second prenom']),
+    // When the table's record was touched, not when anything happened.
+    maintenance: words(['updated', 'update', 'last update', 'last updated', 'modified', 'last modified', 'modifie', 'modification',
+        'mise a jour', 'maj', 'revision', 'revised', 'extracted', 'extraction', 'retrieved', 'refresh', 'refreshed', 'loaded',
+        'load date', 'as of', 'en date du', 'processed', 'traitement', 'edited', 'edit date']),
+    // Numbers that are themselves a breakdown: "Bedrooms 1, 2, 3", "Household size".
+    countDimension: words(['bedroom', 'bedrooms', 'room', 'rooms', 'chambre', 'chambres', 'piece', 'pieces', 'storey', 'storeys',
+        'stories', 'floor', 'floors', 'etage', 'etages', 'person', 'persons', 'personne', 'personnes', 'people', 'children', 'enfants',
+        'members', 'membres', 'occupants', 'size', 'taille', 'age', 'ages', 'household', 'menage']),
+    // A data dictionary: one row per column of some other table.
+    dictionaryField: words(['field', 'field name', 'fieldname', 'champ', 'nom du champ', 'nom de champ', 'column name', 'colonne',
+        'nom de colonne', 'variable', 'variable name', 'nom de variable', 'attribute', 'attribut', 'data element', 'element de donnees']),
+    dictionaryDetail: words(['data type', 'datatype', 'type de donnees', 'field type', 'type de champ', 'format', 'domain', 'domaine',
+        'definition', 'description', 'allowed values', 'valeurs permises', 'field length', 'longueur du champ']),
     english: words(['en', 'eng', 'english', 'anglais', 'ang', 'e']),
     french: words(['fr', 'fra', 'fre', 'french', 'francais', 'f'])
 };
@@ -260,7 +373,8 @@ function nameEvidence(name) {
 function readName(name) {
     const normal = normalizeName(name);
     const has = kind => HINTS[kind].test(normal);
-    const countName = COUNT_NAME_RE.test(normal + ' ');
+    // "n" heads a column of counts in statistical tables.
+    const countName = COUNT_NAME_RE.test(normal + ' ') || normal === 'n';
     const percentName = /%/.test(String(name ?? ''));
     const nonAdditive = has('nonAdditive') || percentName;
     const lastWord = normal.split(' ').pop();
@@ -286,6 +400,12 @@ function readName(name) {
         freeText: has('freeText'),
         label: has('label'),
         total: has('total'),
+        personName: has('personName'),
+        maintenance: has('maintenance'),
+        countDimension: has('countDimension'),
+        sex: /(?:^| )(?:sex|sexe|gender|genre)(?: |$)/.test(normal),
+        dictionaryField: has('dictionaryField'),
+        dictionaryDetail: has('dictionaryDetail'),
         english: has('english'),
         french: has('french')
     };
@@ -294,5 +414,6 @@ function readName(name) {
 module.exports = {
     MISSING_TOKENS, BLANK_LABELS, TOTAL_RE, FOOTNOTE_RE, MARKED_NOTE_RE, NUMERIC_LABEL_RE, LABEL_LIMIT, CATEGORY_LABEL_LIMIT,
     isMissingToken, isBlankLabel, isTotalLabel, isFootnoteLabel, isMarkedNote, isGenericName, cleanLabel, normalizeName,
-    nameEvidence, hasAggregateHint, isProvinceName, isNationalLabel, isRegionLabel, isAggregateLabel, TABLE_BLANK_TOKENS
+    nameEvidence, hasAggregateHint, isProvinceName, isNationalLabel, isRegionLabel, isAggregateLabel, TABLE_BLANK_TOKENS,
+    codeLevel, codeLabels, labelKind, isMeasureLabel, isGarbled
 };

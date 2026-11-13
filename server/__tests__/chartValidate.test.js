@@ -57,7 +57,7 @@ describe('members that add the others up', () => {
     test('without a name to go by, only an exact sum of the others counts, and not among small numbers', () => {
         expect(detect([group('North', 4, [6000]), group('East', 4, [3500]), group('West', 4, [2500])]).totals.map(total => total.label)).toEqual(['North']);
         expect(detect([group('North', 4, [6000]), group('East', 4, [3500]), group('West', 4, [2490])]).totals).toEqual([]);
-        expect(detect([group('A', 4, [5]), group('B', 4, [3]), group('C', 4, [2])]).totals).toEqual([]);
+        expect(detect([group('Alpha', 4, [5]), group('Beta', 4, [3]), group('Gamma', 4, [2])]).totals).toEqual([]);
     });
 
     test('"Canada" beside the provinces is their total even when suppressed cells make it larger, and regions go with it', () => {
@@ -136,11 +136,11 @@ describe('charts of groups', () => {
     test('a chart that would say nothing is not drawn', () => {
         const reason = result => result.reason;
         expect(reason(tally([group('Only', 40)]))).toBe('too_few_groups');
-        expect(reason(tally([group('A', 10), group('B', 10), group('C', 10)]))).toBe('flat');
-        expect(reason(tally([group('A', 1000), group('B', 995), group('C', 990), group('D', 985)]))).toBe('flat');
+        expect(reason(tally([group('Alpha', 10), group('Beta', 10), group('Gamma', 10)]))).toBe('flat');
+        expect(reason(tally([group('Alpha', 1000), group('Beta', 995), group('Gamma', 990), group('Delta', 985)]))).toBe('flat');
         expect(reason(tally(Array.from({ length: 30 }, (_, i) => group('Name ' + i, i < 5 ? 2 : 1))))).toBe('id_like');
-        expect(reason(tally([group('A', 990), group('B', 6), group('C', 4)]))).toBe('one_group');
-        expect(reason(tally([group('', 60), group('A', 30), group('B', 10)]))).toBe('mostly_blank');
+        expect(reason(tally([group('Alpha', 990), group('Beta', 6), group('Gamma', 4)]))).toBe('one_group');
+        expect(reason(tally([group('', 60), group('Alpha', 30), group('Beta', 10)]))).toBe('mostly_blank');
         expect(reason(tally([group('https://example.org/a', 9), group('https://example.org/b', 5), group('Other', 3)]))).toBe('link_labels');
         expect(reason(tally([group('2034-04-30T00:00:00', 9), group('2035-04-30T00:00:00', 5)]))).toBe('date_labels');
         const long = 'A sentence that goes on for much longer than any category label would, well past eighty characters in all';
@@ -197,7 +197,7 @@ describe('charts of groups', () => {
         expect(shares(groups, { spec: spec({ row_labels: true }) }).chart.fit).toEqual({ tab: true, card: false, social: false });
         expect(shares(groups, { spec: spec({ generic: true }) }).chart.fit.card).toBe(false);
         expect(shares(groups.slice(0, 2)).chart.fit.card).toBe(false);
-        const led = tally([group('', 45), group('A', 30), group('B', 25)]).chart;
+        const led = tally([group('', 45), group('Alpha', 30), group('Beta', 25)]).chart;
         expect(led.fit.card).toBe(false);
         expect(led.score).toBe(36);
     });

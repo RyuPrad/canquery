@@ -1,7 +1,7 @@
 // Rules that came out of reading real publisher tables. Each test is a small
 // table with the shape of the one that showed the problem.
 const { samplePlan, profileSample } = require('../services/charts/profile');
-const { buildTableModel } = require('../services/charts/model');
+const { buildTableModel, pinnedModel } = require('../services/charts/model');
 const { listCandidates, pickDiverse } = require('../services/charts/candidates');
 const { validateSpec } = require('../services/charts/spec');
 const { nameEvidence } = require('../services/charts/tokens');
@@ -59,7 +59,7 @@ describe('reading columns', () => {
         expect(column(french.model, 'Total')).toMatchObject({ confidence: 'low', measure: { ambiguous: true } });
     });
 
-    test('a slug beside its long title is the code of it; the code is charted when the title is too long to be', async () => {
+    test('a slug beside its long title is the code of it; neither is charted when the title is too long and the code is a slug', async () => {
         const orgs = [['cer-rec', 'Canada Energy Regulator | Régie de l\'énergie du Canada, organisme de réglementation du secteur'],
             ['cihr-irsc', 'Canadian Institutes of Health Research | Instituts de recherche en santé du Canada, organisme fédéral'],
             ['cta-otc', 'Canadian Transportation Agency | Office des transports du Canada, tribunal quasi judiciaire indépendant'],
@@ -69,7 +69,9 @@ describe('reading columns', () => {
         expect(column(model, 'owner_org').label_columns).toEqual(['owner_org_title']);
         expect(column(model, 'owner_org_title')).toMatchObject({ role: 'text', code_column: 'owner_org' });
         expect(column(model, 'owner_org').twin).toBeUndefined();
-        expect(listCandidates(model).some(spec => spec.x.column === 'owner_org')).toBe(true);
+        // "cer-rec" needs a legend: a reader cannot tell the organizations apart by it.
+        expect(column(model, 'owner_org').category.flags).toEqual(['code_labels']);
+        expect(listCandidates(model).some(spec => spec.x.column === 'owner_org' || spec.x.column === 'owner_org_title')).toBe(false);
     });
 
     test('"(#)" over a column of counts is not a row number', async () => {
@@ -77,8 +79,8 @@ describe('reading columns', () => {
             range(60).map(i => ['K' + (i % 10) + String.fromCharCode(65 + Math.floor(i / 10)), String(40 + scatter(i, 900)), String(1000 + scatter(i, 90000))])));
         expect(column(model, '(#)').role).toBe('measure');
         expect(column(model, 'FSA')).toMatchObject({ role: 'identifier', rankable: true });
-        // A short key with letters names the rows of a ranking when nothing better does.
-        expect(listCandidates(model).map(spec => [spec.template, spec.x.column])).toContainEqual(['top_labels_by_measure', 'FSA']);
+        // A short key ("K1A") names nothing a reader would recognise, and "(#)" says nothing of what it counts.
+        expect(listCandidates(model).some(spec => spec.x.column === 'FSA' || spec.y.column === '(#)')).toBe(false);
     });
 
     test('a column of keys stays one however many rows are sampled', async () => {
@@ -104,7 +106,7 @@ describe('reading columns', () => {
     });
 
     test('numbers that name things are grouped by only when few and known for what they are', async () => {
-        const { model } = await read(table([integer('Class'), integer('Ward'), integer('LAHT'), integer('Code - NOC'), text('COT (µg/L)'), integer('GVW')],
+        const { model } = await read(table([integer('Class'), integer('Ward'), integer('LAHT'), integer('Code - NOC'), text('COT (µg/L)'), integer('Number of trips')],
             range(400).map(i => [String(1 + (i % 5)), String(1 + (i % 25)), String(150 + scatter(i, 90)), String([1, 10, 100, 10010, 21, 213][i % 6]),
                 String(53 + (i % 7)), String(2000 + scatter(i, 30000))])));
         expect(column(model, 'Class')).toMatchObject({ role: 'code', category: { numeric: true, breakdown: true } });
@@ -165,7 +167,8 @@ describe('reading columns', () => {
         expect(column(model, 'Number of turbines in project').measure).toMatchObject({ additive: 'no', reason: 'repeated_per_group' });
         expect(column(model, 'Turbine rated capacity (kW)').measure.additive).not.toBe('no');
         const aggs = Object.fromEntries(listCandidates(model).filter(spec => spec.y.column).map(spec => [spec.y.column, spec.y.agg]));
-        expect(aggs['Number of turbines in project']).toBe('avg');
+        // Neither added up nor averaged on the engine's own initiative.
+        expect(aggs['Number of turbines in project']).toBeUndefined();
     });
 
     test('amounts that are nearly all in one currency are read in that currency, and the table is still a list of things', async () => {
@@ -240,7 +243,11 @@ describe('reading columns', () => {
         const mixed = await read(fixtures.measureNames());
         expect(mixed.model).toMatchObject({ shape: 'long_measures', records: false });
         expect(listCandidates(mixed.model)).toEqual([]);
-        expect(listCandidates(mixed.model, { pinned: ['Data Point Label'] }).length).toBeGreaterThan(0);
+        // Held to one measure, whose name says whether it adds up.
+        const income = pinnedModel(mixed.model, [{ column: 'Data Point Label', op: 'eq', value: 'Net income' }]);
+        expect(listCandidates(income, { pinned: ['Data Point Label'] }).length).toBeGreaterThan(0);
+        const ratio = pinnedModel(mixed.model, [{ column: 'Data Point Label', op: 'eq', value: 'Capital ratio' }]);
+        expect(listCandidates(ratio, { pinned: ['Data Point Label'] })).toEqual([]);
         const wide = await read(fixtures.widePeriods());
         expect(wide.model).toMatchObject({ shape: 'wide', records: false });
     });
@@ -253,7 +260,7 @@ describe('reading columns', () => {
 });
 
 describe('choosing which charts to try', () => {
-    test('sums of a table of events come first, then its counts; averages of attributes after', async () => {
+    test('sums of a table of events come first, then its counts; attributes are not averaged', async () => {
         const { model } = await read(fixtures.cleanEvents());
         const templates = listCandidates(model).map(spec => spec.template);
         expect(templates.slice(0, 3)).toContain('measure_over_time');
@@ -262,7 +269,8 @@ describe('choosing which charts to try', () => {
         const rates = await read(table([text('Name'), text('Province'), numeric('Hub height (m)')],
             range(300).map(i => ['Turbine ' + i, ['ON', 'QC', 'AB', 'NS'][i % 4], String(60 + (i % 50))])));
         const ranked = listCandidates(rates.model);
-        expect(ranked.findIndex(spec => spec.template === 'records_by_category')).toBeLessThan(ranked.findIndex(spec => spec.template === 'average_by_category'));
+        expect(ranked.some(spec => spec.template === 'records_by_category')).toBe(true);
+        expect(ranked.some(spec => spec.y.agg === 'avg')).toBe(false);
     });
 
     test('the charts shown do not repeat themselves', async () => {

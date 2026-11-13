@@ -5,7 +5,8 @@
 // Values decide. A column's name only raises or lowers confidence, except
 // where values cannot tell: what a period column is called, which language a
 // twin column speaks, and whether a quantity adds up.
-const { nameEvidence, isTotalLabel, isAggregateLabel, isGenericName, isMissingToken, TABLE_BLANK_TOKENS } = require('./tokens');
+const { nameEvidence, isTotalLabel, isAggregateLabel, isGenericName, isMissingToken, TABLE_BLANK_TOKENS, codeLabels, labelKind, isMeasureLabel, isGarbled,
+    isNationalLabel, isRegionLabel, isProvinceName } = require('./tokens');
 const { numericLike } = require('./profile');
 
 const NUMERIC_TYPES = new Set(['INTEGER', 'NUMERIC']);
@@ -22,6 +23,13 @@ const PERIOD_MAX = 400;
 const MIN_YEAR = 1800;
 
 const share = (part, whole) => (whole > 0 ? part / whole : 0);
+// One value this common says nothing as a breakdown.
+const DOMINANT_GROUP = 0.95;
+const DICTIONARY_MAX_ROWS = 2000;
+// "20230115": a date written as a number.
+const DATE_NUMBER_RE = /^(1[89]|20|21)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$/;
+// A year or a date inside a label: "Claim period 1 (Sep 27, 2020 to Oct 24, 2020)", "2021-22 Q1".
+const DATED_LABEL_RE = /(?:^|[^0-9])(?:1[89]|20)[0-9]{2}(?:[^0-9]|$)/;
 // A measure whose name only says that it is a value.
 const VALUE_NAME_RE = /^(?:measure |data |obs |observation )?(?:value|values|valeur|valeurs|amount|montant|estimate|estimation|result|resultat|data|donnee|donnees)(?: |$)/;
 
@@ -206,6 +214,14 @@ function decideRole(stat, context) {
         if (name.longitude && stat.number.min >= -180 && stat.number.max <= 180) return decide('coordinate', 'medium', 'coordinate');
     }
 
+    // Dates written as numbers ("20230115") are neither keys nor quantities.
+    if (integers && stat.number.fixed_width === 8 && stat.top.length &&
+        share(stat.top.filter(entry => DATE_NUMBER_RE.test(entry.v)).reduce((sum, entry) => sum + entry.n, 0), stat.top.reduce((sum, entry) => sum + entry.n, 0)) >= 0.9) {
+        return decide('code', 'medium', 'date_numbers');
+    }
+    // People's first or last names repeat, but a group of every "John" is no group.
+    if (name.personName && !stat.number) return decide('text', 'high', 'person_names');
+
     const contact = stat.patterns.url + stat.patterns.email + stat.patterns.phone + stat.patterns.postal;
     if (share(contact, stat.filled) >= 0.8) return decide('identifier', 'high', 'contact_values');
     const nearUnique = ratio >= 0.9 && stat.filled >= 20;
@@ -335,7 +351,10 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
                 ...additivity(stat, name, total, total ? null : repeatedBy.get(stat.id), doubtful, sameLength),
                 doubtful,
                 text: !NUMERIC_TYPES.has(stat.type),
-                clean: NUMERIC_TYPES.has(stat.type) ? null : { ...stat.number.rule, missing: reading.missing_tokens },
+                clean: NUMERIC_TYPES.has(stat.type) ? null : { ...stat.number.rule, missing: reading.missing_tokens,
+                    ...(stat.missing.sentinels.length ? { sentinel: true } : {}) },
+                // Figures that stand for "no figure" in a typed column (99999.9).
+                sentinels: NUMERIC_TYPES.has(stat.type) ? stat.missing.sentinels.slice(0, 8) : [],
                 missing_share: share(reading.missing_cells, stat.filled),
                 unreadable_share: reading.unreadable_share,
                 integer: stat.number.integer_share >= 0.99,
@@ -358,27 +377,45 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             const labels = new Set(profile.rows.total_labels[stat.id] || []);
             for (const entry of stat.top) if (isTotalLabel(entry.v)) labels.add(entry.v.toLowerCase());
             const top = stat.top[0];
-            // Bare numbers make poor labels. A code is charted on its own only
-            // when there are few of them and something says what they are: a
-            // name ("Class", "Code"), leading zeros, or a short scale (1 to 5).
-            const numeric = decided.role === 'code' && Boolean(stat.number) && share(stat.number.parsed, stat.real_cells) >= 0.5;
+            const values = stat.top.map(entry => entry.v);
+            // Bare numbers make poor labels: only a count that is itself a
+            // breakdown ("Bedrooms: 1, 2, 3") reads without a legend.
+            const numeric = Boolean(stat.number) && share(stat.number.parsed, stat.real_cells) >= 0.5;
             const reason = decided.reasons[0].code;
             const readable = !numeric || (stat.est_distinct <= NUMERIC_LABELS_MAX &&
-                (['code_name', 'id_name', 'unit_name', 'leading_zeros', 'year_like', 'period_part', 'two_values', 'code_of_label'].includes(reason) ||
-                    (reason === 'few_whole_numbers' && stat.number.max <= 20)));
+                (name.countDimension || name.nominal || reason === 'period_part' || reason === 'year_like'));
+            const flags = [];
+            // Codes need a legend the table does not give ("U", "ESSF", "*GD").
+            if (!numeric && codeLabels(values, { sex: name.sex })) flags.push('code_labels');
+            if (stat.labels ? stat.labels.garbled > 0 : values.some(isGarbled)) flags.push('garbled_text');
+            // Years or dates inside the labels: periods that were not read as a time axis.
+            const dated = stat.labels ? share(stat.labels.dated_cells, stat.labels.cells)
+                : share(stat.top.filter(entry => DATED_LABEL_RE.test(entry.v)).reduce((sum, entry) => sum + entry.n, 0), stat.top.reduce((sum, entry) => sum + entry.n, 0));
+            if (values.length >= 2 && dated >= 0.9) flags.push('period_labels');
+            const topShare = top ? share(top.n, stat.filled) : 0;
+            if (topShare >= DOMINANT_GROUP) flags.push('one_value_dominates');
+            for (const flag of flags) column.reasons.push({ code: flag });
             column.category = {
                 distinct: stat.est_distinct,
                 total_members: [...labels].slice(0, 8),
                 strip_code_prefix: decided.strip_code_prefix === true,
                 variants: stat.spellings > 0 || stat.padded > 0,
-                top_share: top ? share(top.n, stat.filled) : 0,
+                top_share: topShare,
                 numeric,
+                flags,
                 // Share charts need few groups; rankings take many.
-                breakdown: readable && stat.est_distinct <= AUTO_CATEGORY_MAX && column.blank_share <= 0.5 && (top ? share(top.n, stat.filled) <= 0.98 : true)
+                breakdown: readable && flags.length === 0 && stat.est_distinct <= AUTO_CATEGORY_MAX && column.blank_share <= 0.5
             };
         }
-        if (decided.role === 'label') column.category = { distinct: stat.est_distinct, total_members: [], strip_code_prefix: false, variants: false,
-            top_share: 0, numeric: false, breakdown: false };
+        if (decided.role === 'label') {
+            const values = stat.top.map(entry => entry.v);
+            const flags = [];
+            if (codeLabels(values)) flags.push('code_labels');
+            if (stat.labels ? stat.labels.garbled > 0 : values.some(isGarbled)) flags.push('garbled_text');
+            for (const flag of flags) column.reasons.push({ code: flag });
+            column.category = { distinct: stat.est_distinct, total_members: [], strip_code_prefix: false, variants: false,
+                top_share: 0, numeric: false, flags, breakdown: false };
+        }
         // A short key with letters in it ("K1A", a station code) can name the
         // rows of a ranking when nothing better does. A longer one (a permit
         // or request number) names nothing a reader would recognise.
@@ -449,6 +486,22 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         }
     }
 
+    // A column whose values are themselves names of quantities ("Number of
+    // returns", "Total income", "Average wage"): each row holds another one.
+    for (const column of columns) {
+        if (!column.category || (column.role !== 'category' && column.role !== 'label')) continue;
+        const stat = byId.get(column.id);
+        const values = stat.top.filter(entry => entry.v !== '');
+        const named = stat.labels ? stat.labels.measure : values.filter(entry => isMeasureLabel(entry.v)).length;
+        const distinct = stat.labels ? stat.labels.distinct : values.length;
+        if (named < 3 || named < distinct * 0.3) continue;
+        column.reasons.push({ code: 'measure_names' });
+        for (const measure of columns) {
+            if (measure.role !== 'measure' || measure.measure.blocked_by.some(block => block.column === column.id)) continue;
+            measure.measure.blocked_by.push({ column: column.id, why: 'mixed_measures' });
+        }
+    }
+
     // Where nearly every row is in one unit (99% of contracts in CAD), the
     // measure is read in that unit alone and the other rows are left out,
     // rather than the measure not being added up at all.
@@ -465,6 +518,12 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
 
     const timeAxes = [];
     for (const column of columns) {
+        // When a record was last edited or published is not when anything happened.
+        if (column.role === 'time' && nameEvidence(column.label).maintenance) {
+            column.time.maintenance = true;
+            column.reasons.push({ code: 'maintenance_date' });
+            continue;
+        }
         if (column.role === 'time') timeAxes.push({ id: 't:' + column.id, columns: [column.id], kind: column.time.kind, grain: column.time.grain,
             grains: column.time.grains, composite: false, ...(column.time.periods ? { periods: column.time.periods } : {}) });
     }
@@ -497,7 +556,8 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     }
 
     const measures = columns.filter(column => column.role === 'measure');
-    const fineDate = columns.some(column => column.role === 'time' && column.time.kind !== 'year_number' &&
+    const tableRows = rowCount ?? profile.sample.table_rows ?? profile.sample.rows;
+    const fineDate = columns.some(column => column.role === 'time' && !column.time.maintenance && column.time.kind !== 'year_number' &&
         (column.time.grain === 'day' || ((column.time.days || 0) >= 50 && column.time.days >= profile.sample.rows * 0.05)));
     const entity = columns.some(column => column.role === 'identifier' || column.role === 'row_number' || column.role === 'label');
     // Are the rows records (things or events, worth counting) or figures the
@@ -514,10 +574,69 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     // Rows that hold a different measure each are cells of a table of figures;
     // amounts in a few currencies are still one amount per thing.
     const mixed = measures.some(column => column.measure.blocked_by.some(block => block.why === 'mixed_measures'));
-    const records = !wideGroups.length && !mixed && (entity || fineDate || measures.length === 0 || (!sums && !grid));
+    // A column whose every value splits the same population another way
+    // ("Characteristic": Age, Sex, Region): the rows are cells of a table of
+    // figures, whatever else the table has, and nothing adds up across that column.
+    const partitioned = new Set();
+    for (const partition of profile.groups.partitions || []) {
+        const column = columnOf.get(partition.by);
+        if (!column || !column.category || partitioned.has(column.id)) continue;
+        partitioned.add(column.id);
+        column.reasons.push({ code: 'repeated_partitions' });
+        for (const measure of measures) {
+            if (!measure.measure.blocked_by.some(entry => entry.column === column.id)) measure.measure.blocked_by.push({ column: column.id, why: 'breakdowns' });
+        }
+    }
+
+    // A data dictionary describes another table's columns: nothing in it is counted or added up.
+    const dictionary = tableRows <= DICTIONARY_MAX_ROWS && measures.filter(column => !column.generic_name).length <= 1 &&
+        columns.some(column => nameEvidence(column.label).dictionaryField) && columns.some(column => nameEvidence(column.label).dictionaryDetail);
+    const records = !dictionary && !wideGroups.length && !mixed && partitioned.size === 0 && (entity || fineDate || measures.length === 0 || (!sums && !grid));
+
+    // In a table of figures, columns whose values are not one breakdown of the
+    // rows: several kinds of breakdown at once ("Canada", "Men", "15 to 24
+    // years"), the same population split again and again, or periods the axis
+    // could not read. A sum across one of them adds the same people several
+    // times, or adds up periods; the measure is read one value of it at a time.
+    if (!records && !dictionary) {
+        const block = (columnId, why) => {
+            for (const measure of measures) {
+                if (measure.measure.blocked_by.some(entry => entry.column === columnId)) continue;
+                measure.measure.blocked_by.push({ column: columnId, why });
+            }
+        };
+        for (const column of columns) {
+            if (!column.category || !['category', 'label', 'code'].includes(column.role)) continue;
+            const stat = byId.get(column.id);
+            let read = stat.labels;
+            if (!read) {
+                read = { place: 0, sex: 0, age: 0, national: 0, province: 0, region: 0, others: 0 };
+                for (const { v: value } of stat.top) {
+                    if (value === '') continue;
+                    const kind = labelKind(value);
+                    if (kind) read[kind] += 1;
+                    if (isNationalLabel(value)) read.national += 1;
+                    else if (isProvinceName(value)) read.province += 1;
+                    else if (isRegionLabel(value)) read.region += 1;
+                    else if (!kind && !isTotalLabel(value)) read.others += 1;
+                }
+            }
+            const kindCount = [read.place, read.sex, read.age].filter(count => count > 0).length;
+            // Places at several levels at once: the country or a region of
+            // provinces beside provinces, beside counties or cities.
+            const nested = (read.national > 0 || read.region > 0) && read.province >= 2 && read.others >= 3;
+            if ((kindCount >= 2 && read.place + read.sex + read.age >= 3) || nested) {
+                column.reasons.push({ code: 'mixed_levels' });
+                block(column.id, 'levels');
+            } else if ((column.category.flags || []).includes('period_labels')) block(column.id, 'periods');
+        }
+    }
+    const cubeBlocked = measures.some(column => column.measure.blocked_by.length > 0);
+
     let shape = 'statistics';
-    if (wideGroups.length) shape = 'wide';
-    else if (blocked) shape = 'long_measures';
+    if (dictionary) shape = 'dictionary';
+    else if (wideGroups.length) shape = 'wide';
+    else if (blocked || cubeBlocked) shape = 'long_measures';
     else if (records) shape = 'records';
     // "Total expenditures", "Ontario Total": in a table of figures, a member
     // named like a total is one.
@@ -528,6 +647,17 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             for (const entry of byId.get(column.id).top) if (isAggregateLabel(entry.v)) labels.add(entry.v.toLowerCase());
             column.category.total_members = [...labels].slice(0, 12);
         }
+    }
+
+    // Two columns under one name ("Total assets" twice) are told apart by
+    // their order; the header as written stays for recognising its echoes.
+    const seenLabels = new Map();
+    for (const column of columns) {
+        const key = column.label.toLowerCase();
+        const count = (seenLabels.get(key) || 0) + 1;
+        seenLabels.set(key, count);
+        column.header = column.label;
+        if (count > 1) column.label = column.label + ' (' + count + ')';
     }
 
     // A placeholder that several columns of the table share is the table's way of leaving a cell blank.
@@ -551,6 +681,8 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         wide_groups: wideGroups,
         // Rows that are not data, by _id (at most 200): every chart leaves them out.
         excluded_rows: profile.rows.excluded.slice(0, 200).map(row => row.id),
+        // Of those, rows that held something (notes, headers, units): empty rows are not news.
+        excluded_notes: profile.rows.excluded.filter(row => row.reason !== 'blank').length,
         blank_tokens: blankTokens,
         findings
     };
@@ -577,6 +709,34 @@ function publicModel(model, lang = 'en') {
     };
 }
 
+// A value column read for one measure at a time ("Data Point Label" =
+// "Net income"): what that measure's name says decides whether it adds up.
+/**
+ * @param {object} model from buildTableModel()
+ * @param {Array<{ column: string, value: unknown }>} pins equality filters on columns that block a measure
+ */
+function pinnedModel(model, pins) {
+    if (!pins.length) return model;
+    const held = new Map();
+    for (const pin of pins) {
+        held.set(pin.column, String(pin.value));
+        const twin = model.columns.find(column => column.id === pin.column)?.twin;
+        if (twin) held.set(twin.of, String(pin.value));
+    }
+    let changed = false;
+    const columns = model.columns.map(column => {
+        if (column.role !== 'measure') return column;
+        const block = column.measure.blocked_by.find(entry => entry.why === 'mixed_measures' && held.has(entry.column));
+        if (!block) return column;
+        const name = nameEvidence(held.get(block.column));
+        const additive = name.nonAdditive ? 'no' : name.additive ? 'yes' : column.measure.additive;
+        if (additive === column.measure.additive) return column;
+        changed = true;
+        return { ...column, measure: { ...column.measure, additive, reason: 'pinned_measure_name' } };
+    });
+    return changed ? { ...model, columns } : model;
+}
+
 /** Is this column the side of a twin pair that a reader in `lang` does not need? */
 function hiddenTwin(column, lang) {
     if (!column.twin) return false;
@@ -584,4 +744,4 @@ function hiddenTwin(column, lang) {
     return column.twin.hidden === true;
 }
 
-module.exports = { buildTableModel, publicModel, hiddenTwin, numberReading, numericLike, AUTO_CATEGORY_MAX, CATEGORY_MAX, NUMERIC_LABELS_MAX, DAY_MS };
+module.exports = { buildTableModel, publicModel, hiddenTwin, pinnedModel, numberReading, numericLike, AUTO_CATEGORY_MAX, CATEGORY_MAX, NUMERIC_LABELS_MAX, DAY_MS };

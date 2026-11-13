@@ -67,7 +67,7 @@ describe('the Chart tab', () => {
     fetchResourceCharts.mockImplementation(() => answer(BLOCKED));
     const onPin = vi.fn();
     render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" onPin={onPin} />);
-    await screen.findByText('This table holds different things in one column of numbers');
+    await screen.findByText('Some figures in this table cannot be added up together');
     expect(screen.getByText(/^“Measure Value” is a different measure for each “Data Point Label”/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Net income/ }));
     expect(onPin).toHaveBeenCalledWith('Data Point Label', 'Net income');

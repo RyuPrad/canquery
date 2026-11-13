@@ -36,6 +36,12 @@ export function specTitle(spec, model, t) {
 /** One line under the title: how much of the table the chart shows. */
 export function chartSubtitle(chart, t, lang) {
   const parts = [];
+  // Groups of a table of figures are compared in one period; those of a
+  // table of records count every period the table covers.
+  if (chart.period && chart.period.start) parts.push(fill(t('chart.sub.period'), { period: fmtPeriod(chart.period.start, chart.period.grain, lang) }));
+  else if (chart.span && chart.span.first) {
+    parts.push(fill(t('chart.sub.span'), { first: fmtPeriod(chart.span.first, chart.span.grain, lang), last: fmtPeriod(chart.span.last, chart.span.grain, lang) }));
+  }
   if (chart.x.type === 'time' && chart.time) {
     parts.push(fmtPeriod(chart.time.first, chart.time.grain, lang) + ' – ' + fmtPeriod(chart.time.last, chart.time.grain, lang));
   } else if (chart.scope.complete) parts.push(fill(t('chart.sub.groups'), { total: fmtInt(chart.scope.groups_total, lang) }));
@@ -121,6 +127,7 @@ export function noteText(note, t, lang) {
     cells: count(note.cells), rows: count(note.rows), shown: count(note.shown), total: count(note.total), periods: count(note.periods),
     tokens: Array.isArray(note.tokens) && note.tokens.length ? note.tokens.map((token) => '“' + token + '”').join(', ') : '…',
     by: note.by ? humanize(note.by) : undefined, kept: note.kept,
+    period: typeof note.start === 'string' ? fmtPeriod(note.start, note.grain, lang) : undefined,
   });
 }
 
@@ -149,6 +156,7 @@ const SKIP_GROUPS = {
   flat: 'flat', one_group: 'one_group', mostly_blank: 'mostly_blank', id_like: 'id_like', same_as_other_chart: 'same_as_other_chart',
   too_few_groups: 'too_few', too_few_periods: 'too_few', no_groups: 'too_few', no_periods: 'too_few',
   numeric_labels: 'poor_labels', long_labels: 'poor_labels', link_labels: 'poor_labels', date_labels: 'poor_labels', duplicate_labels: 'poor_labels',
+  code_labels: 'poor_labels', garbled_labels: 'poor_labels', one_period: 'one_group',
   periods_unreadable: 'periods', mostly_undated: 'periods', too_many_periods: 'periods',
   no_numbers: 'numbers', unreadable_values: 'numbers', mostly_suppressed: 'numbers',
   mixed_levels: 'totals', totals_unresolved: 'totals',
@@ -158,6 +166,9 @@ const SKIP_GROUPS = {
 export function skipReason(reason, t) {
   return t('chart.skip.' + (SKIP_GROUPS[reason] || 'other'));
 }
+
+const READING_REASONS = new Set(['code_labels', 'garbled_text', 'period_labels', 'one_value_dominates', 'measure_names', 'mixed_levels',
+  'repeated_partitions', 'maintenance_date', 'date_numbers', 'person_names']);
 
 /** What a column was read as, and what that means for charts. */
 export function columnReading(column, t) {
@@ -171,6 +182,11 @@ export function columnReading(column, t) {
     } else details.push(t(column.measure.additive === 'yes' || column.measure.additive === 'probable' ? 'chart.detail.adds_up' : 'chart.detail.averaged'));
   }
   if (column.wide) details.push(t('chart.detail.period_column'));
+  // What the engine found in the values that keeps a column off the charts, or reads it with care.
+  for (const reason of column.reasons || []) {
+    const text = reason && known(t, 'chart.detail.' + reason.code);
+    if (text && READING_REASONS.has(reason.code)) details.push(text);
+  }
   if (column.category && column.category.distinct > 60) details.push(fill(t('chart.detail.many_values'), { distinct: column.category.distinct }));
   if (column.twin) details.push(fill(t(column.twin.hidden ? 'chart.detail.twin_hidden' : 'chart.detail.twin'), { of: humanize(column.twin.of) }));
   return { role, details };
@@ -178,7 +194,8 @@ export function columnReading(column, t) {
 
 /** The sentence above the values a blocked measure can be filtered to. */
 export function blockedText(block, t) {
-  const key = block.why === 'units' ? 'chart.blocked_units' : block.why === 'mixed_levels' ? 'chart.blocked_levels' : 'chart.blocked_mixed';
+  const key = { units: 'chart.blocked_units', mixed_levels: 'chart.blocked_levels', levels: 'chart.blocked_kinds', breakdowns: 'chart.blocked_breakdowns',
+    periods: 'chart.blocked_periods' }[block.why] || 'chart.blocked_mixed';
   return fill(t(key), { measure: humanize(block.measure_label || ''), column: humanize(block.column_label || block.column) });
 }
 

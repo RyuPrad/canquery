@@ -10,21 +10,22 @@ const { requestSignal } = require('../../utils/requestContext');
 const chartQueries = require('../../db/chartQueries');
 const { buildWhereAndParams } = require('../../db/storeQueries');
 const { samplePlan, profileSample } = require('./profile');
-const { buildTableModel, publicModel, hiddenTwin } = require('./model');
+const { buildTableModel, publicModel, hiddenTwin, pinnedModel } = require('./model');
 const { listCandidates, pickDiverse } = require('./candidates');
-const { shapeCategory, shapeTime, shapeWide, detectTotalMembers } = require('./validate');
+const { shapeCategory, shapeTime, shapeWide, detectTotalMembers, latestPeriod, periodRange } = require('./validate');
 const { validateSpec, asMeasure } = require('./spec');
 const { periodStart } = require('./periods');
 
 // Part of every cache key: raise it when the rules change what a chart shows.
-const ENGINE_VERSION = 1;
+const ENGINE_VERSION = 2;
 const TIMEOUTS = { sample: 6000, batch: 10000, filtered: 15000, custom: 12000 };
 // What one scan may carry.
 const BATCH = { sets: 8, cleaned: 4, plain: 8, wide: 36, specs: 14 };
 const CHART_LIMIT = 6;
 // A selection may scan the table this many times: the charts, a re-run
-// without totals found among the groups, and replacements for rejected charts.
-const MAX_STATEMENTS = 4;
+// without totals found among the groups, replacements for rejected charts,
+// and the latest period of a table of figures.
+const MAX_STATEMENTS = 6;
 const SELECTION_BUDGET_MS = 20000;
 const SLOTS = 3;
 const SLOT_WAIT_MS = 3000;
@@ -203,6 +204,34 @@ function totalsOf(model) {
 
 // --- One scan -------------------------------------------------------------
 
+// How a scan groups the rows by a time axis at a grain: the key, and whether
+// keys sort as their periods do (a year, a bucketed date) or must all be read.
+function timeKeyOf(model, axis, grain) {
+    const columns = axis.columns.map(id => model.columns.find(column => column.id === id));
+    let id = 'time:' + axis.id;
+    let bucket = null;
+    let ordered = true;
+    let key;
+    if (axis.kind === 'composite') {
+        key = { kind: 'composite', year: refOf(columns[0]), part: refOf(columns[1]) };
+        ordered = false;
+    } else {
+        const time = columns[0].time;
+        if (time.kind === 'typed' || time.format === 'iso_date' || time.format === 'day_month_year') {
+            bucket = SQL_GRAINS.has(grain) ? grain : 'year';
+            key = time.format === 'day_month_year'
+                ? { kind: 'day_first', column: refOf(columns[0]), order: time.order, grain: bucket }
+                : { kind: 'date', column: refOf(columns[0]), grain: bucket };
+            id += ':' + bucket;
+        } else if (time.kind === 'year_number') key = { kind: 'category', column: refOf(columns[0]) };
+        else {
+            key = { kind: 'text', column: refOf(columns[0]) };
+            ordered = false;
+        }
+    }
+    return { id, key, bucket, ordered, columns };
+}
+
 // Turns chart specs into one batch: the ways of grouping they need (sets),
 // the number columns they read (measures) and, for each spec, where its
 // figures will be found. Specs that do not fit this scan are handed back.
@@ -260,28 +289,7 @@ function planBatch(model, specs, { totals = new Map(), lang = 'en', pinned = [],
         const measure = spec.y.agg === 'count' ? null : asMeasure(byId.get(spec.y.column));
         if (spec.x.type === 'time') {
             const axis = model.time_axes.find(entry => entry.id === spec.x.axis);
-            const columns = axis.columns.map(id => byId.get(id));
-            let key;
-            let id = 'time:' + axis.id;
-            let bucket = null;
-            let ordered = true;
-            if (axis.kind === 'composite') {
-                key = { kind: 'composite', year: refOf(columns[0]), part: refOf(columns[1]) };
-                ordered = false;
-            } else {
-                const time = columns[0].time;
-                if (time.kind === 'typed' || time.format === 'iso_date' || time.format === 'day_month_year') {
-                    bucket = SQL_GRAINS.has(spec.x.grain) ? spec.x.grain : 'year';
-                    key = time.format === 'day_month_year'
-                        ? { kind: 'day_first', column: refOf(columns[0]), order: time.order, grain: bucket }
-                        : { kind: 'date', column: refOf(columns[0]), grain: bucket };
-                    id += ':' + bucket;
-                } else if (time.kind === 'year_number') key = { kind: 'category', column: refOf(columns[0]) };
-                else {
-                    key = { kind: 'text', column: refOf(columns[0]) };
-                    ordered = false;
-                }
-            }
+            const { id, key, bucket, ordered, columns } = timeKeyOf(model, axis, spec.x.grain);
             if (!setFits(id) || (measure && !measureFits(measure, false))) {
                 deferred.push(spec);
                 continue;
@@ -330,11 +338,12 @@ function planBatch(model, specs, { totals = new Map(), lang = 'en', pinned = [],
         table: { records: model.records, blankTokens: new Set(model.blank_tokens || []) } };
 }
 
-async function runPlan(table, model, plan, { where, timeoutMs }) {
+async function runPlan(table, model, plan, { where, timeoutMs, scope = null }) {
     const result = await scan(() => chartQueries.runBatch({
-        tableName: table.tableName, where, excluded: model.excluded_rows, totals: plan.totals,
+        tableName: table.tableName, where, scope, excluded: model.excluded_rows, totals: plan.totals,
         sets: plan.sets.map(set => ({ key: set.key, rank: set.rank })),
-        measures: plan.measures.map(measure => ({ column: measure.column, clean: measure.clean, only: measure.only }))
+        measures: plan.measures.map(measure => ({ column: measure.column, clean: measure.clean, only: measure.only,
+            sentinels: (measure.model && measure.model.measure && measure.model.measure.sentinels) || [] }))
     }, { timeoutMs }));
     if (!result.grand) throw new AppError('chart batch returned no totals', 500);
     return result;
@@ -435,7 +444,10 @@ function blockedOf(model, lang, pinned, values, levels) {
     for (const column of model.columns) {
         if (column.role !== 'measure' || hiddenTwin(column, lang)) continue;
         for (const block of column.measure.blocked_by) {
-            if (held.has(block.column) || seen.has(column.id + '|' + block.column) || !byId.has(block.column)) continue;
+            const by = byId.get(block.column);
+            if (!by || held.has(block.column) || seen.has(column.id + '|' + block.column)) continue;
+            // A twin pair is offered once, in the reader's language; a pin on either holds it.
+            if (by.twin && (held.has(by.twin.of) || hiddenTwin(by, lang))) continue;
             seen.add(column.id + '|' + block.column);
             out.push({ measure: column.id, measure_label: column.label, column: block.column, column_label: byId.get(block.column).label, why: block.why,
                 values: valuesOf(block.column) });
@@ -465,8 +477,12 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
     // The first scan tries a varied set, so a table with two strong measures
     // still gets its counts looked at without a second scan.
     const candidates = listCandidates(model, { lang, pinned });
-    const lead = pickDiverse(candidates, { limit: 10 });
-    let queue = [...lead, ...candidates.filter(spec => !lead.includes(spec))];
+    // Groups of a table of figures are compared in its latest period, which
+    // the first scans find: those charts wait for them.
+    const later = candidates.filter(spec => spec.scope);
+    const first = candidates.filter(spec => !spec.scope);
+    const lead = pickDiverse(first, { limit: 10 });
+    let queue = [...lead, ...first.filter(spec => !lead.includes(spec))];
     let pending = [];
     const accepted = new Map();
     const skipped = new Map();
@@ -475,11 +491,25 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
     const values = new Map();
     let statements = 0;
     let slowest = 0;
+    // What the time sets found: each measure's latest period on an axis, and each axis's span.
+    const latest = new Map();
+    const ranges = new Map();
+    const notePeriods = (use, result) => {
+        const groups = result.sets[use.set];
+        // A set that kept only its largest periods cannot tell which is the latest.
+        if (!use.ordered && groups.length && groups.length < groups[0].groups) return;
+        const context = { axis: use.axis, columns: use.columns, grain: use.spec.x.grain };
+        const key = (use.spec.y.column || '') + '|' + use.axis.id;
+        if (use.spec.y.column && !latest.has(key)) latest.set(key, latestPeriod(groups, { ...context, j: use.j }));
+        if (!ranges.has(use.axis.id)) ranges.set(use.axis.id, periodRange(groups, context));
+    };
 
     // Columns that block a measure are grouped by even when no chart can be
     // drawn, to offer their values as filters.
+    const byId = new Map(model.columns.map(column => [column.id, column]));
     const blockers = [...new Set(model.columns.filter(column => column.role === 'measure' && !hiddenTwin(column, lang))
-        .flatMap(column => column.measure.blocked_by.map(block => block.column)).filter(id => !pinned.includes(id)))];
+        .flatMap(column => column.measure.blocked_by.map(block => block.column))
+        .filter(id => !pinned.includes(id) && !(byId.get(id) && hiddenTwin(byId.get(id), lang))))];
 
     while (statements < MAX_STATEMENTS) {
         const remaining = SELECTION_BUDGET_MS - (Date.now() - started);
@@ -526,26 +556,58 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
         plan.measures.forEach((measure, j) => stats.set(measure.column.id, result.grand.measures[j]));
         stats.set('', { n: result.grand.n, nx: result.grand.nx });
         for (const use of plan.uses) {
+            if (use.type === 'time') notePeriods(use, result);
             const shaped = shapeUse(use, result, model, { gates: true, filtered: pins.length > 0 });
-            if (!shaped.ok) {
-                skipped.set(use.spec.id, skipOf(use.spec, shaped.reason));
-                continue;
-            }
-            // The same figures under another column (a code beside its name, a
-            // column in each language) are one chart: the better-scored one.
-            const figures = signatureOf(shaped.chart);
-            const same = [...accepted.values()].find(entry => entry.figures === figures && entry.chart.x.column !== shaped.chart.x.column);
-            if (same && same.spec.score >= use.spec.score) {
-                skipped.set(use.spec.id, skipOf(use.spec, 'same_as_other_chart'));
-                continue;
-            }
-            if (same) {
-                accepted.delete(same.spec.id);
-                skipped.set(same.spec.id, skipOf(same.spec, 'same_as_other_chart'));
-            }
-            accepted.set(use.spec.id, { spec: use.spec, chart: shaped.chart, figures });
+            if (!shaped.ok) skipped.set(use.spec.id, skipOf(use.spec, shaped.reason));
+            else accept(accepted, skipped, use.spec, shaped.chart);
         }
         if (!queue.length || pickDiverse(chartsOf(accepted, levels), { limit: CHART_LIMIT }).length >= CHART_LIMIT) break;
+    }
+
+    // The groups of a table of figures, in the latest period each measure has
+    // figures for: one scan per period (nearly always one).
+    const periodGroups = new Map();
+    for (const spec of later) {
+        const info = latest.get(spec.y.column + '|' + spec.scope.axis);
+        if (!info) {
+            skipped.set(spec.id, skipOf(spec, 'no_periods'));
+            continue;
+        }
+        const key = spec.scope.axis + SEPARATOR + info.keys.join(SEPARATOR);
+        if (!periodGroups.has(key)) periodGroups.set(key, { axis: spec.scope.axis, info, specs: [] });
+        periodGroups.get(key).specs.push(spec);
+    }
+    for (const group of periodGroups.values()) {
+        const remaining = SELECTION_BUDGET_MS - (Date.now() - started);
+        const specs = group.specs.slice(0, BATCH.specs);
+        if (statements >= MAX_STATEMENTS || remaining < Math.max(2000, slowest * 1.5)) {
+            for (const spec of specs) skipped.set(spec.id, skipOf(spec, 'not_tried'));
+            continue;
+        }
+        for (const spec of specs) spec.period = { axis: group.axis, grain: group.info.grain, start: group.info.start, keys: group.info.keys };
+        let ran;
+        const began = Date.now();
+        try {
+            ran = await runWithTotals(table, model, specs, { totals, where, scope: scopeOf(model, specs[0].period),
+                timeoutMs: Math.max(1000, Math.min(TIMEOUTS.batch, remaining)), lang, pinned, detectByValue: true });
+        } catch (error) {
+            if (!error || error.publicCode !== 'CHARTS_TIMEOUT') throw error;
+            for (const spec of specs) skipped.set(spec.id, skipOf(spec, 'not_tried'));
+            break;
+        }
+        slowest = Math.max(slowest, Date.now() - began);
+        statements += ran.passes;
+        if (!ran.result) continue;
+        for (const use of ran.plan.uses) {
+            const shaped = ran.unresolved ? { ok: false, reason: 'totals_unresolved' } : shapeUse(use, ran.result, model, { gates: true, filtered: pins.length > 0 });
+            if (!shaped.ok) skipped.set(use.spec.id, skipOf(use.spec, shaped.reason));
+            else accept(accepted, skipped, use.spec, shaped.chart);
+        }
+    }
+    // A table of things or events: its groups count every period; say which.
+    const span = [...ranges.values()].find(Boolean);
+    if (model.records && span) {
+        for (const entry of accepted.values()) if (entry.chart.x.type === 'category') entry.chart.span = span;
     }
     // Totals were found and could not be taken out in the scans allowed.
     for (const spec of pending) skipped.set(spec.id, skipOf(spec, 'totals_unresolved'));
@@ -568,6 +630,63 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
     };
 }
 
+const SEPARATOR = String.fromCharCode(30);
+
+// The rows of one period of an axis, as the scan grouped them.
+function scopeOf(model, period) {
+    if (!period) return null;
+    const axis = model.time_axes.find(entry => entry.id === period.axis);
+    return axis ? { key: timeKeyOf(model, axis, axis.grain).key, keys: period.keys } : null;
+}
+
+// A chart of the latest period says so on itself.
+function withPeriod(chart, spec) {
+    if (!spec.period) return chart;
+    chart.period = { grain: spec.period.grain, start: spec.period.start };
+    chart.notes.push({ code: 'latest_period_only', level: 'info', start: spec.period.start, grain: spec.period.grain });
+    return chart;
+}
+
+// Keeps a chart unless it repeats one already kept: the same figures under
+// another column (a code beside its name, a column in each language), or the
+// same groups in the same proportions (hectares beside square metres).
+function accept(accepted, skipped, spec, chart) {
+    withPeriod(chart, spec);
+    const figures = signatureOf(chart);
+    const same = [...accepted.values()].find(entry => (entry.figures === figures && entry.chart.x.column !== chart.x.column) ||
+        proportional(entry.chart, chart));
+    if (same && same.spec.score >= spec.score) {
+        skipped.set(spec.id, skipOf(spec, 'same_as_other_chart'));
+        return;
+    }
+    if (same) {
+        accepted.delete(same.spec.id);
+        skipped.set(same.spec.id, skipOf(same.spec, 'same_as_other_chart'));
+    }
+    accepted.set(spec.id, { spec, chart, figures });
+}
+
+// Two charts of the same groups whose figures are one multiple of the other.
+function proportional(a, b) {
+    // Two or three groups can line up by chance; four or more in step are one chart.
+    if (a.id === b.id || a.x.type !== b.x.type || (a.x.column || a.x.axis) !== (b.x.column || b.x.axis) || a.points.length !== b.points.length ||
+        a.points.length < 4) return false;
+    let ratio = null;
+    for (let i = 0; i < a.points.length; i += 1) {
+        const p = a.points[i];
+        const q = b.points[i];
+        if ((p.label ?? p.start ?? null) !== (q.label ?? q.start ?? null) || Boolean(p.blank) !== Boolean(q.blank)) return false;
+        if (p.value === 0 || q.value === 0) {
+            if (p.value !== q.value) return false;
+            continue;
+        }
+        const r = q.value / p.value;
+        if (ratio === null) ratio = r;
+        else if (Math.abs(r - ratio) > Math.abs(ratio) * 0.01) return false;
+    }
+    return ratio !== null;
+}
+
 // What a chart of groups draws, apart from the column it groups by.
 function signatureOf(chart) {
     if (chart.x.type !== 'category') return chart.id;
@@ -586,6 +705,8 @@ function chartsOf(accepted, levels) {
 // change which charts make sense; every other filter only narrows the rows.
 function pinsOf(model, filters = []) {
     const blockers = new Set(model.columns.filter(column => column.measure).flatMap(column => column.measure.blocked_by.map(block => block.column)));
+    // Either column of a twin pair holds the pair to one value.
+    for (const column of model.columns) if (column.twin && blockers.has(column.twin.of)) blockers.add(column.id);
     return filters.filter(filter => filter.op === 'eq' && filter.value !== null && filter.value !== '' && blockers.has(filter.column));
 }
 
@@ -601,18 +722,20 @@ async function getSelection(table, model, { lang, pins, signal = requestSignal()
 
 // Scans a plan again while it keeps finding totals by their name, at most
 // three times. Specs whose figures still hold a total are not shown.
-async function runWithTotals(table, model, specs, { totals, where, timeoutMs, lang, pinned, detectByValue }) {
+async function runWithTotals(table, model, specs, { totals, where, scope = null, timeoutMs, lang, pinned, detectByValue }) {
     let plan;
     let result;
     let unresolved = false;
+    let passes = 0;
     for (let pass = 0; pass < 3; pass += 1) {
         plan = planBatch(model, specs, { totals, lang, pinned, detect: detectByValue });
-        if (!plan.uses.length) return { plan, result: null, unresolved: false };
-        result = await runPlan(table, model, plan, { where, timeoutMs });
+        if (!plan.uses.length) return { plan, result: null, unresolved: false, passes };
+        result = await runPlan(table, model, plan, { where, scope, timeoutMs });
+        passes += 1;
         unresolved = addTotals(totals, detect(plan, result).totals);
         if (!unresolved) break;
     }
-    return { plan, result, unresolved };
+    return { plan, result, unresolved, passes };
 }
 
 // The charts of a selection under a search or more filters: the same charts,
@@ -620,22 +743,50 @@ async function runWithTotals(table, model, specs, { totals, where, timeoutMs, la
 async function computeView(table, model, selection, charts, { where, pinned = [] }) {
     const totals = new Map(selection.totals.map(([column, labels]) => [column, new Set(labels)]));
     const specs = charts.map(chart => selection.specs[chart.id]);
-    // A total that only shows under this search is found by its name; totals
-    // found by their value when the charts were chosen stay left out.
-    const { plan, result, unresolved } = await runWithTotals(table, model, specs, { totals, where, timeoutMs: TIMEOUTS.filtered, pinned,
-        detectByValue: false });
+    // Charts of a table's latest period stay in that period: one scan per period.
+    const groups = new Map();
+    for (const spec of specs) {
+        const key = spec.period ? spec.period.axis + SEPARATOR + spec.period.keys.join(SEPARATOR) : '';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(spec);
+    }
+    const shapedOf = new Map();
+    let measures = {};
+    let rows = null;
+    let totalRows = null;
+    for (const [key, list] of groups) {
+        // A total that only shows under this search is found by its name; totals
+        // found by their value when the charts were chosen stay left out.
+        const { plan, result, unresolved } = await runWithTotals(table, model, list, { totals, where, scope: scopeOf(model, list[0].period),
+            timeoutMs: TIMEOUTS.filtered, pinned, detectByValue: false });
+        const deferred = new Set(plan.deferred);
+        for (const spec of list) {
+            const use = plan.uses.find(entry => entry.spec === spec);
+            const shaped = !use || !result || deferred.has(spec) || unresolved
+                ? { ok: false, reason: unresolved ? 'totals_unresolved' : 'not_recomputed' }
+                : shapeUse(use, result, model, { gates: false, filtered: true });
+            if (shaped.ok) withPeriod(shaped.chart, spec);
+            shapedOf.set(spec, shaped);
+        }
+        // The rows in scope are those of the search, not of one period.
+        if (key === '' && result) {
+            measures = Object.fromEntries(plan.measures.map((measure, j) => [measure.column.id, result.grand.measures[j]]));
+            rows = result.grand.n;
+            totalRows = result.grand.nx;
+        }
+    }
     const out = [];
     const skipped = [];
-    const deferred = new Set(plan.deferred);
-    for (const spec of specs) {
-        const use = plan.uses.find(entry => entry.spec === spec);
-        const shaped = !use || deferred.has(spec) || unresolved ? { ok: false, reason: unresolved ? 'totals_unresolved' : 'not_recomputed' }
-            : shapeUse(use, result, model, { gates: false, filtered: true });
-        if (shaped.ok) out.push(shaped.chart);
-        else skipped.push(skipOf(spec, shaped.reason));
-    }
-    return { charts: out, skipped, measures: Object.fromEntries(plan.measures.map((measure, j) => [measure.column.id, result.grand.measures[j]])),
-        rows: result.grand.n, total_rows: result.grand.nx };
+    specs.forEach((spec, index) => {
+        const shaped = shapedOf.get(spec);
+        if (!shaped.ok) {
+            skipped.push(skipOf(spec, shaped.reason));
+            return;
+        }
+        if (charts[index].span) shaped.chart.span = charts[index].span;
+        out.push(shaped.chart);
+    });
+    return { charts: out, skipped, measures, rows, total_rows: totalRows };
 }
 
 // The figures above the charts: rows in scope, the period covered, and the
@@ -700,8 +851,9 @@ function isWarm(table, { lang = 'en', q, filters = [], purpose = 'tab', limit = 
 async function analyzeSnapshot(table, options = {}) {
     const { lang = 'en', q, filters = [], purpose = 'tab', limit = CHART_LIMIT, signal = requestSignal() } = options;
     const work = async () => {
-        const model = await getTableModel(table, { signal });
-        const pins = pinsOf(model, filters);
+        const base = await getTableModel(table, { signal });
+        const pins = pinsOf(base, filters);
+        const model = pinnedModel(base, pins);
         const selection = await getSelection(table, model, { lang, pins, signal });
         const picked = pickFor(selection.charts, { purpose, limit });
         const narrowed = Boolean(q) || filters.length > pins.length;
@@ -721,7 +873,7 @@ async function analyzeSnapshot(table, options = {}) {
             model: publicModel(model, lang),
             builder: { default: (view.charts[0] || selection.charts[0] || {}).spec || null },
             scope: { rows: view.rows, table_rows: model.rows, filtered: narrowed || pins.length > 0, pinned: pins.map(pin => pin.column),
-                total_rows_left_out: view.total_rows, note_rows_left_out: model.excluded_rows.length }
+                total_rows_left_out: view.total_rows, note_rows_left_out: model.excluded_notes ?? model.excluded_rows.length }
         };
     };
     if (isWarm(table, { lang, q, filters, purpose, limit })) return work();
@@ -746,11 +898,12 @@ async function customChart(table, raw, options = {}) {
     const keyOf = spec => customKey(table, spec, q, filters);
     const warm = modelCache.peek(tableKey(table));
     if (warm) {
-        const hit = viewCache.peek(keyOf(validateSpec(raw, warm, { lang, pinned })));
+        const hit = viewCache.peek(keyOf(validateSpec(raw, pinnedModel(warm, pinsOf(warm, filters)), { lang, pinned })));
         if (hit !== undefined) return hit;
     }
     return withSlot({ permit: options.permit, waitMs: options.waitMs, signal }, async () => {
-        const model = await getTableModel(table, { signal });
+        const base = await getTableModel(table, { signal });
+        const model = pinnedModel(base, pinsOf(base, filters));
         const spec = validateSpec(raw, model, { lang, pinned });
         return shared(viewCache, keyOf(spec), async () => {
             const where = whereOf(table, { q, filters });
