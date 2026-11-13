@@ -17,6 +17,7 @@ const AUTO_CATEGORY_MAX = 60;
 // The profile keeps a column's 30 most frequent values: a rule that needs all
 // of them reads only columns with no more.
 const TOP_VALUES_READ = 30;
+const PROVINCE_CODE_RE = /^(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT|PEI|NFLD|QUE|ONT|ALTA|SASK|MAN|CB|NÉ|NE|TNL|IPE|TN-O|TNO)$/i;
 // Answers chosen from a list: at most this many.
 const OPTIONS_MAX = 12;
 // A unit that this share of the rows are in is the table's unit.
@@ -439,6 +440,9 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             // The lines of a statement, each once, several worked out from others
             // ("Employment income" … "Total income assessed", "Net income"): no group of one whole.
             if (stat.labels && stat.labels.derived >= 3 && stat.labels.distinct >= stat.labels.cells * 0.8) flags.push('statement_lines');
+            // Headings inside the column ("Region", then "Sector"): several
+            // breakdowns stacked under one another, not one.
+            if (((profile.rows.sections || {})[stat.id] || 0) >= 2) flags.push('sections');
             // The number of a question whose wording is not in the table ("Q1 DropIn").
             if (name.questionCode) flags.push('question_code');
             // The respondent's system or device, logged by a survey tool.
@@ -469,6 +473,7 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             const flags = [];
             if (codeLabels(values)) flags.push('code_labels');
             if (stat.labels && stat.labels.derived >= 3) flags.push('statement_lines');
+            if (((profile.rows.sections || {})[stat.id] || 0) >= 2) flags.push('sections');
             if (stat.labels ? stat.labels.garbled > 0 : values.some(isGarbled)) flags.push('garbled_text');
             for (const flag of flags) column.reasons.push({ code: flag });
             column.category = { distinct: stat.est_distinct, total_members: [], strip_code_prefix: false, variants: false,
@@ -574,6 +579,16 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         column.reasons.push({ code: 'one_unit_only', column: block.column, value: top.v });
     }
 
+    // Columns named by province codes ("AB", "BC", "NB"…): a table of places
+    // across, one column a place. Charted alone, "NB by Industry" says little.
+    const placeColumns = columns.filter(column => column.role === 'measure' && PROVINCE_CODE_RE.test(String(column.label).trim()));
+    if (placeColumns.length >= 3) {
+        for (const column of placeColumns) {
+            column.measure.place = true;
+            column.reasons.push({ code: 'place_column' });
+        }
+    }
+
     const timeAxes = [];
     for (const column of columns) {
         // When a record was last edited or published is not when anything happened.
@@ -662,7 +677,10 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         const stat = byId.get(column.id);
         return Boolean(column.category) && stat.labels && stat.labels.total_cells >= Math.max(3, stat.labels.cells * 0.05);
     });
-    const records = !dictionary && !wideGroups.length && !mixed && !cube && partitioned.size === 0 &&
+    // Headings inside a column ("Overall", "Region": …, "Sector": …): the rows
+    // are figures of several breakdowns, whatever names they carry.
+    const sectioned = columns.filter(column => (column.role === 'category' || column.role === 'label') && ((profile.rows.sections || {})[column.id] || 0) >= 2);
+    const records = !dictionary && !wideGroups.length && !mixed && !cube && !sectioned.length && partitioned.size === 0 &&
         (entity || fineDate || measures.length === 0 || (!sums && !grid));
     // Rows that only numbers tell apart, in a table of figures: blocks stacked
     // without the column that names them. Nothing in it is added up.
@@ -706,6 +724,8 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             } else if (read.overlapping_bands) {
                 column.reasons.push({ code: 'overlapping_bands' });
                 block(column.id, 'levels');
+            } else if (sectioned.includes(column)) {
+                block(column.id, 'breakdowns');
             } else if ((column.category.flags || []).includes('period_labels')) block(column.id, 'periods');
         }
     }
@@ -735,9 +755,12 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     for (const column of columns) {
         const stat = byId.get(column.id);
         const list = column.category ? column.category.total_members : column.total_members;
-        if (!stat.labels || !stat.labels.totals.length || !list) continue;
+        if (!stat.labels || !list) continue;
         const labels = new Set(list);
         for (const label of stat.labels.totals) if (!records || isTotalLabel(label)) labels.add(label);
+        // One row per member ("Toutes les industries" above each industry): even
+        // in a table read as records, a member named for all of them is their total.
+        if (records && stat.distinct >= stat.filled * 0.9) for (const label of stat.labels.alls || []) labels.add(label);
         if (column.category) column.category.total_members = [...labels].slice(0, 20);
         else column.total_members = [...labels].slice(0, 20);
     }

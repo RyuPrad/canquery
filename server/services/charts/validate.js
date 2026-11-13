@@ -204,6 +204,13 @@ function detectByNumbers(totals, members, grand, j, blank, records) {
                 .map(member => ({ key: member.key, label: member.label, by: 'sum_of_others' })), levels: false };
         }
     }
+    // "Canada" above provinces and regions alike (British Columbia, Prairies,
+    // Ontario, Atlantic…): their total when it is nearly their sum.
+    const places = members.filter(member => member !== national && (isProvinceName(member.label) || isRegionLabel(member.label)));
+    if (national && places.length >= 4 && national.sum > 0 && members.every(member => member.sum <= national.sum)) {
+        const ratio = national.sum / places.reduce((sum, member) => sum + member.sum, 0);
+        if (ratio >= 0.97 && ratio <= 1.03) return { totals: [{ key: national.key, label: national.label, by: 'sum_of_others' }], levels: false };
+    }
     const whole = grand.measures[j].sum - blank;
     const top = members.reduce((best, member) => (member.sum > best.sum ? member : best));
     const rest = whole - top.sum;

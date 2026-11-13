@@ -459,7 +459,7 @@ function rowFindings(stats, matrix, ids) {
     const numeric = stats.map(mostlyNumbers);
     const numericCount = numeric.filter(Boolean).length;
     const labels = stats.map(stat => [stat.id.toLowerCase(), stat.label.toLowerCase()]);
-    const found = { header: [], second_header: [], unit: [], units: {}, total_rows: 0, total_labels: {}, aggregate_labels: {}, tail: [] };
+    const found = { header: [], second_header: [], unit: [], units: {}, total_rows: 0, total_labels: {}, aggregate_labels: {}, tail: [], sections: {} };
     // Notes, legends and sources under a table: at its end, rows with words
     // where the numbers are and not one number.
     if (numericCount >= 2) {
@@ -510,6 +510,14 @@ function rowFindings(stats, matrix, ids) {
         }
         if (filled === 0) continue;
         if (total) found.total_rows += 1;
+        // A heading inside a column ("Region", then "Sector"): one cell of
+        // words and no figure on the row, below the first row.
+        if (filled === 1 && numericCount >= 2 && r > 0) {
+            for (let c = 0; c < width; c += 1) {
+                if (matrix[c][r] === '' || numeric[c]) continue;
+                found.sections[stats[c].id] = (found.sections[stats[c].id] || 0) + 1;
+            }
+        }
         // A header inside the data: most cells repeat their column's name, or
         // a good part do while words sit where every number should be (the
         // header of the next block of a file that stacks several tables).
@@ -1169,7 +1177,9 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
             units: found.units || {},
             total_rows: found.total_rows,
             total_labels: found.total_labels,
-            aggregate_labels: found.aggregate_labels || {}
+            aggregate_labels: found.aggregate_labels || {},
+            // Headings inside a column, by column: two or more make it several breakdowns.
+            sections: found.sections || {}
         },
         pairs,
         groups: {

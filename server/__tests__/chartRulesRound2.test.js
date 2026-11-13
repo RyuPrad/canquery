@@ -478,6 +478,7 @@ describe('fourth reading: tables the rules had never seen', () => {
         const bySex = analysis.charts.find(chart => chart.x.column === 'sex');
         expect(bySex.points.map(point => point.label)).toEqual(['Female', 'Male', 'Unknown']);
         // "All" goes with the name of a breakdown: "All City facilities" is a kind of project.
+        expect([isAllLabel('Overall'), isAllLabel('Combined')]).toEqual([true, true]);
         expect([isAllLabel('All ages'), isAllLabel('Tous les âges'), isAllLabel('Les deux'), isAllLabel('All City facilities'),
             isAllLabel('All other countries'), isAllLabel('Allergies')]).toEqual([true, true, true, false, false, false]);
 
@@ -674,6 +675,36 @@ describe('fourth reading: tables the rules had never seen', () => {
         expect(line.notes.find(note => note.code === 'incomplete_periods_left_out')).toMatchObject({ periods: 3 });
         const shares = analysis.charts.find(chart => chart.x.column === 'Category');
         expect(shares.period).toMatchObject({ start: '2020-01-01' });
+    });
+
+    test('tables of one row per group: a member named for all of them, headings of several breakdowns, columns of places', async () => {
+        // Industries, one row each, with "Toutes les industries" first, and a column per province.
+        const industries = ['Agriculture', 'Services publics', 'Construction', 'Commerce de gros', 'Transport', 'Information', 'Finance', 'Immobilier'];
+        const provinces = ['AB', 'BC', 'MB', 'NB', 'ON', 'QC'];
+        const rows = [['Toutes les industries', ...provinces.map((_, p) => String(industries.length * (10 + p * 3)))],
+            ...industries.map((name, i) => [name, ...provinces.map((_, p) => String(10 + p * 3 + (i % 3) - 1))])];
+        const industryTable = table([text('Industrie'), ...provinces.map(text), integer('Nombre total')], rows.map((row, i) => [...row, String(100 + i)]));
+        const { model } = await read(industryTable);
+        expect(column(model, 'Industrie').category.total_members).toContain('toutes les industries');
+        expect(column(model, 'NB').measure.place).toBe(true);
+        expect(listCandidates(model).some(spec => provinces.includes(spec.y.column))).toBe(false);
+
+        // "Basis of pay": "Overall", then a "Region" heading and its regions, then a "Sector" heading and its sectors.
+        const pay = [['Overall', '776085', '37041'], ['Region', '', ''], ['Atlantic', '62996', '1535'], ['Quebec', '165008', '12610'], ['Ontario', '310894', '14463'],
+            ['West and Territories', '237187', '8433'], ['Sector', '', ''], ['Air transport', '99744', '195'], ['Rail transport', '46704', '4720'],
+            ['Road transport', '66856', '32029'], ['Maritime transport', '15204', '12'], ['Postal services and pipelines', '116377', '67']];
+        const sections = await read(table([text('Basis of pay:'), integer('Hourly rate or salary'), integer('Rate per kilometre')], pay));
+        expect(sections.model.records).toBe(false);
+        expect(column(sections.model, 'Basis of pay:').category.flags).toContain('sections');
+        expect(listCandidates(sections.model)).toEqual([]);
+
+        // "Canada" above provinces and regions alike, with a suppressed cell.
+        const regions = [['Canada', '745', '5105'], ['British Columbia', '90', '590'], ['Prairies', '155', '860'], ['Ontario', '300', '2100'],
+            ['Quebec', '145', '1180'], ['Atlantic', '45', '360'], ['Territories', '<5', '15']];
+        const analysis = await analyze('canada-regions', table([text('Region'), text('Number of children with a relapse'), integer('Number of children with cancers')], regions));
+        const cancers = analysis.charts.find(chart => chart.y.column === 'Number of children with cancers');
+        expect(cancers.points.map(point => point.label)).not.toContain('Canada');
+        expect(cancers.notes.map(note => note.code)).toContain('total_left_out');
     });
 
     test('"Numéro de permis" names a permit and "Nombre de permis" counts them', async () => {
