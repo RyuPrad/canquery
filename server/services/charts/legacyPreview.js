@@ -4,7 +4,7 @@
 // the years, months or days of one other column. Every other chart has no place
 // in it and is left out: the website's cards carry charts whole.
 //
-// The checks of the shape's first builder (insightsService.buildFeaturedPreview)
+// The checks of the shape's first builder (removed with the old chart maker)
 // all hold for what comes out of here; __tests__/featuredApi.test.js checks
 // each preview against a frozen copy of the website's old validator.
 

@@ -307,22 +307,6 @@ describe('GET /web-api/v1/insights/charts', () => {
     });
 });
 
-describe('pure featured preview builder', () => {
-    it('stays available, with the same output, to the hosted social pool until it moves to the engine', () => {
-        const profile = { rowCount: 100, columns: [{ id: 'status', type: 'TEXT', distinct: 3, nulls: 0 }, { id: 'amount', type: 'NUMERIC', distinct: 80, nulls: 0, avg: 5, min: 1, max: 9 }] };
-        const spec = require('../services/featuredChart').pickChartSpec({ row_count: profile.rowCount, columns: profile.columns });
-        const item = service.buildFeaturedPreview({
-            candidate: { dataset_id: 'd1', title_en: 'Grants', title_fr: 'Subventions', resource_id: 'r1' }, current: { ingested_at: PREPARED_AT },
-            profile, spec, aggregate: { records: [{ key: 'Approved', value: '60' }, { key: 'Pending', value: '30' }, { key: 'Rejected', value: '10' }], total: 3 },
-            lang: 'en'
-        });
-        expect(item.points[0]).toEqual({ key: 'Approved', label: 'Approved', value: 60 });
-        expect(item.context.snapshot_at).toBe(PREPARED_AT);
-        expect(FROZEN(item)).toBe(true);
-        expect(snapshots.withSnapshot).not.toHaveBeenCalled();
-    });
-});
-
 describe('startFeaturedWarming', () => {
     const flush = async () => {
         for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
