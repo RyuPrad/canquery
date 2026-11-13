@@ -11,26 +11,41 @@ vi.mock('./InsightCarousel.jsx', () => ({
   </div>,
 }));
 vi.mock('./charts/MiniChart.jsx', () => ({
-  default: ({ kind, points, context, animate }) => <svg aria-hidden="true" data-testid={'chart-' + context.resource_id}
+  default: ({ kind, points, context, animate }) => <svg aria-hidden="true" data-testid="mini-chart"
     data-kind={kind} data-points={JSON.stringify(points)} data-context={JSON.stringify(context)} data-animate={animate} />,
 }));
 
-const context = (id, overrides = {}) => ({
-  resource_id: 'resource-' + id, group_by: 'status', agg: 'count', agg_column: null, bucket: null, group_type: 'TEXT',
-  snapshot_at: '2026-09-29T23:30:00.000Z', snapshot_rows: 4, total_groups: 2, displayed_groups: 2, limited: false, missing_periods: [],
+// Engine charts as GET /web-api/v1/insights/charts carries them.
+const chart = (overrides = {}) => ({
+  id: 'c_000000000000', template: 'records_by_category', kind: 'donut',
+  x: { type: 'category', column: 'status', label: 'status' },
+  y: { agg: 'count', column: null, label: null, additive: 'yes', integer: true, lower_bound: false, unit: null, percent: false, currency: false },
+  points: [{ key: 'a', label: 'Long recorded category A', value: 3, rows: 3, share: 0.75 }, { key: 'b', label: 'Category B', value: 1, rows: 1, share: 0.25 }],
+  other: null, total: 4,
+  scope: { rows: 4, groups_total: 2, groups_shown: 2, complete: true, filtered: false },
+  notes: [], score: 50, fit: { tab: true, card: true, social: true },
   ...overrides,
 });
-const donut = { dataset_id: 'd1', kind: 'donut', title: { en: 'Publisher distribution dataset' },
-  points: [{ key: 'A', label: 'Long recorded category A', value: 3 }, { key: 'B', label: 'Category B', value: 1 }], context: context('d1') };
-const bars = { dataset_id: 'b1', kind: 'bars', title: { en: 'Publisher departmental dataset' },
-  points: [{ key: 'D1', label: 'Full department name', value: 7 }, { key: 'D2', label: 'Another department', value: 3 }],
-  context: context('b1', { group_by: 'department', snapshot_rows: 50, total_groups: 6, limited: true }) };
-const line = { dataset_id: 'l1', kind: 'line', title: { en: 'Publisher observations dataset' },
-  points: [{ key: '2015', label: '2015', value: -2.5 }, { key: '2026', label: '2026', value: 1.75 }],
-  context: context('l1', { group_by: 'year', agg: 'avg', agg_column: 'temperature_departure', snapshot_rows: 80 }) };
+const card = (id, title, chartOverrides, extra = {}) => ({ dataset_id: id, title: { en: title }, resource_id: 'resource-' + id,
+  snapshot_at: '2026-09-29T23:30:00.000Z', rows: 100, kpis: [], chart: chart(chartOverrides), ...extra });
+
+const donut = card('d1', 'Publisher distribution dataset');
+const bars = card('b1', 'Publisher departmental dataset', { id: 'c_111111111111', template: 'share_by_category', kind: 'bars',
+  x: { type: 'category', column: 'department', label: 'department' },
+  y: { agg: 'sum', column: 'amount', label: 'amount', additive: 'yes', integer: true, lower_bound: true, unit: null, percent: false, currency: false },
+  points: [{ key: 'd1', label: 'Full department name', value: 7, rows: 3 }, { key: 'd2', label: 'Another department', value: 3, rows: 2 }],
+  other: { groups: 4, value: 5 }, total: 15, scope: { rows: 50, groups_total: 6, groups_shown: 2, complete: false, filtered: false },
+  notes: [{ code: 'placeholders_left_out', level: 'caution', column: 'amount', cells: 12, share: 0.24, tokens: ['--'] }] });
+const line = card('l1', 'Publisher observations dataset', { id: 'c_222222222222', template: 'measure_over_time', kind: 'line',
+  x: { type: 'time', axis: 't:year', columns: ['year'], label: 'year', grain: 'year' },
+  y: { agg: 'avg', column: 'temperature_departure', label: 'temperature_departure', additive: 'no', integer: false, lower_bound: false, unit: null, percent: false, currency: false },
+  points: [{ key: '2015', start: '2015-01-01', value: -2.5, rows: 4 }, { key: '2026', start: '2026-01-01', value: 1.75, rows: 4 }],
+  total: null, time: { grain: 'year', first: '2015-01-01', last: '2026-01-01', periods_total: 3, periods_shown: 3, missing: ['2020-01-01'] },
+  scope: { rows: 80, groups_total: 3, groups_shown: 2, complete: true, filtered: false },
+  notes: [{ code: 'missing_periods', level: 'info', periods: 1 }] });
 const items = [bars, donut, line];
 const wrapper = (props = {}) => <MemoryRouter><HeroChartWidget items={items} {...props} /></MemoryRouter>;
-const chartFor = id => screen.getByTestId('chart-resource-' + id);
+const chartFor = id => within(document.querySelector('[data-dataset-id="' + id + '"]')).getByTestId('mini-chart');
 
 beforeEach(() => {
   carousel.activeIndex = 0;
@@ -39,123 +54,85 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe('contextual featured chart cards', () => {
-  test('alternates real admitted chart kinds while preserving their points and recorded context', () => {
+describe('chart cards on the homepage', () => {
+  test('alternate chart kinds and hand each small chart the engine\'s points, periods by their first day', () => {
     const original = JSON.stringify(items);
     render(wrapper());
     expect(screen.getByRole('region')).toHaveAttribute('data-showcase', 'true');
-    expect(screen.getAllByRole('article').map(card => card.getAttribute('data-dataset-id'))).toEqual(['d1', 'b1', 'l1']);
-    for (const item of items) {
-      expect(JSON.parse(chartFor(item.dataset_id).getAttribute('data-points'))).toEqual(item.points);
-      expect(JSON.parse(chartFor(item.dataset_id).getAttribute('data-context'))).toEqual(item.context);
-      expect(chartFor(item.dataset_id)).toHaveAttribute('data-kind', item.kind);
-    }
+    expect(screen.getAllByRole('article').map(article => article.getAttribute('data-dataset-id'))).toEqual(['d1', 'b1', 'l1']);
+    expect(JSON.parse(chartFor('d1').getAttribute('data-points'))).toEqual([{ key: 'Long recorded category A', label: 'Long recorded category A', value: 3 },
+      { key: 'Category B', label: 'Category B', value: 1 }]);
+    expect(JSON.parse(chartFor('d1').getAttribute('data-context'))).toEqual({ agg: 'count', limited: false, grain: null, missing_periods: [], totalLabel: null });
+    expect(JSON.parse(chartFor('b1').getAttribute('data-context'))).toMatchObject({ agg: 'avg', limited: true, totalLabel: 'amount' });
+    expect(JSON.parse(chartFor('l1').getAttribute('data-points')).map(point => point.key)).toEqual(['2015-01-01', '2026-01-01']);
+    expect(JSON.parse(chartFor('l1').getAttribute('data-context'))).toMatchObject({ grain: 'year', missing_periods: ['2020-01-01'] });
+    expect(chartFor('l1')).toHaveAttribute('data-kind', 'line');
     expect(JSON.stringify(items)).toBe(original);
   });
 
-  test('names the actual measure above the plot and keeps the publisher title below it', () => {
+  test('name the measure above the plot, say how much is shown, and keep the publisher title below', () => {
     render(wrapper());
     const headings = screen.getAllByRole('heading', { level: 3 });
-    expect(headings.map(heading => heading.textContent)).toEqual(['Records by Status', 'Records by Department', 'Average Temperature departure']);
+    expect(headings.map(heading => heading.textContent)).toEqual(['Records by Status', 'Amount by Department', 'Average Temperature departure over time']);
     const figures = screen.getAllByRole('figure');
     for (let index = 0; index < figures.length; index += 1) {
       expect(figures[index]).toHaveAttribute('aria-labelledby', headings[index].id);
       expect(headings[index].compareDocumentPosition(figures[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
+    expect(screen.getByText('2 groups')).toBeInTheDocument();
+    expect(screen.getByText('Largest 2 of 6 groups · At least: some cells hold no number')).toBeInTheDocument();
+    expect(screen.getByText('2015 – 2026')).toBeInTheDocument();
     const title = screen.getByText('Publisher observations dataset');
     expect(title.tagName).toBe('P');
     expect(title).toHaveClass('cq-home-chart-dataset');
-    expect(screen.getAllByText('Record counts from the prepared file')).toHaveLength(2);
-    expect(screen.queryByText('Grouped by Status')).not.toBeInTheDocument();
-    expect(screen.getByText('Grouped by Year')).toBeInTheDocument();
-    expect(screen.getByText('2026: average 1.75.')).toBeInTheDocument();
-    expect(screen.queryByText(/CAD|°C|dollars/)).not.toBeInTheDocument();
+    // What a reader of a small card should not miss.
+    expect(screen.getByText('12 cells hold “--” instead of a number and are left out.')).toBeInTheDocument();
+    // A sentence for readers who cannot see the chart.
+    expect(screen.getByText('2 groups. Largest: Long recorded category A, 3.')).toBeInTheDocument();
+    expect(screen.getByText('2 periods, 2015 to 2026. Latest: 1.75.')).toBeInTheDocument();
   });
 
-  test('retains full publisher and category text without overriding readable values with an aria label', () => {
+  test('show the prepared snapshot date and keep long text whole', () => {
     const longTitle = 'Complete publisher title with all of its original dataset context and a reference period that remains visible on narrow screens';
-    const longLabel = 'Complete category label with regional qualifiers and a full administrative designation';
-    render(wrapper({ items: [{ ...donut, title: { en: longTitle }, points: [{ ...donut.points[0], label: longLabel }, donut.points[1]] }] }));
-    const card = screen.getByRole('article');
-    expect(card).not.toHaveAttribute('aria-label');
+    render(wrapper({ items: [{ ...donut, title: { en: longTitle }, snapshot_at: '2020-01-02T01:00:00.000Z' }] }));
+    const article = screen.getByRole('article');
+    expect(article).not.toHaveAttribute('aria-label');
     expect(screen.getByText(longTitle)).not.toHaveClass('line-clamp-2', 'truncate');
-    expect(screen.getByText(longLabel + ': 3 records.')).toBeInTheDocument();
-    const link = within(card).getByRole('link', { name: 'Explore insights' });
-    expect(link).not.toHaveAttribute('aria-label');
-    expect(card.tagName).toBe('ARTICLE');
-  });
-
-  test('reports exact group coverage and the actual prepared snapshot date', () => {
-    render(wrapper({ items: [{ ...bars, context: { ...bars.context, snapshot_at: '2020-01-02T01:00:00.000Z' } }] }));
-    expect(screen.getByText('Showing 2 of 6 groups')).toBeInTheDocument();
     const snapshot = document.querySelector('.cq-home-chart-snapshot');
     expect(snapshot).toHaveTextContent('Prepared');
-    expect(snapshot).toHaveTextContent('2020');
     expect(snapshot).toHaveTextContent('(UTC)');
     expect(snapshot.querySelector('time')).toHaveAttribute('datetime', '2020-01-02T01:00:00.000Z');
-    expect(screen.getByText('Full department name: 7 records.')).toBeInTheDocument();
   });
 
-  test('describes the selected temporal window and limits missing-value claims to that window', () => {
-    const temporal = { ...line, context: { ...line.context, total_groups: 8, limited: true, missing_periods: ['2020'] } };
-    render(wrapper({ items: [temporal] }));
-    expect(screen.getByText('Showing 2 of 8 groups')).toBeInTheDocument();
-    expect(screen.getByText('Latest time window: 2015–2026')).toBeInTheDocument();
-    expect(screen.getByText('1 period in this window has no numeric value; it is left unconnected.')).toBeInTheDocument();
-    expect(JSON.parse(chartFor('l1').getAttribute('data-context')).missing_periods).toEqual(['2020']);
-  });
-
-  test('uses the actual date bucket and includes a missing latest boundary in the window', () => {
-    const temporal = { ...line, points: [
-      { key: '2026-01-01T00:00:00.000Z', label: 'Jan 2026', value: -2 },
-      { key: '2026-03-01T00:00:00.000Z', label: 'Mar 2026', value: 0 },
-    ], context: { ...line.context, group_by: 'observation_date', group_type: 'DATE', bucket: 'month',
-      total_groups: 4, limited: true, missing_periods: ['2026-02-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z'] } };
-    render(wrapper({ items: [temporal] }));
-    expect(screen.getByText('Monthly groups of Observation date')).toBeInTheDocument();
-    expect(screen.getByText(/Latest time window: Jan 2026–Apr/)).toHaveTextContent('2026');
-    expect(screen.getByText('2 periods in this window have no numeric value; they are left unconnected.')).toBeInTheDocument();
-    expect(screen.getByText('Mar 2026: average 0.')).toBeInTheDocument();
-  });
-
-  test('attaches deep-link and analytics only to the separate exploration action', () => {
-    render(wrapper());
+  test('attach the deep link and analytics only to the exploration action, with the dataset identity encoded', () => {
+    const view = render(wrapper());
     for (const item of items) {
-      const card = document.querySelector('[data-dataset-id="' + item.dataset_id + '"]');
-      expect(card).not.toHaveAttribute('data-analytics-event');
-      const link = within(card).getByRole('link', { name: 'Explore insights' });
+      const article = document.querySelector('[data-dataset-id="' + item.dataset_id + '"]');
+      expect(article).not.toHaveAttribute('data-analytics-event');
+      const link = within(article).getByRole('link', { name: 'Explore insights' });
       expect(link).toHaveAttribute('href', '/insights?focus=' + item.dataset_id);
       expect(link).toHaveAttribute('data-analytics-event', 'dataset_open');
       expect(link).toHaveAttribute('data-analytics-dataset-id', item.dataset_id);
       expect(link).toHaveAttribute('data-analytics-source', 'hero_insight');
     }
-  });
-
-  test('encodes the focused dataset identity', () => {
-    render(wrapper({ items: [{ ...donut, dataset_id: 'dataset / bilingual' }] }));
+    view.rerender(wrapper({ items: [{ ...donut, dataset_id: 'dataset / bilingual' }] }));
     expect(screen.getByRole('link')).toHaveAttribute('href', '/insights?focus=dataset%20%2F%20bilingual');
   });
 
-  test('omits unsupported, old, malformed and flat candidates while preserving supported source order', () => {
-    const invalid = [{ ...bars, kind: 'area' }, { ...bars, context: undefined },
-      { ...bars, points: [{ key: 'a', label: 'a', value: 3 }, { key: 'b', label: 'b', value: 3 }] }];
+  test('drop cards that do not hold together and keep the order of the rest', () => {
+    const broken = [{ ...bars, dataset_id: 'x1', chart: { ...bars.chart, kind: 'area' } }, { ...bars, dataset_id: 'x2', chart: undefined },
+      { ...bars, dataset_id: 'x3', chart: { ...bars.chart, points: [] } }, { ...bars, dataset_id: 'x4', snapshot_at: 'soon' }];
     const secondDonut = { ...donut, dataset_id: 'd2' };
     const secondBars = { ...bars, dataset_id: 'b2' };
-    render(wrapper({ items: [bars, ...invalid, secondBars, donut, line, secondDonut] }));
-    expect(screen.getAllByRole('article').map(card => card.getAttribute('data-dataset-id'))).toEqual(['d1', 'b1', 'l1', 'd2', 'b2']);
+    const view = render(wrapper({ items: [bars, ...broken, secondBars, donut, line, secondDonut] }));
+    expect(screen.getAllByRole('article').map(article => article.getAttribute('data-dataset-id'))).toEqual(['d1', 'b1', 'l1', 'd2', 'b2']);
+    view.rerender(wrapper({ items: [] }));
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    view.rerender(wrapper({ items: broken }));
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
   });
 
-  test('renders no carousel for empty or metadata-poor responses', () => {
-    const view = render(wrapper({ items: [] }));
-    expect(screen.queryByRole('region')).not.toBeInTheDocument();
-    view.rerender(wrapper({ items: [{ dataset_id: 'old', title: { en: 'Old preview' }, kind: 'donut', points: donut.points }] }));
-    expect(screen.queryByRole('region')).not.toBeInTheDocument();
-    view.rerender(wrapper({ items: [bars] }));
-    expect(screen.getAllByRole('article')).toHaveLength(1);
-    expect(screen.getByText('Records by Department')).toBeInTheDocument();
-  });
-
-  test('translates context and preserves bilingual or available publisher titles', () => {
+  test('speak the reader\'s language and fall back to any title there is', () => {
     localStorage.setItem('cq-lang', 'fr');
     render(<MemoryRouter><LangProvider><HeroChartWidget items={[
       { ...bars, title: { en: 'English title', fr: 'Titre français' } },
@@ -166,14 +143,12 @@ describe('contextual featured chart cards', () => {
     expect(screen.getByText('English fallback')).toBeInTheDocument();
     expect(screen.getByText('Titre disponible')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Enregistrements par Status' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Moyenne de Temperature departure' })).toBeInTheDocument();
-    expect(screen.getByText('2 groupes affichés sur 6')).toBeInTheDocument();
-    expect(screen.getByText('2026 : moyenne de 1,75.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Temperature departure : moyenne dans le temps' })).toBeInTheDocument();
     expect(screen.getAllByText('Explorer les aperçus')).toHaveLength(3);
     expect(document.querySelector('.cq-home-chart-snapshot')).toHaveTextContent('Préparé le');
   });
 
-  test('animates only the active visible page and remounts the drawing chart on page entry', () => {
+  test('animate only the active visible page and remount the drawing chart on page entry', () => {
     carousel.reduced = false;
     const view = render(wrapper());
     const first = chartFor('d1');
@@ -188,7 +163,7 @@ describe('contextual featured chart cards', () => {
     expect(chartFor('d1')).toHaveAttribute('data-animate', 'false');
   });
 
-  test('settles invisible or reduced-motion previews and creates no local rotation timer', () => {
+  test('settle invisible or reduced-motion cards and create no local rotation timer', () => {
     vi.useFakeTimers();
     try {
       carousel.reduced = false;

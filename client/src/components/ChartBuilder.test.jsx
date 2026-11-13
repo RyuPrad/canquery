@@ -1,118 +1,127 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ChartBuilder from './ChartBuilder.jsx';
-import { queryResource } from '../api/catalog.js';
+import { MODEL, SHARE, LINE, BLOCKED } from '../test/chartAnalysis.js';
 
-vi.mock('../api/catalog.js', () => ({ queryResource: vi.fn() }));
+vi.mock('../api/catalog.js', () => ({ fetchCustomChart: vi.fn(), queryResource: vi.fn() }));
 vi.mock('./charts/Visuals.jsx', () => ({
-  ChartCard: ({ children }) => <section>{children}</section>,
+  ChartCard: ({ title, subtitle, children }) => <section><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}{children}</section>,
   ChartSkeleton: () => <div>Chart loading</div>,
   ChartEmpty: ({ label }) => <div>{label}</div>,
-  DonutChart: () => <div>Donut chart</div>,
-  CategoryBar: () => <div>Bar chart</div>,
-  TimeSeriesChart: ({ records }) => <div>Time chart {records.map((r) => r.key).join(',')}</div>,
+  DonutChart: ({ records }) => <div>Donut {records.map((r) => r.key + '=' + r.value).join(', ')}</div>,
+  CategoryBar: ({ records }) => <div>Bars {records.map((r) => r.key + '=' + r.value).join(', ')}</div>,
+  TimeSeriesChart: ({ records }) => <div>Line {records.map((r) => r.key).join(', ')}</div>,
 }));
+import { fetchCustomChart, queryResource } from '../api/catalog.js';
+import { ApiError } from '../api/client.js';
 
-const fields = [{ id: '_id', type: 'INTEGER' }, { id: 'province', type: 'TEXT' }, { id: 'amount', type: 'NUMERIC' }];
+const answer = (chart, reason = null) => Promise.resolve({ data: { chart, reason }, meta: {} });
+const build = (props = {}) => render(<ChartBuilder resourceId="r1" queryMode="ingested" model={MODEL} initialSpec={SHARE.spec} {...props} />);
+const lastSpec = () => fetchCustomChart.mock.calls[fetchCustomChart.mock.calls.length - 1][1];
+const select = (name) => screen.getByRole('combobox', { name });
+
 beforeEach(() => {
   vi.clearAllMocks();
-  queryResource.mockResolvedValue({ data: { records: [{ key: 'ON', value: 2 }], total: 1 } });
+  fetchCustomChart.mockImplementation((_id, spec) => answer(spec.x.time ? LINE : SHARE));
 });
 
-describe('custom aggregation controls', () => {
-  test('every select has its visible control label', async () => {
-    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" />);
-    expect(screen.getByRole('combobox', { name: 'X axis' })).toHaveValue('province');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Function' }), { target: { value: 'sum' } });
-    expect(screen.getByRole('combobox', { name: 'Value column' })).toHaveValue('amount');
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ agg: 'sum', agg_column: 'amount' }), expect.any(Object)));
+describe('the custom builder', () => {
+  test('offers the table\'s time axes and groups, each language\'s copy once, and starts from the first automatic chart', async () => {
+    build();
+    await screen.findByText('Donut Ontario=600, Quebec=300, Not recorded=100');
+    expect(lastSpec()).toEqual({ kind: 'donut', x: { column: 'Province' }, y: { agg: 'sum', column: 'TOTAL' } });
+    const x = select('X axis');
+    expect(x).toHaveValue('c:Province');
+    // Column names read as words: underscores become spaces.
+    expect([...within(x).getByRole('group', { name: 'Time' }).querySelectorAll('option')].map((option) => option.textContent))
+      .toEqual(['EN YEAR', 'EN YEAR + EN MONTH']);
+    expect([...within(x).getByRole('group', { name: 'Groups' }).querySelectorAll('option')].map((option) => option.textContent))
+      .toEqual(['EN MONTH', 'Province', 'Code']);
+    expect(within(x).queryByRole('group', { name: 'Other columns' })).toBeNull();
+    // Every column, on request: the other language's copy and the rest.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show every column' }));
+    expect([...within(select('X axis')).getByRole('group', { name: 'Groups' }).querySelectorAll('option')].map((option) => option.textContent))
+      .toEqual(['EN MONTH', 'Province', 'Province FR', 'Code']);
+    expect(within(select('X axis')).getByRole('group', { name: 'Other columns' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'TOTAL by Province' })).toBeInTheDocument();
   });
 
-  test('min on a text-only schema selects a real column and preserves text results', async () => {
-    queryResource.mockImplementation((_id, params) => Promise.resolve({ data: { records: [{ key: 'ON', value: params.agg === 'min' ? 'Ottawa' : 2 }], total: 1 } }));
-    render(<ChartBuilder resourceId="r1" fields={fields.filter(field => field.type !== 'NUMERIC')} queryMode="ingested" />);
-    await waitFor(() => expect(queryResource).toHaveBeenCalled());
-    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'min' } });
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ agg: 'min', agg_column: 'province' }), expect.any(Object)));
-    expect(await screen.findByText('Ottawa')).toBeInTheDocument();
-    expect(screen.queryByText('No data yet.')).toBeNull();
+  test('values to add up or average are the table\'s numbers, those read from text marked as such', async () => {
+    build();
+    await screen.findByText(/^Donut/);
+    expect([...select('Value column').querySelectorAll('option')].map((option) => option.textContent)).toEqual(['TOTAL (numbers read from text)', 'Rate']);
+    fireEvent.change(select('Value column'), { target: { value: 'Rate' } });
+    fireEvent.change(select('Function'), { target: { value: 'avg' } });
+    await waitFor(() => expect(lastSpec()).toEqual({ kind: 'bars', x: { column: 'Province' }, y: { agg: 'avg', column: 'Rate' } }));
+    // A donut is a share of a whole: offered for counts and sums only.
+    expect(screen.getByRole('button', { name: 'Donut' })).toBeDisabled();
+    fireEvent.change(select('Function'), { target: { value: 'count' } });
+    await waitFor(() => expect(lastSpec()).toEqual({ kind: 'donut', x: { column: 'Province' }, y: { agg: 'count' } }));
+    expect(screen.queryByRole('combobox', { name: 'Value column' })).toBeNull();
   });
 
-  test('date extrema remain readable and every aggregation retains active search filters', async () => {
-    queryResource.mockImplementation((_id, params) => Promise.resolve({ data: { records: [{ key: 'ON', value: params.agg_column === 'recorded_at' ? '2026-09-29T00:00:00.000Z' : 2 }], total: 1 } }));
-    const filters = { province: { op: 'eq', value: 'ON' } };
-    render(<ChartBuilder resourceId="r1" q="Ottawa" filters={filters} fields={[...fields, { id: 'recorded_at', type: 'TIMESTAMPTZ' }]} queryMode="ingested" />);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Function' }), { target: { value: 'max' } });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Value column' }), { target: { value: 'recorded_at' } });
-    expect(await screen.findByText('2026-09-29T00:00:00.000Z')).toBeInTheDocument();
-    expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ q: 'Ottawa', filters, agg: 'max', agg_column: 'recorded_at' }), expect.any(Object));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Function' }), { target: { value: 'sum' } });
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ agg: 'sum', agg_column: 'amount' }), expect.any(Object)));
-    expect(queryResource.mock.calls.some(([, params]) => params.agg === 'sum' && params.agg_column === 'recorded_at')).toBe(false);
+  test('a time axis is drawn in order, at the period chosen', async () => {
+    build();
+    await screen.findByText(/^Donut/);
+    fireEvent.change(select('X axis'), { target: { value: 't:EN_YEAR+EN_MONTH' } });
+    await waitFor(() => expect(lastSpec()).toEqual({ x: { time: 't:EN_YEAR+EN_MONTH', grain: 'month' }, y: { agg: 'sum', column: 'TOTAL' } }));
+    await screen.findByText('Line Jan 2019, Feb 2019, Mar 2019, Apr 2019');
+    expect([...select('Period').querySelectorAll('option')].map((option) => option.textContent)).toEqual(['Month', 'Year']);
+    fireEvent.change(select('Period'), { target: { value: 'year' } });
+    await waitFor(() => expect(lastSpec()).toEqual({ x: { time: 't:EN_YEAR+EN_MONTH', grain: 'year' }, y: { agg: 'sum', column: 'TOTAL' } }));
+    // No donut or bars toggle for time: the engine draws two or three periods as bars itself.
+    expect(screen.queryByRole('button', { name: 'Donut' })).toBeNull();
   });
 
-  test('a schema with no recorded columns shows an empty state instead of an endless skeleton', () => {
-    render(<ChartBuilder resourceId="r1" fields={[fields[0]]} queryMode="ingested" />);
-    expect(screen.getByText('No data yet.')).toBeInTheDocument();
-    expect(screen.queryByText('Chart loading')).toBeNull();
-    expect(queryResource).not.toHaveBeenCalled();
+  test('a sum across different measures is refused with the column to group or filter by', async () => {
+    fetchCustomChart.mockImplementation(() => Promise.reject(new ApiError('refused', 400, { code: 'CHART_REFUSED', hint: 'mixed_measures' })));
+    build({ model: BLOCKED.model, initialSpec: null });
+    fireEvent.change(select('Function'), { target: { value: 'sum' } });
+    expect(await screen.findByText('“Measure Value” holds a different thing for each “Data Point Label”. Group by “Data Point Label”, or filter the table to one of them.'))
+      .toBeInTheDocument();
   });
 
-  test('date axes fetch the newest periods and render them chronologically', async () => {
-    queryResource.mockResolvedValue({ data: { records: [{ key: '2026', value: 3 }, { key: '2025', value: 2 }], total: 40 } });
-    const dateFields = [{ id: 'recorded_at', type: 'TIMESTAMPTZ' }, { id: 'amount', type: 'NUMERIC' }];
-    render(<ChartBuilder resourceId="r1" fields={dateFields} queryMode="ingested" />);
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'recorded_at', sort: 'key desc', limit: 100 }), expect.any(Object)));
-    expect(await screen.findByText('Time chart 2025,2026')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Line' })).toBeInTheDocument();
+  test('says why when the choices leave nothing to draw, and lets a busy engine be retried', async () => {
+    fetchCustomChart.mockImplementationOnce(() => answer(null, 'flat'));
+    const view = build();
+    expect(await screen.findByText('No chart can be drawn with these choices: every value is the same.')).toBeInTheDocument();
+    fetchCustomChart.mockImplementationOnce(() => Promise.reject(new ApiError('busy', 503, { code: 'CHARTS_BUSY' })));
+    view.rerender(<ChartBuilder resourceId="r1" queryMode="ingested" model={MODEL} initialSpec={SHARE.spec} q="on" />);
+    await screen.findByText('Charts are busy right now. Try again in a moment.');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText(/^Donut/);
   });
 
-  test('categorical axes do not offer a line and keep largest-first bars', async () => {
-    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" />);
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'province', sort: 'value desc' }), expect.any(Object)));
-    expect(screen.queryByRole('button', { name: 'Line' })).toBeNull();
+  test('the lowest or highest text of a group is read as the table query reads it', async () => {
+    queryResource.mockResolvedValue({ data: { records: [{ key: 'Ontario', value: 'Toronto note' }], total: 1 } });
+    build();
+    await screen.findByText(/^Donut/);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show every column' }));
+    fireEvent.change(select('Function'), { target: { value: 'max' } });
+    fireEvent.change(select('Value column'), { target: { value: 'Notes' } });
+    await waitFor(() => expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ group_by: 'Province', agg: 'max', agg_column: 'Notes' }), expect.any(Object)));
+    expect(await screen.findByText('Toronto note')).toBeInTheDocument();
   });
 
-  test('year-like columns from the profile classifier still offer a line', async () => {
-    const yearFields = [{ id: 'fiscal_year', type: 'INTEGER' }, { id: 'amount', type: 'NUMERIC' }];
-    const classified = { dates: [{ id: 'fiscal_year', bucket: null }], dimensions: [], measures: [{ id: 'amount' }], columns: [{ id: 'fiscal_year', distinct: 10 }] };
-    render(<ChartBuilder resourceId="r1" fields={yearFields} queryMode="ingested" classified={classified} />);
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'fiscal_year', agg: 'avg', sort: 'key desc' }), expect.any(Object)));
-    expect(screen.getByRole('button', { name: 'Line' })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  test('donut is unavailable for averages and for too many groups', async () => {
-    const classified = { dates: [], dimensions: [{ id: 'province', distinct: 40 }], measures: [], columns: [{ id: 'province', distinct: 40 }] };
-    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" classified={classified} />);
-    const donut = await screen.findByRole('button', { name: /Donut unavailable: too many groups/ });
-    expect(donut).toBeDisabled();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Function' }), { target: { value: 'avg' } });
-    expect(screen.getByRole('button', { name: /Donut unavailable: only counts and sums/ })).toBeDisabled();
-  });
-
-  test('a donut that would be incomplete explains why bars are shown', async () => {
-    queryResource.mockResolvedValue({ data: { records: [{ key: 'ON', value: 2 }], total: 30 } });
-    const classified = { dates: [], dimensions: [{ id: 'province', distinct: 5 }], measures: [], columns: [{ id: 'province', distinct: 5 }] };
-    render(<ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" classified={classified} />);
-    await waitFor(() => expect(queryResource).toHaveBeenLastCalledWith('r1', expect.objectContaining({ group_by: 'province', limit: 16 }), expect.any(Object)));
-    expect(await screen.findByText(/more groups than a donut can show/)).toBeInTheDocument();
-    expect(screen.getByText('Bar chart')).toBeInTheDocument();
+  test('without a prepared copy or a model there is nothing to build from', () => {
+    const first = render(<ChartBuilder resourceId="r1" queryMode="datastore" />);
+    expect(screen.getByText(/Full-data charts require a prepared file/)).toBeInTheDocument();
+    first.unmount();
+    render(<ChartBuilder resourceId="r1" queryMode="ingested" model={null} />);
+    expect(screen.getByText("Couldn't load insights for this table.")).toBeInTheDocument();
+    expect(fetchCustomChart).not.toHaveBeenCalled();
   });
 });
 
 describe('the loading card', () => {
-  test('counts the custom chart until it draws, and an empty schema at once', async () => {
+  test('counts the custom chart until it draws', async () => {
     const { ChartLoadContext, createChartLoadStore } = await import('../hooks/useChartLoadReport.js');
     const store = createChartLoadStore();
     let resolve;
-    queryResource.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
-    const view = render(<ChartLoadContext.Provider value={store}><ChartBuilder resourceId="r1" fields={fields} queryMode="ingested" /></ChartLoadContext.Provider>);
+    fetchCustomChart.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    render(<ChartLoadContext.Provider value={store}><ChartBuilder resourceId="r1" queryMode="ingested" model={MODEL} initialSpec={SHARE.spec} /></ChartLoadContext.Provider>);
     await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 0 }));
-    resolve({ data: { records: [{ key: 'ON', value: 2 }], total: 1 } });
+    resolve({ data: { chart: SHARE, reason: null } });
     await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 }));
-    view.unmount();
-
-    render(<ChartLoadContext.Provider value={store}><ChartBuilder resourceId="r1" fields={[{ id: '_id', type: 'INTEGER' }]} queryMode="ingested" /></ChartLoadContext.Provider>);
-    expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 });
   });
 });

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLang } from '../../i18n.jsx';
-import { fmtInt, fmtNum, fmtBucketKey } from './theme.js';
+import { fmtInt, fmtNum, fmtBucketKey, fmtPeriod, truncate } from './theme.js';
 
 // These small homepage charts stay independent of the resource chart bundle.
 // Every visual has readable values; only the entry animation is decorative.
@@ -81,7 +81,7 @@ function Donut({ points, context, drawn, lang, t }) {
           style={{ transition: `stroke-dasharray 0.65s ${EASE}`, transitionDelay: `${index * 50}ms` }} />;
       })}
       <text className="cq-chart-ring-total" x="75" y="73" textAnchor="middle">{fmtInt(total, lang)}</text>
-      <text className="cq-chart-ring-unit" x="75" y="92" textAnchor="middle">{t('chart.records')}</text>
+      <text className="cq-chart-ring-unit" x="75" y="92" textAnchor="middle">{context?.totalLabel ? truncate(context.totalLabel, 16) : t('chart.records')}</text>
     </svg>
     <ul className="cq-chart-legend" aria-label={t('chart.legend')}>
       {points.map((point, index) => <li key={point.key ?? point.label}>
@@ -144,8 +144,9 @@ function Line({ points, context, width, height, drawn, lang, t }) {
     return `${command}${x(point.time).toFixed(2)} ${y(point.value).toFixed(2)}`;
   }).filter(Boolean).join(' ');
   const middle = series.reduce((best, point) => Math.abs(point.time - (firstTime + elapsed / 2)) < Math.abs(best.time - (firstTime + elapsed / 2)) ? point : best, series[0]);
-  const periodLabel = key => context?.bucket === 'year' || /^\d{4}$/.test(key) ? String(new Date(timestamp(key)).getUTCFullYear())
-    : fmtBucketKey(key, context?.bucket || 'day', lang);
+  const periodLabel = key => context?.grain ? fmtPeriod(key, context.grain, lang)
+    : context?.bucket === 'year' || /^\d{4}$/.test(key) ? String(new Date(timestamp(key)).getUTCFullYear())
+      : fmtBucketKey(key, context?.bucket || 'day', lang);
   const firstLabelWidth = periodLabel(series[0].key).length * 10;
   const lastLabelWidth = periodLabel(series.at(-1).key).length * 10;
   const ticks = [series[0], middle, series.at(-1)].filter((point, index, all) => all.findIndex(other => other.time === point.time) === index)

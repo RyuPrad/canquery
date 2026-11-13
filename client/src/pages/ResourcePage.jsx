@@ -387,6 +387,12 @@ function ResourceExplorer({ id, navigationKey }) {
     },
     [id, columnFilters, view, setColumnFilters]
   );
+  // The Chart tab offers the values of a column whose rows hold different
+  // measures; choosing one filters the table to it, as typing "=value" would.
+  const pinChartFilter = useCallback(
+    (field, value) => changeColumnFilter(field, '=' + value),
+    [changeColumnFilter]
+  );
   const changePage = useCallback(
     (target) => {
       if (!allowQuery('page', { resource: id, page: target, current: page, view })) return false;
@@ -974,6 +980,7 @@ function ResourceExplorer({ id, navigationKey }) {
                   fields={fields || []}
                   queryMode={resource.query_mode}
                   onUnavailable={onUnavailable}
+                  onPin={pinChartFilter}
                 />
               ) : (
                 <ChartFallback />

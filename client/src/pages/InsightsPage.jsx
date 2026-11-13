@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { fetchTopDownloads, fetchFeatured } from '../api/catalog.js';
+import { fetchTopDownloads, fetchInsightCards } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
 import InsightCard from '../components/InsightCard.jsx';
 import InsightCarousel from '../components/InsightCarousel.jsx';
@@ -36,7 +36,8 @@ export default function InsightsPage() {
   const { t, lang } = useLang();
   const [items, setItems] = useState(null);
   const [period, setPeriod] = useState(null);
-  const [chartableIds, setChartableIds] = useState(() => new Set());
+  // The chart engine's card of each dataset that has one, by dataset id.
+  const [cards, setCards] = useState(() => new Map());
   const [searchParams, setSearchParams] = useSearchParams();
   const [highlightId, setHighlightId] = useState(null);
   const [focusId, setFocusId] = useState(null);
@@ -45,12 +46,12 @@ export default function InsightsPage() {
   // representative (and the chartable set) matches the active language.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchTopDownloads(lang), fetchFeatured(lang)])
-      .then(([topEnv, featEnv]) => {
+    Promise.all([fetchTopDownloads(lang), fetchInsightCards(lang).catch(() => null)])
+      .then(([topEnv, cardsEnv]) => {
         if (cancelled) return;
         setItems(topEnv?.data || []);
         setPeriod(topEnv?.meta?.period || null);
-        setChartableIds(new Set((featEnv?.data || []).map((f) => f.dataset_id)));
+        setCards(new Map((cardsEnv?.data || []).map((card) => [card.dataset_id, card])));
       })
       .catch(() => { if (!cancelled) setItems([]); });
     return () => { cancelled = true; };
@@ -66,7 +67,7 @@ export default function InsightsPage() {
   useEffect(() => {
     const focus = searchParams.get('focus');
     if (!focus || !items || items.length === 0) return;
-    const inCarousel = chartableIds.has(focus);
+    const inCarousel = cards.has(focus);
     const el = inCarousel
       ? document.getElementById('featured-section')
       : document.getElementById('dsrow-' + focus);
@@ -78,7 +79,7 @@ export default function InsightsPage() {
     const next = new URLSearchParams(searchParams);
     next.delete('focus');
     setSearchParams(next, { replace: true });
-  }, [items, chartableIds, searchParams, setSearchParams]);
+  }, [items, cards, searchParams, setSearchParams]);
 
   // The un-highlight timer lives on highlightId, not in the effect above:
   // dropping the param re-runs that effect, and a cleanup there would cancel
@@ -92,7 +93,7 @@ export default function InsightsPage() {
   const label = periodLabel(period, lang);
   const valuesOf = (it) => (it.history || []).map((h) => h.d);
   const ringClass = (id) => (highlightId === id ? 'cq-focus-ring' : '');
-  const featuredItems = items ? items.filter((it) => it.dataset_id && chartableIds.has(it.dataset_id)) : [];
+  const featuredItems = items ? items.filter((it) => it.dataset_id && cards.has(it.dataset_id)) : [];
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8 space-y-8">
@@ -138,6 +139,7 @@ export default function InsightsPage() {
                   <div id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
                     <InsightCard
                       item={toCardItem(it)}
+                      card={cards.get(it.dataset_id)}
                       rank={it.rank}
                       downloads={it.downloads}
                       fallbackValues={valuesOf(it)}

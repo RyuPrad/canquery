@@ -1,112 +1,127 @@
 import { describe, beforeEach, vi, expect, test } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import ChartPanel from './ChartPanel.jsx';
+import { ANALYSIS, BLOCKED } from '../test/chartAnalysis.js';
 
-vi.mock('../api/catalog.js', () => ({ queryResource: vi.fn(), fetchResourceProfile: vi.fn() }));
-import { queryResource, fetchResourceProfile } from '../api/catalog.js';
+vi.mock('../api/catalog.js', () => ({ fetchResourceCharts: vi.fn(), fetchCustomChart: vi.fn(), queryResource: vi.fn() }));
+vi.mock('./charts/Visuals.jsx', () => ({
+  ChartCard: ({ title, subtitle, children }) => <section><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}{children}</section>,
+  ChartSkeleton: () => <div>Chart loading</div>,
+  ChartEmpty: ({ label }) => <div>{label}</div>,
+  KpiCard: ({ label, value, sub }) => <div data-testid="kpi">{label}: {value}{sub ? ' (' + sub + ')' : ''}</div>,
+  DonutChart: ({ records }) => <div>Donut {records.map((r) => r.key + '=' + r.value).join(', ')}</div>,
+  CategoryBar: ({ records }) => <div>Bars {records.map((r) => r.key + '=' + r.value).join(', ')}</div>,
+  TimeSeriesChart: ({ records }) => <div>Line {records.map((r) => r.key + '=' + r.value).join(', ')}</div>,
+}));
+import { fetchResourceCharts, fetchCustomChart } from '../api/catalog.js';
+import { ApiError, NotIngestedError } from '../api/client.js';
+import { ChartLoadContext, createChartLoadStore } from '../hooks/useChartLoadReport.js';
 
-const FIELDS = [{ id: '_id', type: 'int' }, { id: 'province', type: 'TEXT' }, { id: 'amount', type: 'NUMERIC' }];
-
-const PROFILE = {
-  row_count: 1000,
-  columns: [
-    { id: 'province', type: 'TEXT', distinct: 13, nulls: 0 },
-    { id: 'amount', type: 'NUMERIC', distinct: 850, nulls: 0, min: 0, max: 100, avg: 42 },
-  ],
-};
+const FIELDS = [{ id: '_id', type: 'int' }, { id: 'Province', type: 'TEXT' }, { id: 'TOTAL', type: 'TEXT' }];
+const answer = (data) => Promise.resolve({ data, meta: {} });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fetchResourceProfile.mockResolvedValue({ data: PROFILE, meta: {} });
-  queryResource.mockResolvedValue({
-    data: { records: [{ key: 'ON', value: '4' }, { key: 'QC', value: '2' }], total: 2, fields: FIELDS },
-    meta: {},
-  });
+  fetchResourceCharts.mockImplementation(() => answer(ANALYSIS));
+  fetchCustomChart.mockImplementation(() => new Promise(() => {}));
 });
 
-describe('ChartPanel', () => {
-  test('ingested resources default to an auto Insights dashboard', async () => {
-    render(<ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" />);
-    expect(screen.getByText('Insights')).toBeInTheDocument();
-    expect(screen.getByText('Custom')).toBeInTheDocument();
+describe('the Chart tab', () => {
+  test('asks the chart engine once and draws what it chose, with the figures above and what it left out', async () => {
+    render(<ChartPanel resourceId="r1" q="" fields={FIELDS} queryMode="ingested" />);
     expect(screen.getByRole('button', { name: 'Insights', pressed: true })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Custom', pressed: false })).toBeInTheDocument();
-
-    await waitFor(() => expect(fetchResourceProfile).toHaveBeenCalledWith('r1', expect.objectContaining({ signal: expect.any(AbortSignal) })));
-    // KPI row surfaces the headline row count (locale-formatted).
-    await waitFor(() => expect(screen.getByText('Total rows')).toBeInTheDocument());
-    expect(screen.getAllByText('1,000').length).toBeGreaterThan(0);
-
-    // Auto-charts aggregate by the categorical dimension - never the unique _id.
-    await waitFor(() =>
-      expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ group_by: 'province', agg: 'count' }), expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    );
-    const groupBys = queryResource.mock.calls.map((c) => c[1].group_by);
-    expect(groupBys).not.toContain('_id');
+    await screen.findByText('TOTAL by Province');
+    expect(fetchResourceCharts).toHaveBeenCalledTimes(1);
+    expect(fetchResourceCharts).toHaveBeenCalledWith('r1', { q: '', filters: undefined, lang: 'en' }, expect.objectContaining({ background: false, signal: expect.any(AbortSignal) }));
+    expect(screen.getAllByTestId('kpi').map((kpi) => kpi.textContent)).toEqual(['Rows: 288', 'Time span: Jan 2019 – Apr 2019', 'Total: ≥ 1,000 (TOTAL)']);
+    // Placeholders are left out of a sum that is then a floor; the blank group is named.
+    expect(screen.getByText('Donut Ontario=600, Quebec=300, Not recorded=100')).toBeInTheDocument();
+    expect(screen.getByText('2 groups · At least: some cells hold no number')).toBeInTheDocument();
+    expect(screen.getByText('200 cells hold “--” instead of a number and are left out.')).toBeInTheDocument();
+    expect(screen.getByText('8 rows have no value here and are shown as “Not recorded”.')).toBeInTheDocument();
+    expect(screen.getByText('TOTAL over time')).toBeInTheDocument();
+    expect(screen.getByText('Line Jan 2019=10, Feb 2019=20, Mar 2019=15, Apr 2019=30')).toBeInTheDocument();
+    // Each chart is a figure with a sentence and its values.
+    expect(screen.getByText('2 groups. Largest: Ontario, 600.')).toBeInTheDocument();
+    expect(screen.getAllByText('Values')).toHaveLength(2);
+    // How the table was read, and what was set aside.
+    expect(screen.getByText('How CanQuery read this table')).toBeInTheDocument();
+    expect(screen.getByText('Average Rate by Province: every value is the same')).toBeInTheDocument();
   });
 
-  test('unprepared live resources never chart a misleading row preview or offer another Load button', () => {
-    render(<ChartPanel resourceId="d1" q="" filters={{}} fields={FIELDS} queryMode="datastore" />);
+  test('a search or a filter redraws the same charts from a background read, keeping the old ones meanwhile', async () => {
+    const view = render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('TOTAL by Province');
+    let resolve;
+    fetchResourceCharts.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    view.rerender(<ChartPanel resourceId="r1" q="ontario" filters={{ Province: { op: 'eq', value: 'Ontario' } }} fields={FIELDS} queryMode="ingested" />);
+    await waitFor(() => expect(fetchResourceCharts).toHaveBeenCalledTimes(2));
+    expect(fetchResourceCharts).toHaveBeenLastCalledWith('r1', { q: 'ontario', filters: { Province: { op: 'eq', value: 'Ontario' } }, lang: 'en' },
+      expect.objectContaining({ background: true }));
+    expect(screen.getByText('TOTAL by Province')).toBeInTheDocument();
+    resolve({ data: { ...ANALYSIS, kpis: [{ role: 'rows', value: 40 }], scope: { ...ANALYSIS.scope, rows: 40, filtered: true } } });
+    await waitFor(() => expect(screen.getAllByTestId('kpi').map((kpi) => kpi.textContent)).toEqual(['Rows: 40']));
+  });
+
+  test('a measure that is different things in each row offers those things as filters', async () => {
+    fetchResourceCharts.mockImplementation(() => answer(BLOCKED));
+    const onPin = vi.fn();
+    render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" onPin={onPin} />);
+    await screen.findByText('This table holds different things in one column of numbers');
+    expect(screen.getByText(/^“Measure Value” is a different measure for each “Data Point Label”/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Net income/ }));
+    expect(onPin).toHaveBeenCalledWith('Data Point Label', 'Net income');
+    expect(screen.getByText('No chart of this table would say something reliable.')).toBeInTheDocument();
+  });
+
+  test('a busy engine says so and offers to try again', async () => {
+    fetchResourceCharts.mockImplementationOnce(() => Promise.reject(new ApiError('busy', 503, { code: 'CHARTS_BUSY' })));
+    render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('Charts are busy right now. Try again in a moment.');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText('TOTAL by Province');
+    expect(fetchResourceCharts).toHaveBeenCalledTimes(2);
+    // The visit was not counted by the failed request: the retry counts it.
+    expect(fetchResourceCharts.mock.calls[1][2]).toMatchObject({ background: false });
+  });
+
+  test('unprepared live resources never chart a misleading row preview', () => {
+    render(<ChartPanel resourceId="d1" fields={FIELDS} queryMode="datastore" />);
     expect(screen.getByText(/Full-data charts require a prepared file/)).toBeInTheDocument();
-    expect(queryResource).not.toHaveBeenCalled();
-    expect(fetchResourceProfile).not.toHaveBeenCalled();
+    expect(fetchResourceCharts).not.toHaveBeenCalled();
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  test('Custom tab aggregates by a sensible default column, not a unique id', async () => {
-    render(<ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" />);
-    fireEvent.click(screen.getByText('Custom'));
-    await waitFor(() =>
-      expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ group_by: 'province', agg: 'count', sort: 'value desc' }), expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    );
+  test('an expired copy asks the resource page to recover', async () => {
+    fetchResourceCharts.mockImplementationOnce(() => Promise.reject(new NotIngestedError('expired', 409)));
+    const onUnavailable = vi.fn();
+    render(<ChartPanel resourceId="expired" fields={FIELDS} queryMode="ingested" onUnavailable={onUnavailable} />);
+    await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1));
   });
 
-  test('count hides the value-column select; switching to sum reveals it', async () => {
-    render(<ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" />);
-    fireEvent.click(screen.getByText('Custom'));
-    await waitFor(() => expect(screen.getByDisplayValue('count')).toBeInTheDocument());
-    expect(screen.queryByDisplayValue('amount')).toBeNull();
-    fireEvent.change(screen.getByDisplayValue('count'), { target: { value: 'sum' } });
-    await waitFor(() => expect(screen.getByDisplayValue('amount')).toBeInTheDocument());
+  test('the Custom tab starts from the chart the engine put first', async () => {
+    render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('TOTAL by Province');
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
+    await waitFor(() => expect(fetchCustomChart).toHaveBeenCalledWith('r1', { kind: 'donut', x: { column: 'Province' }, y: { agg: 'sum', column: 'TOTAL' } },
+      { q: undefined, filters: undefined, lang: 'en' }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    expect(fetchResourceCharts).toHaveBeenCalledTimes(1);
   });
-});
 
-test('an expired profile asks the resource page to recover', async () => {
-  const { NotIngestedError } = await import('../api/client.js');
-  fetchResourceProfile.mockRejectedValueOnce(new NotIngestedError('expired', 409));
-  const onUnavailable = vi.fn();
-  render(<ChartPanel resourceId="expired" fields={FIELDS} queryMode="ingested" onUnavailable={onUnavailable} />);
-  await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1));
-});
-
-test.each(['Insights', 'Custom'])('expired %s aggregates ask the resource page to recover', async tab => {
-  const { NotIngestedError } = await import('../api/client.js');
-  queryResource.mockRejectedValue(new NotIngestedError('expired', 409));
-  const onUnavailable = vi.fn();
-  render(<ChartPanel resourceId="expired-aggregate" fields={FIELDS} queryMode="ingested" onUnavailable={onUnavailable} />);
-  if (tab === 'Custom') fireEvent.click(screen.getByText('Custom'));
-  await waitFor(() => expect(onUnavailable).toHaveBeenCalled());
-});
-
-describe('ChartPanel loading card reports', () => {
-  test('reports the profile until it arrives, then each insight chart', async () => {
-    const { ChartLoadContext, createChartLoadStore } = await import('../hooks/useChartLoadReport.js');
+  test('the loading card waits for the first answer as the profile, and for later ones as a refresh', async () => {
     const store = createChartLoadStore();
-    let resolveProfile;
-    fetchResourceProfile.mockImplementationOnce(() => new Promise((done) => { resolveProfile = done; }));
-    render(<ChartLoadContext.Provider value={store}><ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" /></ChartLoadContext.Provider>);
-    expect(store.getSnapshot().profile).toBe('loading');
-    resolveProfile({ data: PROFILE, meta: {} });
-    await waitFor(() => expect(store.getSnapshot().profile).toBe('settled'));
-    await waitFor(() => expect(store.getSnapshot().charts.total).toBeGreaterThan(0));
-    await waitFor(() => expect(store.getSnapshot().charts.settled).toBe(store.getSnapshot().charts.total));
-  });
-
-  test('a failed profile is reported as failed', async () => {
-    const { ChartLoadContext, createChartLoadStore } = await import('../hooks/useChartLoadReport.js');
-    const store = createChartLoadStore();
-    fetchResourceProfile.mockRejectedValueOnce(new Error('boom'));
-    render(<ChartLoadContext.Provider value={store}><ChartPanel resourceId="r1" q="" filters={{}} fields={FIELDS} queryMode="ingested" /></ChartLoadContext.Provider>);
-    await waitFor(() => expect(store.getSnapshot().profile).toBe('failed'));
+    let resolve;
+    fetchResourceCharts.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const panel = (props) => <ChartLoadContext.Provider value={store}><ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" {...props} /></ChartLoadContext.Provider>;
+    const view = render(panel({}));
+    await waitFor(() => expect(store.getSnapshot()).toMatchObject({ profile: 'loading', charts: { total: 1, settled: 1 } }));
+    resolve({ data: ANALYSIS });
+    await waitFor(() => expect(store.getSnapshot()).toMatchObject({ profile: 'settled', charts: { total: 1, settled: 1 } }));
+    fetchResourceCharts.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    view.rerender(panel({ q: 'x' }));
+    await waitFor(() => expect(store.getSnapshot()).toMatchObject({ profile: 'settled', charts: { total: 1, settled: 0 } }));
+    resolve({ data: ANALYSIS });
+    await waitFor(() => expect(store.getSnapshot().charts).toEqual({ total: 1, settled: 1 }));
+    expect(within(document.body).getByText('TOTAL by Province')).toBeInTheDocument();
   });
 });

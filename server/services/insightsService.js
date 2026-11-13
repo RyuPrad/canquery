@@ -1,8 +1,8 @@
 const topDownloadsQueries = require('../db/topDownloadsQueries');
 const { withSnapshot } = require('../db/snapshotRead');
 const { getResourceById } = require('../db/catalogReadQueries');
-const { profileStoreTable, aggregateStoreTable } = require('../db/storeQueries');
-const { pickChartSpec } = require('./featuredChart');
+const chartEngine = require('./charts/chartEngine');
+const { toFeaturedPreview } = require('./charts/legacyPreview');
 const { createCache } = require('../utils/cache');
 const { startWarming } = require('../utils/warming');
 
@@ -32,23 +32,14 @@ const topDownloads = async (lang = 'en') => {
     return { period, items };
 };
 
-// --- Featured hero charts -------------------------------------------------
-// Bounded previews of prepared Top 100 resources. The aggregate describes the
-// whole snapshot; context discloses the grouping, measure and displayed groups.
-// Reject ambiguous or uninformative candidates rather than inventing context.
-// The whole payload is cached, so per-dataset profile/aggregate runs rarely.
+// --- Featured charts ------------------------------------------------------
+// Charts of prepared Top 100 tables from the chart engine: the website's cards,
+// and the public previews in their published shape. Every figure describes the
+// whole snapshot. The whole payload is cached per language, and the engine
+// keeps each table's charts for a day.
 
 const FEATURED_TTL_MS = 10 * 60 * 1000;
 const featuredCache = createCache({ name: 'insights-featured', ttlMs: FEATURED_TTL_MS, negativeTtlMs: 60 * 1000 });
-// Tables are immutable between publications. Retain the language-independent
-// work across response-cache refreshes; a new table/version/schema gets a new
-// key. Final labels and candidate titles are still built for each language.
-const featuredSnapshotCache = createCache({
-    name: 'featured-snapshots', ttlMs: 24 * 60 * 60 * 1000, negativeTtlMs: 0,
-    maxEntries: 128,
-    cacheable: value => value != null && Buffer.byteLength(JSON.stringify(value)) <= 256 * 1024
-});
-
 const LABEL_LIMIT = 200;
 const DATE_TYPE_RE = /date|time/i;
 const PLACEHOLDER_RE = /^(?:[-_.…]+|n\/?a|n\.a\.|null|undefined|unknown|inconnu|not applicable|sans objet|non applicable)$/i;
@@ -162,63 +153,91 @@ function buildFeaturedPreview({ candidate, current, profile, spec, aggregate, la
     };
 }
 
-// How many top ingested datasets to consider, and how many chart specs to keep.
-// Shared by the landing-hero teasers and the /insights "Featured" carousel.
+// How many top prepared datasets to consider, and how many charts to keep.
+// Shared by the homepage cards, the Insights gallery and the public previews.
 const FEATURED_SCAN = 24;
 const FEATURED_LIMIT = 12;
+// The engine's charts of one table, as many as the Chart tab could show: the
+// cards take the best one that suits a card, the public previews the first one
+// their shape can say.
+const ANALYSIS_LIMIT = 12;
+// Warming waits longer for a scan slot than a visitor would.
+const WARM_WAIT_MS = 30 * 1000;
+
+// The charts of one candidate's current snapshot. A scan slot is taken before
+// the reader lock, as for a visitor, so waiting never holds a connection.
+async function analyzeCandidate(candidate, lang) {
+    const first = await getResourceById(candidate.resource_id);
+    if (!first || first.ingest_status !== 'ready' || !first.table_name) return null;
+    const permit = chartEngine.isWarm(chartEngine.describeTable(first), { lang, limit: ANALYSIS_LIMIT })
+        ? null : await chartEngine.acquireSlot({ waitMs: WARM_WAIT_MS });
+    try {
+        return await withSnapshot(candidate.resource_id, async () => {
+            // The table may have been replaced or evicted since: read it again under the lock.
+            const current = await getResourceById(candidate.resource_id);
+            if (!current || current.ingest_status !== 'ready' || !current.table_name) return null;
+            const preparedAt = snapshotAt(current.ingested_at);
+            if (!preparedAt) return null;
+            const analysis = await chartEngine.analyzeSnapshot(chartEngine.describeTable(current),
+                { lang, limit: ANALYSIS_LIMIT, permit: permit || undefined, waitMs: WARM_WAIT_MS });
+            return { analysis, preparedAt };
+        });
+    } finally {
+        if (permit) permit();
+    }
+}
 
 async function computeFeatured(lang) {
     const candidates = await topDownloadsQueries.listIngestedTop(FEATURED_SCAN, lang);
-    const out = [];
+    const cards = [];
+    const previews = [];
     for (const c of candidates) {
-        if (out.length >= FEATURED_LIMIT) break;
+        if (cards.length >= FEATURED_LIMIT && previews.length >= FEATURED_LIMIT) break;
+        let read;
         try {
-            await withSnapshot(c.resource_id, async () => {
-                const current = await getResourceById(c.resource_id);
-                if (!current || current.ingest_status !== 'ready') return;
-                const columns = Array.isArray(current.ingested_columns) ? current.ingested_columns : [];
-                const preparedAt = snapshotAt(current.ingested_at);
-                if (!preparedAt) return;
-                const key = JSON.stringify([c.resource_id, current.table_name, preparedAt, columns]);
-                const { profile, spec, aggregate } = await featuredSnapshotCache.get(key, async () => {
-                    const profile = await profileStoreTable({ tableName: current.table_name, columns });
-                    const spec = pickChartSpec({ row_count: profile.rowCount, columns: profile.columns }, columns);
-                    if (!spec) return { profile, spec: null, aggregate: null };
-                    const aggregate = await aggregateStoreTable({
-                        tableName: current.table_name,
-                        knownColumns: columns.map((x) => x.id),
-                        q: undefined, filters: [],
-                        groupBy: spec.groupBy, agg: spec.agg, aggColumn: spec.aggColumn || null, bucket: spec.bucket || null,
-                        sortSql: spec.sort === 'value' ? '"value" DESC' : '"key" DESC NULLS LAST',
-                        limit: spec.limit, offset: 0
-                    });
-                    return { profile, spec, aggregate };
-                });
-                if (!spec) return;
-                const preview = buildFeaturedPreview({ candidate: c, current, profile, spec, aggregate, lang });
-                if (preview) out.push(preview);
-            });
+            read = await analyzeCandidate(c, lang);
         } catch {
-            // A dataset that fails to profile/aggregate is simply skipped.
+            // A dataset that cannot be charted now is simply skipped.
+            continue;
+        }
+        if (!read) continue;
+        const { analysis, preparedAt } = read;
+        const title = { en: c.title_en, fr: c.title_fr };
+        const card = analysis.charts.find(chart => chart.fit.card);
+        if (card && cards.length < FEATURED_LIMIT) {
+            cards.push({ dataset_id: c.dataset_id, title, resource_id: c.resource_id, snapshot_at: preparedAt, rows: analysis.scope.table_rows,
+                kpis: analysis.kpis.slice(0, 3), chart: card });
+        }
+        if (previews.length < FEATURED_LIMIT) {
+            for (const chart of analysis.charts) {
+                const preview = toFeaturedPreview({ candidate: c, chart, model: analysis.model, snapshotAt: preparedAt, lang });
+                if (preview) {
+                    previews.push(preview);
+                    break;
+                }
+            }
         }
     }
-    return out;
+    return { cards, previews };
 }
 
 const featuredKey = lang => 'featured:' + lang;
-const featured = async (lang = 'en') => featuredCache.get(featuredKey(lang), () => computeFeatured(lang));
+const computed = async (lang = 'en') => featuredCache.get(featuredKey(lang), () => computeFeatured(lang));
+// The public previews (GET /insights/featured), in their published shape.
+const featured = async (lang = 'en') => (await computed(lang)).previews;
+// The website's chart cards (GET /web-api/v1/insights/charts): engine charts, whole.
+const cards = async (lang = 'en') => (await computed(lang)).cards;
 
-// Rebuilding the previews from cold profiles every candidate, which takes
-// over ten seconds. The API builds them as soon as it starts and refreshes them
-// before they expire, so no visitor waits for that work: a refresh keeps
-// serving the previous previews until the new ones are ready, and the
-// language-independent snapshot work is shared across both passes.
+// Charting two dozen tables from cold takes a while. The API builds them as
+// soon as it starts and refreshes them before they expire, so no visitor waits
+// for that work: a refresh keeps serving the previous charts until the new ones
+// are ready, and the engine keeps each table's charts for a day.
 const FEATURED_WARM_INTERVAL_MS = 8 * 60 * 1000;
 
 // Never throws: the previews are optional for the warming loop.
 async function refreshFeatured(lang = 'en') {
     try {
-        return await featuredCache.refresh(featuredKey(lang), () => computeFeatured(lang));
+        return (await featuredCache.refresh(featuredKey(lang), () => computeFeatured(lang))).previews;
     } catch {
         console.warn('[insights-featured] refresh failed');
         return null;
@@ -229,4 +248,4 @@ function startFeaturedWarming({ intervalMs = FEATURED_WARM_INTERVAL_MS } = {}) {
     return startWarming('insights-featured', ['en', 'fr'].map(lang => () => refreshFeatured(lang)), { intervalMs });
 }
 
-module.exports = { topDownloads, featured, refreshFeatured, startFeaturedWarming, buildFeaturedPreview, FEATURED_WARM_INTERVAL_MS };
+module.exports = { topDownloads, featured, cards, refreshFeatured, startFeaturedWarming, buildFeaturedPreview, FEATURED_WARM_INTERVAL_MS };

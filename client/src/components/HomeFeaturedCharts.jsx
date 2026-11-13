@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchFeatured } from '../api/catalog.js';
+import { fetchInsightCards } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
-import { selectFeaturedCharts } from '../utils/featuredCharts.js';
 import HeroChartWidget from './HeroChartWidget.jsx';
+import { isInsightCard } from '../utils/chartContract.js';
 
 export default function HomeFeaturedCharts({ enabled }) {
   const { lang, t } = useLang();
@@ -38,8 +38,8 @@ export default function HomeFeaturedCharts({ enabled }) {
       const keepEmpty = region.current?.getBoundingClientRect().top < window.innerHeight;
       setResult({ lang, items, failed, keepEmpty });
     };
-    fetchFeatured(lang, { signal: controller.signal })
-      .then(env => settle(selectFeaturedCharts(env?.data)))
+    fetchInsightCards(lang, { signal: controller.signal })
+      .then(env => settle((env?.data || []).filter(isInsightCard)))
       .catch(() => settle([], true));
     return () => { cancelled = true; controller.abort(); };
   }, [enabled, activated, lang]);
