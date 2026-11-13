@@ -15,7 +15,9 @@ jest.mock('../middleware/rateLimits', () => ({
     mapLimiter: (req, res, next) => next(),
     tileLimiter: (req, res, next) => next(),
     aggregationLimiter: (req, res, next) => next(),
-    tableRowsLimiter: (req, res, next) => next()
+    tableRowsLimiter: (req, res, next) => next(),
+    chartsLimiter: (req, res, next) => next(),
+    customChartLimiter: (req, res, next) => next()
 }));
 const request = require('supertest');
 const queries = require('../db/catalogReadQueries');

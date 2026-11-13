@@ -112,6 +112,12 @@ function createCache({ name, ttlMs, negativeTtlMs, maxEntries = 500, maxInFlight
             stats.misses++;
             return compute(key, fn);
         },
+        // The fresh value of a key, or undefined. Never computes and never
+        // waits: for callers that decide what to do before starting work.
+        peek(key) {
+            const cached = store.get(key);
+            return cached && cached.expiresAt > Date.now() ? cached.data : undefined;
+        },
         // Recomputes the entry even while a fresh one exists, sharing any
         // computation already in flight. Reads keep the previous value until
         // the new one is stored; a failure leaves the previous value in place.

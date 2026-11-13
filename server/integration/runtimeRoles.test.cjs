@@ -17,6 +17,8 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
+    const { readSample, runBatch } = require('../db/chartQueries');
+    const { samplePlan } = require('../services/charts/profile');
     const { getLmiaSummary, searchLmiaEmployers, getLmiaEmployerRows, getLmiaEmployer } = require('../db/lmiaQueries');
     const { listOasFiles, listOasPeriods, getOasPeriod } = require('../db/oasQueries');
     const admin = new Pool({ connectionString: enabled });
@@ -119,9 +121,10 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         const filePath = path.join(directory, 'input.csv');
         await fs.writeFile(filePath, 'code,amount\n00123,7\n00234,9\n');
         process.env.CANQUERY_STORE_OWNER_ROLE = 'canquery_store_owner';
+        let loaded;
         try {
             await client.query('BEGIN');
-            const loaded = await loadCsvIntoStore(client, { filePath, tableName: table, delimiter: ',', encoding: 'utf8', maxRows: 10, maxCols: 10 });
+            loaded = await loadCsvIntoStore(client, { filePath, tableName: table, delimiter: ',', encoding: 'utf8', maxRows: 10, maxCols: 10 });
             await client.query('SELECT public.canquery_lock_resource_publication($1)', [prefix]);
             await client.query(`INSERT INTO ingested_resources(resource_id,table_name,row_count,columns)
                 VALUES ($1,$2,$3,$4)`, [prefix, table, loaded.rowCount, JSON.stringify(loaded.columns)]);
@@ -136,6 +139,16 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
         await assert.rejects(api.query('DROP TABLE store.' + quoteId(table)), { code: '42501' });
         await assert.rejects(api.query('UPDATE store.' + quoteId(table) + ' SET amount=0'), { code: '42501' });
         await api.query('UPDATE ingested_resources SET last_accessed_at=now() WHERE resource_id=$1', [prefix]);
+        // The chart engine's two statements under the API's identity: a
+        // read-only transaction with its own time and memory bounds.
+        const columns = loaded.columns;
+        assert.deepEqual(await readSample({ tableName: table, columns, plan: samplePlan({ rowCount: 2, columns }) }, { timeoutMs: 5000, db: api }),
+            [['1', '00123', '7'], ['2', '00234', '9']]);
+        const batch = await runBatch({ tableName: table, sets: [{ key: { kind: 'category', column: columns[0] }, rank: [{ by: 'sum', measure: 0, limit: 10 }] }],
+            measures: [{ column: columns[1], clean: null }, { column: columns[0], clean: { core: 'plain', symbols: '', codes: [], paren: false, missing: [] } }] },
+        { timeoutMs: 5000, db: api });
+        assert.deepEqual([batch.grand.n, batch.grand.measures[0].sum, batch.grand.measures[1].sum], [2, 16, 357]);
+        assert.deepEqual(batch.sets[0].map(group => [group.label, group.measures[0].sum]), [['00123', 7], ['00234', 9]]);
     });
     test('map worker claims its queue and transforms geometry without snapshot access', async () => {
         await admin.query("INSERT INTO map_index_jobs(resource_id,desired_version,candidate) VALUES ($1,'fixture','{}')", [prefix]);
