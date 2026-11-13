@@ -17,9 +17,11 @@ const SPACE_TO = ' '.repeat(SPACE_FROM.length - 1) + '-';
 const SPACE_RE = /[\u00a0\u202f\u2009\u2007\t\n\r]/g;
 const SYMBOLS = '$€£%';
 const CODES = ['CAD', 'USD', 'cad', 'usd'];
-// Footnote marks after a number: "2,605*", "311 †", "1 234¹".
-const MARKS = '*†‡§¹²³⁰⁴⁵⁶⁷⁸⁹';
-const MARK_END_RE = /[*†‡§¹²³⁰⁴⁵⁶⁷⁸⁹]\s*$/;
+// Footnote marks after a number ("2,605*", "311 †", "1 234¹") and the flags
+// statistical tables put there: E (use with caution), p (preliminary), r
+// (revised), as in "635E" or "1,204p".
+const MARKS = '*†‡§¹²³⁰⁴⁵⁶⁷⁸⁹Epr';
+const MARK_END_RE = /[*†‡§¹²³⁰⁴⁵⁶⁷⁸⁹Epr]\s*$/;
 const MAX_LENGTH = 64;
 
 const FORMATS = {

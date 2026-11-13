@@ -4,7 +4,7 @@
 // the whole table.
 const { prep, detectNumberRule, parseNumber } = require('./numberFormats');
 const { decidePeriodFormat, parsePeriodName, parsePart } = require('./periods');
-const { isMissingToken, isTotalLabel, isAggregateLabel, isFootnoteLabel, isMarkedNote, nameEvidence, cleanLabel, labelKind, isNationalLabel, isProvinceName,
+const { isMissingToken, isTotalLabel, isAggregateLabel, isAllLabel, bandOf, bandsOverlap, isFootnoteLabel, isMarkedNote, nameEvidence, cleanLabel, labelKind, isNationalLabel, isProvinceName,
     isRegionLabel, isMeasureLabel, isGarbled } = require('./tokens');
 
 const MAX_ROWS = 20000;
@@ -50,6 +50,9 @@ function yielder(signal) {
 
 const CODE_LABEL_RE = /^[A-Z0-9][A-Z0-9.]{0,9} ?[-–—:] ?\p{L}{3}/u;
 const URL_RE = /^https?:\/\/\S+$/i;
+// Shapes on a map written as text: well-known text ("POINT (-73 46)",
+// "SRID=4326;MULTIPOLYGON (((…") or GeoJSON ('{"type":"LineString", …').
+const SHAPE_TEXT_RE = /^\s*(?:SRID=[0-9]+;\s*)?(?:MULTI)?(?:POINT|LINESTRING|POLYGON|GEOMETRYCOLLECTION)\s*(?:ZM|Z|M)?\s*(?:\(|EMPTY)|^\s*\{\s*"type"\s*:\s*"(?:Multi)?(?:Point|LineString|Polygon)"/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const POSTAL_RE = /^[A-Z][0-9][A-Z] ?[0-9][A-Z][0-9]$/i;
 const PHONE_RE = /^(?:\+?1[ .-]?)?(?:\([0-9]{3}\) ?|[0-9]{3}[ .-])[0-9]{3}[ .-][0-9]{4}(?: ?(?:x|ext\.?|poste) ?[0-9]{1,6})?$/i;
@@ -213,6 +216,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
     // "", "New Brunswick", ""): blanks inside it mean "as above". Read in the
     // table's order, so only when the whole table was read.
     let fillDown = false;
+    let sparseFillDown = false;
     if (complete && filled >= 3) {
         let first = -1;
         let last = -1;
@@ -229,6 +233,9 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
             if (values[r] === '') interior += 1;
         }
         fillDown = interior >= 1 && interior >= span * 0.05 && interior <= span * 0.6 && distinct >= filled * 0.8;
+        // Mostly blank, each name written once: the approver of a block of
+        // contracts, on its first row only. The model reads it so in lists of records.
+        sparseFillDown = !fillDown && interior >= span * 0.6 && filled >= 3 && distinct >= filled * 0.95;
     }
 
     const number = detectNumberRule(real);
@@ -259,7 +266,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
     }
 
     const patterns = { code_label: 0, url: 0, email: 0, postal: 0, phone: 0, letters: 0, digits: 0, spaces: 0, upper: 0, french: 0,
-        english: 0, accents: 0, unit: 0, cut: 0, footnote: 0, slug: 0 };
+        english: 0, accents: 0, unit: 0, cut: 0, footnote: 0, slug: 0, shapes: 0 };
     let lengthSum = 0;
     const lengths = [];
     for (const [value, count] of counts) {
@@ -274,6 +281,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
         if (/[0-9]/.test(value)) patterns.digits += count;
         if (value.includes(' ')) patterns.spaces += count;
         if (CODE_LABEL_RE.test(value)) patterns.code_label += count;
+        if (SHAPE_TEXT_RE.test(value)) patterns.shapes += count;
         if (URL_RE.test(value)) patterns.url += count;
         else if (EMAIL_RE.test(value)) patterns.email += count;
         else if (POSTAL_RE.test(value)) patterns.postal += count;
@@ -327,6 +335,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
         patterns,
         labels,
         fill_down: fillDown,
+        ...(sparseFillDown ? { sparse_fill_down: true } : {}),
         sequence: null
     };
 }
@@ -335,11 +344,15 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
 // to a few hundred): a column that lists "0 à 14 ans" and "Femmes" lists two
 // kinds of breakdown however far down the second one sorts.
 const LABEL_READ_MAX = 2000;
+// Not totals: those are set aside as totals, and a hierarchy of places has many.
+const DERIVED_LINE_RE = /^(?:net|gross|taxable|revenu net|revenu imposable|revenu brut|montant net|perte nette|benefice net|impot net|impot federal net)\b/i;
 const DATED_RE = /(?:^|[^0-9])(?:1[89]|20)[0-9]{2}(?:[^0-9]|$)/;
 function labelReading(counts) {
     if (counts.size === 0 || counts.size > LABEL_READ_MAX) return null;
     const out = { distinct: 0, place: 0, sex: 0, age: 0, national: 0, province: 0, region: 0, others: 0, measure: 0, dated: 0, dated_cells: 0,
-        cells: 0, garbled: 0, total_cells: 0, totals: [], lists: 0 };
+        cells: 0, garbled: 0, total_cells: 0, totals: [], alls: [], lists: 0, overlapping_bands: false, derived: 0 };
+    const bands = [];
+    let named = 0;
     for (const [value, count] of counts) {
         if (isMissingToken(value)) continue;
         out.distinct += 1;
@@ -361,9 +374,21 @@ function labelReading(counts) {
             out.total_cells += count;
             if (out.totals.length < 20) out.totals.push(value.toLowerCase());
         }
+        // "All ages", "Both sexes": totals in a table of figures only, so they
+        // are kept apart and are no sign that the rows are figures.
+        else if (isAllLabel(value) && out.alls.length < 20) out.alls.push(value.toLowerCase());
         // "English ; French": a list, not one group.
         if (/;\s*\S/.test(value)) out.lists += 1;
+        // "Net income", "Total income assessed", "Taxable capital gains": lines of a statement worked out from others.
+        if (DERIVED_LINE_RE.test(value)) out.derived += 1;
+        if (isTotalLabel(value) || isAggregateLabel(value) || isAllLabel(value)) continue;
+        named += 1;
+        const band = bandOf(value);
+        if (band && bands.length < 300) bands.push(band);
     }
+    // Bands of a number nested in one another ("19 and over" beside "19 to
+    // 30"): totals and their parts in one column, whatever they are called.
+    out.overlapping_bands = bands.length >= 3 && bands.length >= named * 0.6 && bandsOverlap(bands);
     return out;
 }
 
@@ -746,8 +771,13 @@ const yearLike = stat => Boolean(stat.number) && stat.number.integer_share >= 0.
 const COMPOSITE_YEARS = 4;
 const COMPOSITE_PARTS = 6;
 
-async function compositeTimes(stats, matrix, pause) {
-    const years = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => yearLike(stat) && stat.distinct >= 1).slice(0, COMPOSITE_YEARS);
+// Fiscal years written as text ("2023-24"): their quarters are fiscal ones, so
+// they make no axis of quarters, but say which years lack some.
+const fiscalLike = stat => Boolean(stat.period) && stat.period.grain === 'fiscal_year' && stat.period.parsed >= stat.real_cells * 0.9;
+
+async function compositeTimes(stats, matrix, pause, complete = false) {
+    const years = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => (yearLike(stat) || fiscalLike(stat)) && stat.distinct >= 1)
+        .slice(0, COMPOSITE_YEARS);
     const out = [];
     if (!years.length) return out;
     let parts = 0;
@@ -765,19 +795,25 @@ async function compositeTimes(stats, matrix, pause) {
             if (year.index === index) continue;
             await pause();
             const seen = new Set();
-            const yearsSeen = new Set();
+            const partsOf = new Map();
             const x = matrix[year.index];
             const y = matrix[index];
             for (let r = 0; r < x.length; r += 1) {
                 if (x[r] === '' || y[r] === '') continue;
                 const value = parsePart(y[r], part);
                 if (value === null) continue;
-                yearsSeen.add(x[r]);
                 seen.add(x[r] + '|' + value);
+                if (!partsOf.has(x[r])) partsOf.set(x[r], new Set());
+                partsOf.get(x[r]).add(value);
             }
             // A part column only refines the years if some year has several parts.
-            if (seen.size > yearsSeen.size && yearsSeen.size >= 1) {
-                out.push({ year: year.stat.id, part: stat.id, grain: part, periods: seen.size, years: yearsSeen.size });
+            if (seen.size > partsOf.size && partsOf.size >= 1) {
+                // Years without some of the parts the others have ("2025-26": Q1 to Q3),
+                // known only when every row was read.
+                const most = Math.max(...[...partsOf.values()].map(found => found.size));
+                const incomplete = complete ? [...partsOf].filter(([, found]) => found.size < most).map(([value]) => value).slice(0, 60) : [];
+                out.push({ year: year.stat.id, part: stat.id, grain: part, periods: seen.size, years: partsOf.size,
+                    ...(fiscalLike(year.stat) ? { fiscal: true } : {}), ...(incomplete.length ? { incomplete } : {}) });
             }
         }
     }
@@ -1110,7 +1146,7 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
     const inWide = new Set(wide.flatMap(group => group.columns.map(column => column.index)));
     await pause();
     const totals = derivedTotals(stats, numbersOf, inWide);
-    const composite = await compositeTimes(stats, matrix, pause);
+    const composite = await compositeTimes(stats, matrix, pause, plan.complete);
     await pause();
     const mixes = scaleMixes(stats, matrix, numbersOf);
     await pause();

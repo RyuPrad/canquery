@@ -2,7 +2,7 @@ import { useLang } from '../i18n.jsx';
 import { ChartEmpty, KpiCard } from './charts/Visuals.jsx';
 import ChartView from './charts/ChartView.jsx';
 import TableReadout from './charts/TableReadout.jsx';
-import { kpiText, blockedText } from './charts/chartText.js';
+import { kpiText, blockedText, blockedValues } from './charts/chartText.js';
 import { fmtInt } from './charts/theme.js';
 import { DatabaseIcon, SparklesIcon, ZapIcon, CalendarIcon } from './Icons.jsx';
 
@@ -23,7 +23,8 @@ function errorText(error, t) {
 }
 
 // A measure that holds different things in each value of a column: the page
-// offers those values as filters, after which the measure is charted.
+// offers those values as filters, after which the measure is charted. Values
+// that lead to no chart (a rate, a measure named by a code) are not offered.
 function BlockedMeasures({ blocked, onPin }) {
   const { t, lang } = useLang();
   if (!blocked.length) return null;
@@ -33,9 +34,9 @@ function BlockedMeasures({ blocked, onPin }) {
       {blocked.slice(0, 3).map((block) => (
         <div key={(block.measure || '*') + '|' + block.column} className="space-y-1.5">
           <p className="text-xs text-base-content/70">{blockedText(block, t)}</p>
-          {block.values.length > 0 && (
+          {blockedValues(block).length > 0 && (
             <ul className="flex flex-wrap gap-1.5">
-              {block.values.map((entry) => (
+              {blockedValues(block).map((entry) => (
                 <li key={entry.value}>
                   {onPin ? (
                     <button type="button" className="btn btn-xs btn-outline normal-case font-normal"

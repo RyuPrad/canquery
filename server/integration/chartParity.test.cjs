@@ -112,7 +112,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
             '\u00a01\u202f234\u2009', '\u22125', '1\u00a0234,5', '12 %', '$ 12', 'CAD 1,250.00', '1,250.00 CAD', '($1,234.50)', '1,234,567.891', '1 234 567,8', '0,125',
             '12,5', '1,234', '1.234,5', '1,23', '1,2345', '00012', '-0', '+0', '1e3', '1E3', '1e+3', '1e-3', '1.5e10',
             // Footnote marks after a number, and marks with nothing before them.
-            '2,605*', '311 \u2020', '1 234\u00b9', '12%*', '(12)*', '*', '**', '\u2021', '1*2', '*12']);
+            '2,605*', '311 \u2020', '1 234\u00b9', '12%*', '(12)*', '*', '**', '\u2021', '1*2', '*12',
+            // Flags of statistical tables: use with caution, preliminary, revised.
+            '635E', '1,204p', '12 r', '3.5Er', 'E', 'pr', '1E', '2.5E2', 'NONE']);
         for (let n = 0; n < 420; n += 1) {
             const whole = digits(n);
             const cents = String(n % 100).padStart(2, '0');

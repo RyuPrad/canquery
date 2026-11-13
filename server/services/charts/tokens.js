@@ -62,7 +62,8 @@ function trimLabel(label) {
 const TOTAL_OF_RE = /^(?:(?:grand|sub|sous)[ -]?)?(?:totals?|totaux)\s+(?:(?:for|of|de|des|du|pour)\s+)?(.+)$/i;
 
 // "TOTALZONE 2", "SOUSTOTAL": a total written in capitals and run into its name.
-const TOTAL_CAPS_RE = /^(?:SOUS-?|SUB-?|GRAND ?)?TOTAL(?=[A-Z0-9])/;
+// Not the words that go on from it: "TOTALLY NUTS & MORE INC.", "TOTALITY".
+const TOTAL_CAPS_RE = /^(?:SOUS-?|SUB-?|GRAND ?)?TOTAL(?!LY|IT(?:Y|IES|ARIAN)|IS(?:E|ED|ATION)|IZ(?:E|ED|ATION))(?=[A-Z0-9])/;
 
 function isTotalLabel(label) {
     const text = trimLabel(label);
@@ -82,6 +83,105 @@ const AGGREGATE_RE = /^(?:(?:grand|sub|sous)[ -]?)?(?:totals?|totaux)\s+\S|\S\s+
 
 function isAggregateLabel(label) {
     return AGGREGATE_RE.test(trimLabel(label));
+}
+
+// "All", "All ages", "Both sexes", "Tous les âges", "Ensemble des provinces":
+// in a table of figures, the member that the other members of its breakdown
+// make up, whether or not its numbers agree with theirs (suppressed cells, a
+// group not listed). "All" goes with the name of a breakdown only: "All City
+// facilities" is a kind of project. In a table of things or events "All" can
+// be a real value ("Eligible wards: All"), so it says nothing there.
+const ALL_ALONE_RE = /^(?:all|both|tous|toutes|ensemble|les deux|(?:both|les deux|deux) sexes)$/i;
+const ALL_LEAD_RE = /^(?:all|tous les|toutes les|tous|toutes|(?:l['’])?ensemble d(?:es|e la|e l['’]|u|['’]))\s*(.+)$/i;
+const BREAKDOWN_NAMES = new Set([
+    'ages', 'age groups', 'sexes', 'genders', 'persons', 'people', 'individuals', 'industries', 'occupations', 'regions', 'provinces',
+    'territories', 'provinces and territories', 'countries', 'areas', 'categories', 'types', 'groups', 'levels', 'sectors', 'classes',
+    'sizes', 'origins', 'languages', 'incomes', 'income groups', 'households', 'families', 'respondents', 'canadians', 'establishments',
+    'businesses', 'enterprises', 'products', 'commodities', 'causes', 'diseases', 'conditions', 'offences', 'offenses', 'departments',
+    'organizations', 'organisations', 'institutions', 'programs', 'programmes', 'ranks', 'grades', 'immigrants', 'citizenships',
+    'destinations', 'sources', 'modes', 'fuels', 'species', 'vehicles', 'years', 'months', 'quarters', 'cities', 'municipalities',
+    'communities', 'divisions', 'districts', 'zones', 'wards', 'ridings', 'schools', 'students', 'employees', 'workers', 'members',
+    'groupes d age', 'genres', 'personnes', 'individus', 'professions', 'territoires', 'provinces et territoires', 'pays', 'groupes',
+    'niveaux', 'secteurs', 'tailles', 'origines', 'langues', 'revenus', 'menages', 'familles', 'repondants', 'canadiens',
+    'etablissements', 'entreprises', 'produits', 'maladies', 'infractions', 'ministeres', 'annees', 'mois', 'trimestres', 'villes',
+    'municipalites', 'collectivites', 'ecoles', 'eleves', 'employes', 'travailleurs', 'membres', 'canada'
+]);
+
+// What a survey records about the respondent's computer, not about the subject.
+const PARADATA = new Set(['windows', 'ios', 'android', 'mac os', 'mac os x', 'macos', 'os x', 'linux', 'chrome os', 'chromeos', 'ubuntu',
+    'chrome', 'safari', 'firefox', 'edge', 'internet explorer', 'opera', 'samsung internet', 'desktop', 'mobile', 'tablet', 'smartphone',
+    'computer', 'ordinateur', 'tablette', 'telephone', 'mobile phone', 'other', 'autre', 'unknown', 'inconnu', 'windows phone', 'blackberry']);
+const PARADATA_CORE = new Set(['windows', 'ios', 'android', 'mac os', 'mac os x', 'macos', 'os x', 'linux', 'chrome os', 'chromeos', 'chrome',
+    'safari', 'firefox', 'internet explorer']);
+
+/** Are these a column's values the respondent's system or device, as surveys log them? */
+function isParadata(values) {
+    const normal = values.map(value => String(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[0-9._]+/g, ' ')
+        .replace(/\s+/g, ' ').trim()).filter(Boolean);
+    return normal.length >= 2 && normal.filter(value => PARADATA.has(value)).length >= normal.length * 0.8 &&
+        normal.some(value => PARADATA_CORE.has(value));
+}
+
+// The same answers in English and in French in one column: "Yes" and "Oui" are one group.
+const ANSWER_PAIRS = [['yes', 'oui'], ['no', 'non'], ['male', 'homme'], ['female', 'femme'], ['men', 'hommes'], ['women', 'femmes'],
+    ['other', 'autre'], ['unknown', 'inconnu'], ['none', 'aucun']];
+
+/** Does a column hold the same answers in two languages? */
+function mixedLanguages(values) {
+    const seen = new Set(values.map(value => String(value).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim()));
+    return ANSWER_PAIRS.some(([english, french]) => seen.has(english) && seen.has(french));
+}
+
+function isAllLabel(label) {
+    const text = trimLabel(label);
+    if (ALL_ALONE_RE.test(text)) return true;
+    const match = ALL_LEAD_RE.exec(text);
+    if (!match) return false;
+    const rest = match[1].toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/['’-]/g, ' ').replace(/\s+/g, ' ').trim();
+    return BREAKDOWN_NAMES.has(rest);
+}
+
+// A band of a number as breakdowns write them: "19 à 30 ans", "65 and over",
+// "Under 5", "$20,000 to $39,999", "6 à 11 mois", "1 an". Returns [low, high]
+// (ages in months as years), or null.
+const BAND_UNIT = '(?: ?(?:years? old|years?|yrs?|ans?|mois|months?))?';
+const BAND_NUMBER = '(\\d+(?:[.,]\\d+)?)';
+const BAND_RANGE_RE = new RegExp('^(?:from |de )?' + BAND_NUMBER + BAND_UNIT + ' ?(?:to|a|au|-|\u2013|\u2014|through|thru) ?' + BAND_NUMBER + BAND_UNIT + '$');
+const BAND_ABOVE_RE = new RegExp('^' + BAND_NUMBER + BAND_UNIT + '(?: ?\\+| and (?:over|older|above|up)| or (?:more|older|over)| et (?:\\+|plus)| ou plus| plus)$');
+const BAND_BELOW_RE = new RegExp('^(?:(?:under|less than|moins de|below|younger than|<) ?' + BAND_NUMBER + BAND_UNIT + '|' + BAND_NUMBER + BAND_UNIT +
+    '(?: and (?:under|younger|below)| or (?:less|younger)| et moins| ou moins))$');
+const BAND_ONE_RE = /^(\d+) ?(?:an|ans|year|years|mois|month|months)$/;
+
+function bandOf(label) {
+    let text = String(label ?? '');
+    if (text.length > 60) return null;
+    text = text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[\u00a0\u202f\s]+/g, ' ').trim()
+        .replace(/\$/g, '').replace(/(\d),(?=\d{3}(?:\D|$))/g, '$1').replace(/ +/g, ' ').trim();
+    if (!/\d/.test(text)) return null;
+    const scale = /(?:^|[^a-z])(?:mois|months?)(?:[^a-z]|$)/.test(text) ? 1 / 12 : 1;
+    const num = value => Number(value.replace(',', '.')) * scale;
+    let match = BAND_RANGE_RE.exec(text);
+    if (match) {
+        const [low, high] = [num(match[1]), num(match[2])];
+        // Two years are a period ("2015-2016"), not a band.
+        if (low >= 1800 && high <= 2100 && scale === 1) return null;
+        return high > low ? [low, high] : null;
+    }
+    if ((match = BAND_ABOVE_RE.exec(text))) return [num(match[1]), Infinity];
+    if ((match = BAND_BELOW_RE.exec(text))) return [-Infinity, num(match[1] ?? match[2])];
+    if ((match = BAND_ONE_RE.exec(text))) return [num(match[1]), num(match[1]) + scale];
+    return null;
+}
+
+// Bands that share more than a boundary: "19 and over" beside "19 to 30",
+// "0 to 18" beside "14 to 18". A breakdown never overlaps itself.
+function bandsOverlap(bands) {
+    for (let i = 1; i < bands.length; i += 1) {
+        for (let k = 0; k < i; k += 1) {
+            if (Math.min(bands[i][1], bands[k][1]) - Math.max(bands[i][0], bands[k][0]) > 1e-9) return true;
+        }
+    }
+    return false;
 }
 
 // Words that suggest a member adds others up ("Both sexes", "All ages",
@@ -314,6 +414,9 @@ const HINTS = {
     personName: words(['first name', 'firstname', 'given name', 'given names', 'prenom', 'prenoms', 'last name', 'lastname', 'surname',
         'family name', 'nom de famille', 'middle name', 'second prenom']),
     // When the table's record was touched, not when anything happened.
+    // The day a reporting period ends: when a return was due, not when anything happened.
+    periodEnd: words(['period end', 'fiscal period end', 'fiscal year end', 'year end', 'fpe', 'fin de l exercice', 'fin d exercice',
+        'fin de periode', 'fin de la periode', 'fin d exercice financier']),
     maintenance: words(['updated', 'update', 'last update', 'last updated', 'modified', 'last modified', 'modifie', 'modification',
         'mise a jour', 'maj', 'revision', 'revised', 'extracted', 'extraction', 'retrieved', 'refresh', 'refreshed', 'loaded',
         'load date', 'as of', 'en date du', 'processed', 'traitement', 'edited', 'edit date']),
@@ -332,7 +435,11 @@ const HINTS = {
 
 // "Number of permits", "No. of employees", "Nbre de cas", "# of visits": a
 // count, whatever the first word looks like on its own.
-const COUNT_NAME_RE = /(?:^| )(?:number|numbers|no|nb|nbr|nbre|nombre|nombres|num|count|counts|#) (?:of|de|d|des|du) /;
+const COUNT_NAME_RE = /(?:^| )(?:(?:number|numbers|no|num|count|counts|#) of|(?:nb|nbr|nbre|nombre|nombres) (?:de|d|des|du)) /;
+// "Numéro de permis", "No de dossier", "N° de lot", "# de client": in French
+// the number given to a thing, never a count of things, whatever the thing
+// is ("permis" alone would read as a count of permits).
+const FRENCH_ID_PHRASE_RE = /^(?:numero|numeros|no|n°|num|#) (?:de|d|du|des) /;
 // Projected coordinates under any prefix: "loc_x", "POINT_Y", "UTM Easting", "coord x".
 const COORDINATE_NAME_RE = /(?:^|[a-z] )(?:x|y|easting|northing)$|(?:^| )(?:utm|mtm|nad83|nad27|wgs84|coord|coords|coordonnee|coordonnees)(?: |$)|(?:^| )(?:disp|pos|coord|loc|point|pt|cent|centroid|utm|geo|map)(?:x|y)$/;
 // Words for a number given to a thing that are too short or too common to
@@ -380,6 +487,7 @@ function readName(name) {
     const has = kind => HINTS[kind].test(normal);
     // "n" heads a column of counts in statistical tables.
     const countName = COUNT_NAME_RE.test(normal + ' ') || normal === 'n';
+    const idPhrase = FRENCH_ID_PHRASE_RE.test(normal + ' ');
     const percentName = /%/.test(String(name ?? ''));
     // A unit per something ("(g/km)", "(L/100 km)", "($/hour)") is a rate.
     const rateUnit = /[([][^()[\]]*\/[^()[\]]*[)\]]/.test(String(name ?? ''));
@@ -390,13 +498,13 @@ function readName(name) {
         generic: isGenericName(name),
         period: has('period'),
         yearPart: has('yearPart'),
-        identifier: !countName && (has('identifier') || WEAK_ID_END_RE.test(normal) || WEAK_ID_START_RE.test(normal) || ID_SUFFIX_RE.test(lastWord)),
+        identifier: idPhrase || (!countName && (has('identifier') || WEAK_ID_END_RE.test(normal) || WEAK_ID_START_RE.test(normal) || ID_SUFFIX_RE.test(lastWord))),
         nominal: !countName && has('nominal') && !BREAKDOWN_RE.test(normal),
         unitInName: UNIT_IN_NAME_RE.test(String(name ?? '')),
         rowNumber: !countName && (has('rowNumber') || /^(?:#|index|idx)$/.test(normal)),
         code: has('code'),
         // "count_id" is the id of a count, not a count.
-        additive: !nonAdditive && !/^(?:id|ids|uuid|guid|key|objectid|fid|globalid|identifier|identifiant)$/.test(lastWord) && (countName || has('additive')),
+        additive: !idPhrase && !nonAdditive && !/^(?:id|ids|uuid|guid|key|objectid|fid|globalid|identifier|identifiant)$/.test(lastWord) && (countName || has('additive')),
         nonAdditive,
         measureName: has('measureName'),
         measureNameWeak: has('measureNameWeak'),
@@ -409,6 +517,12 @@ function readName(name) {
         total: has('total'),
         personName: has('personName'),
         maintenance: has('maintenance'),
+        periodEnd: has('periodEnd'),
+        // What a survey tool logs about the respondent's computer.
+        paradata: /(?:^| )(?:os ?type|browser|browser ?type|device ?type|user ?agent|operating system|platform type|screen resolution)(?: |$)/.test(normal) ||
+            /^(?:ostype|browsertype|devicetype|useragent)$/.test(normal.replace(/ /g, '')),
+        // "Q5_TRAVAIL_MTL", "Q2a DropIn": the number of a question whose wording the table does not give.
+        questionCode: /^q ?[0-9]+[a-z]?(?: |$)/.test(normal) && normal.split(' ').length <= 3,
         countDimension: has('countDimension'),
         sex: /(?:^| )(?:sex|sexe|gender|genre)(?: |$)/.test(normal),
         dictionaryField: has('dictionaryField'),
@@ -421,6 +535,7 @@ function readName(name) {
 module.exports = {
     MISSING_TOKENS, BLANK_LABELS, TOTAL_RE, FOOTNOTE_RE, MARKED_NOTE_RE, NUMERIC_LABEL_RE, LABEL_LIMIT, CATEGORY_LABEL_LIMIT,
     isMissingToken, isBlankLabel, isTotalLabel, isFootnoteLabel, isMarkedNote, isGenericName, cleanLabel, normalizeName,
-    nameEvidence, hasAggregateHint, isProvinceName, isNationalLabel, isRegionLabel, isAggregateLabel, TABLE_BLANK_TOKENS,
+    nameEvidence, hasAggregateHint, isProvinceName, isNationalLabel, isRegionLabel, isAggregateLabel, isAllLabel, bandOf, bandsOverlap, isParadata,
+    mixedLanguages, TABLE_BLANK_TOKENS,
     codeLevel, codeLabels, labelKind, isMeasureLabel, isGarbled
 };

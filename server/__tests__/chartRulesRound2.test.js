@@ -12,7 +12,7 @@ const { samplePlan, profileSample } = require('../services/charts/profile');
 const { buildTableModel } = require('../services/charts/model');
 const { listCandidates } = require('../services/charts/candidates');
 const { shapeCategory, shapeTime, latestPeriod } = require('../services/charts/validate');
-const { codeLevel, codeLabels, labelKind, isMeasureLabel, isTotalLabel, isGarbled, nameEvidence } = require('../services/charts/tokens');
+const { codeLevel, codeLabels, labelKind, isMeasureLabel, isTotalLabel, isAllLabel, isGarbled, nameEvidence } = require('../services/charts/tokens');
 const { parseNumber, detectNumberRule, prep } = require('../services/charts/numberFormats');
 const { fakeQueries } = require('./fixtures/charts/evaluate');
 
@@ -457,5 +457,236 @@ describe('third reading: files that are not one table, and figures that move for
         const sparse = range(240).map(i => ['P-' + (1000 + i), type(i), i % 4 === 0 ? (2019 + (i % 5)) + '-01-15' : null]);
         const few = await analyze('span-few', table([text('Permit'), text('Type'), date('Updated on')], sparse));
         expect(few.charts.find(chart => chart.x.column === 'Type').span).toBeUndefined();
+    });
+});
+
+describe('fourth reading: tables the rules had never seen', () => {
+    test('a member named for all the others is a total in a table of figures, and a value like any other in a list', async () => {
+        // Reported cases by sex, with "All" whose figure is not quite the sum of the others (suppressed cells).
+        const rows = [];
+        ['Salmonella', 'Pertussis', 'Mumps', 'Measles'].forEach((disease, d) => [2019, 2020, 2021, 2022].forEach(year => {
+            const female = 400 + d * 90 + (year - 2019) * 7;
+            const male = 380 + d * 70 + (year - 2019) * 5;
+            rows.push([disease, 'Female', String(year), String(female)], [disease, 'Male', String(year), String(male)],
+                [disease, 'Unknown', String(year), String(3 + d)], [disease, 'All', String(year), String(female + male + 3 + d + 9)]);
+        }));
+        const input = table([text('disease'), text('sex'), integer('year'), text('number-of-reported-cases')], rows);
+        const { model } = await read(input);
+        expect(model.records).toBe(false);
+        expect(column(model, 'sex').category.total_members).toContain('all');
+        const analysis = await analyze('all-member', input);
+        const bySex = analysis.charts.find(chart => chart.x.column === 'sex');
+        expect(bySex.points.map(point => point.label)).toEqual(['Female', 'Male', 'Unknown']);
+        // "All" goes with the name of a breakdown: "All City facilities" is a kind of project.
+        expect([isAllLabel('All ages'), isAllLabel('Tous les âges'), isAllLabel('Les deux'), isAllLabel('All City facilities'),
+            isAllLabel('All other countries'), isAllLabel('Allergies')]).toEqual([true, true, true, false, false, false]);
+
+        // A list of programmes: "All" is where a programme applies, not a total of the others.
+        const programmes = range(90).map(i => ['PRG-' + (1000 + i), ['All', 'Ward 1', 'Ward 2', 'Ward 3'][i % 4], ['Grant', 'Loan', 'Rebate'][i % 3]]);
+        const list = await read(table([text('Programme'), text('Eligible area'), text('Kind')], programmes));
+        expect(list.model.records).toBe(true);
+        expect(column(list.model, 'Eligible area').category.total_members || []).not.toContain('all');
+    });
+
+    test('bands that overlap are totals beside their parts, whatever they are called', async () => {
+        const ages = ['0 à 18 ans', '19 ans et +', '19 à 30 ans', '31 à 50 ans', '51 à 70 ans', '71 ans et +', '1 an', '2 à 3 ans', '6 à 11 mois'];
+        const rows = [];
+        ['Légumes', 'Fruits', 'Viandes', 'Céréales'].forEach((food, f) => ['Femmes', 'Hommes', 'Les deux'].forEach((sex, s) => ages.forEach((age, a) => {
+            rows.push([food, sex, age, String((s === 2 ? 2 : 1) * (300 + f * 40 + a * 13))]);
+        })));
+        const { model } = await read(table([text('Groupe d’aliments'), text('Sexe'), text('Âge'), text('Nombre de répondants')], rows));
+        expect(reasons(model, 'Âge')).toContain('overlapping_bands');
+        expect(column(model, 'Nombre de répondants').measure.blocked_by).toContainEqual({ column: 'Âge', why: 'levels' });
+        expect(column(model, 'Sexe').category.total_members).toContain('les deux');
+        // Bands that only touch are one breakdown.
+        const clean = [];
+        ['0 to 14', '15 to 24', '25 to 44', '45 to 64', '65 and over'].forEach((age, a) => ['Ontario', 'Quebec', 'Manitoba'].forEach((place, p) => {
+            clean.push([place, age, String(1000 + a * 70 + p * 9)]);
+        }));
+        const plain = await read(table([text('Province'), text('Age group'), integer('Persons')], clean));
+        expect(reasons(plain.model, 'Age group')).not.toContain('overlapping_bands');
+        expect(column(plain.model, 'Persons').measure.blocked_by).toEqual([]);
+    });
+
+    test('figures flagged E, p or r are figures, so a survey table stays a table of figures', async () => {
+        expect([parseNumber('635E', { core: 'plain', marks: true }), parseNumber('1,204p', { core: 'thousands_comma', marks: true }),
+            parseNumber('12 r', { core: 'plain', marks: true })]).toEqual([635, 1204, 12]);
+        const rows = [];
+        ['19 to 30 years', '31 to 50 years', '51 to 70 years', '71 years and over'].forEach((age, a) => ['Males', 'Females', 'Both sexes'].forEach((sex, s) => {
+            ['Yes', 'No'].forEach((answer, k) => rows.push([age, sex, answer, String(200 + a * 90 + s * 40 + k * 300), String(3000 + a * 50 + s * 9 + k),
+                k ? String(140 + a * 3 + s) : (500 + a * 20 + s) + 'E']));
+        }));
+        const { model } = await read(table([text('Age group'), text('Sex'), text('High blood pressure'), text('n'), integer('Mean'), text('Mean_SE')], rows));
+        expect(column(model, 'Mean_SE').role).toBe('measure');
+        expect(model.records).toBe(false);
+        expect(column(model, 'Sex').category.total_members).toContain('both sexes');
+    });
+
+    test('shapes on a map written as text are geometry, whatever the column is called', async () => {
+        const shapes = ['POINT (-73 46)', 'POINT (-111.38 56.72)', 'POLYGON ((-114 51, -113 51, -113 52, -114 51))', 'MULTIPOLYGON (((-98 49, -97 49, -97 50, -98 49)))',
+            'SRID=4326;POINT (-66.1 45.3)', '{"type":"LineString","coordinates":[[-79.4,43.6],[-79.3,43.7]]}'];
+        const rows = range(60).map(i => ['EV-' + (100 + i), ['Flood', 'Wildfire', 'Storm'][i % 3], shapes[i % shapes.length], String(1000000 + scatter(i, 900) * 1000)]);
+        const { model } = await read(table([text('Event'), text('Group'), text('GEOG_OBJ'), integer('Estimated total cost')], rows));
+        expect(column(model, 'GEOG_OBJ').role).toBe('geometry');
+        expect(listCandidates(model).some(spec => spec.x.column === 'GEOG_OBJ')).toBe(false);
+    });
+
+    test('a filter is offered only when it leads to a chart: a ratio or a measure named by a code is charted under none', async () => {
+        const rows = [];
+        ['Bank A', 'Bank B', 'Bank C', 'Bank D', 'Bank E'].forEach((bank, b) => [2021, 2022, 2023, 2024].forEach(year => {
+            rows.push([bank, String(year), 'Net income', String(1000 + b * 300 + year)], [bank, String(year), 'Capital ratio', String(12 + b) + '.5'],
+                [bank, String(year), 'Deposits', String(90000 + b * 7000 + year)]);
+        }));
+        const analysis = await analyze('offered-pins', table([text('Bank'), integer('Fiscal year'), text('Data point'), text('Measure value')], rows));
+        const block = analysis.blocked.find(entry => entry.column === 'Data point');
+        expect(Object.fromEntries(block.values.map(entry => [entry.value, entry.charts]))).toEqual({ 'Net income': true, 'Capital ratio': false, Deposits: true });
+        expect(block.charts).toBe(true);
+
+        const codes = rows.map(([bank, year, item, value]) => [bank, year, { 'Net income': '0300', 'Capital ratio': '0302', Deposits: '0317' }[item], value]);
+        const coded = await analyze('offered-codes', table([text('Bank'), integer('Fiscal year'), text('Data point'), text('Measure value')], codes));
+        const none = coded.blocked.find(entry => entry.column === 'Data point');
+        expect(none.values.every(entry => entry.charts === false)).toBe(true);
+        expect(none.charts).toBe(false);
+    });
+
+    test('bands of a count are what the rows are broken down by, and answers chosen from a list are groups however long', async () => {
+        const holders = [11838120, 4646450, 1668360, 643650, 261400, 119470, 58810, 31540, 17520, 26040];
+        const rows = holders.map((count, i) => [i < 9 ? String(i + 1) : '10 et plus', String(count)]);
+        const input = table([text('Nombre de CELI ouverts'), integer('Nombre de titulaires de CELI')], rows);
+        const { model } = await read(input);
+        expect(column(model, 'Nombre de CELI ouverts')).toMatchObject({ role: 'code', reasons: [{ code: 'count_bands' }] });
+        const analysis = await analyze('count-bands', input);
+        expect(analysis.charts.find(chart => chart.x.column === 'Nombre de CELI ouverts' && chart.y.column === 'Nombre de titulaires de CELI')).toBeTruthy();
+        // Numbers that do not run from 0 or 1 without a gap are not bands.
+        const gaps = await read(table([text('Code'), integer('Amount')], [['1', '10'], ['2', '20'], ['5', '30'], ['10 et plus', '40']]));
+        expect(column(gaps.model, 'Code').reasons[0].code).not.toBe('count_bands');
+
+        const answers = ['My institution has full capacity to process unclassified paper records',
+            'My institution has partial capacity to process unclassified paper records', 'My institution has no capacity to process unclassified paper records'];
+        const survey = range(152).map(i => ['Institution ' + i, answers[i % 13 < 6 ? 0 : i % 13 < 11 ? 1 : 2]]);
+        const answered = await read(table([text('Institution name'), text('4 a) Unclassified records')], survey));
+        expect(column(answered.model, '4 a) Unclassified records').role).toBe('category');
+        expect(listCandidates(answered.model).some(spec => spec.x.column === '4 a) Unclassified records' && spec.y.agg === 'count')).toBe(true);
+    });
+
+    test('a name in capitals that goes on from "TOTAL" is not a total', () => {
+        expect([isTotalLabel('TOTALLY NUTS & MORE INC.'), isTotalLabel('TOTALITY'), isTotalLabel('TOTALZONE 2'), isTotalLabel('SOUSTOTAL')])
+            .toEqual([false, false, true, true]);
+    });
+
+    test('records dated after today are left out, and so is a last month the dates stop inside', () => {
+        const DAY = 86400000;
+        const axis = { id: 't:Issued', columns: ['Issued'], kind: 'typed', grain: 'month', bucket: 'month' };
+        const issued = last => ({ id: 'Issued', label: 'Issued', type: 'DATE', role: 'time', time: { kind: 'typed', grain: 'month', last } });
+        const spec = { id: 'c_t', template: 'records_over_time', kind: 'line', x: { type: 'time', axis: 't:Issued', grain: 'month' }, y: { agg: 'count' },
+            limit: 60, score: 46 };
+        const months = counts => counts.map(([start, n]) => ({ key: start, label: start, spellings: 1, n, nx: 0, groups: counts.length, measures: [] }));
+        const run = (counts, last, records) => { const set = months(counts); return shapeTime(spec, set, { n: set.reduce((sum, g) => sum + g.n, 0), nx: 0, measures: [] },
+            { axis, columns: [issued(last)], measure: null, j: null, ordered: true, now: Date.parse('2026-11-13T00:00:00Z'), records }); };
+        // Readings every hour at four stations: the count is the number of hours.
+        const hourly = [['2025-08-01', 2976], ['2025-09-01', 2880], ['2025-10-01', 2976], ['2025-11-01', 2880], ['2025-12-01', 2976], ['2026-01-01', 1728]];
+        expect(run(hourly, Date.parse('2026-01-31T00:00:00Z') / DAY, true).reason).toBe('flat');
+        // Complaints up to 18 January.
+        const air = [['2025-08-01', 3120], ['2025-09-01', 2710], ['2025-10-01', 2994], ['2025-11-01', 3305], ['2025-12-01', 2870], ['2026-01-01', 1728]];
+        const cut = run(air, Date.parse('2026-01-18T00:00:00Z') / DAY, true);
+        expect(cut.chart.points.map(point => point.start)).toEqual(['2025-08-01', '2025-09-01', '2025-10-01', '2025-11-01', '2025-12-01']);
+        expect(cut.chart.notes.find(note => note.code === 'cut_period_left_out')).toMatchObject({ start: '2026-01-01', date: '2026-01-18', rows: 1728 });
+        // A month the dates run to the end of stays, however few its rows.
+        expect(run(air, Date.parse('2026-01-31T00:00:00Z') / DAY, true).chart.points).toHaveLength(6);
+        // Licences dated next month: not yet; this month is not over either.
+        const licences = [['2026-05-01', 40], ['2026-06-01', 44], ['2026-07-01', 39], ['2026-08-01', 47], ['2026-09-01', 52], ['2026-10-01', 49], ['2026-11-01', 21],
+            ['2026-12-01', 30]];
+        const ahead = run(licences, Date.parse('2026-12-03T00:00:00Z') / DAY, true);
+        expect(ahead.chart.points.map(point => point.start).slice(-1)).toEqual(['2026-10-01']);
+        expect(ahead.chart.notes.map(note => note.code)).toEqual(expect.arrayContaining(['future_periods_left_out', 'partial_period_left_out']));
+        // Figures of future periods are projections, and stay.
+        expect(run(licences, Date.parse('2026-12-03T00:00:00Z') / DAY, false).chart.notes.map(note => note.code)).not.toContain('future_periods_left_out');
+    });
+
+    test('a list of records with each name written once above its block groups nothing by that name', async () => {
+        const rows = range(131).map(i => [i % 6 === 1 ? 'Approver ' + Math.floor(i / 6) : '', 'PO-' + (5000 + i), ['Hydro', 'Bell', 'Uline', 'Grainger'][i % 4],
+            (100 + scatter(i, 4000)) + '.25']);
+        const { model } = await read(table([text('Approbateur'), text('Numéro bon'), text('Nom fournisseur'), text('Montant')], rows));
+        expect(reasons(model, 'Approbateur')).toContain('fill_down');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Approbateur')).toBe(false);
+    });
+
+    test('a count over time shows a month with no record as a zero, and years a large file lacks as gaps', () => {
+        const axis = { id: 't:year', kind: 'year_number', columns: ['year'] };
+        const year = { id: 'year', label: 'year', type: 'INTEGER', role: 'time', time: { kind: 'year_number', grain: 'year' } };
+        const spec = { id: 'c_c', template: 'records_over_time', kind: 'line', x: { type: 'time', axis: 't:year', grain: 'year' }, y: { agg: 'count' },
+            limit: 60, score: 46 };
+        const run = pairs => { const set = pairs.map(([key, n]) => ({ key: String(key), label: String(key), spellings: 1, n, nx: 0, groups: pairs.length, measures: [] }));
+            return shapeTime(spec, set, { n: set.reduce((sum, g) => sum + g.n, 0), nx: 0, measures: [] },
+                { axis, columns: [year], measure: null, j: null, ordered: true, now: Date.parse('2026-11-13T00:00:00Z'), records: true }); };
+        const few = run([[2015, 3], [2016, 5], [2018, 2], [2019, 4], [2020, 6]]);
+        expect(few.chart.points.map(point => [point.start.slice(0, 4), point.value])).toEqual([['2015', 3], ['2016', 5], ['2017', 0], ['2018', 2], ['2019', 4], ['2020', 6]]);
+        const many = run([[2013, 880], [2014, 905], [2015, 900], [2016, 950], [2017, 990], [2020, 1010], [2021, 1040]]);
+        expect(many.chart.points.map(point => point.start.slice(0, 4))).toEqual(['2013', '2014', '2015', '2016', '2017', '2020', '2021']);
+        expect(many.chart.time.missing).toEqual(['2018-01-01', '2019-01-01']);
+        // One row every second year: a survey taken every second year, drawn as it is.
+        const biennial = run([[2010, 4], [2012, 6], [2014, 5], [2016, 7], [2018, 6], [2020, 8]]);
+        expect(biennial.chart.points.map(point => point.value)).toEqual([4, 6, 5, 7, 6, 8]);
+    });
+
+    test('a question number, the respondent\'s device, answers in two languages and a period end are not what records are counted by', async () => {
+        expect(['Q5_TRAVAIL_MTL', 'Q2a DropIn', 'Q1. How satisfied are you with the drop-in programs offered', 'Quarter', 'QC']
+            .map(name => nameEvidence(name).questionCode)).toEqual([true, true, false, false, false]);
+        const rows = range(120).map(i => ['R-' + (1000 + i), ['Windows', 'iOS', 'Android', 'Mac OS X'][i % 4], ['Oui', 'Yes', 'Non', 'No'][i % 4],
+            ['Pool', 'Arena', 'Library'][i % 3], ['Yes', 'No'][i % 2], (2015 + (i % 8)) + '-03-31']);
+        const { model } = await read(table([text('Response ID'), text('Operating System'), text('Q5_TRAVAIL_MTL'), text('Facility'), text('Q1 DropIn'),
+            date('Fiscal period end')], rows));
+        expect(column(model, 'Operating System').category.flags).toContain('paradata');
+        expect(column(model, 'Q5_TRAVAIL_MTL').category.flags).toEqual(expect.arrayContaining(['question_code', 'mixed_languages']));
+        expect(column(model, 'Q1 DropIn').category.flags).toContain('question_code');
+        expect(reasons(model, 'Fiscal period end')).toContain('period_end_date');
+        expect(model.time_axes).toEqual([]);
+        const specs = listCandidates(model);
+        expect(specs.map(spec => spec.x.column)).toEqual(['Facility']);
+    });
+
+    test('the lines of a statement are not ranked as groups of one whole', async () => {
+        const lines = ['Number of taxable returns', 'Number of non-taxable returns', 'Total number of returns', 'Employment income', 'Commissions',
+            'Old age security pension', 'Net rental income', 'Taxable capital gains', 'Net business income', 'Total income assessed', 'RRSP deduction',
+            'Child care expenses', 'Net income', 'Taxable income assessed', 'Basic federal tax', 'Net federal tax'];
+        const rows = lines.map((line, i) => [line, String(1000 + i * 937), String(50000 + i * 41013)]);
+        const { model } = await read(table([text('Item'), integer('Grand total #'), integer('Grand total $ (000)')], rows));
+        expect(column(model, 'Item').category.flags).toContain('statement_lines');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Item')).toBe(false);
+    });
+
+    test('fiscal years that lack some of their quarters are not drawn as whole years, nor compared as the latest', async () => {
+        const quarters = { '2013-14': ['Q4'], '2014-15': ['Q1', 'Q2', 'Q3', 'Q4'], '2015-16': ['Q1', 'Q2', 'Q3', 'Q4'], '2016-17': ['Q1', 'Q2', 'Q3', 'Q4'],
+            '2017-18': ['Q2', 'Q3', 'Q4'], '2018-19': ['Q1', 'Q2', 'Q3', 'Q4'], '2019-20': ['Q1', 'Q2', 'Q3', 'Q4'], '2020-21': ['Q1', 'Q2', 'Q3', 'Q4'],
+            '2021-22': ['Q1', 'Q2', 'Q3'] };
+        const rows = [];
+        Object.entries(quarters).forEach(([year, list], y) => list.forEach(quarter => ['Patient protection', 'Product or device', 'Care management'].forEach((category, c) => {
+            rows.push([category, year, quarter, String(5 + ((y * 7 + c * 3 + quarter.charCodeAt(1)) % 11))]);
+        })));
+        const input = table([text('Category'), text('Year'), text('Quarter'), integer('Quantity')], rows);
+        const { model } = await read(input);
+        expect(column(model, 'Year').time.incomplete).toEqual(['2013-14', '2017-18', '2021-22']);
+        expect(column(model, 'Quarter').role).toBe('time_part');
+        const analysis = await analyze('fiscal-quarters', input);
+        const line = analysis.charts.find(chart => chart.x.type === 'time');
+        expect(line.points.map(point => point.start.slice(0, 4))).toEqual(['2014', '2015', '2016', '2018', '2019', '2020']);
+        expect(line.time.missing).toEqual(['2017-01-01']);
+        expect(line.notes.find(note => note.code === 'incomplete_periods_left_out')).toMatchObject({ periods: 3 });
+        const shares = analysis.charts.find(chart => chart.x.column === 'Category');
+        expect(shares.period).toMatchObject({ start: '2020-01-01' });
+    });
+
+    test('"Numéro de permis" names a permit and "Nombre de permis" counts them', async () => {
+        for (const name of ['Numéro de permis (LOPC)', 'No de dossier', 'N° de lot', '# de client', 'Numéro du lot']) {
+            expect([name, nameEvidence(name).identifier, nameEvidence(name).additive]).toEqual([name, true, false]);
+        }
+        for (const name of ['Nombre de permis', 'Nb de cas', 'Nbre d’employés', 'Number of permits', 'No. of employees', '# of visits']) {
+            expect([name, nameEvidence(name).identifier, nameEvidence(name).additive]).toEqual([name, false, true]);
+        }
+        const rows = [['1208', 'Imperial Oil Resources Limited'], ['1210', 'Imperial Oil Resources N.W.T. Limited'], ['1212', 'ExxonMobil Canada Ltd.'],
+            ['1222', 'Canadian Natural Resources Limited'], ['1239', 'SHIHA Energy Transmission Ltd.'], ['1241', 'NXT Energy Solutions Inc.']];
+        const { model } = await read(table([integer('Numéro de permis (LOPC)'), text('Société')], rows));
+        expect(column(model, 'Numéro de permis (LOPC)').role).not.toBe('measure');
+        expect(listCandidates(model).some(spec => spec.y.column === 'Numéro de permis (LOPC)')).toBe(false);
     });
 });

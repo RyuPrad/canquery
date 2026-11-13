@@ -202,7 +202,10 @@ describe('chart engine', () => {
         const analysis = await analyze('cleanEvents');
         expect(analysis.model.shape).toBe('records');
         const counts = by(analysis, 'records_over_time');
-        expect(counts.points.reduce((sum, point) => sum + point.value, 0)).toBe(300);
+        // The dates stop on 20 July 2021: that year is half a year, left out and said so.
+        const cut = counts.notes.find(note => note.code === 'cut_period_left_out');
+        expect(cut).toMatchObject({ start: '2021-01-01', grain: 'year', date: '2021-07-20' });
+        expect(counts.points.reduce((sum, point) => sum + point.value, 0)).toBe(300 - cut.rows);
         expect(by(analysis, 'measure_over_time').y).toMatchObject({ agg: 'sum', column: 'Share capital', lower_bound: false });
         expect(analysis.charts.every(chart => chart.notes.every(note => note.level !== 'caution'))).toBe(true);
     });
