@@ -40,8 +40,9 @@ function cardinalityFit(distinct) {
  * @param {{ lang?: 'en' | 'fr', pinned?: string[] }} [options] pinned: columns that an equality filter holds to one value
  */
 function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
-    // A data dictionary describes another table: nothing in it is charted.
-    if (model.shape === 'dictionary') return [];
+    // A data dictionary describes another table, and a file of stacked blocks
+    // no column names cannot be added up: nothing in either is charted.
+    if (model.shape === 'dictionary' || model.shape === 'stacked') return [];
     const held = new Set(pinned);
     const byId = new Map(model.columns.map(column => [column.id, column]));
     // A pin on either column of a twin pair holds both.
@@ -59,7 +60,7 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
     // A measure with no name of its own ("(#)", "column_7") says nothing on a chart.
     const measures = model.columns
         .filter(column => column.role === 'measure' && !column.wide && visible(column) && column.confidence !== 'low' && !column.measure.doubtful &&
-            !(column.generic_name && !nameEvidence(column.header || column.label).additive) && sums(column))
+            !(column.generic_name && !nameEvidence(column.header || column.label).additive) && !column.measure.sparse && sums(column))
         // Measures that can be added up across the whole table come before those that cannot.
         .sort((a, b) => Math.min(1, blockers(a).length) - Math.min(1, blockers(b).length) ||
             ADDITIVE_RANK[b.measure.additive] - ADDITIVE_RANK[a.measure.additive] ||
@@ -80,7 +81,8 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
     // In a table of figures with a time axis, figures of different periods do
     // not add up (a population, a count of properties, a stock of anything):
     // groups are compared in the latest period, which the axis gives.
-    const scopeAxis = !model.records ? axes.find(axis => !thin(axis)) || null : null;
+    // (Two or three periods too: their figures do not add up any better.)
+    const scopeAxis = !model.records ? axes[0] || null : null;
     const scoped = scopeAxis ? { axis: scopeAxis.id } : undefined;
 
     const out = [];
@@ -135,12 +137,17 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
         }
     });
 
+    // The rows of a wide table, as its first column of names or groups says them.
+    const rowNames = model.columns.find(column => (column.role === 'label' || column.role === 'category') && visible(column));
     for (const group of model.wide_groups) {
         // Period columns are added up over the rows: only when they add up,
-        // and when the rows are one breakdown, not totals beside their parts.
+        // and when the rows are one breakdown, not totals beside their parts,
+        // nor the lines of a report ("Requests received", "Requests processed
+        // within 30 days"), which say what each figure is.
         if (group.additive !== 'yes' && group.additive !== 'probable') continue;
         const members = group.columns.map(entry => byId.get(entry.id)).filter(Boolean);
         if (members.some(column => blockers(column).length > 0)) continue;
+        if (rowNames && rowNames.label_length > 40) continue;
         const agg = 'sum';
         add('wide_totals_per_period', 'line', { type: 'wide', group: group.id, grain: group.grain }, { agg, group: group.id }, 58, [],
             { bonus: 8, limit: LIMITS.periods });
@@ -154,7 +161,7 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
         }
     }
 
-    if (model.records) {
+    if (model.records && !model.lines) {
         axes.slice(0, 1).forEach(axis => add('records_over_time', 'line', { type: 'time', axis: axis.id, grain: axis.grain }, { agg: 'count' }, 46,
             axis.columns.map(id => byId.get(id)), { limit: LIMITS.periods }));
         breakdowns.slice(0, 4).forEach((group, g) => add('records_by_category', group.category.distinct <= LIMITS.donut ? 'donut' : 'bars',

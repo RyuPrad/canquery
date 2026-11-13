@@ -50,7 +50,7 @@ describe('table model', () => {
 
     test('every way a number is written becomes a measure with the right additivity', async () => {
         const model = await modelOf(fixtures.numberFormats());
-        expect(roles(model)).toEqual({ Unit: 'category', Visits: 'measure', Cost: 'measure', Share: 'measure', Taux: 'measure', Balance: 'measure',
+        expect(roles(model)).toEqual({ Office: 'label', Unit: 'category', Visits: 'measure', Cost: 'measure', Share: 'measure', Taux: 'measure', Balance: 'measure',
             Montant: 'measure', Guess: 'measure' });
         expect(column(model, 'Visits').measure).toMatchObject({ additive: 'yes', clean: { core: 'thousands_comma' } });
         expect(column(model, 'Cost').measure).toMatchObject({ additive: 'yes', reason: 'currency', currency: true });
@@ -65,7 +65,7 @@ describe('table model', () => {
 
     test('codes are something to group by, never a quantity', async () => {
         const model = await modelOf(fixtures.codes());
-        expect(roles(model)).toEqual({ C_MNTH: 'code', WMU: 'code', Occupation: 'category', Positions: 'measure' });
+        expect(roles(model)).toEqual({ Employer: 'label', C_MNTH: 'code', WMU: 'code', Occupation: 'category', Positions: 'measure' });
         expect(column(model, 'C_MNTH').reasons[0].code).toBe('leading_zeros');
         expect(column(model, 'WMU').reasons[0].code).toBe('same_length_numbers');
         expect(column(model, 'Occupation').category.strip_code_prefix).toBe(true);

@@ -106,8 +106,9 @@ describe('reading columns', () => {
     });
 
     test('numbers that name things are grouped by only when few and known for what they are', async () => {
-        const { model } = await read(table([integer('Class'), integer('Ward'), integer('LAHT'), integer('Code - NOC'), text('COT (µg/L)'), integer('Number of trips')],
-            range(400).map(i => [String(1 + (i % 5)), String(1 + (i % 25)), String(150 + scatter(i, 90)), String([1, 10, 100, 10010, 21, 213][i % 6]),
+        const { model } = await read(table([text('Trip'), integer('Class'), integer('Ward'), integer('LAHT'), integer('Code - NOC'), text('COT (µg/L)'),
+            integer('Number of trips')],
+            range(400).map(i => ['T-' + (10000 + i), String(1 + (i % 5)), String(1 + (i % 25)), String(150 + scatter(i, 90)), String([1, 10, 100, 10010, 21, 213][i % 6]),
                 String(53 + (i % 7)), String(2000 + scatter(i, 30000))])));
         expect(column(model, 'Class')).toMatchObject({ role: 'code', category: { numeric: true, breakdown: true } });
         // Twenty-five wards are too many bare numbers for a chart; three-digit numbers that say nothing of what they are
@@ -199,8 +200,8 @@ describe('reading columns', () => {
 
     test('"Account" heads a ledger\'s categories as often as a statement\'s measures: the values decide', async () => {
         const accounts = ['Advertising', 'Telephone', 'Printing', 'Travel', 'Stationery'];
-        const ledger = await read(table([text('Member'), text('Account'), numeric('Amount')],
-            range(400).map(i => ['Member ' + (i % 15), accounts[i % 5], String(Number((5 + scatter(i, 2000) * (1 + (i % 5))).toFixed(2)))])));
+        const ledger = await read(table([text('Member'), text('Account'), text('Claim'), numeric('Amount')],
+            range(400).map(i => ['Member ' + (i % 15), accounts[i % 5], 'Claim ' + (i + 1), String(Number((5 + scatter(i, 2000) * (1 + (i % 5))).toFixed(2)))])));
         expect(column(ledger.model, 'Amount').measure.blocked_by).toEqual([]);
         expect(listCandidates(ledger.model).map(spec => spec.x.column)).toContain('Account');
         const lines = [['Total assets', 1e9], ['Net income', 5e6], ['Capital ratio', 0.14], ['Number of branches', 40]];

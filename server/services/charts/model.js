@@ -336,8 +336,12 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         const decided = decideRole(stat, context);
         const name = nameEvidence(stat.label);
         const column = { id: stat.id, label: stat.label, type: stat.type, role: decided.role, confidence: decided.confidence,
-            reasons: decided.reasons, generic_name: isGenericName(stat.label), blank_share: share(stat.blank, stat.cells) };
-        if (decided.time) column.time = decided.time;
+            reasons: decided.reasons, generic_name: isGenericName(stat.label), blank_share: share(stat.blank, stat.cells), label_length: stat.length.avg };
+        if (decided.time) {
+            column.time = decided.time;
+            // Dates that stand for "no date" (1900-01-01) have no period.
+            if (stat.missing.dates && stat.missing.dates.length) column.time.placeholders = stat.missing.dates.slice(0, 8);
+        }
         if (decided.part) column.part = decided.part;
         const reading = numberReading(stat);
         if (decided.role === 'measure') {
@@ -355,6 +359,8 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
                     ...(stat.missing.sentinels.length ? { sentinel: true } : {}) },
                 // Figures that stand for "no figure" in a typed column (99999.9).
                 sentinels: NUMERIC_TYPES.has(stat.type) ? stat.missing.sentinels.slice(0, 8) : [],
+                // Nearly every figure is zero: a column that says almost nothing.
+                sparse: (stat.number.zero_share || 0) >= 0.95,
                 missing_share: share(reading.missing_cells, stat.filled),
                 unreadable_share: reading.unreadable_share,
                 integer: stat.number.integer_share >= 0.99,
@@ -388,6 +394,8 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             // Codes need a legend the table does not give ("U", "ESSF", "*GD").
             if (!numeric && codeLabels(values, { sex: name.sex })) flags.push('code_labels');
             if (stat.labels ? stat.labels.garbled > 0 : values.some(isGarbled)) flags.push('garbled_text');
+            // "English ; French": lists of things, not one group each.
+            if (stat.labels && stat.labels.lists >= Math.max(1, stat.labels.distinct * 0.3)) flags.push('list_labels');
             // Years or dates inside the labels: periods that were not read as a time axis.
             const dated = stat.labels ? share(stat.labels.dated_cells, stat.labels.cells)
                 : share(stat.top.filter(entry => DATED_LABEL_RE.test(entry.v)).reduce((sum, entry) => sum + entry.n, 0), stat.top.reduce((sum, entry) => sum + entry.n, 0));
@@ -591,7 +599,18 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     // A data dictionary describes another table's columns: nothing in it is counted or added up.
     const dictionary = tableRows <= DICTIONARY_MAX_ROWS && measures.filter(column => !column.generic_name).length <= 1 &&
         columns.some(column => nameEvidence(column.label).dictionaryField) && columns.some(column => nameEvidence(column.label).dictionaryDetail);
-    const records = !dictionary && !wideGroups.length && !mixed && partitioned.size === 0 && (entity || fineDate || measures.length === 0 || (!sums && !grid));
+    // A breakdown with a member named for a total on many of its rows ("Total",
+    // "Total Reporting" under every place): the rows are cells of a table of
+    // figures, whatever key they carry.
+    const cube = columns.some(column => {
+        const stat = byId.get(column.id);
+        return Boolean(column.category) && stat.labels && stat.labels.total_cells >= Math.max(3, stat.labels.cells * 0.05);
+    });
+    const records = !dictionary && !wideGroups.length && !mixed && !cube && partitioned.size === 0 &&
+        (entity || fineDate || measures.length === 0 || (!sums && !grid));
+    // Rows that only numbers tell apart, in a table of figures: blocks stacked
+    // without the column that names them. Nothing in it is added up.
+    const stacked = !records && !dictionary && (profile.groups.duplicate_keys || 0) >= 0.2;
 
     // In a table of figures, columns whose values are not one breakdown of the
     // rows: several kinds of breakdown at once ("Canada", "Men", "15 to 24
@@ -635,15 +654,41 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
 
     let shape = 'statistics';
     if (dictionary) shape = 'dictionary';
+    else if (stacked) shape = 'stacked';
     else if (wideGroups.length) shape = 'wide';
     else if (blocked || cubeBlocked) shape = 'long_measures';
     else if (records) shape = 'records';
+    // A column written once per block and blank below: its blanks mean "as
+    // above", so it groups nothing reliably.
+    {
+        for (const column of columns) {
+            const stat = byId.get(column.id);
+            if (!column.category || !stat.fill_down) continue;
+            const flags = column.category.flags || (column.category.flags = []);
+            if (flags.includes('fill_down')) continue;
+            flags.push('fill_down');
+            column.category.breakdown = false;
+            column.reasons.push({ code: 'fill_down' });
+        }
+    }
+    // Members named for totals anywhere in a column, not only among its most
+    // frequent values ("Total Expenditures" in 8 of 11 years).
+    for (const column of columns) {
+        const stat = byId.get(column.id);
+        const list = column.category ? column.category.total_members : column.total_members;
+        if (!stat.labels || !stat.labels.totals.length || !list) continue;
+        const labels = new Set(list);
+        for (const label of stat.labels.totals) if (!records || isTotalLabel(label)) labels.add(label);
+        if (column.category) column.category.total_members = [...labels].slice(0, 20);
+        else column.total_members = [...labels].slice(0, 20);
+    }
     // "Total expenditures", "Ontario Total": in a table of figures, a member
-    // named like a total is one.
+    // named like a total is one, wherever in the table it is.
     if (!records) {
         for (const column of columns) {
             if (!column.category || (column.role !== 'category' && column.role !== 'label')) continue;
             const labels = new Set(column.category.total_members);
+            for (const label of (profile.rows.aggregate_labels || {})[column.id] || []) labels.add(label);
             for (const entry of byId.get(column.id).top) if (isAggregateLabel(entry.v)) labels.add(entry.v.toLowerCase());
             column.category.total_members = [...labels].slice(0, 12);
         }
@@ -660,6 +705,20 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         if (count > 1) column.label = column.label + ' (' + count + ')';
     }
 
+    // Map lines cut into segments: a length per row beside a geometry. Their
+    // count says how the lines were cut; their lengths add up to the network.
+    const lengthOf = column => /(?:^| )(?:length|leng|longueur|shape length|st length)(?: |$)/.test(nameEvidence(column.label).normal);
+    const geometry = columns.some(column => column.role === 'geometry' || /^(?:geom|geometry|the geom|wkt|geometrie|shape)$/.test(nameEvidence(column.label).normal));
+    const lines = geometry && columns.some(column => (column.role === 'geometry' || column.role === 'measure') && lengthOf(column));
+    if (lines) {
+        for (const column of columns) {
+            if (column.role !== 'measure' || !lengthOf(column)) continue;
+            column.measure.additive = 'yes';
+            column.measure.reason = 'segment_length';
+            column.reasons.push({ code: 'segment_length' });
+        }
+    }
+
     // A placeholder that several columns of the table share is the table's way of leaving a cell blank.
     const blankTokens = [...TABLE_BLANK_TOKENS].filter(token => stats.filter(stat => stat.missing.tokens[token] > 0).length >= 2);
 
@@ -674,6 +733,9 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         shape,
         // Rows are records when counting them means something.
         records,
+        // Rows are lines drawn on a map (segments of a path, a pipe): how many
+        // there are depends on how the lines were cut, not on the network.
+        lines,
         rows: rowCount ?? profile.sample.table_rows ?? profile.sample.rows,
         sample: profile.sample,
         columns,

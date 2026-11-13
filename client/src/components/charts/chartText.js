@@ -156,7 +156,7 @@ const SKIP_GROUPS = {
   flat: 'flat', one_group: 'one_group', mostly_blank: 'mostly_blank', id_like: 'id_like', same_as_other_chart: 'same_as_other_chart',
   too_few_groups: 'too_few', too_few_periods: 'too_few', no_groups: 'too_few', no_periods: 'too_few',
   numeric_labels: 'poor_labels', long_labels: 'poor_labels', link_labels: 'poor_labels', date_labels: 'poor_labels', duplicate_labels: 'poor_labels',
-  code_labels: 'poor_labels', garbled_labels: 'poor_labels', one_period: 'one_group',
+  code_labels: 'poor_labels', garbled_labels: 'poor_labels', one_period: 'one_group', suppressed_trend: 'suppressed',
   periods_unreadable: 'periods', mostly_undated: 'periods', too_many_periods: 'periods',
   no_numbers: 'numbers', unreadable_values: 'numbers', mostly_suppressed: 'numbers',
   mixed_levels: 'totals', totals_unresolved: 'totals',
@@ -168,7 +168,7 @@ export function skipReason(reason, t) {
 }
 
 const READING_REASONS = new Set(['code_labels', 'garbled_text', 'period_labels', 'one_value_dominates', 'measure_names', 'mixed_levels',
-  'repeated_partitions', 'maintenance_date', 'date_numbers', 'person_names']);
+  'repeated_partitions', 'maintenance_date', 'date_numbers', 'person_names', 'fill_down', 'list_labels']);
 
 /** What a column was read as, and what that means for charts. */
 export function columnReading(column, t) {

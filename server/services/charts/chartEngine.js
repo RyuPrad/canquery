@@ -222,6 +222,8 @@ function timeKeyOf(model, axis, grain) {
             key = time.format === 'day_month_year'
                 ? { kind: 'day_first', column: refOf(columns[0]), order: time.order, grain: bucket }
                 : { kind: 'date', column: refOf(columns[0]), grain: bucket };
+            // Dates that stand for "no date" have no period.
+            if (time.placeholders && time.placeholders.length) key.skip = time.placeholders;
             id += ':' + bucket;
         } else if (time.kind === 'year_number') key = { kind: 'category', column: refOf(columns[0]) };
         else {
@@ -308,7 +310,11 @@ function planBatch(model, specs, { totals = new Map(), lang = 'en', pinned = [],
         }
         const j = measure ? measureOf(measure, false, column.id) : null;
         const limit = Math.min(1000, (spec.limit || 12) + 8);
-        const set = setOf(id, { kind: 'category', column: refOf(column) }, j === null ? { by: 'n', limit } : { by: spec.y.agg, measure: j, limit });
+        // Figures below zero beside figures above it (cuts beside increases):
+        // the largest either way are shown, not only the largest increases.
+        const signed = measure && spec.y.agg === 'sum' && measure.measure.min !== null && measure.measure.min < 0;
+        const set = setOf(id, { kind: 'category', column: refOf(column) },
+            j === null ? { by: 'n', limit } : { by: signed ? 'abs' : spec.y.agg, measure: j, limit });
         uses.push({ spec, type: 'category', set, j, measure, column });
     }
 
@@ -501,7 +507,7 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
         const context = { axis: use.axis, columns: use.columns, grain: use.spec.x.grain };
         const key = (use.spec.y.column || '') + '|' + use.axis.id;
         if (use.spec.y.column && !latest.has(key)) latest.set(key, latestPeriod(groups, { ...context, j: use.j }));
-        if (!ranges.has(use.axis.id)) ranges.set(use.axis.id, periodRange(groups, context));
+        if (!ranges.has(use.axis.id)) ranges.set(use.axis.id, periodRange(groups, { ...context, rows: result.grand.n }));
     };
 
     // Columns that block a measure are grouped by even when no chart can be
@@ -682,7 +688,8 @@ function proportional(a, b) {
         }
         const r = q.value / p.value;
         if (ratio === null) ratio = r;
-        else if (Math.abs(r - ratio) > Math.abs(ratio) * 0.01) return false;
+        // Within three percent the two draw the same picture.
+        else if (Math.abs(r - ratio) > Math.abs(ratio) * 0.03) return false;
     }
     return ratio !== null;
 }

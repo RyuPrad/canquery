@@ -107,8 +107,8 @@ export default function InsightsDashboard({ data, loading, error, onPin, onRetry
         </div>
       ) : (
         <div className="cq-card p-8 text-center space-y-2">
-          <ChartEmpty label={t(filtered ? 'chart.no_charts_filtered' : data.model && data.model.shape === 'dictionary' ? 'chart.dictionary' : 'chart.no_charts')}
-            height={60} />
+          <ChartEmpty label={t(filtered ? 'chart.no_charts_filtered' : { dictionary: 'chart.dictionary', stacked: 'chart.stacked' }[data.model && data.model.shape] ||
+            'chart.no_charts')} height={60} />
           <p className="text-sm text-base-content/40">{t('chart.try_custom')}</p>
         </div>
       )}

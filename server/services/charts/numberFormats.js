@@ -183,6 +183,7 @@ function detectNumberRule(entries) {
     let distinct = 0;
     let integers = 0;
     let negatives = 0;
+    let zeros = 0;
     let leadingZeros = 0;
     let withPercent = 0;
     let min = Infinity;
@@ -201,6 +202,7 @@ function detectNumberRule(entries) {
         if (MARK_END_RE.test(value)) marks = true;
         if (Number.isInteger(number)) integers += count;
         if (number < 0) negatives += count;
+        if (number === 0) zeros += count;
         if (LEADING_ZERO_RE.test(d)) leadingZeros += count;
         if (number < min) min = number;
         if (number > max) max = number;
@@ -218,6 +220,7 @@ function detectNumberRule(entries) {
         currency: [...symbols].some(symbol => symbol !== '%') || codes.size > 0,
         integerShare: integers / parsed,
         negativeShare: negatives / parsed,
+        zeroShare: zeros / parsed,
         leadingZeroShare: leadingZeros / parsed,
         fixedWidth: width || null,
         min, max

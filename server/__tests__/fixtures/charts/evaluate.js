@@ -40,6 +40,12 @@ function keyOf(key, cell) {
     if (key.kind === 'date') {
         const value = cell(key.column);
         if (value === null) return '';
+        // Dates that stand for "no date" belong to no period.
+        if (Array.isArray(key.skip) && key.skip.length) {
+            const day = key.column.type === 'TIMESTAMPTZ' ? new Date(value).toISOString().slice(0, 10)
+                : (key.column.type === 'TEXT' ? btrim(value) : value).slice(0, 10).replace(/\//g, '-');
+            if (key.skip.includes(day)) return '';
+        }
         if (key.column.type === 'TIMESTAMPTZ') {
             const at = new Date(value);
             return Number.isFinite(at.getTime()) && at.getUTCFullYear() >= 1600 ? bucket(at.getUTCFullYear(), at.getUTCMonth() + 1, at.getUTCDate(), key.grain) : '';
@@ -172,6 +178,7 @@ function evaluateBatch(table, { excluded = [], totals = [], sets, measures, scop
                 if (rank.by === 'n') return group.n;
                 const measure = group.measures[rank.measure];
                 if (rank.by === 'sum') return measure.sum;
+                if (rank.by === 'abs') return measure.sum === null ? null : Math.abs(measure.sum);
                 if (rank.by === 'max') return measure.max;
                 if (rank.by === 'min') return measure.min;
                 return measure.n ? measure.sum / measure.n : null;
