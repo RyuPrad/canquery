@@ -99,8 +99,48 @@ describe('the custom builder', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Show every column' }));
     fireEvent.change(select('Function'), { target: { value: 'max' } });
     fireEvent.change(select('Value column'), { target: { value: 'Notes' } });
-    await waitFor(() => expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ group_by: 'Province', agg: 'max', agg_column: 'Notes' }), expect.any(Object)));
+    // A builder choice is a background read: it neither renews the copy nor counts as a visit.
+    await waitFor(() => expect(queryResource).toHaveBeenCalledWith('r1', expect.objectContaining({ group_by: 'Province', agg: 'max', agg_column: 'Notes' }),
+      expect.objectContaining({ background: true })));
     expect(await screen.findByText('Toronto note')).toBeInTheDocument();
+  });
+
+  test('the column shown is the column asked for, even once its choice is no longer offered', async () => {
+    build();
+    await screen.findByText(/^Donut/);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show every column' }));
+    fireEvent.change(select('X axis'), { target: { value: 'c:Notes' } });
+    await waitFor(() => expect(lastSpec().x).toEqual({ column: 'Notes' }));
+    // Hiding the other columns again takes "Notes" off the list: the select and
+    // the request both fall back to the first choice, never one each.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show every column' }));
+    expect(select('X axis')).toHaveValue('t:EN_YEAR');
+    await waitFor(() => expect(lastSpec().x).toEqual({ time: 't:EN_YEAR', grain: 'year' }));
+  });
+
+  test('the value column is never the column grouped by', async () => {
+    build();
+    await screen.findByText(/^Donut/);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show every column' }));
+    fireEvent.change(select('X axis'), { target: { value: 'c:TOTAL' } });
+    await waitFor(() => expect(lastSpec()).toEqual({ kind: 'donut', x: { column: 'TOTAL' }, y: { agg: 'sum', column: 'Rate' } }));
+    expect([...select('Value column').querySelectorAll('option')].map((option) => option.value)).not.toContain('TOTAL');
+  });
+
+  test('errors read in the page\'s language, and any rate limit can be retried', async () => {
+    fetchCustomChart.mockImplementationOnce(() => Promise.reject(new ApiError('Spec says no', 400, { code: 'INVALID_CHART_SPEC' })));
+    const view = build();
+    expect(await screen.findByText('This chart cannot be drawn from these choices.')).toBeInTheDocument();
+    expect(screen.queryByText('Spec says no')).toBeNull();
+    // The general rate limit answers 429 without a code of its own.
+    fetchCustomChart.mockImplementationOnce(() => Promise.reject(new ApiError('Too many requests', 429, {})));
+    view.rerender(<ChartBuilder resourceId="r1" queryMode="ingested" model={MODEL} initialSpec={SHARE.spec} q="on" />);
+    await screen.findByText('Charts are busy right now. Try again in a moment.');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText(/^Donut/);
+    fetchCustomChart.mockImplementationOnce(() => Promise.reject(new ApiError('Something broke', 500, {})));
+    view.rerender(<ChartBuilder resourceId="r1" queryMode="ingested" model={MODEL} initialSpec={SHARE.spec} q="other" />);
+    expect(await screen.findByText('This chart could not be drawn.')).toBeInTheDocument();
   });
 
   test('without a prepared copy or a model there is nothing to build from', () => {

@@ -164,27 +164,43 @@ const ANALYSIS_LIMIT = 12;
 // Warming waits longer for a scan slot than a visitor would.
 const WARM_WAIT_MS = 30 * 1000;
 
+const COLD = Symbol('cold');
+
 // The charts of one candidate's current snapshot. A scan slot is taken before
 // the reader lock, as for a visitor, so waiting never holds a connection.
+//
+// The work belongs to no visitor. A request that happens to start it (a cold
+// cache) must not cut it short with its own deadline or departure, so no
+// abort signal is passed: otherwise the shortened result would be cached for
+// everyone.
 async function analyzeCandidate(candidate, lang) {
-    const first = await getResourceById(candidate.resource_id);
-    if (!first || first.ingest_status !== 'ready' || !first.table_name) return null;
-    const permit = chartEngine.isWarm(chartEngine.describeTable(first), { lang, limit: ANALYSIS_LIMIT })
-        ? null : await chartEngine.acquireSlot({ waitMs: WARM_WAIT_MS });
-    try {
-        return await withSnapshot(candidate.resource_id, async () => {
-            // The table may have been replaced or evicted since: read it again under the lock.
-            const current = await getResourceById(candidate.resource_id);
-            if (!current || current.ingest_status !== 'ready' || !current.table_name) return null;
-            const preparedAt = snapshotAt(current.ingested_at);
-            if (!preparedAt) return null;
-            const analysis = await chartEngine.analyzeSnapshot(chartEngine.describeTable(current),
-                { lang, limit: ANALYSIS_LIMIT, permit: permit || undefined, waitMs: WARM_WAIT_MS });
-            return { analysis, preparedAt };
-        });
-    } finally {
-        if (permit) permit();
+    const options = { lang, limit: ANALYSIS_LIMIT };
+    // A table replaced or evicted between the first look and the lock needs a
+    // scan after all: then the lock is let go, a slot taken, and the lock taken again.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const first = await getResourceById(candidate.resource_id);
+        if (!first || first.ingest_status !== 'ready' || !first.table_name) return null;
+        const permit = attempt === 0 && chartEngine.isWarm(chartEngine.describeTable(first), options)
+            ? null : await chartEngine.acquireSlot({ waitMs: WARM_WAIT_MS, signal: null });
+        try {
+            const read = await withSnapshot(candidate.resource_id, async () => {
+                // The table may have been replaced or evicted since: read it again under the lock.
+                const current = await getResourceById(candidate.resource_id);
+                if (!current || current.ingest_status !== 'ready' || !current.table_name) return null;
+                const preparedAt = snapshotAt(current.ingested_at);
+                if (!preparedAt) return null;
+                const table = chartEngine.describeTable(current);
+                if (!permit && !chartEngine.isWarm(table, options)) return COLD;
+                const analysis = await chartEngine.analyzeSnapshot(table,
+                    { ...options, permit: permit || undefined, waitMs: WARM_WAIT_MS, signal: null });
+                return { analysis, preparedAt };
+            });
+            if (read !== COLD) return read;
+        } finally {
+            if (permit) permit();
+        }
     }
+    return null;
 }
 
 async function computeFeatured(lang) {

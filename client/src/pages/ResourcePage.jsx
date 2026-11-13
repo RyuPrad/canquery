@@ -21,7 +21,7 @@ import {
 import { preparationCovered } from '../utils/chartLoadProgress.js';
 import useElapsed from '../hooks/useElapsed.js';
 import { formatDuration } from '../utils/time.js';
-import { buildColumnFilters } from '../utils/columnFilter.js';
+import { buildColumnFilters, equalsFilterText } from '../utils/columnFilter.js';
 import { schemaFingerprint, reconcileResourceFields } from '../utils/resourceSchema.js';
 import { takeInitialData, consumeInitialData } from '../utils/initialData.js';
 import { track } from '../utils/analytics.js';
@@ -390,7 +390,8 @@ function ResourceExplorer({ id, navigationKey }) {
   // The Chart tab offers the values of a column whose rows hold different
   // measures; choosing one filters the table to it, as typing "=value" would.
   const pinChartFilter = useCallback(
-    (field, value) => changeColumnFilter(field, '=' + value),
+    // The exact stored spelling: a value with spaces around it stays itself.
+    (field, value) => changeColumnFilter(field, equalsFilterText(value)),
     [changeColumnFilter]
   );
   const changePage = useCallback(

@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STRINGS } from '../../i18n.jsx';
-import { chartTitle, chartSubtitle, chartNotes, noteText, chartSummary, skipReason, columnReading, blockedText, kpiText, specTitle, pointLabel } from './chartText.js';
+import { chartTitle, chartSubtitle, chartNotes, noteText, chartSummary, skipReason, columnReading, blockedText, kpiText, specTitle, pointLabel, chartRows,
+  chartRecords, cardView } from './chartText.js';
 import { fmtPeriod } from './theme.js';
 import { ANALYSIS, SHARE, LINE, MODEL, BLOCKED } from '../../test/chartAnalysis.js';
 
@@ -45,6 +46,29 @@ describe('words for the chart engine\'s answers', () => {
     expect(chartSummary(LINE, en, 'en')).toBe('4 periods, Jan 2019 to Apr 2019. Latest: 30.');
     expect(pointLabel(SHARE.points[2], SHARE, en, 'en')).toBe('Not recorded');
     expect(pointLabel(SHARE.points[2], SHARE, fr, 'fr')).toBe('Non renseigné');
+  });
+
+  test('a period with no number keeps its place, as a gap and as a row', () => {
+    const gappy = { ...LINE, time: { ...LINE.time, missing: ['2019-03-01'] }, points: LINE.points.filter((point) => point.start !== '2019-03-01') };
+    expect(chartRows(gappy).map((row) => [row.start, row.point ? row.point.value : null]))
+      .toEqual([['2019-01-01', 10], ['2019-02-01', 20], ['2019-03-01', null], ['2019-04-01', 30]]);
+    expect(chartRecords(gappy, en, 'en')).toEqual([{ key: 'Jan 2019', value: 10 }, { key: 'Feb 2019', value: 20 }, { key: 'Mar 2019', value: null },
+      { key: 'Apr 2019', value: 30 }]);
+    // Groups have no periods to miss.
+    expect(chartRows(SHARE).map((row) => row.point)).toEqual(SHARE.points);
+  });
+
+  test('a card keeps the five largest bars of a chart and says how many there were', () => {
+    const points = Array.from({ length: 8 }, (_, i) => ({ key: 'g' + i, label: 'G' + i, value: 100 - i, rows: 1 }));
+    const bars = { ...SHARE, kind: 'bars', points, other: { groups: 3, value: 9 }, scope: { ...SHARE.scope, groups_total: 8, groups_shown: 8, complete: true } };
+    const card = cardView(bars);
+    expect(card.points).toHaveLength(5);
+    expect(card.other).toBeNull();
+    expect(chartSubtitle({ ...card, y: { ...card.y, lower_bound: false } }, en, 'en')).toBe('Largest 5 of 8 groups');
+    // A donut, a line and a short bar chart are drawn whole.
+    expect(cardView(SHARE)).toBe(SHARE);
+    expect(cardView(LINE)).toBe(LINE);
+    expect(cardView({ ...bars, points: points.slice(0, 5) }).points).toHaveLength(5);
   });
 
   test('periods are written by their grain', () => {

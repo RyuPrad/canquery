@@ -75,6 +75,16 @@ describe('InsightsPage top-100', () => {
     expect(screen.getAllByText('downloads').length).toBeGreaterThan(0);
   });
 
+  test('a card charts the file its tile links to, or the tile has no chart', async () => {
+    const items = [mkItem(1), mkItem(2)];
+    fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
+    // d2's representative file changed since its card was cached.
+    fetchInsightCards.mockResolvedValue({ data: [cardOf(items[0]), { ...cardOf(items[1]), resource_id: 'r-previous' }] });
+    renderPage();
+    expect(await screen.findAllByText('Chart c_aaaaaaaaaaaa')).toHaveLength(1);
+    await screen.findByText('Dataset 2');
+  });
+
   test('without cards the gallery still lists the ranking, and a download-only dataset charts nothing', async () => {
     fetchInsightCards.mockRejectedValue(new Error('Unavailable'));
     fetchTopDownloads.mockResolvedValue({ data: [mkItem(1, { resource_id: null, ingest_status: null })], meta: { period: { year: 2026, month: 5 } } });

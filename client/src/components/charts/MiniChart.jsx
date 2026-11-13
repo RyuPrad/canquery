@@ -80,7 +80,7 @@ function Donut({ points, context, drawn, lang, t }) {
           strokeDasharray={drawn ? `${arc} ${circumference - arc}` : `0 ${circumference}`}
           style={{ transition: `stroke-dasharray 0.65s ${EASE}`, transitionDelay: `${index * 50}ms` }} />;
       })}
-      <text className="cq-chart-ring-total" x="75" y="73" textAnchor="middle">{fmtInt(total, lang)}</text>
+      <text className="cq-chart-ring-total" x="75" y="73" textAnchor="middle">{valueLabel(total, context, lang)}</text>
       <text className="cq-chart-ring-unit" x="75" y="92" textAnchor="middle">{context?.totalLabel ? truncate(context.totalLabel, 16) : t('chart.records')}</text>
     </svg>
     <ul className="cq-chart-legend" aria-label={t('chart.legend')}>
@@ -88,7 +88,7 @@ function Donut({ points, context, drawn, lang, t }) {
         <span className="cq-chart-legend-dot" style={{ background: COLORS[index] }} aria-hidden="true" />
         <span className="cq-chart-legend-label">{point.label}</span>
         <span className="cq-chart-legend-values">
-          <strong>{fmtInt(point.value, lang)}</strong>
+          <strong>{valueLabel(point.value, context, lang)}</strong>
           <span>{percentage(point.value)}</span>
         </span>
       </li>)}

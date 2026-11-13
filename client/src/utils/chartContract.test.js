@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { isChart, isChartsData, isCustomChartData, customSpec } from './chartContract.js';
-import { ANALYSIS, SHARE, LINE, BLOCKED } from '../test/chartAnalysis.js';
+import { isChart, isChartsData, isCustomChartData, isInsightCard, customSpec } from './chartContract.js';
+import { ANALYSIS, SHARE, LINE, BLOCKED, MODEL } from '../test/chartAnalysis.js';
 
 describe('the chart engine\'s answers', () => {
   test('a well-formed answer passes, also one with no charts', () => {
@@ -28,6 +28,28 @@ describe('the chart engine\'s answers', () => {
     expect(isChartsData({ ...ANALYSIS, charts: [{ ...SHARE, kind: 'pie' }] })).toBe(false);
     expect(isChartsData({ ...ANALYSIS, model: null })).toBe(false);
     expect(isChartsData(null)).toBe(false);
+  });
+
+  test('the parts a page reads beyond the charts are checked too, so a bad answer never reaches the page', () => {
+    for (const broken of [
+      { ...BLOCKED, blocked: [{}] },
+      { ...BLOCKED, blocked: [{ ...BLOCKED.blocked[0], values: [{ value: 7, rows: 1 }] }] },
+      { ...ANALYSIS, skipped: [{}] },
+      { ...ANALYSIS, kpis: [null] },
+      { ...ANALYSIS, model: { ...MODEL, time_axes: [{ id: 't:x', columns: ['x'], grain: 'year' }] } },
+      { ...ANALYSIS, builder: { default: { x: { time: 5 }, y: { agg: 'count' } } } },
+      { ...ANALYSIS, charts: [{ ...LINE, time: { ...LINE.time, missing: 5 } }] },
+      { ...ANALYSIS, charts: [{ ...SHARE, x: { ...SHARE.x, label: { en: 'Province' } } }] },
+    ]) expect(isChartsData(broken)).toBe(false);
+    expect(isChartsData({ ...ANALYSIS, builder: { default: null } })).toBe(true);
+  });
+
+  test('a card has words where words are drawn', () => {
+    const card = { dataset_id: 'd1', title: { en: 'A table', fr: 'Une table' }, resource_id: 'r1', snapshot_at: '2026-09-29T12:00:00.000Z', kpis: [], chart: SHARE };
+    expect(isInsightCard(card)).toBe(true);
+    expect(isInsightCard({ ...card, title: { en: { text: 'A table' } } })).toBe(false);
+    expect(isInsightCard({ ...card, kpis: [null] })).toBe(false);
+    expect(isInsightCard({ ...card, chart: { ...LINE, time: { ...LINE.time, missing: 5 } } })).toBe(false);
   });
 
   test('a custom chart is a chart, or none with its reason', () => {

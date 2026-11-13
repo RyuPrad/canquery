@@ -92,6 +92,18 @@ describe('chart cards on the homepage', () => {
     expect(screen.getByText('2 periods, 2015 to 2026. Latest: 1.75.')).toBeInTheDocument();
   });
 
+  test('a card of many bars says it shows the largest five, as many as it draws', () => {
+    const many = card('m1', 'Publisher many groups dataset', { id: 'c_333333333333', kind: 'bars',
+      points: Array.from({ length: 8 }, (_, i) => ({ key: 'g' + i, label: 'Group ' + (i + 1), value: 80 - i * 5, rows: 1 })),
+      other: null, scope: { rows: 8, groups_total: 8, groups_shown: 8, complete: true, filtered: false } });
+    render(wrapper({ items: [many] }));
+    expect(JSON.parse(chartFor('m1').getAttribute('data-points'))).toHaveLength(5);
+    expect(screen.getByText('Largest 5 of 8 groups')).toBeInTheDocument();
+    expect(screen.queryByText('8 groups')).toBeNull();
+    // The sentence for screen readers still tells how many groups the table has.
+    expect(screen.getByText('8 groups. Largest: Group 1, 80.')).toBeInTheDocument();
+  });
+
   test('show the prepared snapshot date and keep long text whole', () => {
     const longTitle = 'Complete publisher title with all of its original dataset context and a reference period that remains visible on narrow screens';
     render(wrapper({ items: [{ ...donut, title: { en: longTitle }, snapshot_at: '2020-01-02T01:00:00.000Z' }] }));

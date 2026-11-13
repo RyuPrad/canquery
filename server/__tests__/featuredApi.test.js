@@ -272,6 +272,35 @@ describe('GET /web-api/v1/insights/charts', () => {
         await request(app).get('/web-api/v1/insights/charts');
         expect(require('../db/storeQueries').touchLastAccessed).not.toHaveBeenCalled();
     });
+
+    it('a visitor who starts the shared work cannot cut it short for everyone', async () => {
+        seed(['permits', 'counts']);
+        const { runWithRequestSignal } = require('../utils/requestContext');
+        const gone = new AbortController();
+        gone.abort(new Error('The visitor left'));
+        // A cold cache: the request that asks first runs the work, inside its own context.
+        const cards = await runWithRequestSignal(gone.signal, () => service.cards('en'));
+        expect(cards.map(card => card.dataset_id)).toEqual(['d-permits', 'd-counts']);
+        // And what was cached is the whole answer.
+        expect((await service.cards('en')).map(card => card.dataset_id)).toEqual(['d-permits', 'd-counts']);
+    });
+
+    it('a table replaced between the first look and the lock is scanned with a slot, not while holding the lock', async () => {
+        const rows = seed(['permits']);
+        const engine = require('../services/charts/chartEngine');
+        const acquire = jest.spyOn(engine, 'acquireSlot');
+        // Warm the engine on this copy, then let the copy change under the lock.
+        expect((await service.cards('en')).length).toBe(1);
+        acquire.mockClear();
+        let looks = 0;
+        const replaced = { ...rows.get('r-permits'), table_name: tableName('permits:2'), ingested_at: '2026-09-30T12:00:00.000Z' };
+        tables.set(tableName('permits:2'), TABLES.permits());
+        catalog.getResourceById.mockImplementation(async () => (++looks === 1 ? rows.get('r-permits') : replaced));
+        await service.refreshFeatured('en');
+        // The first look found it warm; under the lock it was not, so the lock was let go and a slot taken first.
+        expect(acquire).toHaveBeenCalledTimes(1);
+        expect((await service.cards('en'))[0].snapshot_at).toBe('2026-09-30T12:00:00.000Z');
+    });
 });
 
 describe('pure featured preview builder', () => {

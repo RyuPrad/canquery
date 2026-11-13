@@ -56,6 +56,20 @@ export function pointLabel(point, chart, t, lang) {
  * A chart as the homepage's small charts take it: periods keyed by their first
  * day, groups by their name, and the few facts the drawing needs.
  */
+// A homepage card draws at most this many bars.
+const CARD_BARS = 5;
+
+/**
+ * The part of a chart that a homepage card draws: a bar chart keeps its
+ * largest groups, and says so, so the card's words match its bars.
+ */
+export function cardView(chart) {
+  if (chart.kind !== 'bars' || chart.points.length <= CARD_BARS) return chart;
+  const points = chart.points.slice(0, CARD_BARS);
+  const named = points.filter((point) => !point.blank).length;
+  return { ...chart, points, other: null, scope: { ...chart.scope, groups_shown: named, complete: false } };
+}
+
 export function miniChartOf(chart, t) {
   const time = chart.x.type === 'time';
   const points = chart.points.map((point) => ({
@@ -76,9 +90,23 @@ export function miniChartOf(chart, t) {
   };
 }
 
-/** A chart's points as the visuals take them. */
+/**
+ * A chart's points in order, with each period that has no number in its
+ * place (point: null), so a line shows the gap and the values table lists it.
+ */
+export function chartRows(chart) {
+  const missing = chart.x.type === 'time' && chart.time && Array.isArray(chart.time.missing) ? chart.time.missing : [];
+  const rows = chart.points.map((point) => ({ point, start: typeof point.start === 'string' ? point.start : null }));
+  if (!missing.length) return rows;
+  return [...rows, ...missing.map((start) => ({ point: null, start }))]
+    .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+}
+
+/** A chart's points as the visuals take them; a period with no number has a null value. */
 export function chartRecords(chart, t, lang) {
-  return chart.points.map((point) => ({ key: pointLabel(point, chart, t, lang), value: point.value }));
+  return chartRows(chart).map((row) => (row.point
+    ? { key: pointLabel(row.point, chart, t, lang), value: row.point.value }
+    : { key: fmtPeriod(row.start, chart.x.grain, lang), value: null }));
 }
 
 /**

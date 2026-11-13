@@ -6,6 +6,9 @@
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
+const text = (value) => typeof value === 'string';
+const optional = (value, check) => value === undefined || value === null || check(value);
+const listOf = (value, check) => Array.isArray(value) && value.every(check);
 
 export const CHART_KINDS = ['line', 'bars', 'donut'];
 export const CHART_AGGS = ['count', 'sum', 'avg', 'min', 'max'];
@@ -13,26 +16,39 @@ export const CHART_AGGS = ['count', 'sum', 'avg', 'min', 'max'];
 // A point is a named group, the "not recorded" group, or a period.
 export function isChartPoint(point) {
   return record(point) && finite(point.value) &&
-    (point.blank === true || typeof point.label === 'string' || typeof point.start === 'string');
+    (point.blank === true || text(point.label) || text(point.start));
 }
 
+const isKpi = (kpi) => record(kpi) && text(kpi.role);
+
 export function isChart(chart) {
-  return record(chart) && typeof chart.id === 'string' && CHART_KINDS.includes(chart.kind) &&
-    record(chart.x) && (chart.x.type === 'category' || chart.x.type === 'time') &&
-    record(chart.y) && CHART_AGGS.includes(chart.y.agg) &&
+  return record(chart) && text(chart.id) && CHART_KINDS.includes(chart.kind) &&
+    record(chart.x) && (chart.x.type === 'category' || chart.x.type === 'time') && optional(chart.x.label, text) &&
+    record(chart.y) && CHART_AGGS.includes(chart.y.agg) && optional(chart.y.label, text) &&
     Array.isArray(chart.points) && chart.points.length > 0 && chart.points.every(isChartPoint) &&
-    Array.isArray(chart.notes) && chart.notes.every((note) => record(note) && typeof note.code === 'string') &&
-    record(chart.scope);
+    listOf(chart.notes, (note) => record(note) && text(note.code)) &&
+    record(chart.scope) &&
+    optional(chart.time, (time) => record(time) && optional(time.missing, (missing) => listOf(missing, text))) &&
+    optional(chart.other, (other) => record(other) && finite(other.value));
 }
+
+// Each part of an answer that a page reads beyond the charts themselves.
+const isBlock = (block) => record(block) && text(block.column) &&
+  listOf(block.values, (entry) => record(entry) && text(entry.value) && finite(entry.rows) && optional(entry.label, text));
+const isSkip = (skip) => record(skip) && text(skip.id) && record(skip.x) && text(skip.x.type) && record(skip.y) && text(skip.y.agg);
+const isAxis = (axis) => record(axis) && text(axis.id) && listOf(axis.columns, text) && text(axis.grain) && listOf(axis.grains, text);
+const isSpec = (spec) => record(spec) && record(spec.x) && record(spec.y) && optional(spec.x.time, text) && optional(spec.x.column, text) &&
+  optional(spec.x.wide, text);
 
 /** The answer of GET /web-api/v1/resources/:id/charts. */
 export function isChartsData(data) {
   return record(data) && (data.status === 'ok' || data.status === 'no_charts') &&
-    Array.isArray(data.charts) && data.charts.every(isChart) &&
-    Array.isArray(data.kpis) && data.kpis.every((kpi) => record(kpi) && typeof kpi.role === 'string') &&
-    Array.isArray(data.skipped) && Array.isArray(data.blocked) &&
-    record(data.model) && Array.isArray(data.model.columns) &&
-    data.model.columns.every((column) => record(column) && typeof column.id === 'string' && typeof column.role === 'string') &&
+    listOf(data.charts, isChart) && listOf(data.kpis, isKpi) &&
+    listOf(data.skipped, isSkip) && listOf(data.blocked, isBlock) &&
+    record(data.model) && listOf(data.model.columns, (column) => record(column) && text(column.id) && text(column.role)) &&
+    optional(data.model.time_axes, (axes) => listOf(axes, isAxis)) &&
+    optional(data.model.wide_groups, (groups) => listOf(groups, (group) => record(group) && text(group.id))) &&
+    optional(data.builder, (builder) => record(builder) && optional(builder.default, isSpec)) &&
     record(data.scope);
 }
 
@@ -45,9 +61,10 @@ export function isCustomChartData(data) {
 
 /** A homepage or gallery card: a dataset, the snapshot charted, and one chart. */
 export function isInsightCard(card) {
-  return record(card) && typeof card.dataset_id === 'string' && card.dataset_id !== '' && record(card.title) &&
-    typeof card.resource_id === 'string' && typeof card.snapshot_at === 'string' && !Number.isNaN(Date.parse(card.snapshot_at)) &&
-    Array.isArray(card.kpis) && isChart(card.chart);
+  return record(card) && text(card.dataset_id) && card.dataset_id !== '' &&
+    record(card.title) && Object.values(card.title).every((title) => optional(title, text)) &&
+    text(card.resource_id) && text(card.snapshot_at) && !Number.isNaN(Date.parse(card.snapshot_at)) &&
+    listOf(card.kpis, isKpi) && isChart(card.chart);
 }
 
 // The spec of the chart the builder shows, in the engine's request vocabulary.

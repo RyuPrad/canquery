@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLang } from '../i18n.jsx';
 import InsightCarousel from './InsightCarousel.jsx';
 import MiniChart from './charts/MiniChart.jsx';
-import { chartTitle, chartSubtitle, chartSummary, chartNotes, miniChartOf } from './charts/chartText.js';
+import { cardView, chartTitle, chartSubtitle, chartSummary, chartNotes, miniChartOf } from './charts/chartText.js';
 import { isInsightCard } from '../utils/chartContract.js';
 import { ArrowRightIcon } from './Icons.jsx';
 
@@ -26,7 +26,8 @@ function alternateKinds(cards) {
 function FeaturedChartCard({ card, active, visible, reduced }) {
   const { t, lang } = useLang();
   const headingId = useId();
-  const { chart } = card;
+  // What the card draws (at most five bars) is what its words describe.
+  const chart = cardView(card.chart);
   const title = card.title?.[lang] || card.title?.en || card.title?.fr;
   const mini = miniChartOf(chart, t);
   // The one note a reader of a small card should not miss: a caution first.

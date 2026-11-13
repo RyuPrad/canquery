@@ -40,12 +40,14 @@ function choicesOf(model, all) {
   const columns = model.columns;
   const shown = (column) => all || !(column.twin && column.twin.hidden);
   const name = (id) => humanize((columns.find((column) => column.id === id) || { label: id }).label || id);
+  // A short key that names rows ("K1A") groups like a category.
+  const groups = (column) => GROUP_ROLES.has(column.role) || (column.role === 'identifier' && Boolean(column.category));
   return {
     name,
     time: (model.time_axes || []).map((axis) => ({ value: axis.id, label: axis.columns.map(name).join(' + '), axis })),
     wide: (model.wide_groups || []).map((group) => ({ value: 'w:' + group.id, group })),
-    groups: columns.filter((column) => GROUP_ROLES.has(column.role) && shown(column)).map((column) => ({ value: 'c:' + column.id, column })),
-    others: all ? columns.filter((column) => !GROUP_ROLES.has(column.role) && column.role !== 'time').map((column) => ({ value: 'c:' + column.id, column })) : [],
+    groups: columns.filter((column) => groups(column) && shown(column)).map((column) => ({ value: 'c:' + column.id, column })),
+    others: all ? columns.filter((column) => !groups(column) && column.role !== 'time').map((column) => ({ value: 'c:' + column.id, column })) : [],
     measures: columns.filter((column) => column.role === 'measure' && shown(column)),
     numbers: all ? columns.filter((column) => column.role !== 'measure' && NUMERIC_TYPES.has(column.type)) : [],
     any: all ? columns.filter((column) => column.role !== 'measure' && !NUMERIC_TYPES.has(column.type)) : [],
@@ -66,11 +68,12 @@ function initialState(model, spec) {
   return { x: first ? 'c:' + first.id : '', grain: '', agg: 'count', y: '', kind: 'bars' };
 }
 
-// What the error of a chart request means for the reader.
+// What the error of a chart request means for the reader, in the page's language.
 function errorText(error, model, request, t) {
   const code = error?.body?.code;
   if (code === 'CHARTS_BUSY' || error?.status === 429) return t('chart.busy');
   if (code === 'CHARTS_TIMEOUT') return t('chart.timeout');
+  if (code === 'INVALID_CHART_SPEC') return t('chart.invalid_spec');
   if (code === 'CHART_REFUSED') {
     const measure = model.columns.find((column) => column.id === request.y);
     const blocker = measure && measure.measure && measure.measure.blocked_by && measure.measure.blocked_by[0];
@@ -78,8 +81,11 @@ function errorText(error, model, request, t) {
     if (measure && by) return fill(t('chart.refused_detail'), { measure: humanize(measure.label || measure.id), column: humanize(by.label || by.id) });
     return t('chart.refused');
   }
-  return error?.message || t('chart.no_data');
+  return t('chart.failed');
 }
+
+// Errors that pass with time: the reader may try again.
+const retryable = (error) => error?.status === 429 || ['CHARTS_BUSY', 'CHARTS_TIMEOUT'].includes(error?.body?.code);
 
 // Ingested resources: a chart built from the table's model.
 function ModelBuilder({ resourceId, q, filters, model, initialSpec, onUnavailable }) {
@@ -93,26 +99,32 @@ function ModelBuilder({ resourceId, q, filters, model, initialSpec, onUnavailabl
     setState((previous) => ({ ...previous, ...patch }));
   }, [resourceId]);
 
-  const isTime = state.x.startsWith('t:');
-  const isWide = state.x.startsWith('w:');
-  const axis = isTime ? choices.time.find((entry) => entry.value === state.x)?.axis : null;
+  // The x the select shows is the x that is asked for: a choice that is no
+  // longer offered (every column hidden again, the other language's copy)
+  // falls back to the first one, as the value column does.
+  const xOptions = [...choices.time, ...choices.wide, ...choices.groups, ...choices.others].map((entry) => entry.value);
+  const x = xOptions.includes(state.x) ? state.x : xOptions[0] || '';
+  const isTime = x.startsWith('t:');
+  const isWide = x.startsWith('w:');
+  const axis = isTime ? choices.time.find((entry) => entry.value === x)?.axis : null;
   const grain = axis ? (axis.grains.includes(state.grain) ? state.grain : axis.grain) : null;
   const aggs = isWide ? ['sum', 'avg'] : AGGS;
   const agg = aggs.includes(state.agg) ? state.agg : aggs[0];
-  // Numbers to add up or average; any column for the lowest or highest of a group.
+  // Numbers to add up or average; any column for the lowest or highest of a
+  // group. Never the column the chart groups by.
   const values = agg === 'count' || isWide ? [] : [...choices.measures, ...choices.numbers,
-    ...((agg === 'min' || agg === 'max') && !isTime ? choices.any : [])];
+    ...((agg === 'min' || agg === 'max') && !isTime ? choices.any : [])].filter((column) => 'c:' + column.id !== x);
   const y = values.some((column) => column.id === state.y) ? state.y : values[0]?.id || '';
   const yColumn = values.find((column) => column.id === y);
   // The lowest or highest text of a group is read as the table query reads it.
   const plain = Boolean(yColumn) && yColumn.role !== 'measure' && !NUMERIC_TYPES.has(yColumn.type);
-  const ready = Boolean(state.x) && (agg === 'count' || isWide || Boolean(y));
+  const ready = Boolean(x) && (agg === 'count' || isWide || Boolean(y));
 
   let request = null;
-  if (ready && isWide) request = customSpec({ wide: state.x.slice(2), agg });
-  else if (ready && isTime) request = customSpec({ time: state.x, grain, agg, column: y });
+  if (ready && isWide) request = customSpec({ wide: x.slice(2), agg });
+  else if (ready && isTime) request = customSpec({ time: x, grain, agg, column: y });
   else if (ready) {
-    request = customSpec({ x: state.x.slice(2), kind: state.kind === 'donut' && (agg === 'count' || agg === 'sum') ? 'donut' : 'bars', agg, column: y });
+    request = customSpec({ x: x.slice(2), kind: state.kind === 'donut' && (agg === 'count' || agg === 'sum') ? 'donut' : 'bars', agg, column: y });
   }
   const requestKey = JSON.stringify([request, plain]);
   const filtersKey = JSON.stringify(filters || {});
@@ -134,8 +146,9 @@ function ModelBuilder({ resourceId, q, filters, model, initialSpec, onUnavailabl
       if (error instanceof NotIngestedError) onUnavailable?.();
     };
     if (plain) {
+      // A builder choice is not a visit: it neither renews the copy nor counts.
       queryResource(resourceId, { q, filters, group_by: request.x.column, agg: request.y.agg, agg_column: request.y.column, sort: 'value desc', limit: 50 },
-        { signal: controller.signal }).then((env) => done({ rows: env.data.records }), failed);
+        { signal: controller.signal, background: true }).then((env) => done({ rows: env.data.records }), failed);
     } else {
       fetchCustomChart(resourceId, request, { q, filters, lang }, { signal: controller.signal }).then((env) => done({ data: env.data }), failed);
     }
@@ -151,7 +164,7 @@ function ModelBuilder({ resourceId, q, filters, model, initialSpec, onUnavailabl
     body = (
       <div className="flex flex-col items-center justify-center gap-3 text-center text-sm text-base-content/60" style={{ minHeight: 200 }}>
         <p>{errorText(result.error, model, { y }, t)}</p>
-        {['CHARTS_BUSY', 'CHARTS_TIMEOUT'].includes(result.error?.body?.code) &&
+        {retryable(result.error) &&
           <button type="button" className="btn btn-sm" onClick={() => setAttempt((value) => value + 1)}>{t('chart.retry')}</button>}
       </div>
     );
@@ -172,7 +185,7 @@ function ModelBuilder({ resourceId, q, filters, model, initialSpec, onUnavailabl
     <ChartCard title={chart ? chartTitle(chart, t) : t('chart.custom')} subtitle={chart ? chartSubtitle(chart, t, lang) : undefined}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-1">
         <Label htmlFor={controlId + '-x'}>{t('chart.x')}</Label>
-        <select id={controlId + '-x'} className={selectClass} value={state.x} onChange={(event) => change('group_by', { x: event.target.value })}>
+        <select id={controlId + '-x'} className={selectClass} value={x} onChange={(event) => change('group_by', { x: event.target.value })}>
           {choices.time.length > 0 && (
             <optgroup label={t('chart.builder.time')}>
               {choices.time.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}

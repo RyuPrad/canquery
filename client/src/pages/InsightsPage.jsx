@@ -18,6 +18,13 @@ function toCardItem(it) {
   };
 }
 
+// A dataset's card, only while it charts the file the tile links to: the
+// cards are cached for minutes and a dataset's representative file can change.
+function cardFor(cards, item) {
+  const card = cards.get(item.dataset_id);
+  return card && card.resource_id === item.resource_id ? card : undefined;
+}
+
 function periodLabel(period, lang) {
   if (!period || !period.year || !period.month) return '';
   try {
@@ -93,7 +100,7 @@ export default function InsightsPage() {
   const label = periodLabel(period, lang);
   const valuesOf = (it) => (it.history || []).map((h) => h.d);
   const ringClass = (id) => (highlightId === id ? 'cq-focus-ring' : '');
-  const featuredItems = items ? items.filter((it) => it.dataset_id && cards.has(it.dataset_id)) : [];
+  const featuredItems = items ? items.filter((it) => it.dataset_id && cardFor(cards, it)) : [];
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 md:px-8 py-8 space-y-8">
@@ -139,7 +146,7 @@ export default function InsightsPage() {
                   <div id={'ds-' + it.dataset_id} className={ringClass(it.dataset_id)}>
                     <InsightCard
                       item={toCardItem(it)}
-                      card={cards.get(it.dataset_id)}
+                      card={cardFor(cards, it)}
                       rank={it.rank}
                       downloads={it.downloads}
                       fallbackValues={valuesOf(it)}
