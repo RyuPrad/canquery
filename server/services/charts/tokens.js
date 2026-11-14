@@ -392,6 +392,8 @@ const HINTS = {
         // Sizes of one thing: a rink's width, a valve's diameter.
         'length', 'longueur', 'width', 'largeur', 'diameter', 'diametre', 'thickness', 'epaisseur', 'radius', 'rayon',
         'spacing', 'espacement', 'wheelbase', 'empattement', 'clearance', 'degagement',
+        // One figure divided by another: "lengthDivEstArea".
+        'div', 'divided', 'divise',
         // A moment, not an amount: the day or hour of a timestamp.
         'day', 'jour', 'hour', 'heure', 'minute', 'second', 'seconde', 'weekday', 'timestamp', 'datetime',
         // Rates of one thing: miles per gallon, kilometres per hour.

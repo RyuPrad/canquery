@@ -646,7 +646,8 @@ function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = f
     if (stop !== null && grain !== 'day' && !partial && kept.length > 4) {
         const last = kept[kept.length - 1];
         const ends = Date.parse(periodStart(grain, last.ord + 1) + 'T00:00:00Z');
-        if ((stop + 2) * DAY_MS < ends && last.n < middle(kept.slice(0, -1).map(entry => entry.n)) * 0.9) {
+        // (Well short: a field season that ends in October every year is whole.)
+        if ((stop + 2) * DAY_MS < ends && last.n < middle(kept.slice(0, -1).map(entry => entry.n)) * 0.7) {
             cut = last;
             kept = kept.slice(0, -1);
         }
