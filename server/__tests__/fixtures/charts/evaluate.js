@@ -85,11 +85,18 @@ function readMeasure(measure, cell) {
     return { value: readable ? Number(format.js(d)) : null, blank: p === null || p === '', missing };
 }
 
-const emptyGroup = measures => ({ n: 0, nx: 0, measures: measures.map(() => ({ sum: null, n: 0, min: null, max: null, blank: 0, missing: 0, other: 0 })) });
+const emptyGroup = measures => ({ n: 0, nx: 0, measures: measures.map(() => ({ sum: null, n: 0, min: null, max: null, blank: 0, missing: 0, other: 0,
+    xsum: null, xn: 0 })) });
 
 function addRow(group, row) {
     if (row.total) {
         group.nx += 1;
+        // What the total rows say themselves, as the batch keeps it.
+        row.measures.forEach((read, j) => {
+            if (read.other || read.value === null) return;
+            group.measures[j].xsum = (group.measures[j].xsum || 0) + read.value;
+            group.measures[j].xn += 1;
+        });
         return;
     }
     group.n += 1;
@@ -122,6 +129,8 @@ function mergeGroup(into, more) {
         measure.blank += other.blank;
         measure.missing += other.missing;
         measure.other += other.other;
+        if (other.xsum !== null) measure.xsum = (measure.xsum || 0) + other.xsum;
+        measure.xn += other.xn;
     });
 }
 

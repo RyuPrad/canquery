@@ -230,6 +230,12 @@ function buildBatchSql({ tableName, where, scope = null, excluded = [], totals =
             aggregates.push('count(*) FILTER (WHERE o' + j + and + ')::bigint AS ot' + j);
             folds.push('sum(ot' + j + ')::bigint AS ot' + j);
         }
+        // What the rows set aside as totals say themselves: where a table has one
+        // total row, its figure is the total, whatever its parts add up to.
+        if (totalParts.length) {
+            aggregates.push('sum(v' + j + ') FILTER (WHERE x) AS xs' + j, 'count(v' + j + ') FILTER (WHERE x)::bigint AS xc' + j);
+            folds.push('sum(xs' + j + ') AS xs' + j, 'sum(xc' + j + ')::bigint AS xc' + j);
+        }
     });
     const grouped = 'SELECT ' + (count ? 'GROUPING(' + keys.join(', ') + ')::int' : '0') + ' AS gs, ' +
         (count === 0 ? 'NULL::text' : count === 1 ? 'k0' : 'coalesce(' + keys.join(', ') + ')') + ' AS k, ' + aggregates.join(', ') +
@@ -296,7 +302,8 @@ async function runBatch(plan, options) {
             groups: Number(row.groups), measures: [] };
         for (let j = 0; j < measures; j += 1) {
             group.measures.push({ sum: number(row['s' + j]), n: Number(row['c' + j]), min: number(row['lo' + j]), max: number(row['hi' + j]),
-                blank: Number(row['bl' + j]), missing: Number(row['mi' + j]), other: Number(row['ot' + j] || 0) });
+                blank: Number(row['bl' + j]), missing: Number(row['mi' + j]), other: Number(row['ot' + j] || 0),
+                xsum: number(row['xs' + j]), xn: Number(row['xc' + j] || 0) });
         }
         const gs = Number(row.gs);
         if (gs === grand) out.grand = group;

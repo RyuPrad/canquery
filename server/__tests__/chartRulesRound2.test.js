@@ -707,6 +707,68 @@ describe('fourth reading: tables the rules had never seen', () => {
         expect(cancers.notes.map(note => note.code)).toContain('total_left_out');
     });
 
+    test('a ranking of figures does not merge two places that share a name', async () => {
+        const places = ['Winnipeg', 'Brandon', 'Steinbach', 'Portage la Prairie', 'Thompson', 'Winkler', 'Selkirk', 'Dauphin', 'Morden', 'Flin Flon',
+            'The Pas', 'Neepawa', 'Altona', 'Swan River', 'Virden', 'Carman'];
+        const rows = places.map((place, i) => ['46', String(1 + (i % 6)), 'CA/AR', place, String(90000 - i * 5300)]);
+        // Rural municipalities elsewhere in the province that carry a city's name.
+        rows.push(['46', '3', 'OUT/EXT', 'Thompson', '440'], ['46', '9', 'OUT/EXT', 'Portage la Prairie', '1690']);
+        const analysis = await analyze('same-names', table([text('Prov'), integer('CD'), text('Classification'), text('Description'),
+            integer('Total number of returns')], rows));
+        expect(analysis.charts.some(chart => chart.x.column === 'Description')).toBe(false);
+        expect(analysis.skipped.find(skip => skip.x.column === 'Description')).toMatchObject({ reason: 'duplicate_labels' });
+
+        // A department on two lines, with its number beside its name on both: one thing, added up.
+        const departments = ['Agriculture', 'Parks Canada', 'Research Council', 'Revenue Agency', 'Border Services', 'Foreign Affairs', 'Public Service School',
+            'Humanities Council', 'Engineering Council', 'Arctic Station'];
+        const lines = [];
+        ['2021/2022', '2022/2023', '2023/2024'].forEach((year, y) => {
+            departments.forEach((name, i) => lines.push([year, String(100 + i * 7), name, ['Budgetary', 'Non-budgetary'][i % 2], String(900000 - i * 61000 + y * 1000)]));
+            lines.push([year, '121', 'Revenue Agency', 'Non-budgetary', '250000']);
+        });
+        const coded = await analyze('same-department', table([text('Fiscal year'), text('Dept number'), text('Department name'), text('Authority type'),
+            integer('Amount')], lines));
+        const byName = coded.charts.find(chart => chart.x.column === 'Department name');
+        expect(byName.points.find(point => point.label === 'Revenue Agency')).toMatchObject({ value: 900000 - 3 * 61000 + 2000 + 250000, rows: 2 });
+    });
+
+    test('where each period has one total row of its own, the line shows it rather than what its parts add up to', async () => {
+        const sectors = ['Manufacturing', 'Professional services', 'Information', 'Wholesale trade', 'Mining'];
+        const rows = [];
+        [2015, 2016, 2017, 2018, 2019, 2020].forEach((year, y) => {
+            sectors.forEach((sector, i) => rows.push([String(year), sector, i === 4 && y % 2 === 0 ? 'x' : String(1000 + y * 40 + i * 300)]));
+            // The publisher's total counts the suppressed sector too.
+            rows.push([String(year), 'Total', String(sectors.reduce((sum, _, i) => sum + 1000 + y * 40 + i * 300, 0))]);
+        });
+        const input = table([integer('Year'), text('Sector'), text('Expenditures')], rows);
+        const analysis = await analyze('own-totals', input);
+        const line = analysis.charts.find(chart => chart.x.type === 'time');
+        expect(line.points.map(point => point.value)).toEqual([8000, 8200, 8400, 8600, 8800, 9000]);
+        expect(line.y.lower_bound).toBe(false);
+        expect(line.notes.map(note => note.code)).toContain('table_total_shown');
+        expect(line.notes.map(note => note.code)).not.toContain('placeholders_left_out');
+        // Under a search the total row is no longer the total of the rows in scope: the parts are added up.
+        fake.options.filter = row => row[2] !== 'Mining';
+        const searched = await analyze('own-totals', input, { q: 'i' });
+        const narrowed = searched.charts.find(chart => chart.x.type === 'time');
+        expect(narrowed.notes.map(note => note.code)).not.toContain('table_total_shown');
+        expect(narrowed.points[0].value).toBe(1000 + 1300 + 1600 + 1900);
+    });
+
+    test('a wide table with one total row shows that row per period, exact even where cells are suppressed', async () => {
+        const years = ['2015', '2016', '2017', '2018', '2019'];
+        const sectors = ['Manufacturing', 'Professional services', 'Information', 'Wholesale trade', 'Mining', 'Finance', 'Construction', 'Retail trade'];
+        const rows = sectors.map((sector, i) => [sector, ...years.map((_, y) => (i === 3 && y < 2 ? '--' : String(500 + i * 200 + y * 30)))]);
+        const whole = y => sectors.reduce((sum, _, i) => sum + 500 + i * 200 + y * 30, 0);
+        rows.push(['TOTAL', ...years.map((_, y) => String(whole(y)))]);
+        const analysis = await analyze('wide-own-total', table([text('Sector'), ...years.map(text)], rows));
+        const line = analysis.charts.find(chart => chart.template === 'wide_totals_per_period');
+        expect(line.points.map(point => point.value)).toEqual(years.map((_, y) => whole(y)));
+        expect(line.y.lower_bound).toBe(false);
+        expect(line.notes.map(note => note.code)).toEqual(expect.arrayContaining(['table_total_shown', 'wide_periods']));
+        expect(line.notes.map(note => note.code)).not.toContain('placeholders_left_out');
+    });
+
     test('"Numéro de permis" names a permit and "Nombre de permis" counts them', async () => {
         for (const name of ['Numéro de permis (LOPC)', 'No de dossier', 'N° de lot', '# de client', 'Numéro du lot']) {
             expect([name, nameEvidence(name).identifier, nameEvidence(name).additive]).toEqual([name, true, false]);

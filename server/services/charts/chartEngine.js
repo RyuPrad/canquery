@@ -369,14 +369,16 @@ function detect(plan, result) {
     return { totals, levels };
 }
 
-function shapeUse(use, result, model, { gates, filtered }) {
+// ownTotals: the rows in scope are the table's, or one pinned value's, so a
+// total row among them is their total (under a search or other filters it is not).
+function shapeUse(use, result, model, { gates, filtered, ownTotals = !filtered }) {
     const { spec } = use;
     const grand = result.grand;
     let shaped;
-    if (use.type === 'wide') shaped = shapeWide(spec, grand, { group: use.group, columns: use.columns, indexes: use.indexes, filtered, gates });
+    if (use.type === 'wide') shaped = shapeWide(spec, grand, { group: use.group, columns: use.columns, indexes: use.indexes, filtered, gates, ownTotals });
     else if (use.type === 'time') {
         shaped = shapeTime(spec, result.sets[use.set], grand, { axis: use.axis, columns: use.columns, measure: use.measure, j: use.j,
-            ordered: use.ordered, filtered, gates, records: model.records });
+            ordered: use.ordered, filtered, gates, records: model.records, ownTotals });
     } else {
         const groups = result.sets[use.set];
         // Every group came back: their rows must add up to the rows in scope.
@@ -384,7 +386,9 @@ function shapeUse(use, result, model, { gates, filtered }) {
             return { ok: false, reason: 'inconsistent_counts' };
         }
         shaped = shapeCategory(spec, groups, grand, { column: use.column, measure: use.measure, j: use.j, filtered, gates,
-            blankTokens: new Set(model.blank_tokens || []), records: model.records });
+            blankTokens: new Set(model.blank_tokens || []), records: model.records,
+            // Codes that no name column explains identify the table's rows.
+            coded: model.columns.some(column => (column.role === 'code' || column.role === 'identifier') && !(column.label_columns || []).length) });
         if (shaped.ok && spec.y.latest) {
             const group = model.wide_groups.find(entry => entry.id === spec.y.of);
             const last = group && group.columns[group.columns.length - 1];
@@ -570,7 +574,7 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
         stats.set('', { n: result.grand.n, nx: result.grand.nx });
         for (const use of plan.uses) {
             if (use.type === 'time') notePeriods(use, result);
-            const shaped = shapeUse(use, result, model, { gates: true, filtered: pins.length > 0 });
+            const shaped = shapeUse(use, result, model, { gates: true, filtered: pins.length > 0, ownTotals: true });
             if (!shaped.ok) skipped.set(use.spec.id, skipOf(use.spec, shaped.reason));
             else accept(accepted, skipped, use.spec, shaped.chart);
         }
@@ -612,7 +616,7 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
         statements += ran.passes;
         if (!ran.result) continue;
         for (const use of ran.plan.uses) {
-            const shaped = ran.unresolved ? { ok: false, reason: 'totals_unresolved' } : shapeUse(use, ran.result, model, { gates: true, filtered: pins.length > 0 });
+            const shaped = ran.unresolved ? { ok: false, reason: 'totals_unresolved' } : shapeUse(use, ran.result, model, { gates: true, filtered: pins.length > 0, ownTotals: true });
             if (!shaped.ok) skipped.set(use.spec.id, skipOf(use.spec, shaped.reason));
             else accept(accepted, skipped, use.spec, shaped.chart);
         }
@@ -805,7 +809,7 @@ async function computeView(table, model, selection, charts, { where, pinned = []
 
 // The figures above the charts: rows in scope, the period covered, and the
 // totals or averages of the measures the charts show.
-function kpisOf(model, charts, measures, rows) {
+function kpisOf(model, charts, measures, rows, { totalRows = 0, narrowed = false } = {}) {
     const byId = new Map(model.columns.map(column => [column.id, column]));
     const kpis = [{ role: 'rows', value: rows }];
     const time = charts.find(chart => chart.time);
@@ -819,8 +823,10 @@ function kpisOf(model, charts, measures, rows) {
         if (!stat || !column || !column.measure || seen.has(id) || stat.n === 0 || chart.template === 'wide_top_rows_latest') continue;
         seen.add(id);
         const total = chart.y.agg === 'sum';
-        kpis.push({ role: total ? 'sum' : 'avg', column: id, label: column.label, value: total ? stat.sum : stat.sum / stat.n,
-            lower_bound: total && stat.missing > 0, integer: total && column.measure.integer, percent: column.measure.percent,
+        // The table's one total row says the total itself; its parts add up to less when some are suppressed.
+        const published = total && !narrowed && totalRows === 1 && (stat.xn || 0) === 1;
+        kpis.push({ role: total ? 'sum' : 'avg', column: id, label: column.label, value: published ? stat.xsum : total ? stat.sum : stat.sum / stat.n,
+            lower_bound: total && stat.missing > 0 && !published, integer: total && column.measure.integer, percent: column.measure.percent,
             currency: column.measure.currency, unit: column.measure.unit || null });
     }
     const groups = charts.find(chart => chart.x.type === 'category' && chart.scope.groups_total > 1);
@@ -880,7 +886,8 @@ async function analyzeSnapshot(table, options = {}) {
         return {
             engine: ENGINE_VERSION,
             status: view.charts.length ? 'ok' : 'no_charts',
-            kpis: view.rows === null || view.rows === undefined ? [] : kpisOf(model, view.charts, view.measures, view.rows),
+            kpis: view.rows === null || view.rows === undefined ? []
+                : kpisOf(model, view.charts, view.measures, view.rows, { totalRows: view.total_rows, narrowed }),
             charts: view.charts,
             skipped: view.skipped.slice(0, 16),
             blocked: selection.blocked,
