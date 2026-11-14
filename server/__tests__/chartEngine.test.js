@@ -8,6 +8,10 @@ const queries = require('../db/chartQueries');
 const engine = require('../services/charts/chartEngine');
 const fixtures = require('./fixtures/charts/tables');
 const { fakeQueries } = require('./fixtures/charts/evaluate');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const tables = new Map();
 let fake;

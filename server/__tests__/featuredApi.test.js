@@ -24,6 +24,10 @@ jest.mock('../db/storeQueries', () => ({
 jest.mock('../db/chartQueries', () => ({ readSample: jest.fn(), runBatch: jest.fn() }));
 const request = require('supertest');
 const fixtures = require('./fixtures/charts/tables');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const PREPARED_AT = '2026-09-29T12:00:00.000Z';
 const text = id => ({ id, type: 'TEXT', original_label: id });

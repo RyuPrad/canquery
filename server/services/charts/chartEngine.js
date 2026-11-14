@@ -11,13 +11,18 @@ const chartQueries = require('../../db/chartQueries');
 const { buildWhereAndParams } = require('../../db/storeQueries');
 const { samplePlan, profileSample } = require('./profile');
 const { buildTableModel, publicModel, hiddenTwin, pinnedModel } = require('./model');
-const { listCandidates, pickDiverse, automaticMeasure } = require('./candidates');
+const { listCandidates, pickDiverse, automaticMeasure, LONG_SUMS } = require('./candidates');
 const { shapeCategory, shapeTime, shapeWide, detectTotalMembers, latestPeriod, periodRange } = require('./validate');
 const { validateSpec, asMeasure } = require('./spec');
 const { periodStart } = require('./periods');
 
 // Part of every cache key: raise it when the rules change what a chart shows.
-const ENGINE_VERSION = 2;
+const ENGINE_VERSION = 3;
+// Which figures the engine adds up on its own initiative. 'wide' (the
+// default): only in tables with periods as columns; a long table gets its
+// counts, and its sums are the reader's to build. 'all' adds them up in long
+// tables too: one in three of those charts misled on tables nobody had read.
+const autoSums = () => (process.env.CHART_AUTO_SUMS === 'all' ? 'all' : 'wide');
 const TIMEOUTS = { sample: 6000, batch: 10000, filtered: 15000, custom: 12000 };
 // What one scan may carry.
 const BATCH = { sets: 8, cleaned: 4, plain: 8, wide: 36, specs: 14 };
@@ -445,7 +450,7 @@ function noteValues(values, plan, result) {
 
 // The columns that keep a measure from being added up, with their largest
 // members, so a page can offer them as filters ("show one measure at a time").
-function blockedOf(model, lang, pinned, values, levels) {
+function blockedOf(model, lang, pinned, values, levels, sums = 'all') {
     const held = new Set(pinned);
     const byId = new Map(model.columns.map(column => [column.id, column]));
     const out = [];
@@ -453,20 +458,29 @@ function blockedOf(model, lang, pinned, values, levels) {
     const valuesOf = id => values.get(id) || [];
     for (const column of model.columns) {
         if (column.role !== 'measure' || hiddenTwin(column, lang)) continue;
+        // A long table's figures are not added up on the engine's initiative
+        // in this mode: no filter on them leads to a chart, so none is offered.
+        if (sums === 'wide' && !column.wide) continue;
         for (const block of column.measure.blocked_by) {
             const by = byId.get(block.column);
-            if (!by || held.has(block.column) || seen.has(column.id + '|' + block.column)) continue;
+            // The period columns of a wide table are blocked together: said once.
+            const key = (column.wide ? 'w:' + column.wide : column.id) + '|' + block.column;
+            if (!by || held.has(block.column) || seen.has(key)) continue;
             // A twin pair is offered once, in the reader's language; a pin on either holds it.
             if (by.twin && (held.has(by.twin.of) || hiddenTwin(by, lang))) continue;
-            seen.add(column.id + '|' + block.column);
+            seen.add(key);
             // Whether a filter on each value leads to charts of the measure: a
             // rate, or a measure named by a code, is charted under no filter.
+            // A period column is drawn once nothing else keeps it from being added up.
+            const free = column.measure.blocked_by.every(other => other.column === block.column || held.has(other.column));
             const offered = valuesOf(block.column).map(entry => {
+                if (column.wide) return { ...entry, charts: free };
                 // The model already holds the visitor's pins; this adds one more.
                 const pinnedTo = pinnedModel(model, [{ column: block.column, op: 'eq', value: entry.value }]);
                 return { ...entry, charts: automaticMeasure(pinnedTo, pinnedTo.columns.find(other => other.id === column.id), { lang }) };
             });
-            out.push({ measure: column.id, measure_label: column.label, column: block.column, column_label: byId.get(block.column).label, why: block.why,
+            out.push({ measure: column.wide ? null : column.id, measure_label: column.wide ? null : column.label, column: block.column,
+                column_label: byId.get(block.column).label, why: block.why,
                 values: offered, ...(offered.length ? { charts: offered.some(entry => entry.charts) } : {}) });
         }
     }
@@ -493,7 +507,9 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
     const totals = totalsOf(model);
     // The first scan tries a varied set, so a table with two strong measures
     // still gets its counts looked at without a second scan.
-    const candidates = listCandidates(model, { lang, pinned });
+    const sums = autoSums();
+    const candidates = listCandidates(model, { lang, pinned, sums });
+    const withheld = sums === 'wide' ? listCandidates(model, { lang, pinned, sums: 'all' }).filter(spec => LONG_SUMS.has(spec.template)) : [];
     // Groups of a table of figures are compared in its latest period, which
     // the first scans find: those charts wait for them.
     const later = candidates.filter(spec => spec.scope);
@@ -643,7 +659,11 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
         specs: Object.fromEntries(charts.map(chart => [chart.id, accepted.get(chart.id).spec])),
         skipped: [...skipped.values()].filter(entry => !accepted.has(entry.id) || entry.reason === 'mixed_levels'),
         totals: [...totals.entries()].map(([column, labels]) => [column, [...labels]]),
-        blocked: blockedOf(model, lang, pinned, values, [...levels]),
+        blocked: blockedOf(model, lang, pinned, values, [...levels], sums),
+        // Sums the engine would draw in a long table, and leaves to the builder,
+        // which opens on the first of them (one over time before one of a period).
+        sums_withheld: withheld.length > 0,
+        withheld_spec: withheld.length ? builderSpec(withheld.find(spec => !spec.scope) || withheld[0]) : null,
         measures: Object.fromEntries([...stats.entries()].filter(([id]) => id !== '')),
         rows: grand.n, total_rows: grand.nx, statements
     };
@@ -893,8 +913,10 @@ async function analyzeSnapshot(table, options = {}) {
             charts: view.charts,
             skipped: view.skipped.slice(0, 16),
             blocked: selection.blocked,
+            sums_withheld: Boolean(selection.sums_withheld),
             model: publicModel(model, lang),
-            builder: { default: (view.charts[0] || selection.charts[0] || {}).spec || null },
+            // The builder opens on the sums left to it, or else on the first chart drawn.
+            builder: { default: selection.withheld_spec || (view.charts[0] || selection.charts[0] || {}).spec || null },
             scope: { rows: view.rows, table_rows: model.rows, filtered: narrowed || pins.length > 0, pinned: pins.map(pin => pin.column),
                 total_rows_left_out: view.total_rows, note_rows_left_out: model.excluded_notes ?? model.excluded_rows.length }
         };

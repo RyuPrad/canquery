@@ -9,6 +9,10 @@
 //  - whole analyses come out identical whichever of the two computed them;
 //  - the rows in scope are the rows the table shows for the same search and filters;
 //  - a statement that runs out of time leaves its connection and its snapshot lease usable.
+// The engine adds figures up in long tables only when told to; this suite compares SQL with the
+// evaluator on every statement the engine can send, those sums included.
+process.env.CHART_AUTO_SUMS = 'all';
+
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');

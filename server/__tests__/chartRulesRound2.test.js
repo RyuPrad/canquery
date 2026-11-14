@@ -15,6 +15,10 @@ const { shapeCategory, shapeTime, latestPeriod } = require('../services/charts/v
 const { codeLevel, codeLabels, labelKind, isMeasureLabel, isTotalLabel, isAllLabel, isGarbled, nameEvidence } = require('../services/charts/tokens');
 const { parseNumber, detectNumberRule, prep } = require('../services/charts/numberFormats');
 const { fakeQueries } = require('./fixtures/charts/evaluate');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const NOW = new Date('2026-11-12T00:00:00Z');
 const text = id => ({ id, type: 'TEXT', original_label: id });

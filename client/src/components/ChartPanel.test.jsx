@@ -85,6 +85,20 @@ describe('the Chart tab', () => {
     expect(screen.queryByRole('button', { name: /Net income|Capital ratio/ })).toBeNull();
   });
 
+  test('figures the engine did not add up on its own are said, under the counts or in place of a chart', async () => {
+    fetchResourceCharts.mockImplementation(() => answer({ ...ANALYSIS, sums_withheld: true }));
+    const view = render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('TOTAL by Province');
+    expect(screen.getByText('The figures of this table are not added up automatically: adding up its rows could count the same thing twice. In the Custom tab, you choose what to add up.')).toBeInTheDocument();
+    view.unmount();
+
+    fetchResourceCharts.mockImplementation(() => answer({ ...ANALYSIS, status: 'no_charts', charts: [], kpis: [{ role: 'rows', value: 20 }], sums_withheld: true }));
+    render(<ChartPanel resourceId="r2" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('The figures of this table are not added up automatically: adding up its rows could count the same thing twice.');
+    expect(screen.getByText('In the Custom tab, you choose what to add up.')).toBeInTheDocument();
+    expect(screen.queryByText('No chart of this table would say something reliable.')).toBeNull();
+  });
+
   test('a busy engine says so and offers to try again', async () => {
     fetchResourceCharts.mockImplementationOnce(() => Promise.reject(new ApiError('busy', 503, { code: 'CHARTS_BUSY' })));
     render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" />);
