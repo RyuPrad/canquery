@@ -548,11 +548,11 @@ function aboutExplanation() {
         // The sections with an id are the ones other pages and the structured
         // data point to: guides link their byline to #guides.
         { id: 'data-sources', title: 'Where the data comes from and how often it is refreshed', paragraphs: [
-            'Every record comes from an official open-data portal: the Government of Canada\'s, and those of provinces, territories, regions and cities. A portal is added only when its records are published under a recognized open licence, and each dataset page names its publisher, its source and its licence.',
-            'On canquery.com the federal catalogue is checked for changes every 30 minutes and read in full every night, and the other portals are read once a day. A live table is read from its publisher when you open it. A prepared table is a copy of the publisher\'s file, and its page shows when the copy was made.'
+            'Every record comes from an official open-data portal: the Government of Canada’s, which also carries records from provincial and territorial governments, and municipal, regional and territorial portals. A record from a municipal, regional or territorial portal is listed only when it is published under a recognized open licence. Each dataset page links to its publisher, its source portal and the applicable licence.',
+            'On canquery.com the federal catalogue is checked for changes every 30 minutes and read in full once a day, and the other portals are read once a day. A table hosted by its source portal is read from that portal when you open it, and answers are kept for up to five minutes. A table prepared from a CSV or Excel file is a copy of that file, and the table says when the copy was made.'
         ] },
         { id: 'guides', title: 'How guides are written and checked', paragraphs: [
-            'Each data guide starts from one task and one dataset in the catalogue. Before a guide is published, the publisher, the source\'s own description and the steps the guide describes are checked against the official source, and the guide links to it.',
+            'Each guide starts from one task and one dataset in the catalogue. Before a guide is published, the publisher, the source’s own description and the steps the guide describes are checked against the official source, and the guide links to it.',
             'Every guide shows three dates: when it was published, when the article last changed in substance, and when its data links and steps were last checked. Guides say what the data covers and where it stops, and they draw no conclusions about real-world changes from catalogue dates. When a source no longer supports the task a guide describes, the guide is updated or withdrawn. Guides are published in English and French.'
         ], links: pathLink('/blog', 'Data guides') + ' · ' + pathLink('/fr/blog', 'Guides des données') },
         { id: 'who', title: 'Who runs CanQuery', paragraphs: [

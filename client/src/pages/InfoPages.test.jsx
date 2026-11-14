@@ -60,12 +60,23 @@ test.each(['en', 'fr'])('About preserves attribution and distinguishes software 
   // Where the data comes from, how guides are checked, who runs the site and how to get something corrected.
   const section = name => screen.getByRole('heading', { level: 2, name }).closest('section');
   const en = lang === 'en';
-  expect(section(en ? 'Where the data comes from and how often it is refreshed' : 'D’où viennent les données et à quelle fréquence elles sont mises à jour'))
-    .toHaveAttribute('id', 'data-sources');
+  const sources = section(en ? 'Where the data comes from and how often it is refreshed' : 'D’où viennent les données et à quelle fréquence elles sont mises à jour');
+  expect(sources).toHaveAttribute('id', 'data-sources');
+  expect(sources.querySelectorAll('p')).toHaveLength(2);
+  expect(sources).toHaveTextContent(en ? 'which also carries records from provincial and territorial governments'
+    : 'qui diffuse aussi des fiches de gouvernements provinciaux et territoriaux');
+  expect(sources).toHaveTextContent(en ? 'is listed only when it is published under a recognized open licence'
+    : 'n’est répertoriée que si elle est publiée sous une licence ouverte reconnue');
+  expect(sources).toHaveTextContent(en ? 'checked for changes every 30 minutes and read in full once a day'
+    : 'consulté toutes les 30 minutes pour en relever les changements et relu en entier une fois par jour');
+  expect(sources).toHaveTextContent(en ? 'is read from that portal when you open it, and answers are kept for up to five minutes'
+    : 'est lue auprès de ce portail au moment où vous l’ouvrez, et les réponses sont conservées jusqu’à cinq minutes');
+  expect(sources).toHaveTextContent(en ? 'the table says when the copy was made' : 'la table indique quand la copie a été faite');
   const guides = section(en ? 'How guides are written and checked' : 'Comment les guides sont rédigés et vérifiés');
   expect(guides).toHaveAttribute('id', 'guides');
   expect(guides).toHaveTextContent(en ? 'checked against the official source' : 'vérifiés auprès de la source officielle');
   expect(guides).toHaveTextContent(en ? 'Every guide shows three dates' : 'Chaque guide affiche trois dates');
+  expect(guides).toHaveTextContent(en ? 'the guide is updated or withdrawn' : 'ne permet plus d’accomplir la tâche décrite, le guide est mis à jour ou retiré');
   expect(guides.querySelector('a')).toHaveAttribute('href', en ? '/blog' : '/fr/blog');
   expect(section(en ? 'Who runs CanQuery' : 'Qui est derrière CanQuery')).toHaveAttribute('id', 'who');
   const corrections = section('Corrections');

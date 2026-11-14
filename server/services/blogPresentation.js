@@ -67,13 +67,15 @@ function resolveBlogPage(pathname) {
     const alternate = lang === 'fr' ? 'en' : 'fr';
     const languageLink = '<a href="' + translations[alternate] + '" hreflang="' + alternate +
         '" class="link">' + (alternate === 'fr' ? 'Lire en français' : 'Read in English') + '</a>';
+    // The byline leads to the About section on how guides are written and checked. The server's About
+    // page is in English, which a French guide's link says; the application shows it in the reader's language.
     let body = '<main data-cq-blog class="max-w-3xl mx-auto px-4 py-10">' + sectionNav();
     if (article) {
         body += '<nav aria-label="' + (lang === 'fr' ? 'Fil d’Ariane' : 'Breadcrumbs') + '"><a class="link" href="' + indexPath + '">' + labels.title + '</a></nav>' +
             '<article><p class="cq-chip !whitespace-normal mt-6">' + esc([article.placeName, article.topicName].filter(Boolean).join(' · ')) + '</p>' +
             '<h1 class="font-display text-3xl sm:text-4xl font-bold mt-4">' + esc(title) + '</h1>' +
             '<p class="text-base-content/60 mt-4">' + esc(description) + '</p>' +
-            '<p class="text-sm text-base-content/60 mt-4">' + labels.by + ' <a class="link" href="/about#guides">CanQuery</a> · ' + labels.published + ' ' + article.published + '</p>' +
+            '<p class="text-sm text-base-content/60 mt-4">' + labels.by + ' <a class="link" href="/about#guides"' + (lang === 'fr' ? ' hreflang="en"' : '') + '>CanQuery</a> · ' + labels.published + ' ' + article.published + '</p>' +
             '<p class="text-sm text-base-content/60">' + labels.updated + ' ' + article.updated + ' · ' + labels.verified + ' ' + article.verified + '</p>' +
             '<p class="mt-4">' + languageLink + '</p>' +
             '<div class="cq-article mt-8">' + article.bodyHtml + '</div>' +
