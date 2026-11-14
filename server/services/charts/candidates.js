@@ -56,6 +56,7 @@ function visibleIn(model, column, lang, byId) {
 function automaticMeasure(model, column, { lang = 'en', byId = new Map(model.columns.map(entry => [entry.id, entry])) } = {}) {
     return Boolean(column) && column.role === 'measure' && !column.wide && visibleIn(model, column, lang, byId) && column.confidence !== 'low' &&
         !column.measure.doubtful && !(column.generic_name && !nameEvidence(column.header || column.label).additive) && !column.measure.sparse &&
+        !column.measure.place &&
         summable(column, model);
 }
 

@@ -91,7 +91,7 @@ function isAggregateLabel(label) {
 // group not listed). "All" goes with the name of a breakdown only: "All City
 // facilities" is a kind of project. In a table of things or events "All" can
 // be a real value ("Eligible wards: All"), so it says nothing there.
-const ALL_ALONE_RE = /^(?:all|both|tous|toutes|ensemble|les deux|(?:both|les deux|deux) sexes)$/i;
+const ALL_ALONE_RE = /^(?:all|both|tous|toutes|ensemble|les deux|overall|all combined|combined|(?:both|les deux|deux) sexes)$/i;
 const ALL_LEAD_RE = /^(?:all|tous les|toutes les|tous|toutes|(?:l['’])?ensemble d(?:es|e la|e l['’]|u|['’]))\s*(.+)$/i;
 const BREAKDOWN_NAMES = new Set([
     'ages', 'age groups', 'sexes', 'genders', 'persons', 'people', 'individuals', 'industries', 'occupations', 'regions', 'provinces',
