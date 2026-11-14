@@ -170,7 +170,7 @@ export function skipReason(reason, t) {
 
 const READING_REASONS = new Set(['code_labels', 'garbled_text', 'period_labels', 'one_value_dominates', 'measure_names', 'mixed_levels',
   'repeated_partitions', 'maintenance_date', 'date_numbers', 'person_names', 'fill_down', 'list_labels', 'overlapping_bands', 'question_code',
-  'paradata', 'mixed_languages', 'period_end_date', 'statement_lines', 'sections', 'place_column']);
+  'paradata', 'mixed_languages', 'period_end_date', 'statement_lines', 'sections', 'place_column', 'nested_rows', 'total_per_version']);
 
 /** What a column was read as, and what that means for charts. */
 export function columnReading(column, t) {

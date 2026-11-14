@@ -45,7 +45,8 @@ function isBlankLabel(label, tableTokens) {
 // ("Canada", "Both sexes", "All") is found from the numbers instead.
 // "Total, all ages" and "Total - Age groups" are totals; "Total-factor
 // productivity" is a member: a bare hyphen joins words.
-const TOTAL_RE = /^(?:(?:(?:grand|sub|sous)[ -]?)?(?:totals?|totaux)(?: g[ée]n[ée]ral)?|totals?(?:\s*[,:–—]\s*|\s+-\s+)\S.*)$/i;
+// "Total partiel" is the French subtotal, "Total général" and "Total global" the grand total.
+const TOTAL_RE = /^(?:(?:(?:grand|sub|sous)[ -]?)?(?:totals?|totaux)(?: g[ée]n[ée]ral| g[ée]n[ée]raux| partiels?| global| globaux)?|totals?(?:\s*[,:–—]\s*|\s+-\s+)\S.*)$/i;
 const TAIL_MARKS = new Set([':', '.', '*']);
 
 // The label without spaces, colons, full stops and stars at its end. A loop:
@@ -353,7 +354,10 @@ const HINTS = {
         'poll', 'precinct', 'station', 'route', 'line', 'ligne', 'class', 'classe', 'grade', 'category', 'categorie', 'type', 'group',
         'groupe', 'section', 'block', 'bloc', 'lot', 'phase', 'floor', 'etage', 'site', 'plot', 'township', 'meridian', 'quartier',
         'region', 'branch', 'team', 'equipe', 'cluster', 'tier', 'priority', 'priorite', 'version', 'wave', 'cycle', 'round', 'stage',
-        'etape', 'step', 'order', 'ordre', 'sort', 'tri', 'sequence']),
+        'etape', 'step', 'order', 'ordre', 'sort', 'tri', 'sequence',
+        // A number given to whoever did the work: "First observer 107".
+        'observer', 'observers', 'observateur', 'observateurs', 'inspector', 'inspecteur', 'operator', 'operateur', 'technician', 'technicien',
+        'collector', 'recorder', 'surveyor', 'sampler', 'enumerator', 'interviewer', 'crew']),
     rowNumber: words(['row', 'rang', 'ligne', 'objectid', 'fid', 'seq', 'sequence', 'no', 'num', 'numero', '#']),
     code: words(['code', 'codes', 'naics', 'scian', 'noc', 'cnp', 'sic', 'hs', 'cip', 'fsa', 'rta', 'zip', 'cd', 'uid']),
     // Quantities that add up.
@@ -387,6 +391,7 @@ const HINTS = {
         'confidence', 'bound', 'bounds', 'borne', 'bornes', 'decile', 'p10', 'p25', 'p50', 'p75', 'p90', 'p95',
         // Sizes of one thing: a rink's width, a valve's diameter.
         'length', 'longueur', 'width', 'largeur', 'diameter', 'diametre', 'thickness', 'epaisseur', 'radius', 'rayon',
+        'spacing', 'espacement', 'wheelbase', 'empattement', 'clearance', 'degagement',
         // A moment, not an amount: the day or hour of a timestamp.
         'day', 'jour', 'hour', 'heure', 'minute', 'second', 'seconde', 'weekday', 'timestamp', 'datetime',
         // Rates of one thing: miles per gallon, kilometres per hour.

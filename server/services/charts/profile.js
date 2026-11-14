@@ -349,7 +349,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set(), scale 
 // kinds of breakdown however far down the second one sorts.
 const LABEL_READ_MAX = 2000;
 // Not totals: those are set aside as totals, and a hierarchy of places has many.
-const DERIVED_LINE_RE = /^(?:net|gross|taxable|revenu net|revenu imposable|revenu brut|montant net|perte nette|benefice net|impot net|impot federal net)\b/i;
+const DERIVED_LINE_RE = /^(?:net|gross|taxable|revenus? nets?|revenus? imposables?|revenus? bruts?|montants? nets?|pertes? nettes?|b[ée]n[ée]fices? nets?|gains? (?:en capital )?imposables?|imp[oô]ts? (?:f[ée]d[ée]ral |provincial )?nets?)(?:$|[^\p{L}])/iu;
 const DATED_RE = /(?:^|[^0-9])(?:1[89]|20)[0-9]{2}(?:[^0-9]|$)/;
 function labelReading(counts) {
     if (counts.size === 0 || counts.size > LABEL_READ_MAX) return null;
@@ -677,6 +677,12 @@ function describePairs(pairs, byId, stats) {
 
 // Period columns of a wide table, grouped by what is left of their labels
 // once the period is taken out.
+// What a period column's name may carry besides its period and still be the
+// same series: a flag (preliminary, revised, estimate, forecast) or "n".
+// Parents among their children are looked for in tables of at most this many rows.
+const NESTED_ROWS_MAX = 500;
+const NEUTRAL_STEMS = new Set(['p', 'r', 'e', 'f', '*', 'n', 'nb', 'nbr', 'nombre', 'count']);
+
 function wideGroups(stats) {
     const groups = new Map();
     stats.forEach((stat, index) => {
@@ -688,6 +694,18 @@ function wideGroups(stats) {
         group.columns.push({ id: stat.id, ord: period.ord, index });
         groups.set(key, group);
     });
+    // "2018p" (preliminary), "2019r" (revised) and "n_2020" beside "2016" …
+    // "2019" are the next periods of the same series: they join it, unless
+    // the series already has that period.
+    for (const [key, group] of [...groups]) {
+        if (!NEUTRAL_STEMS.has(group.stem)) continue;
+        const plain = groups.get(group.grain + '|');
+        if (!plain) continue;
+        const taken = new Set(plain.columns.map(column => column.ord));
+        if (group.columns.some(column => taken.has(column.ord))) continue;
+        plain.columns.push(...group.columns);
+        groups.delete(key);
+    }
     const out = [];
     for (const group of groups.values()) {
         const ords = new Set(group.columns.map(column => column.ord));
@@ -1152,6 +1170,85 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
         await pause();
     }
 
+    // Told from the numbers, so only when the whole table was read: a row
+    // with no name that says, in every number it carries, what all the other
+    // rows add up to (the table's own total, written without a label, with
+    // any footer lines after it); and rows that say what the rows right
+    // under or above them add up to (sectors under their parent sector).
+    let nested = 0;
+    if (plan.complete && count >= 5) {
+        const numeric = [];
+        for (let c = 0; c < used.length; c += 1) {
+            if (numericLike(stats[c]) && !(stats[c].sequence && stats[c].sequence.row_number_share >= 0.99)) numeric.push(c);
+        }
+        const textual = [];
+        for (let c = 0; c < used.length; c += 1) if (!stats[c].number && stats[c].filled >= count * 0.5) textual.push(c);
+        const live = [];
+        for (let r = 0; r < count; r += 1) if (!aside.has(r)) live.push(r);
+        const carries = r => numeric.some(c => !Number.isNaN(numbersOf(c)[r]));
+        const figures = live.filter(carries);
+        for (const r of numeric.length && figures.length >= 5 ? [figures[figures.length - 1], figures[0]] : []) {
+            let carried = 0;
+            let agree = 0;
+            let most = 0;
+            for (const c of numeric) {
+                const numbers = numbersOf(c);
+                if (Number.isNaN(numbers[r])) continue;
+                carried += 1;
+                let others = 0;
+                let rows = 0;
+                for (const x of figures) {
+                    if (x === r || Number.isNaN(numbers[x])) continue;
+                    others += numbers[x];
+                    rows += 1;
+                }
+                most = Math.max(most, rows);
+                if (rows >= 3 && numbers[r] !== 0 && Math.abs(numbers[r] - others) <= Math.abs(others) * 0.005) agree += 1;
+            }
+            const unnamed = textual.length > 0 && textual.every(c => matrix[c][r] === '');
+            if (carried >= 1 && agree === carried && unnamed && most >= 3) {
+                aside.set(r, 'total');
+                excluded.push({ id: ids[r], reason: 'total' });
+                // Lines after a total at the foot of a table are its footer ("Return to Table of Contents").
+                if (r === figures[figures.length - 1]) {
+                    for (const x of live) {
+                        if (x > r && !carries(x)) {
+                            aside.set(x, 'note');
+                            excluded.push({ id: ids[x], reason: 'note' });
+                        }
+                    }
+                }
+                excluded.sort((x, y) => x.id - y.id);
+                break;
+            }
+        }
+        // Parents above or below their children: a row equal, in every number
+        // it carries (two at least, one of them a hundred or more), to the sum
+        // of the two to forty rows next to it. Small numbers add up to one
+        // another by chance, so the sums must be nearly exact and such rows
+        // more than a stray one or two.
+        if (numeric.length >= 2 && figures.length <= NESTED_ROWS_MAX) {
+            const rows = figures.filter(r => !aside.has(r));
+            const values = rows.map(r => numeric.map(c => numbersOf(c)[r]));
+            const sumsTo = (i, step) => {
+                const own = values[i];
+                const carried = own.filter(value => !Number.isNaN(value));
+                if (carried.length < 2 || !carried.some(value => Math.abs(value) >= 100)) return false;
+                const sums = own.map(() => 0);
+                for (let k = 1; k <= 40; k += 1) {
+                    const other = values[i + step * k];
+                    if (!other) return false;
+                    for (let c = 0; c < own.length; c += 1) if (!Number.isNaN(other[c])) sums[c] += other[c];
+                    if (k >= 2 && own.every((value, c) => Number.isNaN(value) || Math.abs(value - sums[c]) <= Math.abs(value) * 0.005 + 0.5)) return true;
+                }
+                return false;
+            };
+            let parents = 0;
+            for (let i = 0; i < rows.length; i += 1) if (sumsTo(i, 1) || sumsTo(i, -1)) parents += 1;
+            if (parents >= Math.max(2, Math.ceil(rows.length * 0.03))) nested = parents;
+        }
+    }
+
     const byId = new Map(stats.map(stat => [stat.id, stat]));
     const pairs = describePairs(await findPairs(stats, matrix, pause), byId, stats);
     await pause();
@@ -1184,7 +1281,9 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
             total_labels: found.total_labels,
             aggregate_labels: found.aggregate_labels || {},
             // Headings inside a column, by column: two or more make it several breakdowns.
-            sections: found.sections || {}
+            sections: found.sections || {},
+            // Rows that are the sum of the rows next to them: levels nested in one another.
+            nested
         },
         pairs,
         groups: {
