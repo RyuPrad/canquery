@@ -17,6 +17,12 @@ const AUTO_CATEGORY_MAX = 60;
 // The profile keeps a column's 30 most frequent values: a rule that needs all
 // of them reads only columns with no more.
 const TOP_VALUES_READ = 30;
+// A list of people by its header and its values: "Last, First" under "Name" or "Employee".
+const PERSON_HEADER_RE = /(?:^| )(?:name|names|nom|noms|employee|employees|employe|employes|recipient name|member|membre)$/;
+const ORGANISATION_HEADER_RE = /(?:^| )(?:company|compagnie|organization|organisation|organisme|business|entreprise|vendor|supplier|fournisseur|societe|product|produit|street|rue|place|lieu|program|programme|project|projet|department|ministere|institution|school|ecole|facility|site|station)(?: |$)/;
+const PERSON_VALUE_RE = /^[\p{Lu}][\p{L}'’.\- ]*, ?[\p{Lu}][\p{L}'’.\- ]*$/u;
+const VERSION_HEADER_RE = /(?:^| )(?:amendment|amendments|amendement|revision|revisions|version|versions|modification|modifications|avenant|avenants)(?: |$)/;
+const CUMULATIVE_HEADER_RE = /(?:^| )(?:total|totale|cumulative|cumulatif|cumulee|cumul|revised|revise|current|courant|to date|a ce jour)(?: |$)/;
 const PROVINCE_CODE_RE = /^(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT|PEI|NFLD|QUE|ONT|ALTA|SASK|MAN|CB|NÉ|NE|TNL|IPE|TN-O|TNO)$/i;
 // Answers chosen from a list: at most this many.
 const OPTIONS_MAX = 12;
@@ -249,6 +255,9 @@ function decideRole(stat, context) {
     }
     // People's first or last names repeat, but a group of every "John" is no group.
     if (name.personName && !stat.number) return decide('text', 'high', 'person_names');
+    // "Singh,Gurpreet" under "Name": people, and seven of them share that one.
+    if (!stat.number && PERSON_HEADER_RE.test(name.normal) && !ORGANISATION_HEADER_RE.test(name.normal) && stat.top.length >= 3 &&
+        stat.top.filter(entry => PERSON_VALUE_RE.test(entry.v)).length >= stat.top.length * 0.8) return decide('text', 'high', 'person_names');
 
     // Shapes on a map written as text are neither names nor groups.
     if (share(stat.patterns.shapes || 0, stat.filled) >= 0.9) return decide('geometry', 'high', 'shape_text');
@@ -579,6 +588,30 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
         column.reasons.push({ code: 'one_unit_only', column: block.column, value: top.v });
     }
 
+    // The lines of a statement are the same lines under their French names:
+    // every column that names the rows is one of statement lines.
+    if (columns.some(column => column.role === 'label' && ((column.category || {}).flags || []).includes('statement_lines'))) {
+        for (const column of columns) {
+            if (column.role !== 'label' || !column.category) continue;
+            const flags = column.category.flags || (column.category.flags = []);
+            if (flags.includes('statement_lines')) continue;
+            flags.push('statement_lines');
+            column.reasons.push({ code: 'statement_lines' });
+        }
+    }
+    // Rows that are versions of one thing (a contract and its amendments):
+    // a figure named for a total or a running amount is the thing's, on each
+    // of its rows, and adding the rows up counts it once per version.
+    if (columns.some(column => column.role !== 'measure' && VERSION_HEADER_RE.test(nameEvidence(column.label).normal))) {
+        for (const column of columns) {
+            if (column.role !== 'measure' || column.measure.additive === 'no') continue;
+            if (!CUMULATIVE_HEADER_RE.test(nameEvidence(column.label).normal)) continue;
+            column.measure.additive = 'no';
+            column.measure.reason = 'total_per_version';
+            column.reasons.push({ code: 'total_per_version' });
+        }
+    }
+
     // Columns named by province codes ("AB", "BC", "NB"…): a table of places
     // across, one column a place. Charted alone, "NB by Industry" says little.
     const placeColumns = columns.filter(column => column.role === 'measure' && PROVINCE_CODE_RE.test(String(column.label).trim()));
@@ -680,6 +713,20 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
     // Headings inside a column ("Overall", "Region": …, "Sector": …): the rows
     // are figures of several breakdowns, whatever names they carry.
     const sectioned = columns.filter(column => (column.role === 'category' || column.role === 'label') && ((profile.rows.sections || {})[column.id] || 0) >= 2);
+    // Two rows or more that are the sum of the rows next to them: the column
+    // that names the rows holds parents and their children ("Seafood" above
+    // "Commercial Fishing", "Aquaculture", "Fish Processing").
+    if ((profile.rows.nested || 0) >= 2) {
+        // A table of one named row per item: its first column of names.
+        const namer = columns.find(column => (column.role === 'label' || column.role === 'category') && column.category);
+        if (namer && namer.role === 'label' && !sectioned.includes(namer)) {
+            sectioned.push(namer);
+            const flags = namer.category.flags || (namer.category.flags = []);
+            if (!flags.includes('nested_rows')) flags.push('nested_rows');
+            namer.category.breakdown = false;
+            namer.reasons.push({ code: 'nested_rows' });
+        }
+    }
     const records = !dictionary && !wideGroups.length && !mixed && !cube && !sectioned.length && partitioned.size === 0 &&
         (entity || fineDate || measures.length === 0 || (!sums && !grid));
     // Rows that only numbers tell apart, in a table of figures: blocks stacked
@@ -717,7 +764,11 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             const kindCount = [read.place, read.sex, read.age].filter(count => count > 0).length;
             // Places at several levels at once: the country or a region of
             // provinces beside provinces, beside counties or cities.
-            const nested = (read.national > 0 || read.region > 0) && read.province >= 2 && read.others >= 3;
+            // The country above one province and that province's own districts
+            // and towns ("Canada", "British Columbia", "Capital", "Victoria") is
+            // the same nesting with one province.
+            const nested = ((read.national > 0 || read.region > 0) && read.province >= 2 && read.others >= 3) ||
+                (read.national > 0 && read.province >= 1 && read.others >= 5);
             if ((kindCount >= 2 && read.place + read.sex + read.age >= 3) || nested) {
                 column.reasons.push({ code: 'mixed_levels' });
                 block(column.id, 'levels');

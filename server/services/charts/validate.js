@@ -346,6 +346,8 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
             namedTotals.push('');
             wholeLeft = total === null ? null : total - blankValue;
         } else if (blankValue > 0 && ranking) {
+            // A ranking that leaves most of the amount out says who is first among the few rows that carry a name.
+            if (gates && total > 0 && blankValue / total > 0.5) return reject('mostly_blank');
             notes.push({ code: 'unnamed_rows_left_out', level: 'info', column: column.id, rows: blank.n });
             wholeLeft = total === null ? null : total - blankValue;
         } else if (blankValue > 0) {
@@ -565,13 +567,15 @@ function latestPeriod(groups, { axis, columns, grain, j, now = Date.now() }) {
 
 /**
  * The first and last periods of a table's records, every one of them (the
- * groups of a chart count them all), or null when the axis dates fewer than
- * half of the rows.
+ * groups of a chart count them all), or null when the axis leaves a tenth of
+ * the rows undated or holds a single period.
  */
 function periodRange(groups, { axis, columns, grain, rows }) {
     const list = periodsOf(groups, { axis, columns, grain });
     const dated = list.reduce((sum, entry) => sum + entry.n, 0);
-    if (!list.length || (rows > 0 && dated < rows * 0.5)) return null;
+    // Nearly every row dated, over more than one period: a third of the rows
+    // without a date are counted too, and one day is when the file was made.
+    if (list.length < 2 || (rows > 0 && dated < rows * 0.9)) return null;
     return { grain, first: periodStart(grain, list[0].ord), last: periodStart(grain, list[list.length - 1].ord) };
 }
 

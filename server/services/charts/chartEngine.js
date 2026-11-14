@@ -622,7 +622,9 @@ async function computeSelection(table, model, { lang = 'en', pins = [] } = {}) {
         }
     }
     // A table of things or events: its groups count every period; say which.
-    const span = [...ranges.values()].find(Boolean);
+    // Only when the table has one date to go by: with a date of death and a
+    // date of burial, or an award and an expiry, no one span is the records'.
+    const span = model.time_axes.length === 1 ? [...ranges.values()].find(Boolean) : null;
     if (model.records && span) {
         for (const entry of accepted.values()) if (entry.chart.x.type === 'category') entry.chart.span = span;
     }

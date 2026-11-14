@@ -769,6 +769,30 @@ describe('fourth reading: tables the rules had never seen', () => {
         expect(line.notes.map(note => note.code)).not.toContain('placeholders_left_out');
     });
 
+    test('a name that is nearly every row\'s own in a large table is not ranked', async () => {
+        const rows = range(60).map(i => ['21 ' + (126000 + i) + ' BLD', ['House', 'Apartment', 'Store'][i % 3], String(1000 + scatter(i, 900000))]);
+        const { model } = await read(table([text('Permit'), text('Structure'), integer('Estimated construction cost')], rows));
+        const permit = column(model, 'Permit');
+        expect(permit.role).toBe('label');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Permit')).toBe(true);
+        // The same column as the sample of a 450,000-row table estimates it: some 400,000 permits.
+        permit.category.distinct = 400000;
+        expect(listCandidates(model).some(spec => spec.x.column === 'Permit')).toBe(false);
+    });
+
+    test('a list of people under "Name" is not ranked by name: several people share one', async () => {
+        const people = ['Singh,Gurpreet', 'Charlesworth,Jennifer', 'Lakey,William', 'Burns,Aaron', 'Wright,Robert H', 'Buchanan,Alison', 'Li,Wei', 'Tremblay,Marc',
+            "O'Neil,Sean", 'Smith-Jones,Anne', 'Nguyen,Thi', 'Roy,Julie'];
+        const rows = range(120).map(i => [people[i % people.length].replace(',', i % 7 === 0 ? ', ' : ','), ['Analyst', 'Manager', 'Director'][i % 3],
+            String(75000 + scatter(i, 90000))]);
+        const { model } = await read(table([text('Name'), text('Position Title'), integer('Amount')], rows));
+        expect(reasons(model, 'Name')).toContain('person_names');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Name')).toBe(false);
+        // "City, Province" under another header is a place, and a company's name is one thing.
+        const places = range(60).map(i => [['Toronto, Ontario', 'Laval, Quebec', 'Surrey, British Columbia'][i % 3], String(10 + i)]);
+        expect(reasons((await read(table([text('Location'), integer('Count of permits')], places))).model, 'Location')).not.toContain('person_names');
+    });
+
     test('"Numéro de permis" names a permit and "Nombre de permis" counts them', async () => {
         for (const name of ['Numéro de permis (LOPC)', 'No de dossier', 'N° de lot', '# de client', 'Numéro du lot']) {
             expect([name, nameEvidence(name).identifier, nameEvidence(name).additive]).toEqual([name, true, false]);
@@ -781,5 +805,119 @@ describe('fourth reading: tables the rules had never seen', () => {
         const { model } = await read(table([integer('Numéro de permis (LOPC)'), text('Société')], rows));
         expect(column(model, 'Numéro de permis (LOPC)').role).not.toBe('measure');
         expect(listCandidates(model).some(spec => spec.y.column === 'Numéro de permis (LOPC)')).toBe(false);
+    });
+});
+
+describe('fifth reading: a second set of tables the rules had never seen', () => {
+    test('"Total partiel" is a subtotal in any table; an observer\'s number names the observer; an axle spacing does not add up', async () => {
+        expect(['Total partiel', 'Total général', 'Total global', 'Totaux partiels'].map(isTotalLabel)).toEqual([true, true, true, true]);
+        expect(isTotalLabel('Total-factor productivity')).toBe(false);
+        const rows = range(60).map(i => ['Pond ' + (i % 12), String(2016 + (i % 4)), String([1, 14, 107, 128, 131][i % 5]), String(2 + (i % 7))]);
+        const { model } = await read(table([text('Wetland'), integer('Year of observation'), text('First observer'), text('Number of egg masses')], rows));
+        expect(column(model, 'First observer').role).toBe('code');
+        expect(nameEvidence('Axle spacing 1-2').nonAdditive).toBe(true);
+    });
+
+    test('the country above one province and that province\'s own districts and towns is one place nested in another', async () => {
+        const places = ['Canada', 'British Columbia', 'Capital', 'Victoria', 'Saanich', 'Greater Vancouver', 'Vancouver', 'Surrey', 'Burnaby', 'Fraser Valley',
+            'Abbotsford', 'Chilliwack'];
+        const months = ['Jan 2024', 'Feb 2024', 'Mar 2024', 'Apr 2024'];
+        const rows = places.map((place, i) => [place, ...months.map((_, m) => String(i === 0 ? 4000 + m : i === 1 ? 240 + m : 20 + i + m))]);
+        const { model } = await read(table([text('Geography'), ...months.map(text)], rows));
+        expect(reasons(model, 'Geography')).toContain('mixed_levels');
+        expect(listCandidates(model).some(spec => spec.template === 'wide_totals_per_period')).toBe(false);
+    });
+
+    test('the lines of a statement are the same lines under their French names', async () => {
+        const lines = [['Number of taxable returns', 'Nombre de déclarations imposables'], ['Employment income', "Revenus d'emploi"], ['Commissions', 'Commissions'],
+            ['Old age security pension', 'Pension de sécurité de la vieillesse'], ['Net rental income', 'Revenus nets de location'],
+            ['Taxable capital gains', 'Gains en capital imposables'], ['Net business income', "Revenus nets d'entreprise"],
+            ['Total income assessed', 'Revenu total cotisé'], ['RRSP deduction', 'Déduction pour REER'], ['Child care expenses', "Frais de garde d'enfants"],
+            ['Net income', 'Revenu net'], ['Taxable income assessed', 'Revenu imposable cotisé'], ['Basic federal tax', 'Impôt fédéral de base'],
+            ['Net federal tax', 'Impôt fédéral net'], ['Basic personal amount', 'Montant personnel de base'], ['Tuition amount', 'Frais de scolarité']];
+        const rows = lines.map(([item, poste], i) => [item, poste, String(1000 + i * 937), String(50000 + i * 41013)]);
+        const { model } = await read(table([text('Item'), text('Poste'), integer('Grand total #'), integer('Grand total $ (000)')], rows));
+        expect(column(model, 'Poste').category.flags).toContain('statement_lines');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Poste' || spec.x.column === 'Item')).toBe(false);
+    });
+
+    test('a last row with no name that says what all the others add up to is the table\'s total, and is set aside', async () => {
+        const suppliers = ['SHAW CABLESYSTEMS', 'XEROX CANADA', 'WESTJET', 'PUROLATOR', 'TELUS MOBILITY', 'STAPLES', 'AIR CANADA', 'BEST WESTERN'];
+        const rows = suppliers.map((name, i) => [name, String(3 + i * 4), (120.25 + i * 911.5).toFixed(2), ['VICTORIA', 'CALGARY', 'WINNIPEG'][i % 3]]);
+        rows.push(['', String(rows.reduce((sum, row) => sum + Number(row[1]), 0)), rows.reduce((sum, row) => sum + Number(row[2]), 0).toFixed(2), '']);
+        const input = table([text('Supplier Name'), integer('Total Transactions'), text('Net Amount'), text('City')], rows);
+        const { profile } = await read(input);
+        expect(profile.rows.excluded).toEqual([{ id: rows.length, reason: 'total' }]);
+        const analysis = await analyze('own-total-row', input);
+        const byCity = analysis.charts.find(chart => chart.x.column === 'City' && chart.y.column === 'Net Amount');
+        expect(byCity.points.map(point => point.label)).toEqual(expect.arrayContaining(['VICTORIA', 'CALGARY', 'WINNIPEG']));
+        expect(byCity.points.some(point => point.blank)).toBe(false);
+        // A named row that merely equals the sum of a few others in its one number stays.
+        const few = await read(table([text('Item'), integer('Count')], [['A', '1'], ['B', '2'], ['C', '3'], ['D', '4'], ['E', '10']]));
+        expect(few.profile.rows.excluded).toEqual([]);
+    });
+
+    test('a total row with no name is found before the footer lines under it', async () => {
+        const suppliers = ['SHAW CABLESYSTEMS', 'XEROX CANADA', 'WESTJET', 'PUROLATOR', 'TELUS MOBILITY', 'STAPLES', 'AIR CANADA', 'BEST WESTERN'];
+        const rows = suppliers.map((name, i) => [name, String(3 + i * 4), (120.25 + i * 911.5).toFixed(2), ['VICTORIA', 'CALGARY', 'WINNIPEG'][i % 3]]);
+        rows.push(['', String(rows.reduce((sum, row) => sum + Number(row[1]), 0)), rows.reduce((sum, row) => sum + Number(row[2]), 0).toFixed(2), '']);
+        rows.push(['Return to Table of Contents', '', '', '']);
+        const { profile } = await read(table([text('Supplier Name'), integer('Total Transactions'), text('Net Amount'), text('City')], rows));
+        expect(profile.rows.excluded).toEqual([{ id: rows.length - 1, reason: 'total' }, { id: rows.length, reason: 'note' }]);
+    });
+
+    test('rows that are the sum of the rows under them are parents among their children: nothing is added up or ranked across them', async () => {
+        const years = ['2014', '2015', '2016', '2017'];
+        const leaf = (i, y) => 500 + i * 370 + y * 45;
+        const sum = (list, y) => list.reduce((total, i) => total + leaf(i, y), 0);
+        const rows = [
+            ['Seafood', ...years.map((_, y) => String(sum([0, 1, 2], y)))], ['Commercial Fishing', ...years.map((_, y) => String(leaf(0, y)))],
+            ['Aquaculture', ...years.map((_, y) => String(leaf(1, y)))], ['Fish Processing', ...years.map((_, y) => String(leaf(2, y)))],
+            ['Offshore Oil & Gas', ...years.map((_, y) => String(leaf(3, y)))],
+            ['Transportation', ...years.map((_, y) => String(sum([4, 5], y)))], ['Marine Transportation', ...years.map((_, y) => String(leaf(4, y)))],
+            ['Support Activities', ...years.map((_, y) => String(leaf(5, y)))], ['Tourism & Recreation', ...years.map((_, y) => String(leaf(6, y)))]];
+        const { model, profile } = await read(table([text('Industry'), ...years.map(text)], rows));
+        expect(profile.rows.nested).toBe(2);
+        expect(reasons(model, 'Industry')).toContain('nested_rows');
+        expect(listCandidates(model)).toEqual([]);
+        // A plain table of sectors has no such rows.
+        const flat = await read(table([text('Industry'), ...years.map(text)], rows.filter((_, i) => i !== 0 && i !== 5)));
+        expect(flat.profile.rows.nested).toBe(0);
+        expect(listCandidates(flat.model).some(spec => spec.template === 'wide_totals_per_period')).toBe(true);
+    });
+
+    test('a ranking that would leave most of the amount without a name is not drawn', async () => {
+        const rows = range(60).map(i => [i % 9 === 1 ? 'APPROVER ' + (i % 4) : '', 'PO-' + (5000 + i), ['Hydro', 'Bell', 'Uline', 'Grainger', 'Rona'][i % 5],
+            (100 + scatter(i, 4000)) + '.25']);
+        const analysis = await analyze('mostly-unnamed', table([text('Dernier Approbateur'), text('Numéro bon'), text('Nom fournisseur'), text('Montant de')], rows));
+        expect(analysis.charts.some(chart => chart.x.column === 'Dernier Approbateur')).toBe(false);
+    });
+
+    test('the span of a chart of records is said only when the table has one date to go by', async () => {
+        const type = i => 'Type ' + (i % 7 < 3 ? 0 : i % 7 < 5 ? 1 : i % 7 < 6 ? 2 : 3);
+        const rows = range(240).map(i => ['P-' + (1000 + i), type(i), (1950 + (i % 60)) + '-0' + (1 + (i % 9)) + '-1' + (i % 9), (1951 + (i % 60)) + '-0' + (1 + (i % 9)) + '-2' + (i % 9)]);
+        const two = await analyze('two-dates', table([text('Person'), text('Type'), date('Date of death'), date('Date interred')], rows));
+        expect(two.charts.find(chart => chart.x.column === 'Type').span).toBeUndefined();
+    });
+
+    test('"2018p" and "n_2020" are the next periods of the series beside them', async () => {
+        const industries = ['Fishing', 'Fish processing', 'Shipbuilding', 'Marine transport', 'Ports', 'Tourism', 'Offshore oil', 'Aquaculture'];
+        const flagged = await read(table([text('Industry'), ...['2014', '2015', '2016', '2017', '2018p'].map(text)],
+            industries.map((name, i) => [name, ...range(5).map(y => String(1000 + i * 150 + y * 40))])));
+        expect(flagged.model.wide_groups[0].columns.map(entry => entry.id)).toEqual(['2014', '2015', '2016', '2017', '2018p']);
+        const counted = await read(table([text('categorie'), ...['2016', '2017', '2018', '2019', 'n_2020'].map(text), numeric('%_2020')],
+            industries.map((name, i) => [name, ...range(5).map(y => String(1000 + i * 150 + y * 40)), String(10 + i)])));
+        expect(counted.model.wide_groups[0].columns.map(entry => entry.id)).toEqual(['2016', '2017', '2018', '2019', 'n_2020']);
+        expect(column(counted.model, '%_2020').wide).toBeUndefined();
+    });
+
+    test('rows that are versions of a contract: its total value on each of them is not added up, the value of each change is', async () => {
+        const rows = range(120).map(i => ['C-' + (1000 + Math.floor(i / 2)), String(i % 2).padStart(3, '0'), (2011 + (i % 2)) + '-0' + (1 + (i % 9)) + '-1' + (i % 9),
+            String(5000 + scatter(i, 90000)), String(200000 + scatter(i, 900000)), ['Open bidding', 'Traditional'][i % 2]]);
+        const { model } = await read(table([text('contract-number'), text('amendment_number'), date('award_date'), integer('contract-value'),
+            integer('total-contract-value'), text('solicitation-procedure')], rows));
+        expect(column(model, 'total-contract-value').measure).toMatchObject({ additive: 'no', reason: 'total_per_version' });
+        expect(column(model, 'contract-value').measure.additive).not.toBe('no');
+        expect(listCandidates(model).some(spec => spec.y.column === 'total-contract-value')).toBe(false);
     });
 });
