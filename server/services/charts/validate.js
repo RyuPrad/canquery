@@ -6,8 +6,8 @@
 // would mislead. Selection checks (gates) apply when charts are being chosen
 // for a table; while a visitor searches or filters, the chosen charts stay and
 // only integrity is checked, so charts do not come and go with every keystroke.
-const { cleanLabel, isBlankLabel, isTotalLabel, isAggregateLabel, isFootnoteLabel, isMarkedNote, hasAggregateHint, isProvinceName, isNationalLabel, isRegionLabel,
-    NUMERIC_LABEL_RE, CATEGORY_LABEL_LIMIT } = require('./tokens');
+const { cleanLabel, isBlankLabel, isTotalLabel, isAggregateLabel, isAllLabel, isFootnoteLabel, isMarkedNote, hasAggregateHint, isProvinceName, isNationalLabel, isRegionLabel,
+    NUMERIC_LABEL_RE, CATEGORY_LABEL_LIMIT, codeLabels, isGarbled, nameEvidence } = require('./tokens');
 const { parsePeriod, parsePart, periodStart, ordinalOfStart, toGrain } = require('./periods');
 
 // The fewest points a chart may have on the Chart tab, and on a card or a post.
@@ -26,6 +26,14 @@ const LINK_RE = /^(?:https?:\/\/|www\.)|^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 // How far "Canada" may exceed the provinces listed beside it and still be
 // their total: suppressed cells make a total larger than its visible parts.
 const NATIONAL_RANGE = [0.95, 1.6];
+// One group this large says nothing as a comparison.
+const DOMINANT_SHARE = 0.95;
+// One period with this share of the records: a bulk load date, not a history.
+const DOMINANT_PERIOD = 0.8;
+// A first or last period with this little of the typical period's rows is
+// one the table barely covers.
+const SPARSE_EDGE = 0.2;
+const EDGE_MAX = 3;
 
 // Labels that differ only by accents or case name one group: "Québec" and "Quebec".
 const plainKey = label => String(label).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -38,6 +46,9 @@ function addMeasures(into, more) {
         measure.blank += other.blank;
         measure.missing += other.missing;
         measure.other = (measure.other || 0) + (other.other || 0);
+        const own = other.xsum ?? null;
+        if (own !== null) measure.xsum = (measure.xsum ?? 0) + own;
+        measure.xn = (measure.xn || 0) + (other.xn || 0);
         if (other.max !== null && (measure.max === null || other.max > measure.max)) measure.max = other.max;
         if (other.min !== null && (measure.min === null || other.min < measure.min)) measure.min = other.min;
     });
@@ -112,11 +123,11 @@ function measureNotes(notes, column, counters) {
     }
 }
 
-function yOf(spec, column, counters) {
+function yOf(spec, column, counters, published = false) {
     if (!column) return { agg: 'count', column: null, label: null, additive: 'yes', integer: true, lower_bound: false, unit: null, percent: false, currency: false };
     return { agg: spec.y.agg, column: column.id, label: column.label, additive: column.measure.additive, integer: column.measure.integer && spec.y.agg !== 'avg',
-        // A sum that leaves placeholder cells out is a floor, not the figure.
-        lower_bound: spec.y.agg === 'sum' && counters.missing > 0, unit: column.measure.unit || (column.measure.only ? column.measure.only.value : null),
+        // A sum that leaves placeholder cells out is a floor, not the figure; the table's own total row is the figure.
+        lower_bound: spec.y.agg === 'sum' && counters.missing > 0 && !published, unit: column.measure.unit || (column.measure.only ? column.measure.only.value : null),
         percent: column.measure.percent, currency: column.measure.currency };
 }
 
@@ -155,7 +166,9 @@ function fitOf(spec, chart, gates) {
  * @returns {{ totals: Array<{ key: string, label: string, by: 'name' | 'sum_of_others' }>, levels: boolean }}
  */
 function detectTotalMembers(groups, grand, j, { records = false, blankTokens } = {}) {
+    const byName = !records;
     const totals = [];
+    const named = [];
     const members = [];
     let blank = 0;
     for (const group of groups) {
@@ -166,9 +179,20 @@ function detectTotalMembers(groups, grand, j, { records = false, blankTokens } =
             blank += sum || 0;
             continue;
         }
-        if (isTotalLabel(label) || (!records && isAggregateLabel(label))) totals.push({ key: group.key, label, by: 'name' });
-        else if (sum !== null && group.measures[j].n > 0) members.push({ key: group.key, label, sum });
+        if (isTotalLabel(label) || (byName && isAggregateLabel(label))) totals.push({ key: group.key, label, by: 'name' });
+        else {
+            // "All ages", "Both sexes": a total by its name in a table of figures, and
+            // still a member below, so that subtotals beneath it are found too.
+            if (byName && isAllLabel(label)) named.push({ key: group.key, label, by: 'name' });
+            if (sum !== null && group.measures[j].n > 0) members.push({ key: group.key, label, sum });
+        }
     }
+    const found = detectByNumbers(totals, members, grand, j, blank, records);
+    for (const total of named) if (!found.totals.some(entry => entry.key === total.key)) found.totals.push(total);
+    return found;
+}
+
+function detectByNumbers(totals, members, grand, j, blank, records) {
     if (totals.length || j === null || members.length < 3) return { totals, levels: false };
     // "Canada" beside the provinces is their total, and "Atlantic" or
     // "Prairies" beside both are subtotals of the same figures.
@@ -182,6 +206,13 @@ function detectTotalMembers(groups, grand, j, { records = false, blankTokens } =
             return { totals: members.filter(member => member === national || (isRegionLabel(member.label) && member.sum <= national.sum))
                 .map(member => ({ key: member.key, label: member.label, by: 'sum_of_others' })), levels: false };
         }
+    }
+    // "Canada" above provinces and regions alike (British Columbia, Prairies,
+    // Ontario, Atlantic…): their total when it is nearly their sum.
+    const places = members.filter(member => member !== national && (isProvinceName(member.label) || isRegionLabel(member.label)));
+    if (national && places.length >= 4 && national.sum > 0 && members.every(member => member.sum <= national.sum)) {
+        const ratio = national.sum / places.reduce((sum, member) => sum + member.sum, 0);
+        if (ratio >= 0.97 && ratio <= 1.03) return { totals: [{ key: national.key, label: national.label, by: 'sum_of_others' }], levels: false };
     }
     const whole = grand.measures[j].sum - blank;
     const top = members.reduce((best, member) => (member.sum > best.sum ? member : best));
@@ -202,9 +233,10 @@ function detectTotalMembers(groups, grand, j, { records = false, blankTokens } =
  * @param {object[]} groups the set's rows from the batch
  * @param {object} grand the grand-total row
  * @param {{ column: object, measure: object | null, j: number | null, filtered?: boolean, gates?: boolean, blankTokens?: Set<string>,
- *   records?: boolean }} context records: the table's rows are things or events, not figures
+ *   records?: boolean, coded?: boolean }} context records: the table's rows are things or events, not figures; coded: the table has
+ *   codes that no name column explains (they identify its rows)
  */
-function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false, gates = true, blankTokens, records = false }) {
+function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false, gates = true, blankTokens, records = false, coded = false }) {
     const { groups, folded } = mergeSpellings(rows);
     const agg = spec.y.agg;
     const notes = [];
@@ -213,8 +245,10 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
         const problem = measureProblem(counters);
         if (problem) return reject(problem);
     }
-    const names = [column.id.toLowerCase(), column.label.toLowerCase()];
+    const names = [column.id.toLowerCase(), (column.header || column.label).toLowerCase()];
     const counting = additive(agg);
+    // A ranking names rows: rows without a name are not one of them.
+    const ranking = spec.template === 'top_labels_by_measure';
     let points = [];
     let blank = null;
     let noteRows = 0;
@@ -223,6 +257,7 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
     let droppedGroups = folded;
     let unresolved = 0;
     const namedTotals = [];
+    const byName = !records;
     for (const group of groups) {
         const label = cleanLabel(group.label);
         // Every row of this group was a total row: the group is a total.
@@ -239,14 +274,15 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
             droppedGroups += 1;
             continue;
         }
-        if (isTotalLabel(label) || (!records && isAggregateLabel(label))) {
+        if (isTotalLabel(label) || (byName && (isAggregateLabel(label) || isAllLabel(label)))) {
             // A total the batch did not set aside: left out here, and out of what the shares are of.
             namedTotals.push(label);
             unresolved += valueOf(group, agg, j) || 0;
             droppedGroups += 1;
             continue;
         }
-        if (isFootnoteLabel(label) || (label.length > CATEGORY_LABEL_LIMIT && group.n <= 2) || (isMarkedNote(label) && group.n <= 1 && label.length > 30)) {
+        // A long label is data here: notes under a table were set aside with their rows.
+        if (isFootnoteLabel(label) || (isMarkedNote(label) && group.n <= 1 && label.length > 30)) {
             noteRows += group.n;
             droppedGroups += 1;
             continue;
@@ -264,7 +300,11 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
         if (group.spellings > 1) merged = true;
         points.push({ key: group.key, label, value, rows: group.n });
     }
-    points.sort((a, b) => b.value - a.value || (a.label < b.label ? -1 : 1));
+    // A measure with figures below zero (cuts beside increases): the groups
+    // largest either way are the ones shown, drawn in order of their value.
+    const signed = Boolean(measure && grand.measures[j] && grand.measures[j].min !== null && grand.measures[j].min < 0);
+    points.sort(signed ? (a, b) => Math.abs(b.value) - Math.abs(a.value) || (a.label < b.label ? -1 : 1)
+        : (a, b) => b.value - a.value || (a.label < b.label ? -1 : 1));
 
     const whole = agg === 'count' ? grand.n : measure ? grand.measures[j].sum : null;
     const total = counting && whole !== null ? whole - unresolved : null;
@@ -273,6 +313,7 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
     // Two or three groups more than the limit are shown rather than lumped together.
     const limit = spec.limit || 12;
     const shown = points.slice(0, groupsTotal <= limit + 3 && spec.kind !== 'donut' ? groupsTotal : limit);
+    if (signed) shown.sort((a, b) => b.value - a.value || (a.label < b.label ? -1 : 1));
 
     // "6322 - Cooks" reads "Cooks", unless two codes share a wording.
     let stripped = false;
@@ -286,11 +327,30 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
         }
     }
     if (new Set(shown.map(point => point.label.toLowerCase())).size !== shown.length) return reject('duplicate_labels');
+    // Figures by names that are nearly all on one row each, in a table whose
+    // rows carry codes of their own: a name on two rows is two things under
+    // one name (a city and an unrelated municipality called the same), and
+    // adding them up invents a third. A code paired with the name says the
+    // rows are one thing (a department on two lines).
+    if (gates && measure && !records && coded && !column.code_column && points.length >= 5 && shown.some(point => point.rows > 1) &&
+        points.filter(point => point.rows === 1).length >= points.length * 0.8) return reject('duplicate_labels');
 
     let blankPoint = null;
+    let wholeLeft = total;
     if (blank && counting) {
         const blankValue = valueOf(blank, agg, j) || 0;
-        if (blankValue > 0) {
+        const namedSum = points.reduce((sum, point) => sum + point.value, 0);
+        if (blankValue > 0 && agg === 'sum' && points.length >= 2 && points.length === groupsTotal &&
+            Math.abs(blankValue - namedSum) <= Math.max(1e-9, Math.abs(namedSum) * TOTAL_TOLERANCE)) {
+            // The unnamed row is the total of the named ones ("Total" written in another column).
+            namedTotals.push('');
+            wholeLeft = total === null ? null : total - blankValue;
+        } else if (blankValue > 0 && ranking) {
+            // A ranking that leaves most of the amount out says who is first among the few rows that carry a name.
+            if (gates && total > 0 && blankValue / total > 0.5) return reject('mostly_blank');
+            notes.push({ code: 'unnamed_rows_left_out', level: 'info', column: column.id, rows: blank.n });
+            wholeLeft = total === null ? null : total - blankValue;
+        } else if (blankValue > 0) {
             if (gates && total > 0 && blankValue / total > 0.5) return reject('mostly_blank');
             blankPoint = { key: null, label: null, blank: true, value: blankValue, rows: blank.n };
             notes.push({ code: 'not_recorded_group', level: 'info', column: column.id, rows: blank.n });
@@ -309,22 +369,31 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
         if (shown.filter(point => point.label.length > CATEGORY_LABEL_LIMIT).length >= shown.length * 0.5) return reject('long_labels');
         // Dates that were not read as a time axis make a poor set of groups.
         if (shown.filter(point => DATE_LABEL_RE.test(point.label)).length >= shown.length * 0.5) return reject('date_labels');
-        if (counting && total > 0 && shown[0].value / total >= 0.98) return reject('one_group');
+        if (counting && !signed && total > 0 && shown[0].value / total >= 0.98) return reject('one_group');
+        // Codes without a legend ("U", "ESSF", "*GD"), and text decoded wrongly, cannot be read.
+        // (Bare numbers are judged above.)
+        const worded = shown.map(point => point.label).filter(label => !NUMERIC_LABEL_RE.test(label));
+        if (worded.length && codeLabels(worded, { sex: nameEvidence(column.header || column.label).sex })) return reject('code_labels');
+        if (shown.some(point => isGarbled(point.label))) return reject('garbled_labels');
+        // One group with nearly everything ("Incluses" on 480 of 501 lines) is no comparison.
+        if (counting && !signed && wholeLeft > 0 && shown.every(point => point.value >= 0) && shown[0].value / wholeLeft >= DOMINANT_SHARE) return reject('one_group');
     }
 
-    // Shares mean something only when every part is a part of the whole.
-    const parts = counting && total > 0 && shown.every(point => point.value >= 0);
-    if (parts) for (const point of shown) point.share = point.value / total;
-    if (parts && blankPoint) blankPoint.share = blankPoint.value / total;
+    // Shares mean something only when every part is a part of the whole: no
+    // part below zero, shown or not.
+    const parts = counting && wholeLeft > 0 && !signed && shown.every(point => point.value >= 0);
+    if (parts) for (const point of shown) point.share = point.value / wholeLeft;
+    if (parts && blankPoint) blankPoint.share = blankPoint.value / wholeLeft;
     const shownSum = shown.reduce((sum, point) => sum + point.value, 0) + (blankPoint ? blankPoint.value : 0);
     const otherGroups = groupsTotal - shown.length;
-    const other = parts && otherGroups > 0 ? { groups: otherGroups, value: Math.max(0, total - shownSum) } : null;
+    // What the other groups come to, as it is: below zero when they are cuts.
+    const other = counting && wholeLeft !== null && otherGroups > 0 ? { groups: otherGroups, value: wholeLeft - shownSum } : null;
     const complete = otherGroups <= 0;
     points = blankPoint ? [...shown, blankPoint] : shown;
     const donut = spec.kind === 'donut' && parts && complete && points.length <= DONUT_MAX;
 
     if (measure) measureNotes(notes, measure, counters);
-    if (namedTotals.length || grand.nx > 0) notes.push({ code: 'total_left_out', level: 'info', labels: [...new Set(namedTotals)].slice(0, 4), rows: grand.nx });
+    if (namedTotals.length || grand.nx > 0) notes.push({ code: 'total_left_out', level: 'info', labels: [...new Set(namedTotals.filter(Boolean))].slice(0, 4), rows: grand.nx });
     if (noteRows > 0) notes.push({ code: 'notes_rows_left_out', level: 'info', rows: noteRows });
     if (headerRows > 0) notes.push({ code: 'header_rows_left_out', level: 'info', rows: headerRows });
     if (merged) notes.push({ code: 'variants_merged', level: 'info', column: column.id });
@@ -342,7 +411,7 @@ function shapeCategory(spec, rows, grand, { column, measure, j, filtered = false
         id: spec.id, template: spec.template, kind: donut ? 'donut' : 'bars',
         x: { type: 'category', column: column.id, label: column.label },
         y: yOf(spec, measure, counters),
-        points, other, total: parts ? total : null,
+        points, other, total: parts ? wholeLeft : null,
         scope: { rows: grand.n, groups_total: groupsTotal, groups_shown: shown.length, complete, filtered },
         notes, score: spec.score - (blankLeads ? 14 : blankShare >= 0.25 ? 6 : 0)
     };
@@ -378,7 +447,140 @@ function periodOfKey(key, axis, columns) {
  * @param {{ axis: object, columns: object[], measure: object | null, j: number | null, ordered?: boolean, filtered?: boolean, gates?: boolean }} context
  *   axis.bucket is the grain SQL bucketed dates at; ordered says the set holds the latest periods (keys sort in SQL)
  */
-function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = false, filtered = false, gates = true }) {
+const middle = values => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const at = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[at] : (sorted[at - 1] + sorted[at]) / 2;
+};
+
+// Is the period that holds `now` this one: begun and not over?
+const DAY_MS = 86400000;
+// A count over time draws its periods with no record, up to this many periods:
+// as zeros when a typical period holds this many records or fewer, else as gaps.
+const MAX_FILLED_PERIODS = 2000;
+const ZERO_PLAUSIBLE = 20;
+const ABSENT_MAX = 0.25;
+const dayString = day => new Date(day * DAY_MS).toISOString().slice(0, 10);
+
+// How many days a period of a grain holds.
+const periodDays = (grain, ord) => Math.round((Date.parse(periodStart(grain, ord + 1) + 'T00:00:00Z') - Date.parse(periodStart(grain, ord) + 'T00:00:00Z')) / DAY_MS);
+
+// The periods of an axis that lack some of their quarters or months, as ordinals of a grain.
+function incompleteOrds(axis, columns, grain) {
+    const out = new Set();
+    if (axis.kind === 'composite' || !columns[0] || !columns[0].time || !Array.isArray(columns[0].time.incomplete)) return out;
+    for (const value of columns[0].time.incomplete) {
+        const period = periodOfKey(value, axis, columns);
+        const ord = period ? toGrain(period, grain) : null;
+        if (ord !== null) out.add(ord);
+    }
+    return out;
+}
+
+// The last day a date axis holds (days since 1970), when it is one column of days.
+function lastDay(axis, columns) {
+    if (axis.kind === 'composite' || columns.length !== 1 || !columns[0].time) return null;
+    const time = columns[0].time;
+    const days = time.kind === 'typed' || time.format === 'iso_date';
+    return days && Number.isFinite(time.last) ? time.last : null;
+}
+
+function inProgress(ord, grain, now) {
+    const start = Date.parse(periodStart(grain, ord) + 'T00:00:00Z');
+    const end = Date.parse(periodStart(grain, ord + 1) + 'T00:00:00Z');
+    return Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end;
+}
+
+/**
+ * The periods a table covers well, oldest first. A first or last period with
+ * a fifth of a typical period's rows is one the table barely covers ("2016:
+ * 625 contracts" beside 190,000 a year). A last period still in progress is
+ * left out whatever its rows: its records keep coming, and its figures are
+ * the year so far (a "2026" of eight months, on one row per year).
+ * @param {Array<{ ord: number, n: number }>} list periods in order
+ */
+function coveredPeriods(list, { grain, now = Date.now() }) {
+    if (list.length < 4) return { kept: list, sparse: [], partial: null };
+    const typical = middle(list.map(entry => entry.n));
+    let first = 0;
+    let last = list.length - 1;
+    const sparse = [];
+    while (first < last - 2 && first < EDGE_MAX && list[first].n < typical * SPARSE_EDGE) sparse.push(list[first++]);
+    for (let dropped = 0; last > first + 2 && dropped < EDGE_MAX && list[last].n < typical * SPARSE_EDGE; dropped += 1) sparse.push(list[last--]);
+    let partial = null;
+    if (last > first + 2 && inProgress(list[last].ord, grain, now)) partial = list[last--];
+    return { kept: list.slice(first, last + 1), sparse, partial };
+}
+
+// The periods of a time set: for each, its rows, its groups' keys as the
+// batch grouped them, and what the groups add up to.
+function periodsOf(groups, { axis, columns, grain }) {
+    const periods = new Map();
+    for (const group of groups) {
+        if (group.n === 0 || group.key === '' || group.key === SEPARATOR) continue;
+        const period = periodOfKey(group.key, axis, columns);
+        const ord = period ? toGrain(period, grain) : null;
+        if (ord === null) continue;
+        const seen = periods.get(ord);
+        if (!seen) periods.set(ord, { ord, n: group.n, keys: [group.key], measures: group.measures.map(m => ({ ...m })) });
+        else {
+            seen.n += group.n;
+            seen.keys.push(group.key);
+            addMeasures(seen.measures, group.measures);
+        }
+    }
+    return [...periods.values()].sort((a, b) => a.ord - b.ord);
+}
+
+/**
+ * The latest period a table covers well in which a measure has figures, with
+ * the keys that name it in the batch, or null. Months and quarters are
+ * compared over the latest year they fill (twelve months, four quarters) that
+ * is over: a single month is noisy, and suppressed cells empty it; a year in
+ * progress is not one. Without such a year, the latest well-covered period.
+ * @param {{ axis: object, columns: object[], grain: string, j: number | null, now?: number }} context
+ */
+function latestPeriod(groups, { axis, columns, grain, j, now = Date.now() }) {
+    const incomplete = incompleteOrds(axis, columns, grain);
+    const list = periodsOf(groups, { axis, columns, grain })
+        .filter(entry => (j === null || (entry.measures[j] && entry.measures[j].n > 0)) && !incomplete.has(entry.ord));
+    if (!list.length) return null;
+    if (grain !== 'year' && grain !== 'fiscal_year') {
+        const years = new Map();
+        for (const entry of list) {
+            const year = Number(periodStart(grain, entry.ord).slice(0, 4));
+            const seen = years.get(year) || { year, periods: 0, keys: [], n: 0 };
+            seen.periods += 1;
+            seen.keys.push(...entry.keys);
+            seen.n += entry.n;
+            years.set(year, seen);
+        }
+        const filled = Math.max(...[...years.values()].map(entry => entry.periods));
+        const full = [...years.values()].filter(entry => entry.periods === filled && entry.periods > 1 && Date.UTC(entry.year + 1, 0, 1) <= now)
+            .sort((a, b) => b.year - a.year)[0];
+        if (full) return { start: full.year + '-01-01', grain: 'year', keys: full.keys, rows: full.n };
+    }
+    const { kept } = coveredPeriods(list, { grain, now });
+    const latest = kept[kept.length - 1];
+    return latest ? { start: periodStart(grain, latest.ord), grain, keys: latest.keys, rows: latest.n } : null;
+}
+
+/**
+ * The first and last periods of a table's records, every one of them (the
+ * groups of a chart count them all), or null when the axis leaves a tenth of
+ * the rows undated or holds a single period.
+ */
+function periodRange(groups, { axis, columns, grain, rows }) {
+    const list = periodsOf(groups, { axis, columns, grain });
+    const dated = list.reduce((sum, entry) => sum + entry.n, 0);
+    // Nearly every row dated, over more than one period: a third of the rows
+    // without a date are counted too, and one day is when the file was made.
+    if (list.length < 2 || (rows > 0 && dated < rows * 0.9)) return null;
+    return { grain, first: periodStart(grain, list[0].ord), last: periodStart(grain, list[list.length - 1].ord) };
+}
+
+function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = false, filtered = false, gates = true, now = Date.now(), records = false,
+    ownTotals = !filtered }) {
     const agg = spec.y.agg;
     const grain = spec.x.grain;
     const notes = [];
@@ -408,29 +610,92 @@ function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = f
             continue;
         }
         const seen = periods.get(ord);
-        if (!seen) periods.set(ord, { n: group.n, measures: group.measures.map(m => ({ ...m })) });
+        // own: every group merged into the period has exactly one total row, with a figure of the measure.
+        const own = j !== null && (group.nx || 0) === 1 && (group.measures[j].xn || 0) === 1;
+        if (!seen) periods.set(ord, { n: group.n, own, measures: group.measures.map(m => ({ ...m })) });
         else {
             seen.n += group.n;
-            seen.measures.forEach((m, i) => {
-                const more = group.measures[i];
-                m.sum = m.sum === null && more.sum === null ? null : (m.sum || 0) + (more.sum || 0);
-                m.n += more.n;
-                if (more.max !== null && (m.max === null || more.max > m.max)) m.max = more.max;
-                if (more.min !== null && (m.min === null || more.min < m.min)) m.min = more.min;
-            });
+            seen.own = seen.own && own;
+            addMeasures(seen.measures, group.measures);
         }
     }
     // Rows whose period cannot be read are few, or the axis is not one.
     if (unread > 2 && grand.n > 0 && unread / grand.n > 0.02) return reject('periods_unreadable');
     if (gates && grand.n > 0 && undated / grand.n > 0.5) return reject('mostly_undated');
 
-    const ords = [...periods.keys()].sort((a, b) => a - b);
+    const all = [...periods.keys()].sort((a, b) => a - b);
+    // Edges the table barely covers, and a period still in progress, are left out.
+    const covered = coveredPeriods(all.map(ord => ({ ord, n: periods.get(ord).n })), { grain, now });
+    let kept = covered.kept;
+    let partial = covered.partial;
+    // Records dated after today did not happen yet (a typo, a planned date);
+    // then the period in progress is the last. Figures of future periods are
+    // projections, and stay.
+    const future = records ? kept.filter(entry => Date.parse(periodStart(grain, entry.ord) + 'T00:00:00Z') > now) : [];
+    if (future.length) {
+        kept = kept.filter(entry => !future.includes(entry));
+        if (!partial && kept.length > 3 && inProgress(kept[kept.length - 1].ord, grain, now)) {
+            partial = kept[kept.length - 1];
+            kept = kept.slice(0, -1);
+        }
+    }
+    // A last period that the table's dates stop inside, short of rows: the
+    // table ends there, the period does not ("January" up to the 18th).
+    const stop = lastDay(axis, columns);
+    let cut = null;
+    if (stop !== null && grain !== 'day' && !partial && kept.length > 4) {
+        const last = kept[kept.length - 1];
+        const ends = Date.parse(periodStart(grain, last.ord + 1) + 'T00:00:00Z');
+        // (Well short: a field season that ends in October every year is whole.)
+        if ((stop + 2) * DAY_MS < ends && last.n < middle(kept.slice(0, -1).map(entry => entry.n)) * 0.7) {
+            cut = last;
+            kept = kept.slice(0, -1);
+        }
+    }
+    // Years that lack some of their quarters or months: left out at the
+    // edges, a gap inside, never drawn as whole years.
+    const incomplete = incompleteOrds(axis, columns, grain);
+    const lacking = kept.filter(entry => incomplete.has(entry.ord));
+    if (lacking.length) kept = kept.filter(entry => !incomplete.has(entry.ord));
+    let ords = kept.map(entry => entry.ord);
+    if (lacking.length && ords.length) {
+        const inside = lacking.map(entry => entry.ord).filter(ord => ord > ords[0] && ord < ords[ords.length - 1]);
+        ords = [...ords, ...inside].sort((a, b) => a - b);
+    }
+    // Periods with no record between the first and the last are drawn: as
+    // zeros where a few records a period make a zero plausible (no request
+    // in May), as gaps where hundreds do (the file lacks those years). A
+    // table of figures may have no figure for years it does not cover.
+    const zeros = agg === 'count' && middle(kept.map(entry => entry.n)) <= ZERO_PLAUSIBLE;
+    // Only a few periods may be absent: one row every second year is a
+    // survey taken every second year, not a year of nothing in between.
+    const span = ords.length >= 2 ? ords[ords.length - 1] - ords[0] + 1 : ords.length;
+    if (agg === 'count' && ords.length >= 2 && span <= MAX_FILLED_PERIODS && span - ords.length <= span * ABSENT_MAX) {
+        const every = [];
+        for (let ord = ords[0]; ord <= ords[ords.length - 1]; ord += 1) every.push(ord);
+        ords = every;
+    }
     const window = ords.slice(-(spec.limit || 60));
+    // Where each period has one total row of its own ("Total" under the
+    // sectors of every year), that row is the period's figure: the other rows
+    // add up to less when some are suppressed, and to more when they overlap.
+    // Not under a search or a filter, which the total row does not follow.
+    const published = agg === 'sum' && j !== null && ownTotals && window.some(ord => periods.has(ord)) &&
+        window.every(ord => !periods.has(ord) || incomplete.has(ord) || periods.get(ord).own);
     const points = [];
     const missing = [];
     for (const ord of window) {
-        const value = valueOf(periods.get(ord), agg, j);
         const start = periodStart(grain, ord);
+        if (incomplete.has(ord)) {
+            missing.push(start);
+            continue;
+        }
+        if (!periods.has(ord)) {
+            if (zeros) points.push({ key: String(ord), start, value: 0, rows: 0 });
+            else missing.push(start);
+            continue;
+        }
+        const value = published ? periods.get(ord).measures[j].xsum : valueOf(periods.get(ord), agg, j);
         if (value === null || !Number.isFinite(value)) missing.push(start);
         else points.push({ key: String(ord), start, value, rows: periods.get(ord).n });
     }
@@ -438,16 +703,48 @@ function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = f
     if (gates) {
         if (points.length < MIN_POINTS.bars) return reject('too_few_periods');
         if (flat(points.map(point => point.value), agg === 'count')) return reject('flat');
+        // Nearly every record on one date: a bulk load or publication date, not a history.
+        if (agg === 'count' && grand.n > 0 && Math.max(...points.map(point => point.rows)) / grand.n >= DOMINANT_PERIOD) return reject('one_period');
+        // A sum over time whose suppressed cells come and go: where a quarter
+        // of a period's cells are suppressed and hardly any of another's, the
+        // line's rises and falls are partly the suppression's.
+        if (agg === 'sum' && counters && counters.missing > 0 && !published) {
+            const shares = window.map(ord => periods.get(ord)).filter(period => period && period.n > 0 && period.measures[j] && period.measures[j].n > 0)
+                .map(period => period.measures[j].missing / period.n);
+            if (shares.length >= 2 && Math.max(...shares) - Math.min(...shares) > 0.25) return reject('suppressed_trend');
+        }
         // Rows per period that only differ in the first and last, partial,
         // periods: the table has one row per month or per place, nothing to count.
         const inner = points.slice(1, -1).map(point => point.value);
         if (agg === 'count' && inner.length >= 2 && Math.max(...inner) > 0 && (Math.max(...inner) - Math.min(...inner)) / Math.max(...inner) < 0.02) return reject('flat');
+        // The same rows every day, months long and short alike: readings taken
+        // on a schedule (every hour at four stations). Counting them counts hours.
+        if (agg === 'count' && (grain === 'month' || grain === 'quarter') && inner.length >= 3) {
+            const perDay = points.slice(1, -1).map(point => point.value / periodDays(grain, Number(point.key)));
+            if (Math.min(...perDay) > 0 && (Math.max(...perDay) - Math.min(...perDay)) / Math.max(...perDay) < 0.01) return reject('flat');
+        }
     }
 
     const periodsTotal = ords.length + unseen;
-    if (measure) measureNotes(notes, measure, counters);
-    if (grand.nx > 0) notes.push({ code: 'total_left_out', level: 'info', labels: [], rows: grand.nx });
+    if (measure && published) {
+        // The total rows are the chart: what their parts leave out does not touch it.
+        const mine = [];
+        measureNotes(mine, measure, counters);
+        notes.push(...mine.filter(note => note.code !== 'placeholders_left_out' && note.code !== 'blank_cells_left_out'));
+        notes.push({ code: 'table_total_shown', level: 'info', rows: grand.nx });
+    } else {
+        if (measure) measureNotes(notes, measure, counters);
+        if (grand.nx > 0) notes.push({ code: 'total_left_out', level: 'info', labels: [], rows: grand.nx });
+    }
     if (periodsTotal > window.length) notes.push({ code: 'latest_periods', level: 'info', shown: window.length, total: periodsTotal });
+    if (covered.sparse.length) {
+        notes.push({ code: 'sparse_periods_left_out', level: 'info', periods: covered.sparse.length,
+            rows: covered.sparse.reduce((sum, entry) => sum + entry.n, 0) });
+    }
+    if (partial) notes.push({ code: 'partial_period_left_out', level: 'info', start: periodStart(grain, partial.ord), grain, rows: partial.n });
+    if (cut) notes.push({ code: 'cut_period_left_out', level: 'info', start: periodStart(grain, cut.ord), grain, date: dayString(stop), rows: cut.n });
+    if (lacking.length) notes.push({ code: 'incomplete_periods_left_out', level: 'info', periods: lacking.length, rows: lacking.reduce((sum, entry) => sum + entry.n, 0) });
+    if (future.length) notes.push({ code: 'future_periods_left_out', level: 'info', periods: future.length, rows: future.reduce((sum, entry) => sum + entry.n, 0) });
     if (missing.length) notes.push({ code: 'missing_periods', level: 'info', periods: missing.length });
     if (unread > 0) notes.push({ code: 'periods_unreadable', level: 'info', rows: unread });
     if (undated > 0) notes.push({ code: 'rows_without_period', level: undated / grand.n >= 0.05 ? 'caution' : 'info', rows: undated });
@@ -462,7 +759,7 @@ function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = f
         // Two or three periods are bars in time order: a line would suggest a trend.
         kind: points.length >= MIN_POINTS.line ? 'line' : 'bars',
         x: { type: 'time', axis: axis.id, columns: axis.columns, label: columns.map(column => column.label).join(' + '), grain },
-        y: yOf(spec, measure, counters),
+        y: yOf(spec, measure, counters, published),
         points, other: null, total: null,
         time: { grain, first: points[0].start, last: points[points.length - 1].start, periods_total: periodsTotal, periods_shown: window.length, missing },
         scope: { rows: grand.n, groups_total: periodsTotal, groups_shown: points.length, complete: periodsTotal <= window.length, filtered },
@@ -478,7 +775,7 @@ function shapeTime(spec, groups, grand, { axis, columns, measure, j, ordered = f
  * @param {{ group: object, columns: object[], indexes: number[], filtered?: boolean, gates?: boolean }} context
  *   columns and indexes are the group's period columns that were computed, oldest first
  */
-function shapeWide(spec, grand, { group, columns, indexes, filtered = false, gates = true }) {
+function shapeWide(spec, grand, { group, columns, indexes, filtered = false, gates = true, ownTotals = !filtered }) {
     const agg = spec.y.agg;
     const notes = [];
     const points = [];
@@ -488,14 +785,21 @@ function shapeWide(spec, grand, { group, columns, indexes, filtered = false, gat
     let parsed = 0;
     const tokens = new Set();
     const ordOf = new Map(group.columns.map(entry => [entry.id, entry.ord]));
+    const suppressed = [];
+    // One total row in the table, with a figure under every period that has
+    // any: that row is each period's figure, not what the other rows add up to.
+    const published = agg === 'sum' && ownTotals && grand.nx === 1 && indexes.some(index => (grand.measures[index].xn || 0) === 1) &&
+        indexes.every(index => grand.measures[index].n === 0 || (grand.measures[index].xn || 0) === 1);
     columns.forEach((column, i) => {
         const counters = measureCounters(grand, indexes[i]);
         placeholders += counters.missing;
+        // A period with no figure at all is a gap, not a swing in suppression.
+        if (counters.rows > 0 && counters.parsed > 0) suppressed.push(counters.missing / counters.rows);
         unreadable += counters.unreadable;
         parsed += counters.parsed;
         if (column.measure.clean) for (const token of column.measure.clean.missing) tokens.add(token);
         const measure = grand.measures[indexes[i]];
-        const value = measure.n === 0 ? null : agg === 'sum' ? measure.sum : measure.sum / measure.n;
+        const value = published ? ((measure.xn || 0) === 1 ? measure.xsum : null) : measure.n === 0 ? null : agg === 'sum' ? measure.sum : measure.sum / measure.n;
         const ord = ordOf.get(column.id);
         const start = periodStart(group.grain, ord);
         if (value === null || !Number.isFinite(value)) missing.push(start);
@@ -506,14 +810,19 @@ function shapeWide(spec, grand, { group, columns, indexes, filtered = false, gat
     if (gates) {
         if (points.length < MIN_POINTS.bars) return reject('too_few_periods');
         if (flat(points.map(point => point.value), false)) return reject('flat');
+        // Suppressed cells that come and go between periods make the line's rises and falls theirs.
+        if (agg === 'sum' && !published && placeholders > 0 && suppressed.length >= 2 && Math.max(...suppressed) - Math.min(...suppressed) > 0.25) return reject('suppressed_trend');
     }
 
     const total = group.columns.length;
     const cells = grand.n * columns.length;
-    if (placeholders > 0) notes.push({ code: 'placeholders_left_out', level: cells > 0 && placeholders / cells >= 0.05 ? 'caution' : 'info', column: null,
-        cells: placeholders, share: cells > 0 ? placeholders / cells : 0, tokens: [...tokens].slice(0, 6) });
-    if (unreadable > 0) notes.push({ code: 'unreadable_left_out', level: 'info', column: null, cells: unreadable });
-    if (grand.nx > 0) notes.push({ code: 'total_left_out', level: 'info', labels: [], rows: grand.nx });
+    if (published) notes.push({ code: 'table_total_shown', level: 'info', rows: 1 });
+    else {
+        if (placeholders > 0) notes.push({ code: 'placeholders_left_out', level: cells > 0 && placeholders / cells >= 0.05 ? 'caution' : 'info', column: null,
+            cells: placeholders, share: cells > 0 ? placeholders / cells : 0, tokens: [...tokens].slice(0, 6) });
+        if (unreadable > 0) notes.push({ code: 'unreadable_left_out', level: 'info', column: null, cells: unreadable });
+        if (grand.nx > 0) notes.push({ code: 'total_left_out', level: 'info', labels: [], rows: grand.nx });
+    }
     notes.push({ code: 'wide_periods', level: 'info', columns: columns.length });
     if (total > columns.length) notes.push({ code: 'latest_periods', level: 'info', shown: columns.length, total });
     if (missing.length) notes.push({ code: 'missing_periods', level: 'info', periods: missing.length });
@@ -525,7 +834,7 @@ function shapeWide(spec, grand, { group, columns, indexes, filtered = false, gat
         id: spec.id, template: spec.template, kind: points.length >= MIN_POINTS.line ? 'line' : 'bars',
         x: { type: 'time', wide: group.id, columns: columns.map(column => column.id), label: null, grain: group.grain },
         y: { agg, column: null, label: group.stem || null, additive: group.additive, integer: agg === 'sum' && columns.every(column => column.measure.integer),
-            lower_bound: agg === 'sum' && placeholders > 0, unit: null, percent: columns.every(column => column.measure.percent),
+            lower_bound: agg === 'sum' && placeholders > 0 && !published, unit: null, percent: columns.every(column => column.measure.percent),
             currency: columns.every(column => column.measure.currency) },
         points, other: null, total: null,
         time: { grain: group.grain, first: points[0].start, last: points[points.length - 1].start, periods_total: total, periods_shown: columns.length, missing },
@@ -536,5 +845,5 @@ function shapeWide(spec, grand, { group, columns, indexes, filtered = false, gat
     return { ok: true, chart };
 }
 
-module.exports = { shapeCategory, shapeTime, shapeWide, detectTotalMembers, measureCounters, measureProblem, periodOfKey,
-    MIN_POINTS, CARD_POINTS, DONUT_MAX, SEPARATOR };
+module.exports = { shapeCategory, shapeTime, shapeWide, detectTotalMembers, measureCounters, measureProblem, periodOfKey, latestPeriod, periodRange,
+    coveredPeriods, MIN_POINTS, CARD_POINTS, DONUT_MAX, SEPARATOR };

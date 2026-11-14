@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STRINGS } from '../../i18n.jsx';
-import { chartTitle, chartSubtitle, chartNotes, noteText, chartSummary, skipReason, columnReading, blockedText, kpiText, specTitle, pointLabel, chartRows,
+import { chartTitle, chartSubtitle, chartNotes, noteText, chartSummary, skipReason, columnReading, blockedText, blockedValues, kpiText, specTitle, pointLabel, chartRows,
   chartRecords, cardView } from './chartText.js';
 import { fmtPeriod } from './theme.js';
 import { ANALYSIS, SHARE, LINE, MODEL, BLOCKED } from '../../test/chartAnalysis.js';
@@ -71,6 +71,31 @@ describe('words for the chart engine\'s answers', () => {
     expect(cardView({ ...bars, points: points.slice(0, 5) }).points).toHaveLength(5);
   });
 
+  test('a chart of one period says which; groups of records say the span they count', () => {
+    const scoped = { ...SHARE, y: { ...SHARE.y, lower_bound: false }, period: { grain: 'year', start: '2025-01-01' } };
+    expect(chartSubtitle(scoped, en, 'en')).toBe('In 2025 · 2 groups');
+    expect(chartSubtitle({ ...scoped, period: { grain: 'month', start: '2025-08-01' } }, fr, 'fr')).toMatch(/^En août 2025 · 2 groupes$/);
+    const counted = { ...SHARE, y: { ...SHARE.y, lower_bound: false }, span: { grain: 'year', first: '2016-01-01', last: '2026-01-01' } };
+    expect(chartSubtitle(counted, en, 'en')).toBe('2016 – 2026 · 2 groups');
+    expect(noteText({ code: 'latest_period_only', level: 'info', start: '2025-01-01', grain: 'year' }, en, 'en'))
+      .toBe('Figures for 2025, the latest full period in the table: figures of different periods are not added up.');
+    expect(noteText({ code: 'partial_period_left_out', level: 'info', start: '2026-01-01', grain: 'year', rows: 8 }, en, 'en'))
+      .toBe('2026 is not over and is left out: its figures are not all in yet.');
+    expect(noteText({ code: 'sparse_periods_left_out', level: 'info', periods: 2, rows: 629 }, fr, 'fr'))
+      .toBe('2 périodes aux extrémités de la table ne comptent que quelques lignes et sont exclues.');
+  });
+
+  test('what keeps a column off the charts is said in the readout, and each kind of block in its own words', () => {
+    const coded = { id: 'P_ISEV', label: 'P_ISEV', role: 'category', reasons: [{ code: 'repeating_values' }, { code: 'code_labels' }], category: { distinct: 5 } };
+    expect(columnReading(coded, en).details).toEqual(['codes without a legend, not charted on their own']);
+    const block = (why) => blockedText({ measure: 'n_2021', measure_label: 'n_2021', column: 'detail', column_label: 'detail', why, values: [] }, en);
+    expect(block('levels')).toMatch(/^“Detail” lists several kinds of breakdown at once/);
+    expect(block('breakdowns')).toMatch(/^Each value of “Detail” splits the same population another way/);
+    expect(block('periods')).toMatch(/^“Detail” lists periods/);
+    expect(skipReason('code_labels', en)).toBe('the groups have no readable names');
+    expect(skipReason('one_period', en)).toBe('one group holds nearly everything');
+  });
+
   test('periods are written by their grain', () => {
     expect(fmtPeriod('2021-01-01', 'year', 'en')).toBe('2021');
     expect(fmtPeriod('2015-01-01', 'fiscal_year', 'en')).toBe('2015–16');
@@ -96,7 +121,7 @@ describe('words for the chart engine\'s answers', () => {
   test('how each column was read, why charts were set aside, and what blocks a measure', () => {
     const reading = (id, t = en) => columnReading(MODEL.columns.find((column) => column.id === id), t);
     expect(reading('TOTAL')).toEqual({ role: 'Numbers', details: ['stored as text', 'added up'] });
-    expect(reading('Rate')).toEqual({ role: 'Numbers', details: ['a percentage', 'averaged, not added up'] });
+    expect(reading('Rate')).toEqual({ role: 'Numbers', details: ['a percentage', 'not added up; charted on request (Custom)'] });
     expect(reading('Province_FR')).toEqual({ role: 'Groups', details: ['same as “Province”, not charted'] });
     expect(reading('Notes', fr)).toEqual({ role: 'Texte', details: [] });
     expect(skipReason('flat', en)).toBe('every value is the same');
@@ -106,6 +131,13 @@ describe('words for the chart engine\'s answers', () => {
     expect(specTitle({ x: { type: 'time', axis: 't:EN_YEAR+EN_MONTH' }, y: { agg: 'count' } }, MODEL, en)).toBe('Records over time');
     expect(blockedText(BLOCKED.blocked[0], en)).toBe('“Measure Value” is a different measure for each “Data Point Label”, so it is not added up or averaged across them. Choose one:');
     expect(blockedText({ column: 'level', column_label: 'Level', why: 'mixed_levels' }, en)).toMatch(/^“Level” lists totals together with their parts/);
+    expect(blockedText({ ...BLOCKED.blocked[0], charts: false }, fr)).toBe('« Measure Value » n’est pas mis en graphique : ses chiffres ne s’additionnent ni entre les « Data Point Label », ni pour une seule à la fois. L’onglet Tableau les présente tels que publiés.');
+    expect(blockedValues(BLOCKED.blocked[0]).map((entry) => entry.value)).toEqual(['Net income']);
+    expect(noteText({ code: 'cut_period_left_out', start: '2026-01-01', grain: 'month', date: '2026-01-18', rows: 1728 }, en, 'en'))
+      .toBe('Jan 2026 is left out: the table’s dates stop on Jan 18, 2026, before it ends.');
+    expect(noteText({ code: 'future_periods_left_out', periods: 2, rows: 40 }, fr, 'fr'))
+      .toBe('2 périodes postérieures à aujourd’hui sont exclues : des enregistrements datés dans le futur.');
+    expect(blockedValues({ values: [{ value: 'A', rows: 1 }] }).map((entry) => entry.value)).toEqual(['A']);
   });
 });
 

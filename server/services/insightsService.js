@@ -264,4 +264,5 @@ function startFeaturedWarming({ intervalMs = FEATURED_WARM_INTERVAL_MS } = {}) {
     return startWarming('insights-featured', ['en', 'fr'].map(lang => () => refreshFeatured(lang)), { intervalMs });
 }
 
-module.exports = { topDownloads, featured, cards, refreshFeatured, startFeaturedWarming, buildFeaturedPreview, FEATURED_WARM_INTERVAL_MS };
+// analyzeCandidate: the hosted social pool charts its tables the way the cards do.
+module.exports = { topDownloads, featured, cards, analyzeCandidate, refreshFeatured, startFeaturedWarming, buildFeaturedPreview, FEATURED_WARM_INTERVAL_MS };

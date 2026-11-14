@@ -37,11 +37,11 @@ function numberFormats() {
     const rows = [];
     for (let i = 0; i < 40; i += 1) {
         const n = 1000 + scatter(i, 8000);
-        rows.push(['Unit ' + (i % 8), n.toLocaleString('en-CA'), '$' + (n + 0.5).toLocaleString('en-CA', { minimumFractionDigits: 2 }),
+        rows.push(['Office ' + (i + 1), 'Unit ' + (i % 8), n.toLocaleString('en-CA'), '$' + (n + 0.5).toLocaleString('en-CA', { minimumFractionDigits: 2 }),
             scatter(i, 97) + '%', String(scatter(i, 300) + 0.5).replace('.', ','), i % 5 === 0 ? '(' + n + ')' : String(n),
             String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',5', i < 2 ? '1,' + (234 + i) : String(900 + i)]);
     }
-    return { columns: [text('Unit'), text('Visits'), text('Cost'), text('Share'), text('Taux'), text('Balance'), text('Montant'), text('Guess')],
+    return { columns: [text('Office'), text('Unit'), text('Visits'), text('Cost'), text('Share'), text('Taux'), text('Balance'), text('Montant'), text('Guess')],
         rows: withIds(rows) };
 }
 
@@ -49,8 +49,11 @@ function numberFormats() {
 function codes() {
     const jobs = ['6322 - Cooks', '6311 - Food service supervisors', '7511 - Transport truck drivers', '0621 - Retail managers'];
     const rows = [];
-    for (let i = 0; i < 120; i += 1) rows.push([String(1 + (i % 12)).padStart(2, '0'), String(4100 + (i % 40) * 13), jobs[i % 4], String(10 + scatter(i, 500))]);
-    return { columns: [text('C_MNTH'), integer('WMU'), text('Occupation'), integer('Positions')], rows: withIds(rows) };
+    // One posting per row, each with its employer.
+    for (let i = 0; i < 120; i += 1) {
+        rows.push(['Employer ' + (i + 1), String(1 + (i % 12)).padStart(2, '0'), String(4100 + (i % 40) * 13), jobs[i % 4], String(10 + scatter(i, 500))]);
+    }
+    return { columns: [text('Employer'), text('C_MNTH'), integer('WMU'), text('Occupation'), integer('Positions')], rows: withIds(rows) };
 }
 
 // 4. Row numbers, keys, constants, empty columns and near-unique names.
@@ -112,10 +115,12 @@ function twins() {
     for (let i = 0; i < 160; i += 1) {
         const [en, fr] = PROVINCES[i % 6];
         const region = regions[(i * 5) % 4];
-        rows.push([en, fr, ['Yes', 'No', 'Maybe'][i % 3], ['Oui', 'Non', 'Peut-être'][i % 3], region[0], region[1], region[2], String(20 + (i % 30))]);
+        rows.push(['R-' + String(100000 + i * 37), en, fr, ['Yes', 'No', 'Maybe'][i % 3], ['Oui', 'Non', 'Peut-être'][i % 3], region[0], region[1], region[2],
+            String(20 + (i % 30)), String(3 + ((i * 7) % 40))]);
     }
-    return { columns: [text('EN_PROVINCE/TERRITORY'), text('FR_PROVINCE/TERRITOIRE'), text('answer_e'), text('answer_f'), text('ER_Code'), text('ER_Name'),
-        text('Nom_RE'), numeric('Median_Wage')], rows: withIds(rows) };
+    // One survey answer per row, each with its reference number.
+    return { columns: [text('Reference number'), text('EN_PROVINCE/TERRITORY'), text('FR_PROVINCE/TERRITOIRE'), text('answer_e'), text('answer_f'), text('ER_Code'),
+        text('ER_Name'), text('Nom_RE'), numeric('Median_Wage'), integer('Number of vacancies')], rows: withIds(rows) };
 }
 
 // 9. A report-style table: French second header, a unit row, notes, a repeated
@@ -142,32 +147,46 @@ function reportStyle() {
 // 10. The same category spelled with padding and in two cases.
 function untidyCategories() {
     const rows = [];
-    for (let i = 0; i < 90; i += 1) rows.push([['High Wage', 'High Wage      ', 'HIGH WAGE', 'Low Wage', 'low wage', 'Global Talent'][i % 6], ['TORONTO', 'Toronto', 'Ottawa'][i % 3], String(1 + (i % 9))]);
-    return { columns: [text('Stream'), text('City'), integer('Approved Positions')], rows: withIds(rows) };
+    // One approval per row, each with its employer.
+    for (let i = 0; i < 90; i += 1) {
+        rows.push(['Employer ' + (i + 1), ['High Wage', 'High Wage      ', 'HIGH WAGE', 'Low Wage', 'low wage', 'Global Talent'][i % 6], ['TORONTO', 'Toronto', 'Ottawa'][i % 3],
+            String(1 + (i % 9))]);
+    }
+    return { columns: [text('Employer'), text('Stream'), text('City'), integer('Approved Positions')], rows: withIds(rows) };
 }
 
 // 11. A measure-name table, and a table in two currencies.
 function measureNames() {
     const points = [['Total assets', 1e9], ['Net income', 5e6], ['Capital ratio', 0.14], ['Number of branches', 40]];
     const rows = [];
-    for (let i = 0; i < 160; i += 1) {
-        const [label, scale] = points[i % 4];
-        rows.push([String(2015 + (i % 8)), 'Bank ' + (1 + (i % 5)), label, String(Number((scale * (1 + (i % 7) / 10)).toPrecision(6)))]);
+    // One row per year, bank and measure, as such returns are.
+    for (let year = 0; year < 8; year += 1) {
+        for (let bank = 0; bank < 5; bank += 1) {
+            points.forEach(([label, scale], p) => rows.push([String(2015 + year), 'Bank ' + (1 + bank), label,
+                String(Number((scale * (1 + ((year + bank + p) % 7) / 10)).toPrecision(6)))]));
+        }
     }
     return { columns: [integer('Fiscal Year'), text('Institution'), text('Data Point Label'), numeric('Measure Value')], rows: withIds(rows) };
 }
 
 function twoCurrencies() {
     const rows = [];
-    for (let i = 0; i < 80; i += 1) rows.push([['Paris', 'Tokyo', 'Ottawa', 'Calgary'][i % 4], ['USD', 'USD', 'CAD', 'CAD'][i % 4], String(100 + (i % 20) * 5)]);
-    return { columns: [text('City'), text('Currency'), integer('Max rate')], rows: withIds(rows) };
+    for (let i = 0; i < 80; i += 1) {
+        rows.push(['Hotel ' + (i + 1), ['Paris', 'Tokyo', 'Ottawa', 'Calgary'][i % 4], ['USD', 'USD', 'CAD', 'CAD'][i % 4], String(100 + (i % 20) * 5)]);
+    }
+    return { columns: [text('Hotel'), text('City'), text('Currency'), integer('Max rate')], rows: withIds(rows) };
 }
 
 // 12. Rates, ratios and indexes beside a count.
 function ratesAndCounts() {
     const rows = [];
-    for (let i = 0; i < 100; i += 1) rows.push([['A', 'B', 'C', 'D', 'E'][i % 5], String(50 + scatter(i, 400)), String(scatter(i, 100) / 10), String(0.25 + (i % 4) / 10), String(95 + scatter(i, 30))]);
-    return { columns: [text('Sector'), integer('Employees'), numeric('Unemployment rate'), numeric('Male ratio'), numeric('Price index')], rows: withIds(rows) };
+    // One row per sector and month.
+    for (let i = 0; i < 100; i += 1) {
+        rows.push(['2025-' + String(1 + Math.floor(i / 5) % 12).padStart(2, '0') + '-0' + (1 + Math.floor(i / 60)), ['Retail', 'Mining', 'Finance', 'Health', 'Transport'][i % 5],
+            String(50 + scatter(i, 400)), String(scatter(i, 100) / 10), String(0.25 + (i % 4) / 10), String(95 + scatter(i, 30))]);
+    }
+    return { columns: [text('Survey date'), text('Sector'), integer('Employees'), numeric('Unemployment rate'), numeric('Male ratio'), numeric('Price index')],
+        rows: withIds(rows) };
 }
 
 // 13. Coordinates, postal codes, addresses on the web.
@@ -195,8 +214,11 @@ function cleanEvents() {
 // 16. A number column the loader gave up on because of late bad values.
 function castFailed() {
     const rows = [];
-    for (let i = 0; i < 150; i += 1) rows.push([['North', 'South', 'East'][i % 3], i === 140 ? 'see note' : i % 50 === 49 ? 'x' : String(200 + scatter(i, 4000))]);
-    return { columns: [text('Zone'), { id: 'Volume', type: 'TEXT', original_label: 'Volume', cast_failed: true }], rows: withIds(rows) };
+    // One reading per station and day.
+    for (let i = 0; i < 150; i += 1) {
+        rows.push(['Station ' + (i + 1), ['North', 'South', 'East'][i % 3], i === 140 ? 'see note' : i % 50 === 49 ? 'x' : String(200 + scatter(i, 4000))]);
+    }
+    return { columns: [text('Station'), text('Zone'), { id: 'Volume', type: 'TEXT', original_label: 'Volume', cast_failed: true }], rows: withIds(rows) };
 }
 
 // 17. One row per year, every figure higher than the last: sorted and unique,

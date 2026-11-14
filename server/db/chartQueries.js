@@ -71,7 +71,7 @@ async function readSample({ tableName, columns, plan }, options) {
 const MAX_SETS = 12;
 const MAX_MEASURES = 48;
 const KEY_CUT = 200;
-const RANK_ALIAS = { sum: 's', avg: 'a', max: 'x', min: 'l' };
+const RANK_ALIAS = { sum: 's', avg: 'a', max: 'x', min: 'l', abs: 'b' };
 // Groups are ordered by the bytes of their key: the same order on every
 // database, whatever its language settings, and the cheapest comparison.
 const BY_KEY = 'fk COLLATE "C"';
@@ -92,14 +92,16 @@ const BY_KEY = 'fk COLLATE "C"';
  * @param {{
  *   tableName: string,
  *   where?: { whereSql: string, params: unknown[] },
+ *   scope?: { key: object, keys: string[] } | null,
  *   excluded?: number[],
  *   totals?: Array<{ column: { id: string, type: string }, labels: string[] }>,
  *   sets: Array<{ key: object, rank: Array<{ by: 'n' | 'sum' | 'avg' | 'max' | 'min' | 'key', measure?: number, limit: number }> }>,
  *   measures: Array<{ column: { id: string, type: string }, clean: object | null, only?: { column: { id: string, type: string }, value: string } | null }>
- * }} plan measures[].only: read the measure on the rows where that column holds that value, and count the others
+ * }} plan measures[].only: read the measure on the rows where that column holds that value, and count the others;
+ *   scope: only the rows whose key (as a set of that key groups them, folded) is one of these, such as one period
  * @returns {{ text: string, values: unknown[], grand: number, sets: number[] }} the gs value of the grand-total row and of each set
  */
-function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, measures }) {
+function buildBatchSql({ tableName, where, scope = null, excluded = [], totals = [], sets, measures }) {
     if (sets.length > MAX_SETS || measures.length > MAX_MEASURES) throw new AppError('chart batch is too large', 500);
     const values = where && Array.isArray(where.params) ? where.params.slice() : [];
     const placeholders = new Map();
@@ -144,7 +146,13 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
         }
         if (key.kind === 'date') {
             const text = key.column.type === 'TEXT';
-            return 'coalesce(' + sqlDateKey(text ? 'btrim(' + stored(key.column) + ')' : stored(key.column), text ? 'iso_date' : key.column.type, key.grain) + ', \'\')';
+            const value = text ? 'btrim(' + stored(key.column) + ')' : stored(key.column);
+            const bucketed = 'coalesce(' + sqlDateKey(value, text ? 'iso_date' : key.column.type, key.grain) + ', \'\')';
+            if (!Array.isArray(key.skip) || !key.skip.length) return bucketed;
+            // Dates that stand for "no date" (1900-01-01) belong to no period.
+            const day = text ? 'replace(left(' + value + ', 10), \'/\', \'-\')'
+                : key.column.type === 'TIMESTAMPTZ' ? 'to_char(' + value + ' AT TIME ZONE \'UTC\', \'YYYY-MM-DD\')' : 'to_char(' + value + ', \'YYYY-MM-DD\')';
+            return '(CASE WHEN coalesce(' + day + ' = ANY(' + param(key.skip) + '::text[]), false) THEN \'\' ELSE ' + bucketed + ' END)';
         }
         if (key.kind === 'text') return 'coalesce(' + asText(key.column) + ', \'\')';
         if (key.kind === 'day_first') return 'coalesce(' + sqlDayFirstKey('btrim(' + asText(key.column) + ')', key.order, key.grain, param) + ', \'\')';
@@ -152,9 +160,20 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
         throw new AppError('invalid chart key', 500);
     };
     const keyItems = sets.map((set, i) => keyOf(set.key) + ' AS k' + i);
+    // One period of an axis (or any one group of a key): the same key, folded
+    // as groups are, so the rows are exactly those of the group the set found.
+    const scoped = scope && Array.isArray(scope.keys) ? ' WHERE ' + fold(keyOf(scope.key)) + ' = ANY(' + param(scope.keys) + '::text[])' : '';
 
-    // Rows that add other rows up are counted apart, in every set.
-    const totalParts = totals.map(total => 'coalesce(' + fold(groupKey(total.column)) + ' = ANY(' + foldAll(total.labels) + '), false)');
+    // Rows that add other rows up are counted apart, in every set. Folding a
+    // long text cell costs more than everything else a row goes through, so
+    // the spellings that are one of the labels are found once, among the
+    // column's distinct values, and each row is compared with those as stored.
+    const totalParts = totals.map(total => {
+        const raw = total.column.type === 'TEXT' ? 'left(' + quoteIdent(total.column.id) + ', ' + KEY_CUT + ')' : quoteIdent(total.column.id) + '::text';
+        const spellings = 'ARRAY(SELECT v FROM (SELECT DISTINCT ' + raw + ' AS v FROM ' + tableOf(tableName) + ') d WHERE ' + fold('v') +
+            ' = ANY(' + foldAll(total.labels) + '))';
+        return 'coalesce(' + groupKey(total.column) + ' = ANY(' + spellings + '), false)';
+    });
     const live = totalParts.length ? ' FILTER (WHERE NOT x)' : '';
     const and = totalParts.length ? ' AND NOT x' : '';
 
@@ -168,7 +187,7 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
         if (measure.column.type === 'TEXT') {
             const p = prepped(measure.column);
             let d = p;
-            if (measure.clean.symbols || (measure.clean.codes && measure.clean.codes.length) || measure.clean.paren) {
+            if (measure.clean.symbols || (measure.clean.codes && measure.clean.codes.length) || measure.clean.paren || measure.clean.marks) {
                 d = 'd' + j;
                 stripItems.push(sqlStrip(p, measure.clean, param) + ' AS ' + d);
             }
@@ -181,7 +200,14 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
             const c = stored(measure.column);
             value = sqlTypedValue(c, measure.column.type);
             blank = '(' + c + ' IS NULL)';
+            // Figures that stand for "no figure" (99999.9) are placeholders, not numbers.
+            if (Array.isArray(measure.sentinels) && measure.sentinels.length) {
+                missing = 'coalesce(' + c + '::float8 = ANY(' + param(measure.sentinels) + '::float8[]), false)';
+                value = '(CASE WHEN ' + missing + ' THEN NULL ELSE ' + value + ' END)';
+            }
         }
+        // A text measure whose placeholders are figures too ("99999.9"): the placeholder wins.
+        if (measure.column.type === 'TEXT' && measure.clean.sentinel && missing) value = '(CASE WHEN ' + missing + ' THEN NULL ELSE ' + value + ' END)';
         if (measure.only) {
             // Rows in another unit are neither numbers nor blanks of this measure: they are counted apart.
             const here = 'coalesce(' + fold(groupKey(measure.only.column)) + ' = ' + fold(param(String(measure.only.value))) + ', false)';
@@ -212,6 +238,12 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
             aggregates.push('count(*) FILTER (WHERE o' + j + and + ')::bigint AS ot' + j);
             folds.push('sum(ot' + j + ')::bigint AS ot' + j);
         }
+        // What the rows set aside as totals say themselves: where a table has one
+        // total row, its figure is the total, whatever its parts add up to.
+        if (totalParts.length) {
+            aggregates.push('sum(v' + j + ') FILTER (WHERE x) AS xs' + j, 'count(v' + j + ') FILTER (WHERE x)::bigint AS xc' + j);
+            folds.push('sum(xs' + j + ') AS xs' + j, 'sum(xc' + j + ')::bigint AS xc' + j);
+        }
     });
     const grouped = 'SELECT ' + (count ? 'GROUPING(' + keys.join(', ') + ')::int' : '0') + ' AS gs, ' +
         (count === 0 ? 'NULL::text' : count === 1 ? 'k0' : 'coalesce(' + keys.join(', ') + ')') + ' AS k, ' + aggregates.join(', ') +
@@ -238,8 +270,8 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
             else if (Object.hasOwn(RANK_ALIAS, rank.by) && Number.isInteger(rank.measure) && rank.measure >= 0 && rank.measure < measures.length) {
                 const j = rank.measure;
                 name = 'rn_' + RANK_ALIAS[rank.by] + j;
-                orders.set(name, (rank.by === 'sum' ? 's' + j : rank.by === 'max' ? 'hi' + j : rank.by === 'min' ? 'lo' + j
-                    : '(s' + j + ' / nullif(c' + j + ', 0))') + ' DESC NULLS LAST, ' + BY_KEY);
+                orders.set(name, (rank.by === 'sum' ? 's' + j : rank.by === 'abs' ? 'abs(s' + j + ')' : rank.by === 'max' ? 'hi' + j
+                    : rank.by === 'min' ? 'lo' + j : '(s' + j + ' / nullif(c' + j + ', 0))') + ' DESC NULLS LAST, ' + BY_KEY);
             } else throw new AppError('invalid chart ranking', 500);
             any.push(name + ' <= ' + rank.limit);
         }
@@ -255,9 +287,9 @@ function buildBatchSql({ tableName, where, excluded = [], totals = [], sets, mea
     // level of its own only when a measure has any.
     const rowItems = [...keyItems, ...valueItems, ...(totalItem ? [totalItem] : [])];
     const source = stripItems.length
-        ? 'base AS (' + base + '), b AS (SELECT base.*' + stripItems.map(item => ', ' + item).join('') + ' FROM base OFFSET 0), ' +
+        ? 'base AS (' + base + '), b AS (SELECT base.*' + stripItems.map(item => ', ' + item).join('') + ' FROM base' + scoped + ' OFFSET 0), ' +
             's AS (SELECT ' + (rowItems.length ? rowItems.join(', ') : '1 AS one') + ' FROM b OFFSET 0)'
-        : 'base AS (' + base + '), s AS (SELECT ' + (rowItems.length ? rowItems.join(', ') : '1 AS one') + ' FROM base OFFSET 0)';
+        : 'base AS (' + base + '), s AS (SELECT ' + (rowItems.length ? rowItems.join(', ') : '1 AS one') + ' FROM base' + scoped + ' OFFSET 0)';
     const text = 'WITH ' + source + ', g AS (' + grouped + '), f AS (' + folded + '), r AS (' + ranked + ') ' +
         'SELECT * FROM r WHERE ' + keep.join(' OR ') + ' ORDER BY gs, ' + BY_KEY;
     return { text, values, grand, sets: setIds };
@@ -278,7 +310,8 @@ async function runBatch(plan, options) {
             groups: Number(row.groups), measures: [] };
         for (let j = 0; j < measures; j += 1) {
             group.measures.push({ sum: number(row['s' + j]), n: Number(row['c' + j]), min: number(row['lo' + j]), max: number(row['hi' + j]),
-                blank: Number(row['bl' + j]), missing: Number(row['mi' + j]), other: Number(row['ot' + j] || 0) });
+                blank: Number(row['bl' + j]), missing: Number(row['mi' + j]), other: Number(row['ot' + j] || 0),
+                xsum: number(row['xs' + j]), xn: Number(row['xc' + j] || 0) });
         }
         const gs = Number(row.gs);
         if (gs === grand) out.grand = group;

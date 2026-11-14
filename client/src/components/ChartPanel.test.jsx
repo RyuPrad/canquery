@@ -67,11 +67,36 @@ describe('the Chart tab', () => {
     fetchResourceCharts.mockImplementation(() => answer(BLOCKED));
     const onPin = vi.fn();
     render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" onPin={onPin} />);
-    await screen.findByText('This table holds different things in one column of numbers');
+    await screen.findByText('Some figures in this table cannot be added up together');
     expect(screen.getByText(/^“Measure Value” is a different measure for each “Data Point Label”/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Net income/ }));
     expect(onPin).toHaveBeenCalledWith('Data Point Label', 'Net income');
+    // A ratio is charted under no filter: it is not offered.
+    expect(screen.queryByRole('button', { name: /Capital ratio/ })).toBeNull();
     expect(screen.getByText('No chart of this table would say something reliable.')).toBeInTheDocument();
+  });
+
+  test('when no value leads to a chart, the tab says so and offers none', async () => {
+    const block = { ...BLOCKED.blocked[0], values: BLOCKED.blocked[0].values.map((entry) => ({ ...entry, charts: false })), charts: false };
+    fetchResourceCharts.mockImplementation(() => answer({ ...BLOCKED, blocked: [block] }));
+    render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" onPin={vi.fn()} />);
+    await screen.findByText('Some figures in this table cannot be added up together');
+    expect(screen.getByText('“Measure Value” is not charted: its figures cannot be added up across “Data Point Label”, nor one “Data Point Label” at a time. The Table tab shows them as published.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Net income|Capital ratio/ })).toBeNull();
+  });
+
+  test('figures the engine did not add up on its own are said, under the counts or in place of a chart', async () => {
+    fetchResourceCharts.mockImplementation(() => answer({ ...ANALYSIS, sums_withheld: true }));
+    const view = render(<ChartPanel resourceId="r1" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('TOTAL by Province');
+    expect(screen.getByText('The figures of this table are not added up automatically: adding up its rows could count the same thing twice. In the Custom tab, you choose what to add up.')).toBeInTheDocument();
+    view.unmount();
+
+    fetchResourceCharts.mockImplementation(() => answer({ ...ANALYSIS, status: 'no_charts', charts: [], kpis: [{ role: 'rows', value: 20 }], sums_withheld: true }));
+    render(<ChartPanel resourceId="r2" fields={FIELDS} queryMode="ingested" />);
+    await screen.findByText('The figures of this table are not added up automatically: adding up its rows could count the same thing twice.');
+    expect(screen.getByText('In the Custom tab, you choose what to add up.')).toBeInTheDocument();
+    expect(screen.queryByText('No chart of this table would say something reliable.')).toBeNull();
   });
 
   test('a busy engine says so and offers to try again', async () => {

@@ -19,7 +19,8 @@ async function getCharts(req, res) {
         { ...(isBackgroundRead(req) ? { touch: false, log: false } : {}), client: req.ip });
     res.set('Cache-Control', 'no-cache');
     res.json(envelope({ engine: result.engine, status: result.status, kpis: result.kpis, charts: result.charts, skipped: result.skipped,
-        blocked: result.blocked, model: result.model, builder: result.builder, scope: result.scope }, { meta: meta(result) }));
+        blocked: result.blocked, sums_withheld: result.sums_withheld === true, model: result.model, builder: result.builder, scope: result.scope },
+    { meta: meta(result) }));
 }
 
 // GET /web-api/v1/resources/:id/charts/custom?spec=<json> — one chart from the custom builder.

@@ -17,6 +17,11 @@ const SPACE_TO = ' '.repeat(SPACE_FROM.length - 1) + '-';
 const SPACE_RE = /[\u00a0\u202f\u2009\u2007\t\n\r]/g;
 const SYMBOLS = '$€£%';
 const CODES = ['CAD', 'USD', 'cad', 'usd'];
+// Footnote marks after a number ("2,605*", "311 †", "1 234¹") and the flags
+// statistical tables put there: E (use with caution), p (preliminary), r
+// (revised), as in "635E" or "1,204p".
+const MARKS = '*†‡§¹²³⁰⁴⁵⁶⁷⁸⁹Epr';
+const MARK_END_RE = /[*†‡§¹²³⁰⁴⁵⁶⁷⁸⁹Epr]\s*$/;
 const MAX_LENGTH = 64;
 
 const FORMATS = {
@@ -62,10 +67,19 @@ function prep(value) {
 
 const removeAll = (text, piece) => text.split(piece).join('');
 
-// The digits of a prepped cell under a rule: currency and percent signs gone,
-// accounting parentheses turned into a minus.
+// The cell without footnote marks and spaces at its end: what PostgreSQL's
+// rtrim(cell, marks || ' ') leaves.
+function trimMarks(text) {
+    let end = text.length;
+    while (end > 0 && (text[end - 1] === ' ' || MARKS.includes(text[end - 1]))) end -= 1;
+    return end === text.length ? text : text.slice(0, end);
+}
+
+// The digits of a prepped cell under a rule: footnote marks, currency and
+// percent signs gone, accounting parentheses turned into a minus.
 function strip(prepped, rule) {
     let d = prepped;
+    if (rule.marks) d = trimMarks(d);
     if (rule.symbols) {
         for (const symbol of rule.symbols) d = removeAll(d, symbol);
         d = trimSpaces(d);
@@ -89,7 +103,7 @@ function parseNumber(value, rule) {
     return Number.isFinite(number) ? number : null;
 }
 
-const FULL_STRIP = { symbols: SYMBOLS, codes: CODES, paren: true };
+const FULL_STRIP = { symbols: SYMBOLS, codes: CODES, paren: true, marks: true };
 // Comma evidence, on fully stripped digits.
 const TWO_GROUPS_RE = /^[+-]?[0-9]{1,3}(?:,[0-9]{3}){2,}(?:\.[0-9]+)?$/;
 const GROUP_AND_DOT_RE = /^[+-]?[0-9]{1,3}(?:,[0-9]{3})+\.[0-9]+$/;
@@ -166,10 +180,12 @@ function detectNumberRule(entries) {
     const symbols = new Set();
     const codes = new Set();
     let paren = false;
+    let marks = false;
     let parsed = 0;
     let distinct = 0;
     let integers = 0;
     let negatives = 0;
+    let zeros = 0;
     let leadingZeros = 0;
     let withPercent = 0;
     let min = Infinity;
@@ -185,8 +201,10 @@ function detectNumberRule(entries) {
         for (const code of CODES) if (value.includes(code)) codes.add(code);
         if (value.includes('%')) withPercent += count;
         if (value.includes('(')) paren = true;
+        if (MARK_END_RE.test(value)) marks = true;
         if (Number.isInteger(number)) integers += count;
         if (number < 0) negatives += count;
+        if (number === 0) zeros += count;
         if (LEADING_ZERO_RE.test(d)) leadingZeros += count;
         if (number < min) min = number;
         if (number > max) max = number;
@@ -196,13 +214,15 @@ function detectNumberRule(entries) {
     }
     if (!parsed) return null;
     return {
-        rule: { core, symbols: SYMBOLS.split('').filter(symbol => symbols.has(symbol)).join(''), codes: CODES.filter(code => codes.has(code)), paren },
+        rule: { core, symbols: SYMBOLS.split('').filter(symbol => symbols.has(symbol)).join(''), codes: CODES.filter(code => codes.has(code)), paren,
+            ...(marks ? { marks } : {}) },
         parsed, cells, distinct,
         ambiguous, settled,
         percent: withPercent / parsed >= 0.2,
         currency: [...symbols].some(symbol => symbol !== '%') || codes.size > 0,
         integerShare: integers / parsed,
         negativeShare: negatives / parsed,
+        zeroShare: zeros / parsed,
         leadingZeroShare: leadingZeros / parsed,
         fixedWidth: width || null,
         min, max
@@ -221,6 +241,7 @@ function sqlPrep(column, param) {
 /** SQL for strip(): takes the prepped cell (a column of an inner query). */
 function sqlStrip(prepped, rule, param) {
     let d = prepped;
+    if (rule.marks) d = 'rtrim(' + d + ', ' + param(MARKS + ' ') + ')';
     if (rule.symbols) d = 'btrim(translate(' + d + ', ' + param(rule.symbols) + ', \'\'))';
     for (const code of rule.codes || []) d = 'btrim(replace(' + d + ', ' + param(code) + ', \'\'))';
     if (rule.paren) {
@@ -251,4 +272,5 @@ function sqlTypedValue(column, type) {
     return '(CASE WHEN ' + column + ' = 0 OR abs(' + column + ') < 1e-300 THEN 0::float8 WHEN abs(' + column + ') <= 1e300 THEN ' + column + '::float8 END)';
 }
 
-module.exports = { FORMATS, SPACE_FROM, SPACE_TO, MAX_LENGTH, prep, strip, trimSpaces, parseNumber, detectNumberRule, sqlPrep, sqlStrip, sqlValue, sqlTypedValue };
+module.exports = { FORMATS, SPACE_FROM, SPACE_TO, MARKS, MAX_LENGTH, prep, strip, trimSpaces, parseNumber, detectNumberRule, sqlPrep, sqlStrip, sqlValue,
+    sqlTypedValue };

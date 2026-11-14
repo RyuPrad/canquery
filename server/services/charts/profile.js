@@ -4,7 +4,8 @@
 // the whole table.
 const { prep, detectNumberRule, parseNumber } = require('./numberFormats');
 const { decidePeriodFormat, parsePeriodName, parsePart } = require('./periods');
-const { isMissingToken, isTotalLabel, isFootnoteLabel, isMarkedNote, nameEvidence, cleanLabel } = require('./tokens');
+const { isMissingToken, isTotalLabel, isAggregateLabel, isAllLabel, bandOf, bandsOverlap, isFootnoteLabel, isMarkedNote, nameEvidence, cleanLabel, labelKind, isNationalLabel, isProvinceName,
+    isRegionLabel, isMeasureLabel, isGarbled } = require('./tokens');
 
 const MAX_ROWS = 20000;
 const CELL_TARGET = 240000;
@@ -49,6 +50,9 @@ function yielder(signal) {
 
 const CODE_LABEL_RE = /^[A-Z0-9][A-Z0-9.]{0,9} ?[-–—:] ?\p{L}{3}/u;
 const URL_RE = /^https?:\/\/\S+$/i;
+// Shapes on a map written as text: well-known text ("POINT (-73 46)",
+// "SRID=4326;MULTIPOLYGON (((…") or GeoJSON ('{"type":"LineString", …').
+const SHAPE_TEXT_RE = /^\s*(?:SRID=[0-9]+;\s*)?(?:MULTI)?(?:POINT|LINESTRING|POLYGON|GEOMETRYCOLLECTION)\s*(?:ZM|Z|M)?\s*(?:\(|EMPTY)|^\s*\{\s*"type"\s*:\s*"(?:Multi)?(?:Point|LineString|Polygon)"/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 const POSTAL_RE = /^[A-Z][0-9][A-Z] ?[0-9][A-Z][0-9]$/i;
 const PHONE_RE = /^(?:\+?1[ .-]?)?(?:\([0-9]{3}\) ?|[0-9]{3}[ .-])[0-9]{3}[ .-][0-9]{4}(?: ?(?:x|ext\.?|poste) ?[0-9]{1,6})?$/i;
@@ -65,11 +69,43 @@ const SLUG_RE = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/;
 // The most rows a block of notes under a table may have.
 const TAIL_ROWS = 60;
 
+const ISO_DAY_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:$|[ t])/i;
+function swappedDayMonth(real) {
+    let sure = 0;
+    let low = Infinity;
+    let high = -Infinity;
+    const unsure = [];
+    for (const [value, count] of real) {
+        const match = ISO_DAY_RE.exec(value);
+        if (!match) continue;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const ord = Date.UTC(year, month - 1, day) / 86400000;
+        if (day > 12) {
+            sure += count;
+            if (ord < low) low = ord;
+            if (ord > high) high = ord;
+        } else if (day !== month) unsure.push({ ord, swapped: Date.UTC(year, day - 1, month) / 86400000, count });
+    }
+    const total = unsure.reduce((sum, entry) => sum + entry.count, 0);
+    if (sure < 20 || total < 20) return false;
+    const from = low - 31;
+    const to = high + 31;
+    const outside = unsure.reduce((sum, entry) => sum + (entry.ord < from || entry.ord > to ? entry.count : 0), 0);
+    const inside = unsure.reduce((sum, entry) => sum + (entry.swapped >= from && entry.swapped <= to ? entry.count : 0), 0);
+    return outside >= total * 0.3 && inside >= total * 0.95;
+}
+
 // The Chao1 estimate of how many distinct values the whole column holds, from
 // how many were seen once and twice in the sample.
-function estimateDistinct(distinct, once, twice, complete) {
+function estimateDistinct(distinct, once, twice, complete, scale = Infinity) {
     if (complete || once === 0) return distinct;
-    return Math.round(distinct + (twice > 0 ? (once * once) / (2 * twice) : (once * (once - 1)) / 2));
+    const chao = Math.round(distinct + (twice > 0 ? (once * once) / (2 * twice) : (once * (once - 1)) / 2));
+    // Never more than the sample's distinct values scaled up to the table: a
+    // sample of most of a table of names has few seen twice, and the estimate
+    // runs to millions on a table of twenty thousand rows.
+    return Math.min(chao, Math.max(distinct, Math.round(distinct * scale)));
 }
 
 // FNV-1a: enough to count values that are not kept.
@@ -82,7 +118,59 @@ function hash32(text) {
     return hash >>> 0;
 }
 
-function profileColumn(column, values, raw, { complete }) {
+// Codes for "no figure" written as figures: all nines (999, 99999.9) far above
+// every real value, or a small negative (-9, -999) in a column of positives.
+const SENTINEL_RE = /^(?:9{3,}(?:\.9+)?|-9{1,4}(?:\.0+)?|-9{3,}(?:\.9+)?)$/;
+function sentinelValues(real) {
+    const out = new Set();
+    const candidates = real.filter(([value, count]) => count >= 2 && SENTINEL_RE.test(value));
+    if (!candidates.length) return out;
+    const others = [];
+    let negative = 0;
+    for (const [value] of real) {
+        if (SENTINEL_RE.test(value)) continue;
+        const number = Number(value.replace(/[,\s$%]/g, ''));
+        if (!Number.isFinite(number)) continue;
+        if (number < 0) negative += 1;
+        others.push(Math.abs(number));
+    }
+    if (others.length < 5) return out;
+    others.sort((a, b) => a - b);
+    const high = others[Math.min(others.length - 1, Math.floor(others.length * 0.95))];
+    for (const [value] of candidates) {
+        const number = Number(value);
+        if (number > 0 ? high > 0 && number >= high * 10 : negative === 0) out.add(value);
+    }
+    return out;
+}
+
+// Dates that stand for "no date": far from every real one ("1900-01-01" in a
+// column of permits since 1990).
+const PLACEHOLDER_DATES = new Set(['1900-01-01', '1899-12-30', '1899-12-31', '1901-01-01', '1970-01-01', '1800-01-01', '9999-12-31', '2999-12-31',
+    '2099-12-31', '3000-01-01']);
+function placeholderDates(real) {
+    const out = new Set();
+    const candidates = real.filter(([value, count]) => count >= 2 && PLACEHOLDER_DATES.has(value.slice(0, 10)));
+    if (!candidates.length) return out;
+    let low = Infinity;
+    let high = -Infinity;
+    let dated = 0;
+    for (const [value] of real) {
+        if (PLACEHOLDER_DATES.has(value.slice(0, 10)) || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(value)) continue;
+        const year = Number(value.slice(0, 4));
+        if (year < low) low = year;
+        if (year > high) high = year;
+        dated += 1;
+    }
+    if (dated < 5) return out;
+    for (const [value] of candidates) {
+        const year = Number(value.slice(0, 4));
+        if (year <= low - 20 || year >= high + 20) out.add(value);
+    }
+    return out;
+}
+
+function profileColumn(column, values, raw, { complete, skip = new Set(), scale = Infinity }) {
     const cells = values.length;
     const counts = new Map();
     // Values past the cap are not read one by one, but they are still
@@ -126,18 +214,70 @@ function profileColumn(column, values, raw, { complete }) {
     }
     const distinct = folded.size + beyond.size;
 
-    const missing = { cells: 0, tokens: {} };
-    const real = [];
+    const missing = { cells: 0, tokens: {}, sentinels: [], dates: [] };
+    let real = [];
     for (const [value, count] of counts) {
         if (isMissingToken(value)) {
             missing.cells += count;
             missing.tokens[value.toLowerCase()] = (missing.tokens[value.toLowerCase()] || 0) + count;
         } else real.push([value, count]);
     }
+    // "99999.9" or "-999" among ordinary figures: a code for "no figure".
+    const sentinels = sentinelValues(real);
+    if (sentinels.size) {
+        real = real.filter(([value, count]) => {
+            if (!sentinels.has(value)) return true;
+            missing.cells += count;
+            missing.tokens[value.toLowerCase()] = (missing.tokens[value.toLowerCase()] || 0) + count;
+            missing.sentinels.push(Number(value));
+            return false;
+        });
+    }
+    const placeholders = placeholderDates(real);
+    if (placeholders.size) {
+        real = real.filter(([value, count]) => {
+            if (!placeholders.has(value)) return true;
+            missing.cells += count;
+            if (!missing.dates.includes(value.slice(0, 10))) missing.dates.push(value.slice(0, 10));
+            return false;
+        });
+    }
     const realCells = filled - missing.cells - overflow;
+
+    // A column written once per block and left blank below it ("Nova Scotia",
+    // "", "New Brunswick", ""): blanks inside it mean "as above". Read in the
+    // table's order, so only when the whole table was read.
+    let fillDown = false;
+    let sparseFillDown = false;
+    if (complete && filled >= 3) {
+        let first = -1;
+        let last = -1;
+        for (let r = 0; r < cells; r += 1) {
+            if (skip.has(r) || values[r] === '') continue;
+            if (first < 0) first = r;
+            last = r;
+        }
+        let span = 0;
+        let interior = 0;
+        for (let r = first; r >= 0 && r <= last; r += 1) {
+            if (skip.has(r)) continue;
+            span += 1;
+            if (values[r] === '') interior += 1;
+        }
+        fillDown = interior >= 1 && interior >= span * 0.05 && interior <= span * 0.6 && distinct >= filled * 0.8;
+        // Mostly blank, each name written once: the approver of a block of
+        // contracts, on its first row only. The model reads it so in lists of records.
+        sparseFillDown = !fillDown && interior >= span * 0.6 && filled >= 3 && distinct >= filled * 0.95;
+    }
 
     const number = detectNumberRule(real);
     const period = decidePeriodFormat(real);
+    // Dates whose day and month were swapped at the source wherever the day
+    // could pass for a month ("13/06" kept as 13 June, "05/06" stored as 6
+    // May): dates that cannot be swapped (a day past the 12th) say which
+    // months the column really covers; the others fall outside them as
+    // stored, and inside once swapped back.
+    const swappedDays = swappedDayMonth(real);
 
     // What a number column holds besides numbers and missing-value tokens.
     const other = { cells: 0, distinct: 0, longest: 0, short: {}, recurring: {}, examples: [], echoes: 0 };
@@ -164,7 +304,7 @@ function profileColumn(column, values, raw, { complete }) {
     }
 
     const patterns = { code_label: 0, url: 0, email: 0, postal: 0, phone: 0, letters: 0, digits: 0, spaces: 0, upper: 0, french: 0,
-        english: 0, accents: 0, unit: 0, cut: 0, footnote: 0, slug: 0 };
+        english: 0, accents: 0, unit: 0, cut: 0, footnote: 0, slug: 0, shapes: 0 };
     let lengthSum = 0;
     const lengths = [];
     for (const [value, count] of counts) {
@@ -179,6 +319,7 @@ function profileColumn(column, values, raw, { complete }) {
         if (/[0-9]/.test(value)) patterns.digits += count;
         if (value.includes(' ')) patterns.spaces += count;
         if (CODE_LABEL_RE.test(value)) patterns.code_label += count;
+        if (SHAPE_TEXT_RE.test(value)) patterns.shapes += count;
         if (URL_RE.test(value)) patterns.url += count;
         else if (EMAIL_RE.test(value)) patterns.email += count;
         else if (POSTAL_RE.test(value)) patterns.postal += count;
@@ -207,6 +348,7 @@ function profileColumn(column, values, raw, { complete }) {
 
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, TOP_VALUES)
         .map(([value, count]) => ({ v: value.slice(0, 80), n: count }));
+    const labels = labelReading(counts);
 
     return {
         id: column.id,
@@ -215,7 +357,7 @@ function profileColumn(column, values, raw, { complete }) {
         cast_failed: column.cast_failed === true,
         cells, blank, filled, padded,
         distinct, exact_distinct: overflow === 0,
-        est_distinct: estimateDistinct(distinct, once, twice, complete),
+        est_distinct: estimateDistinct(distinct, once, twice, complete, scale),
         spellings: counts.size - folded.size,
         top,
         length: { avg: counted ? lengthSum / counted : 0, p90 },
@@ -223,14 +365,71 @@ function profileColumn(column, values, raw, { complete }) {
         real_cells: realCells,
         number: number && {
             rule: number.rule, parsed: number.parsed, distinct: number.distinct, ambiguous: number.ambiguous, settled: number.settled, percent: number.percent,
-            currency: number.currency, integer_share: number.integerShare, negative_share: number.negativeShare,
+            currency: number.currency, integer_share: number.integerShare, negative_share: number.negativeShare, zero_share: number.zeroShare,
             leading_zero_share: number.leadingZeroShare, fixed_width: number.fixedWidth, min: number.min, max: number.max
         },
         other,
         period: period && { ...period },
         patterns,
+        labels,
+        fill_down: fillDown,
+        ...(sparseFillDown ? { sparse_fill_down: true } : {}),
+        ...(swappedDays ? { swapped_days: true } : {}),
         sequence: null
     };
+}
+
+// What a column's values say as labels, read over every distinct value (up
+// to a few hundred): a column that lists "0 à 14 ans" and "Femmes" lists two
+// kinds of breakdown however far down the second one sorts.
+const LABEL_READ_MAX = 2000;
+// Not totals: those are set aside as totals, and a hierarchy of places has many.
+const DERIVED_LINE_RE = /^(?:net|gross|taxable|revenus? nets?|revenus? imposables?|revenus? bruts?|montants? nets?|pertes? nettes?|b[ée]n[ée]fices? nets?|gains? (?:en capital )?imposables?|imp[oô]ts? (?:f[ée]d[ée]ral |provincial )?nets?)(?:$|[^\p{L}])/iu;
+const DATED_RE = /(?:^|[^0-9])(?:1[89]|20)[0-9]{2}(?:[^0-9]|$)/;
+function labelReading(counts) {
+    if (counts.size === 0 || counts.size > LABEL_READ_MAX) return null;
+    const out = { distinct: 0, place: 0, sex: 0, age: 0, national: 0, province: 0, region: 0, others: 0, measure: 0, dated: 0, dated_cells: 0,
+        cells: 0, garbled: 0, total_cells: 0, totals: [], alls: [], lists: 0, overlapping_bands: false, derived: 0 };
+    const bands = [];
+    let named = 0;
+    for (const [value, count] of counts) {
+        if (isMissingToken(value)) continue;
+        out.distinct += 1;
+        out.cells += count;
+        const kind = labelKind(value);
+        if (kind) out[kind] += 1;
+        if (isNationalLabel(value)) out.national += 1;
+        else if (isProvinceName(value)) out.province += 1;
+        else if (isRegionLabel(value)) out.region += 1;
+        else if (!kind && !isTotalLabel(value)) out.others += 1;
+        if (isMeasureLabel(value)) out.measure += 1;
+        if (DATED_RE.test(value)) {
+            out.dated += 1;
+            out.dated_cells += count;
+        }
+        if (isGarbled(value)) out.garbled += 1;
+        // Members that add the others up, under any name a table of figures gives them.
+        if (isTotalLabel(value) || isAggregateLabel(value)) {
+            out.total_cells += count;
+            if (out.totals.length < 20) out.totals.push(value.toLowerCase());
+        }
+        // "All ages", "Both sexes": totals in a table of figures only, so they
+        // are kept apart and are no sign that the rows are figures.
+        else if (isAllLabel(value) && out.alls.length < 20) out.alls.push(value.toLowerCase());
+        // "English ; French": a list, not one group.
+        if (/;\s*\S/.test(value)) out.lists += 1;
+        // "Net income", "Total income assessed", "Taxable capital gains": lines of a statement worked out from others.
+        if (DERIVED_LINE_RE.test(value)) out.derived += 1;
+        if (isTotalLabel(value) || isAggregateLabel(value) || isAllLabel(value)) continue;
+        named += 1;
+        const band = bandOf(value);
+        if (band && bands.length < 300) bands.push(band);
+    }
+    // Bands of a number nested in one another ("19 and over" beside "19 to
+    // 30"): totals and their parts in one column, whatever they are called.
+    // ("15 years and over" beside "18 years and over" are two, and nested.)
+    out.overlapping_bands = bands.length >= 2 && bands.length >= named * 0.6 && bandsOverlap(bands);
+    return out;
 }
 
 // A measure-like column: typed as a number, or text that is nearly all numbers.
@@ -300,7 +499,7 @@ function rowFindings(stats, matrix, ids) {
     const numeric = stats.map(mostlyNumbers);
     const numericCount = numeric.filter(Boolean).length;
     const labels = stats.map(stat => [stat.id.toLowerCase(), stat.label.toLowerCase()]);
-    const found = { header: [], second_header: [], unit: [], units: {}, total_rows: 0, total_labels: {}, tail: [] };
+    const found = { header: [], second_header: [], unit: [], units: {}, total_rows: 0, total_labels: {}, aggregate_labels: {}, tail: [], sections: {} };
     // Notes, legends and sources under a table: at its end, rows with words
     // where the numbers are and not one number.
     if (numericCount >= 2) {
@@ -343,10 +542,22 @@ function rowFindings(stats, matrix, ids) {
                 total = true;
                 const list = found.total_labels[stats[c].id] || (found.total_labels[stats[c].id] = []);
                 if (list.length < 5 && !list.includes(lower)) list.push(lower);
+            } else if (!numeric[c] && isAggregateLabel(value)) {
+                // "Total Expenditures": a total in a table of figures, read from every row.
+                const list = found.aggregate_labels[stats[c].id] || (found.aggregate_labels[stats[c].id] = []);
+                if (list.length < 10 && !list.includes(lower)) list.push(lower);
             }
         }
         if (filled === 0) continue;
         if (total) found.total_rows += 1;
+        // A heading inside a column ("Region", then "Sector"): one cell of
+        // words and no figure on the row, below the first row.
+        if (filled === 1 && numericCount >= 2 && r > 0) {
+            for (let c = 0; c < width; c += 1) {
+                if (matrix[c][r] === '' || numeric[c]) continue;
+                found.sections[stats[c].id] = (found.sections[stats[c].id] || 0) + 1;
+            }
+        }
         // A header inside the data: most cells repeat their column's name, or
         // a good part do while words sit where every number should be (the
         // header of the next block of a file that stacks several tables).
@@ -502,6 +713,12 @@ function describePairs(pairs, byId, stats) {
 
 // Period columns of a wide table, grouped by what is left of their labels
 // once the period is taken out.
+// What a period column's name may carry besides its period and still be the
+// same series: a flag (preliminary, revised, estimate, forecast) or "n".
+// Parents among their children are looked for in tables of at most this many rows.
+const NESTED_ROWS_MAX = 500;
+const NEUTRAL_STEMS = new Set(['p', 'r', 'e', 'f', '*', 'n', 'nb', 'nbr', 'nombre', 'count']);
+
 function wideGroups(stats) {
     const groups = new Map();
     stats.forEach((stat, index) => {
@@ -513,6 +730,18 @@ function wideGroups(stats) {
         group.columns.push({ id: stat.id, ord: period.ord, index });
         groups.set(key, group);
     });
+    // "2018p" (preliminary), "2019r" (revised) and "n_2020" beside "2016" …
+    // "2019" are the next periods of the same series: they join it, unless
+    // the series already has that period.
+    for (const [key, group] of [...groups]) {
+        if (!NEUTRAL_STEMS.has(group.stem)) continue;
+        const plain = groups.get(group.grain + '|');
+        if (!plain) continue;
+        const taken = new Set(plain.columns.map(column => column.ord));
+        if (group.columns.some(column => taken.has(column.ord))) continue;
+        plain.columns.push(...group.columns);
+        groups.delete(key);
+    }
     const out = [];
     for (const group of groups.values()) {
         const ords = new Set(group.columns.map(column => column.ord));
@@ -608,8 +837,13 @@ const yearLike = stat => Boolean(stat.number) && stat.number.integer_share >= 0.
 const COMPOSITE_YEARS = 4;
 const COMPOSITE_PARTS = 6;
 
-async function compositeTimes(stats, matrix, pause) {
-    const years = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => yearLike(stat) && stat.distinct >= 1).slice(0, COMPOSITE_YEARS);
+// Fiscal years written as text ("2023-24"): their quarters are fiscal ones, so
+// they make no axis of quarters, but say which years lack some.
+const fiscalLike = stat => Boolean(stat.period) && stat.period.grain === 'fiscal_year' && stat.period.parsed >= stat.real_cells * 0.9;
+
+async function compositeTimes(stats, matrix, pause, complete = false) {
+    const years = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => (yearLike(stat) || fiscalLike(stat)) && stat.distinct >= 1)
+        .slice(0, COMPOSITE_YEARS);
     const out = [];
     if (!years.length) return out;
     let parts = 0;
@@ -627,19 +861,25 @@ async function compositeTimes(stats, matrix, pause) {
             if (year.index === index) continue;
             await pause();
             const seen = new Set();
-            const yearsSeen = new Set();
+            const partsOf = new Map();
             const x = matrix[year.index];
             const y = matrix[index];
             for (let r = 0; r < x.length; r += 1) {
                 if (x[r] === '' || y[r] === '') continue;
                 const value = parsePart(y[r], part);
                 if (value === null) continue;
-                yearsSeen.add(x[r]);
                 seen.add(x[r] + '|' + value);
+                if (!partsOf.has(x[r])) partsOf.set(x[r], new Set());
+                partsOf.get(x[r]).add(value);
             }
             // A part column only refines the years if some year has several parts.
-            if (seen.size > yearsSeen.size && yearsSeen.size >= 1) {
-                out.push({ year: year.stat.id, part: stat.id, grain: part, periods: seen.size, years: yearsSeen.size });
+            if (seen.size > partsOf.size && partsOf.size >= 1) {
+                // Years without some of the parts the others have ("2025-26": Q1 to Q3),
+                // known only when every row was read.
+                const most = Math.max(...[...partsOf.values()].map(found => found.size));
+                const incomplete = complete ? [...partsOf].filter(([, found]) => found.size < most).map(([value]) => value).slice(0, 60) : [];
+                out.push({ year: year.stat.id, part: stat.id, grain: part, periods: seen.size, years: partsOf.size,
+                    ...(fiscalLike(year.stat) ? { fiscal: true } : {}), ...(incomplete.length ? { incomplete } : {}) });
             }
         }
     }
@@ -710,8 +950,10 @@ function repeatedFigures(stats, matrix, numbersOf) {
     const rows = matrix.length ? matrix[0].length : 0;
     const measures = stats.map((stat, index) => ({ stat, index }))
         .filter(({ stat }) => numericLike(stat) && stat.number.distinct >= 5 && stat.distinct <= stat.filled * 0.8).slice(0, 8);
+    // Keys of things that have a few rows each (a contract and its amendments,
+    // a building and its permits): most have one row, enough have several.
     const keys = stats.map((stat, index) => ({ stat, index }))
-        .filter(({ stat }) => !numericLike(stat) && !DATE_TYPES.has(stat.type) && stat.distinct >= 5 && stat.distinct <= stat.filled * 0.8 &&
+        .filter(({ stat }) => !numericLike(stat) && !DATE_TYPES.has(stat.type) && stat.distinct >= 5 && stat.distinct <= stat.filled * 0.95 &&
             stat.filled >= rows * 0.8)
         .sort((x, y) => y.stat.distinct - x.stat.distinct).slice(0, 8);
     const out = [];
@@ -749,6 +991,105 @@ function repeatedFigures(stats, matrix, numbersOf) {
         }
     }
     return out;
+}
+
+// A column whose every value splits the same people or things another way:
+// "Age", "Sex" and "Region" as values of one "Characteristic" column, each
+// adding up to the same total. Adding a measure across that column counts
+// everything once per way of splitting. Read only from a whole table, where
+// the sums are exact.
+function repeatedPartitions(stats, matrix, numbersOf, complete) {
+    if (!complete) return [];
+    const rows = matrix.length ? matrix[0].length : 0;
+    const measures = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => numericLike(stat) && stat.number.distinct > 2 &&
+        !stat.number.percent).slice(0, 8);
+    const categories = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => categoryLike(stat) && stat.distinct >= 3 && stat.distinct <= 30);
+    const out = [];
+    for (const category of categories) {
+        const c = matrix[category.index];
+        for (const measure of measures) {
+            const m = numbersOf(measure.index);
+            const sums = new Map();
+            const sizes = new Map();
+            for (let r = 0; r < rows; r += 1) {
+                if (c[r] === '' || Number.isNaN(m[r])) continue;
+                const key = c[r].toLowerCase();
+                sums.set(key, (sums.get(key) || 0) + m[r]);
+                sizes.set(key, (sizes.get(key) || 0) + 1);
+            }
+            const values = [...sums.values()].filter(value => value > 0).sort((a, b) => a - b);
+            if (values.length < 3) continue;
+            const mid = median(values);
+            const close = [...sums.entries()].filter(([, value]) => value > 0 && Math.abs(value - mid) <= mid * 0.01).map(([key]) => sizes.get(key));
+            // Each way of splitting has its own number of parts (two sexes, six
+            // age bands): a balanced panel, with the same rows under every value, is not this.
+            if (close.length >= 3 && close.length >= values.length * 0.6 && Math.max(...close) >= Math.min(...close) * 1.5) {
+                out.push({ by: category.stat.id, measure: measure.stat.id, groups: values.length });
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+// Rows that no column but numbers tells apart: in a table of figures, blocks
+// stacked one under the other without the column that would name them (an
+// all-ages block over one block per age group). Read from a whole table.
+function duplicateKeys(stats, matrix, complete, skip) {
+    if (!complete || !matrix.length) return 0;
+    // What names a row: text, years, and whole numbers that run densely or
+    // repeat (a month number, a line number, a code); not figures (numbers,
+    // even behind placeholders), not empty columns, not columns named for a
+    // period (the periods of a wide table).
+    const keys = stats.map((stat, index) => ({ stat, index })).filter(({ stat }) => {
+        if (stat.filled === 0 || parsePeriodName(stat.label)) return false;
+        const years = stat.period && stat.period.format === 'year' && stat.period.parsed >= stat.real_cells * 0.9 && stat.period.min >= 1800 &&
+            stat.period.max <= 2100;
+        if (years) return true;
+        const numeric = stat.number && stat.number.parsed >= Math.max(1, stat.real_cells * 0.5);
+        if (!numeric) return true;
+        const name = nameEvidence(stat.label);
+        if (stat.number.integer_share < 0.99 || stat.distinct > 200 || name.additive || name.nonAdditive || name.unitInName) return false;
+        const dense = stat.number.distinct / Math.max(1, stat.number.max - stat.number.min + 1) >= 0.5;
+        return stat.distinct <= stat.filled * 0.2 || dense;
+    });
+    if (!keys.length) return 0;
+    const rows = matrix[0].length;
+    const last = new Map();
+    const counts = new Map();
+    const gaps = new Map();
+    let counted = 0;
+    let position = 0;
+    for (let r = 0; r < rows; r += 1) {
+        if (skip.has(r)) continue;
+        const parts = keys.map(({ index }) => matrix[index][r]);
+        if (parts.every(part => part === '')) continue;
+        const key = parts.join(String.fromCharCode(31));
+        counts.set(key, (counts.get(key) || 0) + 1);
+        if (last.has(key)) {
+            const gap = position - last.get(key);
+            gaps.set(gap, (gaps.get(gap) || 0) + 1);
+        }
+        last.set(key, position);
+        counted += 1;
+        position += 1;
+    }
+    let repeated = 0;
+    for (const count of counts.values()) if (count > 1) repeated += count;
+    if (!counted || !repeated) return 0;
+    // Stacked blocks repeat a key one block apart, the same distance for most
+    // keys. Records with no id of their own repeat it next to itself, or anywhere.
+    let gapCount = 0;
+    let common = 0;
+    let commonGap = 0;
+    for (const [gap, count] of gaps) {
+        gapCount += count;
+        if (count > common) {
+            common = count;
+            commonGap = gap;
+        }
+    }
+    return commonGap >= 2 && common >= gapCount * 0.6 ? repeated / counted : 0;
 }
 
 /**
@@ -796,10 +1137,23 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
         }
     };
     setAside(noteRows(matrix, count), 'note');
+    // A row with nothing in it is not a record. Known exactly only when the
+    // whole table was read.
+    if (plan.complete) {
+        const empty = [];
+        for (let r = 0; r < count; r += 1) {
+            let filled = false;
+            for (let c = 0; c < used.length && !filled; c += 1) filled = matrix[c][r] !== '';
+            if (!filled) empty.push(r);
+        }
+        setAside(empty, 'blank');
+    }
     const read = async () => {
         const out = [];
+        const skip = new Set(aside.keys());
         for (let c = 0; c < used.length; c += 1) {
-            out.push(profileColumn(used[c], matrix[c], raws[c], { complete: plan.complete }));
+            out.push(profileColumn(used[c], matrix[c], raws[c], { complete: plan.complete, skip,
+                scale: plan.rows > 0 && count > 0 ? Math.max(1, plan.rows / count) : Infinity }));
             await pause();
         }
         return out;
@@ -852,6 +1206,85 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
         await pause();
     }
 
+    // Told from the numbers, so only when the whole table was read: a row
+    // with no name that says, in every number it carries, what all the other
+    // rows add up to (the table's own total, written without a label, with
+    // any footer lines after it); and rows that say what the rows right
+    // under or above them add up to (sectors under their parent sector).
+    let nested = 0;
+    if (plan.complete && count >= 5) {
+        const numeric = [];
+        for (let c = 0; c < used.length; c += 1) {
+            if (numericLike(stats[c]) && !(stats[c].sequence && stats[c].sequence.row_number_share >= 0.99)) numeric.push(c);
+        }
+        const textual = [];
+        for (let c = 0; c < used.length; c += 1) if (!stats[c].number && stats[c].filled >= count * 0.5) textual.push(c);
+        const live = [];
+        for (let r = 0; r < count; r += 1) if (!aside.has(r)) live.push(r);
+        const carries = r => numeric.some(c => !Number.isNaN(numbersOf(c)[r]));
+        const figures = live.filter(carries);
+        for (const r of numeric.length && figures.length >= 5 ? [figures[figures.length - 1], figures[0]] : []) {
+            let carried = 0;
+            let agree = 0;
+            let most = 0;
+            for (const c of numeric) {
+                const numbers = numbersOf(c);
+                if (Number.isNaN(numbers[r])) continue;
+                carried += 1;
+                let others = 0;
+                let rows = 0;
+                for (const x of figures) {
+                    if (x === r || Number.isNaN(numbers[x])) continue;
+                    others += numbers[x];
+                    rows += 1;
+                }
+                most = Math.max(most, rows);
+                if (rows >= 3 && numbers[r] !== 0 && Math.abs(numbers[r] - others) <= Math.abs(others) * 0.005) agree += 1;
+            }
+            const unnamed = textual.length > 0 && textual.every(c => matrix[c][r] === '');
+            if (carried >= 1 && agree === carried && unnamed && most >= 3) {
+                aside.set(r, 'total');
+                excluded.push({ id: ids[r], reason: 'total' });
+                // Lines after a total at the foot of a table are its footer ("Return to Table of Contents").
+                if (r === figures[figures.length - 1]) {
+                    for (const x of live) {
+                        if (x > r && !carries(x)) {
+                            aside.set(x, 'note');
+                            excluded.push({ id: ids[x], reason: 'note' });
+                        }
+                    }
+                }
+                excluded.sort((x, y) => x.id - y.id);
+                break;
+            }
+        }
+        // Parents above or below their children: a row equal, in every number
+        // it carries (two at least, one of them a hundred or more), to the sum
+        // of the two to forty rows next to it. Small numbers add up to one
+        // another by chance, so the sums must be nearly exact and such rows
+        // more than a stray one or two.
+        if (numeric.length >= 2 && figures.length <= NESTED_ROWS_MAX) {
+            const rows = figures.filter(r => !aside.has(r));
+            const values = rows.map(r => numeric.map(c => numbersOf(c)[r]));
+            const sumsTo = (i, step) => {
+                const own = values[i];
+                const carried = own.filter(value => !Number.isNaN(value));
+                if (carried.length < 2 || !carried.some(value => Math.abs(value) >= 100)) return false;
+                const sums = own.map(() => 0);
+                for (let k = 1; k <= 40; k += 1) {
+                    const other = values[i + step * k];
+                    if (!other) return false;
+                    for (let c = 0; c < own.length; c += 1) if (!Number.isNaN(other[c])) sums[c] += other[c];
+                    if (k >= 2 && own.every((value, c) => Number.isNaN(value) || Math.abs(value - sums[c]) <= Math.abs(value) * 0.005 + 0.5)) return true;
+                }
+                return false;
+            };
+            let parents = 0;
+            for (let i = 0; i < rows.length; i += 1) if (sumsTo(i, 1) || sumsTo(i, -1)) parents += 1;
+            if (parents >= Math.max(2, Math.ceil(rows.length * 0.03))) nested = parents;
+        }
+    }
+
     const byId = new Map(stats.map(stat => [stat.id, stat]));
     const pairs = describePairs(await findPairs(stats, matrix, pause), byId, stats);
     await pause();
@@ -859,11 +1292,14 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
     const inWide = new Set(wide.flatMap(group => group.columns.map(column => column.index)));
     await pause();
     const totals = derivedTotals(stats, numbersOf, inWide);
-    const composite = await compositeTimes(stats, matrix, pause);
+    const composite = await compositeTimes(stats, matrix, pause, plan.complete);
     await pause();
     const mixes = scaleMixes(stats, matrix, numbersOf);
     await pause();
     const repeated = repeatedFigures(stats, matrix, numbersOf);
+    await pause();
+    const partitions = repeatedPartitions(stats, matrix, numbersOf, plan.complete);
+    const stacked = duplicateKeys(stats, matrix, plan.complete, new Set(aside.keys()));
 
     return {
         v: 1,
@@ -875,9 +1311,15 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
             notes: excluded.filter(row => row.reason === 'note').length,
             headers: excluded.filter(row => row.reason === 'header' || row.reason === 'second_header').length,
             unit_rows: excluded.filter(row => row.reason === 'unit').length,
+            blank_rows: excluded.filter(row => row.reason === 'blank').length,
             units: found.units || {},
             total_rows: found.total_rows,
-            total_labels: found.total_labels
+            total_labels: found.total_labels,
+            aggregate_labels: found.aggregate_labels || {},
+            // Headings inside a column, by column: two or more make it several breakdowns.
+            sections: found.sections || {},
+            // Rows that are the sum of the rows next to them: levels nested in one another.
+            nested
         },
         pairs,
         groups: {
@@ -886,7 +1328,10 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
             derived_totals: totals,
             composite_time: composite,
             scale_mixed: mixes,
-            repeated
+            repeated,
+            partitions,
+            // Share of rows that no column other than numbers tells apart.
+            duplicate_keys: stacked
         }
     };
 }

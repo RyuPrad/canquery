@@ -49,6 +49,7 @@ export function isChartsData(data) {
     optional(data.model.time_axes, (axes) => listOf(axes, isAxis)) &&
     optional(data.model.wide_groups, (groups) => listOf(groups, (group) => record(group) && text(group.id))) &&
     optional(data.builder, (builder) => record(builder) && optional(builder.default, isSpec)) &&
+    optional(data.sums_withheld, (value) => typeof value === 'boolean') &&
     record(data.scope);
 }
 

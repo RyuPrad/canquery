@@ -40,6 +40,12 @@ function keyOf(key, cell) {
     if (key.kind === 'date') {
         const value = cell(key.column);
         if (value === null) return '';
+        // Dates that stand for "no date" belong to no period.
+        if (Array.isArray(key.skip) && key.skip.length) {
+            const day = key.column.type === 'TIMESTAMPTZ' ? new Date(value).toISOString().slice(0, 10)
+                : (key.column.type === 'TEXT' ? btrim(value) : value).slice(0, 10).replace(/\//g, '-');
+            if (key.skip.includes(day)) return '';
+        }
         if (key.column.type === 'TIMESTAMPTZ') {
             const at = new Date(value);
             return Number.isFinite(at.getTime()) && at.getUTCFullYear() >= 1600 ? bucket(at.getUTCFullYear(), at.getUTCMonth() + 1, at.getUTCDate(), key.grain) : '';
@@ -66,22 +72,31 @@ function readMeasure(measure, cell) {
     const raw = cell(measure.column);
     if (measure.column.type !== 'TEXT') {
         const number = raw === null ? null : Number(raw);
-        const value = number === null ? null : number === 0 || Math.abs(number) < 1e-300 ? 0 : Math.abs(number) <= 1e300 ? number : null;
-        return { value, blank: raw === null, missing: false };
+        // Figures that stand for "no figure" are placeholders.
+        const sentinel = number !== null && (measure.sentinels || []).includes(number);
+        const value = number === null || sentinel ? null : number === 0 || Math.abs(number) < 1e-300 ? 0 : Math.abs(number) <= 1e300 ? number : null;
+        return { value, blank: raw === null, missing: sentinel };
     }
     const p = raw === null ? null : prep(raw);
     const d = p === null ? null : strip(p, measure.clean);
     const format = FORMATS[measure.clean.core];
-    const readable = d !== null && d.length >= 1 && d.length <= MAX_LENGTH && format.re.test(d);
-    return { value: readable ? Number(format.js(d)) : null, blank: p === null || p === '',
-        missing: p !== null && (measure.clean.missing || []).includes(p.toLowerCase()) };
+    const missing = p !== null && (measure.clean.missing || []).includes(p.toLowerCase());
+    const readable = d !== null && d.length >= 1 && d.length <= MAX_LENGTH && format.re.test(d) && !(measure.clean.sentinel && missing);
+    return { value: readable ? Number(format.js(d)) : null, blank: p === null || p === '', missing };
 }
 
-const emptyGroup = measures => ({ n: 0, nx: 0, measures: measures.map(() => ({ sum: null, n: 0, min: null, max: null, blank: 0, missing: 0, other: 0 })) });
+const emptyGroup = measures => ({ n: 0, nx: 0, measures: measures.map(() => ({ sum: null, n: 0, min: null, max: null, blank: 0, missing: 0, other: 0,
+    xsum: null, xn: 0 })) });
 
 function addRow(group, row) {
     if (row.total) {
         group.nx += 1;
+        // What the total rows say themselves, as the batch keeps it.
+        row.measures.forEach((read, j) => {
+            if (read.other || read.value === null) return;
+            group.measures[j].xsum = (group.measures[j].xsum || 0) + read.value;
+            group.measures[j].xn += 1;
+        });
         return;
     }
     group.n += 1;
@@ -114,6 +129,8 @@ function mergeGroup(into, more) {
         measure.blank += other.blank;
         measure.missing += other.missing;
         measure.other += other.other;
+        if (other.xsum !== null) measure.xsum = (measure.xsum || 0) + other.xsum;
+        measure.xn += other.xn;
     });
 }
 
@@ -122,14 +139,17 @@ function mergeGroup(into, more) {
  * @param {object} plan as passed to runBatch(); `where` is not supported
  * @returns {{ grand: object, sets: object[][] }} as runBatch() returns
  */
-function evaluateBatch(table, { excluded = [], totals = [], sets, measures }) {
+function evaluateBatch(table, { excluded = [], totals = [], sets, measures, scope = null }) {
     const index = new Map(table.columns.map((column, i) => [column.id, i + 1]));
     const skip = new Set(excluded.map(Number));
     const grand = emptyGroup(measures);
     const raw = sets.map(() => new Map());
+    const inScope = scope ? new Set(scope.keys) : null;
     for (const row of table.rows) {
         if (skip.has(Number(row[0]))) continue;
         const cell = column => { const value = row[index.get(column.id)]; return value === null || value === undefined ? null : String(value); };
+        // One period (or group) of a key: its folded key is one of the scope's.
+        if (inScope && !inScope.has(fold(keyOf(scope.key, cell)))) continue;
         const total = totals.some(entry => cell(entry.column) !== null && entry.labels.map(fold).includes(fold(groupKey(entry.column, cell))));
         const read = { total, measures: measures.map(measure => {
             if (measure.only) {
@@ -167,6 +187,7 @@ function evaluateBatch(table, { excluded = [], totals = [], sets, measures }) {
                 if (rank.by === 'n') return group.n;
                 const measure = group.measures[rank.measure];
                 if (rank.by === 'sum') return measure.sum;
+                if (rank.by === 'abs') return measure.sum === null ? null : Math.abs(measure.sum);
                 if (rank.by === 'max') return measure.max;
                 if (rank.by === 'min') return measure.min;
                 return measure.n ? measure.sum / measure.n : null;

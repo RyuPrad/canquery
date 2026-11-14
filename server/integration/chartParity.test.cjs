@@ -9,6 +9,10 @@
 //  - whole analyses come out identical whichever of the two computed them;
 //  - the rows in scope are the rows the table shows for the same search and filters;
 //  - a statement that runs out of time leaves its connection and its snapshot lease usable.
+// The engine adds figures up in long tables only when told to; this suite compares SQL with the
+// evaluator on every statement the engine can send, those sums included.
+process.env.CHART_AUTO_SUMS = 'all';
+
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -110,7 +114,11 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
         const tokens = new Set(['', ' ', '--', '-', '.', ',', '1e999', '1e99', '1e-99', '9'.repeat(64), '9'.repeat(65), '1,2,3', '1.2.3', 'NaN', 'Infinity', '-Infinity',
             '0x1F', '1_000', '１２３', '12abc', 'abc', '1 2', '(12)', '(12', '12)', '$', '%', '+', '+-1', '--1', '1-', '1e', 'e1', '.5', '5.', '0.', '-.5', '+.5e3',
             '\u00a01\u202f234\u2009', '\u22125', '1\u00a0234,5', '12 %', '$ 12', 'CAD 1,250.00', '1,250.00 CAD', '($1,234.50)', '1,234,567.891', '1 234 567,8', '0,125',
-            '12,5', '1,234', '1.234,5', '1,23', '1,2345', '00012', '-0', '+0', '1e3', '1E3', '1e+3', '1e-3', '1.5e10']);
+            '12,5', '1,234', '1.234,5', '1,23', '1,2345', '00012', '-0', '+0', '1e3', '1E3', '1e+3', '1e-3', '1.5e10',
+            // Footnote marks after a number, and marks with nothing before them.
+            '2,605*', '311 \u2020', '1 234\u00b9', '12%*', '(12)*', '*', '**', '\u2021', '1*2', '*12',
+            // Flags of statistical tables: use with caution, preliminary, revised.
+            '635E', '1,204p', '12 r', '3.5Er', 'E', 'pr', '1E', '2.5E2', 'NONE']);
         for (let n = 0; n < 420; n += 1) {
             const whole = digits(n);
             const cents = String(n % 100).padStart(2, '0');
@@ -121,7 +129,8 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
         const list = [...tokens];
         assert.ok(list.length > 2000);
         for (const core of Object.keys(FORMATS)) {
-            for (const rule of [{ core, symbols: '', codes: [], paren: false }, { core, symbols: '$%', codes: ['CAD'], paren: true }]) {
+            for (const rule of [{ core, symbols: '', codes: [], paren: false }, { core, symbols: '$%', codes: ['CAD'], paren: true },
+                { core, symbols: '$%', codes: ['CAD'], paren: true, marks: true }]) {
                 const values = [list];
                 const param = value => { values.push(value); return '$' + values.length; };
                 const text = 'SELECT t, ' + sqlValue('d', rule, param) + ' AS v FROM (SELECT t, ' + sqlStrip('p', rule, param) + ' AS d FROM (SELECT t, ' +
@@ -218,6 +227,28 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL) {
         assert.deepEqual(sql.sets[1].filter(group => group.n > 0).map(group => group.key).sort(), ['', '2020-01-01', '2021-01-01']);
         // Each group carries the spelling stored in the table, for an exact filter.
         assert.equal(sql.sets[0].find(group => group.key === 'grand total').raw, 'Grand\u00a0 Total ');
+    });
+
+    test('a scan of one period, figures that stand for none and footnote marks read the same in SQL and in the evaluator', async () => {
+        const unit = String.fromCharCode(31);
+        const fixture = { columns: [{ id: 'Year', type: 'INTEGER' }, { id: 'Month', type: 'TEXT' }, { id: 'Region', type: 'TEXT' }, { id: 'Assets', type: 'NUMERIC' },
+            { id: 'Count', type: 'TEXT' }],
+            rows: [[1, '2024', 'Jan', 'East', '10', '5'], [2, '2024', ' jan', 'West', '99999.9', '7*'], [3, '2025', 'Jan', 'East', '20', '99999.9'],
+                [4, '2025', 'Feb', 'West', '-999', '3']] };
+        const table = await build(fixture);
+        const [year, month, region, assets, count] = fixture.columns;
+        const plan = { tableName: table.tableName, scope: { key: { kind: 'composite', year, part: month }, keys: ['2024' + unit + 'jan', '2024' + unit + ' jan'] },
+            sets: [{ key: { kind: 'category', column: region }, rank: [{ by: 'n', limit: 10 }] }],
+            measures: [{ column: assets, clean: null, only: null, sentinels: [99999.9, -999] },
+                { column: count, clean: { core: 'plain', symbols: '', codes: [], paren: false, marks: true, missing: ['99999.9'], sentinel: true }, only: null }] };
+        const sql = await queries.runBatch(plan, { timeoutMs: 15000 });
+        const js = evaluateBatch(fixture, plan);
+        assert.deepEqual(figures(sql.grand), figures(js.grand));
+        assert.deepEqual(byKey(sql.sets[0]), byKey(js.sets[0]));
+        // January 2024 only, however its month is spelled.
+        assert.equal(sql.grand.n, 2);
+        assert.deepEqual([sql.grand.measures[0].sum, sql.grand.measures[0].n, sql.grand.measures[0].missing], [10, 1, 1]);
+        assert.deepEqual([sql.grand.measures[1].sum, sql.grand.measures[1].n], [12, 2]);
     });
 
     test('whole analyses are the same whether PostgreSQL or the evaluator scanned the table', async () => {

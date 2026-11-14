@@ -24,6 +24,10 @@ jest.mock('../db/storeQueries', () => ({
 jest.mock('../db/chartQueries', () => ({ readSample: jest.fn(), runBatch: jest.fn() }));
 const request = require('supertest');
 const fixtures = require('./fixtures/charts/tables');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const PREPARED_AT = '2026-09-29T12:00:00.000Z';
 const text = id => ({ id, type: 'TEXT', original_label: id });
@@ -157,14 +161,18 @@ describe('GET /api/v1/insights/featured', () => {
         expect(FROZEN(items[0])).toBe(true);
     });
 
-    it('an average over the years of one column is a line, keyed by year', async () => {
-        seed(['panel']);
+    it('records counted over the years of a date column are a line, keyed by the first day of each year', async () => {
+        seed(['events']);
         const [item] = await fetchFeatured();
-        expect(item).toMatchObject({ kind: 'line', context: { group_by: 'Year', agg: 'avg', agg_column: 'Unemployment rate', bucket: null, group_type: 'INTEGER',
-            total_groups: 12, displayed_groups: 12, limited: false, missing_periods: [] } });
-        expect(item.points.map(point => point.key)).toEqual(['1960', '1961', '1962', '1963', '1964', '1965', '1966', '1967', '1968', '1969', '1970', '1971']);
-        expect(item.points.map(point => point.label)).toEqual(item.points.map(point => point.key));
+        expect(item).toMatchObject({ kind: 'line', context: { group_by: 'Incorporation date', agg: 'count', agg_column: null, bucket: 'year', group_type: 'DATE' } });
+        expect(item.points.every(point => /^\d{4}-01-01T00:00:00\.000Z$/.test(point.key))).toBe(true);
         expect(FROZEN(item)).toBe(true);
+    });
+
+    it('a table of rates has neither a preview nor a card: an average of rows that are figures says little', async () => {
+        seed(['panel']);
+        expect(await fetchFeatured()).toEqual([]);
+        expect(await service.cards('en')).toEqual([]);
     });
 
     it('sums have no place in the published shape, so a table of totals has no preview, but it has a card', async () => {
@@ -203,10 +211,10 @@ describe('GET /api/v1/insights/featured', () => {
     });
 
     it('skips a table that cannot be charted now and keeps the others', async () => {
-        seed(['permits', 'panel']);
+        seed(['permits', 'events']);
         chartQueries.readSample.mockRejectedValueOnce(new Error('snapshot unavailable'));
         const items = await fetchFeatured();
-        expect(items.map(item => item.dataset_id)).toEqual(['d-panel']);
+        expect(items.map(item => item.dataset_id)).toEqual(['d-events']);
     });
 
     it('bounds the scan to 24 tables and keeps at most 12 previews and 12 cards', async () => {
@@ -340,7 +348,7 @@ describe('startFeaturedWarming', () => {
     });
 
     it('a refresh replaces the cached charts while requests keep the previous ones', async () => {
-        seed(['permits', 'panel']);
+        seed(['permits', 'events']);
         topq.listIngestedTop.mockResolvedValueOnce([candidate('permits')]);
         expect(await service.featured('en')).toHaveLength(1);
         let release;
@@ -348,7 +356,7 @@ describe('startFeaturedWarming', () => {
         const refreshed = service.refreshFeatured('en');
         await flush();
         expect(await service.featured('en')).toHaveLength(1);
-        release([candidate('permits'), candidate('panel')]);
+        release([candidate('permits'), candidate('events')]);
         expect(await refreshed).toHaveLength(2);
         expect(await service.featured('en')).toHaveLength(2);
         expect(await service.cards('en')).toHaveLength(2);

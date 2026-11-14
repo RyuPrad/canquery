@@ -8,6 +8,10 @@ const queries = require('../db/chartQueries');
 const engine = require('../services/charts/chartEngine');
 const fixtures = require('./fixtures/charts/tables');
 const { fakeQueries } = require('./fixtures/charts/evaluate');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const tables = new Map();
 let fake;
@@ -33,16 +37,24 @@ beforeEach(() => {
 describe('chart engine', () => {
     test('a measure that is text because of "--" is read, and the chart says what it left out', async () => {
         const analysis = await analyze('suppressedCounts');
-        expect(fake.calls.batches).toHaveLength(1);
+        // A table of monthly figures: the provinces are compared over the
+        // latest year it covers in full, which a second scan reads.
+        expect(fake.calls.batches).toHaveLength(2);
+        expect(fake.calls.batches[1].scope.keys).toHaveLength(12);
         const share = by(analysis, 'share_by_category');
         expect(share.x.column).toBe('EN_PROVINCE/TERRITORY');
+        expect(share.period).toEqual({ grain: 'year', start: '2022-01-01' });
+        expect(codes(share)).toContain('latest_period_only');
         expect(share.y).toMatchObject({ agg: 'sum', column: 'TOTAL', lower_bound: true });
         expect(share.kind).toBe('donut');
+        const of2022 = fixtures.suppressedCounts().rows.filter(row => row[1] === '2022');
+        expect(share.scope.rows).toBe(of2022.length);
+        expect(share.points.reduce((sum, point) => sum + point.value, 0)).toBe(of2022.reduce((sum, row) => sum + (row[7] === '--' ? 0 : Number(row[7])), 0));
         expect(share.points.reduce((sum, point) => sum + point.value, 0)).toBe(share.total);
         expect(share.points.reduce((sum, point) => sum + point.share, 0)).toBeCloseTo(1);
         const left = share.notes.find(note => note.code === 'placeholders_left_out');
         expect(left).toMatchObject({ level: 'caution', column: 'TOTAL', tokens: ['--'] });
-        expect(left.cells).toBe(fixtures.suppressedCounts().rows.filter(row => row[7] === '--').length);
+        expect(left.cells).toBe(of2022.filter(row => row[7] === '--').length);
 
         const line = by(analysis, 'measure_over_time');
         expect(line.x).toMatchObject({ type: 'time', grain: 'month', columns: ['EN_YEAR', 'EN_MONTH'] });
@@ -55,10 +67,13 @@ describe('chart engine', () => {
     });
 
     test('numbers written with commas, spaces, currency signs and parentheses add up to the same figures', async () => {
-        const analysis = await analyze('numberFormats');
+        const table = tableOf('numberFormats');
+        const analysis = await engine.analyzeSnapshot(table);
         const total = column => analysis.kpis.find(kpi => kpi.column === column)?.value;
         expect(total('Visits')).toBe(157340);
-        expect(total('Cost')).toBe(157360);
+        // Cost is Visits plus fifty cents a row: drawn once, as one chart says it all; its own figures still read.
+        const cost = await engine.customChart(table, { x: { column: 'Unit' }, y: { agg: 'sum', column: 'Cost' } });
+        expect(cost.chart.points.reduce((sum, point) => sum + point.value, 0)).toBe(157360);
         // A percentage is averaged, and a column whose format is a guess is not charted by itself.
         expect(analysis.charts.some(chart => chart.y.column === 'Share' && chart.y.agg === 'sum')).toBe(false);
         expect(analysis.charts.some(chart => chart.y.column === 'Guess')).toBe(false);
@@ -130,8 +145,11 @@ describe('chart engine', () => {
         const analysis = await analyze('reportStyle');
         expect(analysis.scope.rows).toBe(32);
         expect(analysis.scope.note_rows_left_out).toBeGreaterThan(0);
+        expect(analysis.charts.length).toBeGreaterThan(0);
         for (const chart of analysis.charts) {
-            expect(codes(chart)).toContain('total_left_out');
+            // Charts of the whole table say the total row was left out; a chart
+            // of the latest year never had it (it has no year).
+            if (!chart.period) expect(codes(chart)).toContain('total_left_out');
             expect(labels(chart).some(label => /total|note|source/i.test(String(label)))).toBe(false);
         }
     });
@@ -166,12 +184,15 @@ describe('chart engine', () => {
         expect(analysis.blocked).toEqual([]);
     });
 
-    test('rates are averaged and counts are added up', async () => {
-        const analysis = await analyze('ratesAndCounts');
+    test('counts are added up; rates, ratios and indexes are charted only on request', async () => {
+        const table = tableOf('ratesAndCounts');
+        const analysis = await engine.analyzeSnapshot(table);
         const agg = column => [...new Set(analysis.charts.filter(chart => chart.y.column === column).map(chart => chart.y.agg))];
         expect(agg('Employees')).toEqual(['sum']);
-        expect(agg('Unemployment rate')).toEqual(['avg']);
-        expect(by(analysis, 'average_by_category').notes.map(note => note.code)).toContain('unweighted_average');
+        // An average of rows that are themselves rates says little on its own initiative.
+        for (const column of ['Unemployment rate', 'Male ratio', 'Price index']) expect(agg(column)).toEqual([]);
+        const asked = await engine.customChart(table, { x: { column: 'Sector' }, y: { agg: 'avg', column: 'Unemployment rate' } });
+        expect(asked.chart.notes.map(note => note.code)).toContain('unweighted_average');
     });
 
     test('coordinates and links are not charted, and a table with nothing to say gets no chart', async () => {
@@ -185,7 +206,10 @@ describe('chart engine', () => {
         const analysis = await analyze('cleanEvents');
         expect(analysis.model.shape).toBe('records');
         const counts = by(analysis, 'records_over_time');
-        expect(counts.points.reduce((sum, point) => sum + point.value, 0)).toBe(300);
+        // The dates stop on 20 July 2021: that year is half a year, left out and said so.
+        const cut = counts.notes.find(note => note.code === 'cut_period_left_out');
+        expect(cut).toMatchObject({ start: '2021-01-01', grain: 'year', date: '2021-07-20' });
+        expect(counts.points.reduce((sum, point) => sum + point.value, 0)).toBe(300 - cut.rows);
         expect(by(analysis, 'measure_over_time').y).toMatchObject({ agg: 'sum', column: 'Share capital', lower_bound: false });
         expect(analysis.charts.every(chart => chart.notes.every(note => note.level !== 'caution'))).toBe(true);
     });

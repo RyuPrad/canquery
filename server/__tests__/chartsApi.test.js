@@ -19,6 +19,10 @@ const { chartsLimiter, customChartLimiter } = require('../middleware/rateLimits'
 const fixtures = require('./fixtures/charts/tables');
 const { fakeQueries } = require('./fixtures/charts/evaluate');
 const app = require('../app');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const tables = new Map();
 let fake;
@@ -51,13 +55,30 @@ beforeEach(async () => {
 });
 
 describe('GET /web-api/v1/resources/:id/charts', () => {
+    test('by default the answer says when sums over a long table\'s rows were left to the builder, which opens on the first of them', async () => {
+        const before = process.env.CHART_AUTO_SUMS;
+        delete process.env.CHART_AUTO_SUMS;
+        try {
+            engine.clearCaches();
+            serve(copy('cleanEvents'));
+            const res = await request(app).get(chartsUrl('cleanEvents'));
+            expect(res.status).toBe(200);
+            expect(res.body.data.sums_withheld).toBe(true);
+            expect(res.body.data.charts.every(chart => chart.y.agg === 'count')).toBe(true);
+            expect(res.body.data.builder.default.y).toEqual({ agg: 'sum', column: 'Share capital' });
+        } finally {
+            if (before !== undefined) process.env.CHART_AUTO_SUMS = before;
+            engine.clearCaches();
+        }
+    });
+
     test('answers with the charts, the figures above them, how the table was read, and the snapshot they are of', async () => {
         const row = copy('cleanEvents');
         serve(row);
         const res = await request(app).get(chartsUrl('cleanEvents'));
         expect(res.status).toBe(200);
         expect(res.headers['cache-control']).toBe('no-cache');
-        expect(Object.keys(res.body.data)).toEqual(['engine', 'status', 'kpis', 'charts', 'skipped', 'blocked', 'model', 'builder', 'scope']);
+        expect(Object.keys(res.body.data)).toEqual(['engine', 'status', 'kpis', 'charts', 'skipped', 'blocked', 'sums_withheld', 'model', 'builder', 'scope']);
         expect(res.body.data).toMatchObject({ engine: engine.ENGINE_VERSION, status: 'ok', scope: { rows: 300, table_rows: 300, filtered: false } });
         expect(res.body.data.charts.length).toBeGreaterThan(1);
         for (const chart of res.body.data.charts) {
