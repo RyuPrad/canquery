@@ -632,6 +632,21 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
             column.reasons.push({ code: kept.maintenance ? 'maintenance_date' : 'period_end_date' });
             continue;
         }
+        // Dates with day and month swapped in part of the column are in the wrong months.
+        if (column.role === 'time' && byId.get(column.id).swapped_days) {
+            column.time.maintenance = true;
+            column.reasons.push({ code: 'swapped_days' });
+            continue;
+        }
+        // One day that holds a third of the records, among many days: the day
+        // the records were entered in bulk, not when things happened.
+        const dated = byId.get(column.id);
+        if (column.role === 'time' && column.time.kind === 'typed' && dated.top.length && dated.distinct >= 10 &&
+            share(dated.top[0].n, dated.filled) >= 0.3) {
+            column.time.maintenance = true;
+            column.reasons.push({ code: 'bulk_date' });
+            continue;
+        }
         if (column.role === 'time') timeAxes.push({ id: 't:' + column.id, columns: [column.id], kind: column.time.kind, grain: column.time.grain,
             grains: column.time.grains, composite: false, ...(column.time.periods ? { periods: column.time.periods } : {}) });
     }
@@ -842,7 +857,9 @@ function buildTableModel(profile, { rowCount, now = new Date() } = {}) {
 
     // Map lines cut into segments: a length per row beside a geometry. Their
     // count says how the lines were cut; their lengths add up to the network.
-    const lengthOf = column => /(?:^| )(?:length|leng|longueur|shape length|st length)(?: |$)/.test(nameEvidence(column.label).normal);
+    // A length divided by something, or per something, is a ratio of the thing, not a piece of a line.
+    const lengthOf = column => { const normal = nameEvidence(column.label).normal; return /(?:^| )(?:length|leng|longueur|shape length|st length)(?: |$)/.test(normal) &&
+        !/(?:^| )(?:div|divided|divise|per|par|ratio|density|densite|avg|average|moyenne|mean|pct|percent)(?: |$)/.test(normal); };
     const geometry = columns.some(column => column.role === 'geometry' || /^(?:geom|geometry|the geom|wkt|geometrie|shape)$/.test(nameEvidence(column.label).normal));
     const lines = geometry && columns.some(column => (column.role === 'geometry' || column.role === 'measure') && lengthOf(column));
     if (lines) {

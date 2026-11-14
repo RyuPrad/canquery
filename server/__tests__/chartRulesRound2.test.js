@@ -920,4 +920,46 @@ describe('fifth reading: a second set of tables the rules had never seen', () =>
         expect(column(model, 'contract-value').measure.additive).not.toBe('no');
         expect(listCandidates(model).some(spec => spec.y.column === 'total-contract-value')).toBe(false);
     });
+
+    test('dates whose day and month were swapped at the source in part of the column are not a time axis', async () => {
+        // Tickets of April to June: the 13th to the 30th are right; the 1st to the 12th were stored month-first.
+        const rows = [];
+        for (const month of [4, 5, 6]) {
+            for (let day = 1; day <= 28; day += 1) {
+                const stored = day > 12 ? '2020-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0')
+                    : '2020-' + String(day).padStart(2, '0') + '-' + String(month).padStart(2, '0');
+                rows.push(['T-' + rows.length, stored + ' 10:00:00+00', ['Meter', 'Hydrant', 'No stopping'][rows.length % 3]]);
+                rows.push(['T-' + rows.length, stored + ' 14:30:00+00', ['Meter', 'Hydrant', 'No stopping'][rows.length % 3]]);
+            }
+        }
+        const { model } = await read(table([text('Ticket'), { id: 'VIOLATION_DATETIME', type: 'TIMESTAMPTZ', original_label: 'VIOLATION_DATETIME' }, text('Infraction')], rows));
+        expect(reasons(model, 'VIOLATION_DATETIME')).toContain('swapped_days');
+        expect(model.time_axes).toEqual([]);
+        // A year of tickets has every month, and nothing to tell a swap by.
+        const whole = range(360).map(i => ['T-' + i, '2020-' + String(1 + (i % 12)).padStart(2, '0') + '-' + String(1 + (i % 28)).padStart(2, '0') + ' 09:00:00+00', 'Meter']);
+        const steady = await read(table([text('Ticket'), { id: 'VIOLATION_DATETIME', type: 'TIMESTAMPTZ', original_label: 'VIOLATION_DATETIME' }, text('Infraction')], whole));
+        expect(reasons(steady.model, 'VIOLATION_DATETIME')).not.toContain('swapped_days');
+    });
+
+    test('one day that holds a third of the records is when they were entered, and two open age groups are one inside the other', async () => {
+        const rows = range(240).map(i => ['SEG-' + i, i % 5 < 3 ? '2013-11-18' : (2014 + (i % 9)) + '-0' + (1 + (i % 9)) + '-1' + (i % 9), ['Local', 'Collector'][i % 2],
+            String(40 + scatter(i, 900))]);
+        const bulk = await read(table([text('Segment'), date('DATE_CREATION'), text('Type'), integer('Count of signs')], rows));
+        expect(reasons(bulk.model, 'DATE_CREATION')).toContain('bulk_date');
+        expect(bulk.model.time_axes).toEqual([]);
+
+        const ages = [];
+        ['15 years and over', '18 years and over'].forEach((age, a) => ['Seeing', 'Hearing', 'Mobility', 'Pain', 'Learning', 'Memory'].forEach((kind, k) => {
+            ['Ontario', 'Quebec', 'Alberta'].forEach((place, p) => ages.push([age, kind, place, String(40000 - a * 3000 + k * 900 + p * 70)]));
+        }));
+        const nested = await read(table([text('Age group'), text('Type of difficulty'), text('Province'), integer('Number of filers')], ages));
+        expect(reasons(nested.model, 'Age group')).toContain('overlapping_bands');
+        expect(nameEvidence('shoreline_lengthDivEstArea').nonAdditive).toBe(true);
+        // A length divided by an area stays a ratio beside a map shape: it is not a segment of a line.
+        const estuaries = range(60).map(i => ['Estuary ' + i, ['Northern Shelf', 'Southern Shelf', 'Salish Sea'][i % 3], 'POLYGON ((' + i + ' 0, ' + (i + 1) + ' 1, ' + i + ' 1, ' + i + ' 0))',
+            (0.01 + scatter(i, 900) / 1000).toFixed(3), String(3 + scatter(i, 40))]);
+        const ratio = await read(table([text('Estuary'), text('Bioregion'), text('geom'), numeric('eelgrass_biobands_lengthDivEstArea'), integer('spot_prawn_count')], estuaries));
+        expect(column(ratio.model, 'eelgrass_biobands_lengthDivEstArea').measure.additive).toBe('no');
+        expect(listCandidates(ratio.model).some(spec => spec.y.column === 'eelgrass_biobands_lengthDivEstArea')).toBe(false);
+    });
 });

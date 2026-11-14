@@ -69,6 +69,34 @@ const SLUG_RE = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/;
 // The most rows a block of notes under a table may have.
 const TAIL_ROWS = 60;
 
+const ISO_DAY_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:$|[ t])/i;
+function swappedDayMonth(real) {
+    let sure = 0;
+    let low = Infinity;
+    let high = -Infinity;
+    const unsure = [];
+    for (const [value, count] of real) {
+        const match = ISO_DAY_RE.exec(value);
+        if (!match) continue;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const ord = Date.UTC(year, month - 1, day) / 86400000;
+        if (day > 12) {
+            sure += count;
+            if (ord < low) low = ord;
+            if (ord > high) high = ord;
+        } else if (day !== month) unsure.push({ ord, swapped: Date.UTC(year, day - 1, month) / 86400000, count });
+    }
+    const total = unsure.reduce((sum, entry) => sum + entry.count, 0);
+    if (sure < 20 || total < 20) return false;
+    const from = low - 31;
+    const to = high + 31;
+    const outside = unsure.reduce((sum, entry) => sum + (entry.ord < from || entry.ord > to ? entry.count : 0), 0);
+    const inside = unsure.reduce((sum, entry) => sum + (entry.swapped >= from && entry.swapped <= to ? entry.count : 0), 0);
+    return outside >= total * 0.3 && inside >= total * 0.95;
+}
+
 // The Chao1 estimate of how many distinct values the whole column holds, from
 // how many were seen once and twice in the sample.
 function estimateDistinct(distinct, once, twice, complete, scale = Infinity) {
@@ -244,6 +272,12 @@ function profileColumn(column, values, raw, { complete, skip = new Set(), scale 
 
     const number = detectNumberRule(real);
     const period = decidePeriodFormat(real);
+    // Dates whose day and month were swapped at the source wherever the day
+    // could pass for a month ("13/06" kept as 13 June, "05/06" stored as 6
+    // May): dates that cannot be swapped (a day past the 12th) say which
+    // months the column really covers; the others fall outside them as
+    // stored, and inside once swapped back.
+    const swappedDays = swappedDayMonth(real);
 
     // What a number column holds besides numbers and missing-value tokens.
     const other = { cells: 0, distinct: 0, longest: 0, short: {}, recurring: {}, examples: [], echoes: 0 };
@@ -340,6 +374,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set(), scale 
         labels,
         fill_down: fillDown,
         ...(sparseFillDown ? { sparse_fill_down: true } : {}),
+        ...(swappedDays ? { swapped_days: true } : {}),
         sequence: null
     };
 }
@@ -392,7 +427,8 @@ function labelReading(counts) {
     }
     // Bands of a number nested in one another ("19 and over" beside "19 to
     // 30"): totals and their parts in one column, whatever they are called.
-    out.overlapping_bands = bands.length >= 3 && bands.length >= named * 0.6 && bandsOverlap(bands);
+    // ("15 years and over" beside "18 years and over" are two, and nested.)
+    out.overlapping_bands = bands.length >= 2 && bands.length >= named * 0.6 && bandsOverlap(bands);
     return out;
 }
 
