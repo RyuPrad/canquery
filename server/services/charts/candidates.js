@@ -62,7 +62,17 @@ function automaticMeasure(model, column, { lang = 'en', byId = new Map(model.col
         summable(column, model);
 }
 
-function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
+// Charts that add a number column up over the rows of a long table: the kind
+// that misleads most on tables nobody has looked at (a value repeated on
+// several rows, groups nested in one another, coverage that changes).
+const LONG_SUMS = new Set(['measure_over_time', 'share_by_category', 'top_labels_by_measure']);
+
+/**
+ * @param {object} model
+ * @param {{ lang?: 'en' | 'fr', pinned?: string[], sums?: 'all' | 'wide' }} [options] sums 'wide': figures are added
+ *   up only in tables with periods as columns; long tables get their counts, and their sums are left to the builder.
+ */
+function listCandidates(model, { lang = 'en', pinned = [], sums: sumsMode = 'all' } = {}) {
     // A data dictionary describes another table, and a file of stacked blocks
     // no column names cannot be added up: nothing in either is charted.
     if (model.shape === 'dictionary' || model.shape === 'stacked') return [];
@@ -122,7 +132,7 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
         (column.measure.additive === 'yes' ? 8 : column.measure.additive === 'probable' ? 4 : 0) - (column.measure.missing_share > 0.5 ? 8 : 0);
     const groupBonus = column => cardinalityFit(column.category.distinct) + 6 * (1 - column.blank_share);
 
-    measures.slice(0, 3).forEach((measure, index) => {
+    (sumsMode === 'wide' ? [] : measures.slice(0, 3)).forEach((measure, index) => {
         const blocked = blockers(measure);
         const agg = 'sum';
         // Later measures give way to the first.
@@ -193,6 +203,11 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
     return out.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
 }
 
+/** Would the engine add figures up over this table's rows if it did so in long tables? */
+function withheldSums(model, options = {}) {
+    return listCandidates(model, { ...options, sums: 'all' }).some(spec => LONG_SUMS.has(spec.template));
+}
+
 const measureOf = spec => spec.y.column || spec.y.group || null;
 
 /**
@@ -229,4 +244,4 @@ function pickDiverse(charts, { limit = 6 } = {}) {
     return picked;
 }
 
-module.exports = { listCandidates, pickDiverse, automaticMeasure, specId, LIMITS };
+module.exports = { listCandidates, pickDiverse, automaticMeasure, withheldSums, specId, LIMITS, LONG_SUMS };

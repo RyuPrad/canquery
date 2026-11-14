@@ -19,6 +19,10 @@ const { chartsLimiter, customChartLimiter } = require('../middleware/rateLimits'
 const fixtures = require('./fixtures/charts/tables');
 const { fakeQueries } = require('./fixtures/charts/evaluate');
 const app = require('../app');
+const { addUpLongTables } = require('./fixtures/charts/sums');
+
+// These tests are about what the engine does when it adds figures up in long tables too.
+addUpLongTables();
 
 const tables = new Map();
 let fake;

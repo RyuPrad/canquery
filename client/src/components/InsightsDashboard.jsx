@@ -103,14 +103,20 @@ export default function InsightsDashboard({ data, loading, error, onPin, onRetry
       )}
       <BlockedMeasures blocked={data.blocked} onPin={onPin} />
       {data.charts.length > 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {data.charts.map((chart, i) => <ChartView key={chart.id} chart={chart} accent={i} height={280} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {data.charts.map((chart, i) => <ChartView key={chart.id} chart={chart} accent={i} height={280} />)}
+          </div>
+          {/* The table has figures the engine does not add up on its own: said under its counts. */}
+          {data.sums_withheld && !filtered && (
+            <p className="text-xs text-base-content/60">{t('chart.sums_withheld')} {t('chart.sums_custom')}</p>
+          )}
+        </>
       ) : (
         <div className="cq-card p-8 text-center space-y-2">
           <ChartEmpty label={t(filtered ? 'chart.no_charts_filtered' : { dictionary: 'chart.dictionary', stacked: 'chart.stacked' }[data.model && data.model.shape] ||
-            'chart.no_charts')} height={60} />
-          <p className="text-sm text-base-content/40">{t('chart.try_custom')}</p>
+            (data.sums_withheld ? 'chart.sums_withheld' : 'chart.no_charts'))} height={60} />
+          <p className="text-sm text-base-content/40">{t(data.sums_withheld && !filtered ? 'chart.sums_custom' : 'chart.try_custom')}</p>
         </div>
       )}
       <TableReadout model={data.model} skipped={data.skipped} />
