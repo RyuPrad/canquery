@@ -799,6 +799,14 @@ describe('seoMeta - title compaction, paging and place names', () => {
         const [about, breadcrumb] = seo.staticMeta('about').jsonLd;
         expect(about).toMatchObject({ '@type': 'AboutPage', url: 'https://canquery.com/about',
             about: { '@type': 'Organization', name: 'CanQuery', logo: 'https://canquery.com/android-chrome-512.png' } });
+        // How to reach the project and where it says how guides are checked and corrected.
+        expect(about.about.contactPoint).toEqual({ '@type': 'ContactPoint', contactType: 'customer support', email: 'support@canquery.com' });
+        expect(about.about.publishingPrinciples).toBe('https://canquery.com/about#guides');
+        expect(about.about.correctionsPolicy).toBe('https://canquery.com/about#corrections');
+        // The home page keeps the plain Organization.
+        const organization = seo.staticMeta('home').jsonLd.find(item => item['@type'] === 'Organization');
+        expect(organization).not.toHaveProperty('contactPoint');
+        expect(organization).not.toHaveProperty('publishingPrinciples');
         expect(breadcrumb['@type']).toBe('BreadcrumbList');
         expect(breadcrumb.itemListElement.map(item => item.item)).toEqual(['https://canquery.com/', 'https://canquery.com/about']);
         expect(seo.staticMeta('faq').jsonLd).toBeUndefined();

@@ -1,5 +1,5 @@
 const { listArticles, getArticle, relatedArticles } = require('./blogContent');
-const { SITE_URL, escapeHtml: esc, truncate } = require('./seoMeta');
+const { SITE_URL, SITE_LOGO, DEFAULT_IMAGE, escapeHtml: esc, truncate } = require('./seoMeta');
 const { sectionNav } = require('./seoSnapshot');
 
 const LABELS = {
@@ -57,8 +57,11 @@ function resolveBlogPage(pathname) {
         '@context': 'https://schema.org', '@type': 'BlogPosting', headline: article.title,
         description: article.description, inLanguage: lang === 'fr' ? 'fr-CA' : 'en-CA',
         datePublished: article.published, dateModified: article.updated,
+        // Guides carry no picture of their own yet: the site's preview image stands in.
+        image: { '@type': 'ImageObject', url: DEFAULT_IMAGE, width: 1200, height: 630 },
         author: { '@type': 'Organization', name: 'CanQuery', url: SITE_URL + '/' },
-        publisher: { '@type': 'Organization', name: 'CanQuery', url: SITE_URL + '/' },
+        publisher: { '@type': 'Organization', name: 'CanQuery', url: SITE_URL + '/',
+            logo: { '@type': 'ImageObject', url: SITE_LOGO, width: 512, height: 512 } },
         mainEntityOfPage: SITE_URL + article.path
     });
     const alternate = lang === 'fr' ? 'en' : 'fr';
@@ -70,7 +73,7 @@ function resolveBlogPage(pathname) {
             '<article><p class="cq-chip !whitespace-normal mt-6">' + esc([article.placeName, article.topicName].filter(Boolean).join(' · ')) + '</p>' +
             '<h1 class="font-display text-3xl sm:text-4xl font-bold mt-4">' + esc(title) + '</h1>' +
             '<p class="text-base-content/60 mt-4">' + esc(description) + '</p>' +
-            '<p class="text-sm text-base-content/60 mt-4">' + labels.by + ' CanQuery · ' + labels.published + ' ' + article.published + '</p>' +
+            '<p class="text-sm text-base-content/60 mt-4">' + labels.by + ' <a class="link" href="/about#guides">CanQuery</a> · ' + labels.published + ' ' + article.published + '</p>' +
             '<p class="text-sm text-base-content/60">' + labels.updated + ' ' + article.updated + ' · ' + labels.verified + ' ' + article.verified + '</p>' +
             '<p class="mt-4">' + languageLink + '</p>' +
             '<div class="cq-article mt-8">' + article.bodyHtml + '</div>' +

@@ -545,14 +545,27 @@ function aboutExplanation() {
             'CanQuery mirrors catalogue metadata from Canadian federal, municipal, regional and territorial publishers. You can follow original download links, query supported live tables, prepare eligible CSV and Excel files, and explore supported maps. Availability depends on the resource and its publisher.',
             'Each dataset keeps its publisher, source links and applicable licence. Field meanings and coverage remain publisher-specific. Check the original source and attribution requirements when using the data.'
         ] },
-        { title: 'Independently built, openly shared', paragraphs: [
+        // The sections with an id are the ones other pages and the structured
+        // data point to: guides link their byline to #guides.
+        { id: 'data-sources', title: 'Where the data comes from and how often it is refreshed', paragraphs: [
+            'Every record comes from an official open-data portal: the Government of Canada\'s, and those of provinces, territories, regions and cities. A portal is added only when its records are published under a recognized open licence, and each dataset page names its publisher, its source and its licence.',
+            'On canquery.com the federal catalogue is checked for changes every 30 minutes and read in full every night, and the other portals are read once a day. A live table is read from its publisher when you open it. A prepared table is a copy of the publisher\'s file, and its page shows when the copy was made.'
+        ] },
+        { id: 'guides', title: 'How guides are written and checked', paragraphs: [
+            'Each data guide starts from one task and one dataset in the catalogue. Before a guide is published, the publisher, the source\'s own description and the steps the guide describes are checked against the official source, and the guide links to it.',
+            'Every guide shows three dates: when it was published, when the article last changed in substance, and when its data links and steps were last checked. Guides say what the data covers and where it stops, and they draw no conclusions about real-world changes from catalogue dates. When a source no longer supports the task a guide describes, the guide is updated or withdrawn. Guides are published in English and French.'
+        ], links: pathLink('/blog', 'Data guides') + ' · ' + pathLink('/fr/blog', 'Guides des données') },
+        { id: 'who', title: 'Who runs CanQuery', paragraphs: [
             'CanQuery is an independent project and is not affiliated with the Government of Canada. It is built by @RyuPrad, and its source code is available under the MIT licence. The software licence is separate from the licences that apply to the published data.'
-        ] }
+        ], links: pathLink('https://github.com/RyuPrad', 'Meet the creator on GitHub') + ' · ' +
+            pathLink('https://github.com/RyuPrad/canquery', 'Explore the source code') },
+        { id: 'corrections', title: 'Corrections', paragraphs: [
+            'Found a mistake in a guide or on a page? Email support@canquery.com with the page address and what is wrong: it will be checked against the official source and corrected. An error in the data itself can only be corrected by its publisher, and every dataset page links to the official source.'
+        ], links: pathLink('mailto:support@canquery.com', 'support@canquery.com') }
     ];
-    return sections.map(section => '<section><h2>' + text(section.title) + '</h2>' +
-        section.paragraphs.map(paragraph => '<p>' + text(paragraph) + '</p>').join('') + '</section>').join('') +
-        '<p>' + pathLink('https://github.com/RyuPrad', 'Meet the creator on GitHub') + ' · ' +
-        pathLink('https://github.com/RyuPrad/canquery', 'Explore the source code') + '</p>' + supportExplanation();
+    return sections.map(section => '<section' + (section.id ? ' id="' + section.id + '"' : '') + '><h2>' + text(section.title) + '</h2>' +
+        section.paragraphs.map(paragraph => '<p>' + text(paragraph) + '</p>').join('') +
+        (section.links ? '<p>' + section.links + '</p>' : '') + '</section>').join('') + supportExplanation();
 }
 
 // hosted adds questions and groups for a deployment with developer accounts.

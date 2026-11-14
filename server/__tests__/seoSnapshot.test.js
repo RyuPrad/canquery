@@ -30,6 +30,24 @@ describe('server-rendered crawl snapshots', () => {
         for (const path of ['/datasets', '/faq', 'https://github.com/RyuPrad', 'https://github.com/RyuPrad/canquery']) {
             expect(html).toContain('href="' + path + '"');
         }
+        // Who runs the site, where its data comes from, how guides are checked and how to get one corrected:
+        // each in a section other pages can link to.
+        expect(html).toContain('<section id="who"><h2>Who runs CanQuery</h2><p>CanQuery is an independent project');
+        expect(html).toContain('<section id="data-sources"><h2>Where the data comes from and how often it is refreshed</h2>');
+        expect(html).toContain('published under a recognized open licence');
+        expect(html).toContain('checked for changes every 30 minutes and read in full every night');
+        expect(html).toContain('<section id="guides"><h2>How guides are written and checked</h2>');
+        expect(html).toContain('checked against the official source');
+        expect(html).toContain('Every guide shows three dates');
+        expect(html).toContain('the guide is updated or withdrawn');
+        const corrections = html.slice(html.indexOf('<section id="corrections">'), html.indexOf('<section id="support">'));
+        expect(corrections).toContain('<h2>Corrections</h2>');
+        expect(corrections).toContain('href="mailto:support@canquery.com"');
+        expect(corrections).toContain('can only be corrected by its publisher');
+        // In the order a reader meets them, before the support contact.
+        const order = ['What is CanQuery?', 'id="data-sources"', 'id="guides"', 'id="who"', 'id="corrections"', 'id="support"'].map(part => html.indexOf(part));
+        expect(order.every(index => index > 0)).toBe(true);
+        expect([...order].sort((a, b) => a - b)).toEqual(order);
     });
 
     test.each(['faq', 'about'])('makes support available on %s without JavaScript', type => {

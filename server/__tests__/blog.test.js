@@ -51,8 +51,13 @@ test.each(['en', 'fr'])('renders complete %s articles and metadata without any c
         if (article.place) expect(html.indexOf(homeLabel)).toBeGreaterThan(html.lastIndexOf('/places/' + article.place));
         expect(page.meta.alternates).toHaveProperty('fr-CA');
         expect(page.meta.jsonLd.find(item => item['@type'] === 'BlogPosting')).toMatchObject({
-            author: { '@type': 'Organization', name: 'CanQuery' }, datePublished: article.published
+            author: { '@type': 'Organization', name: 'CanQuery' }, datePublished: article.published,
+            image: { '@type': 'ImageObject', url: 'https://canquery.com/og-image.png', width: 1200, height: 630 },
+            publisher: { '@type': 'Organization', name: 'CanQuery',
+                logo: { '@type': 'ImageObject', url: 'https://canquery.com/android-chrome-512.png', width: 512, height: 512 } }
         });
+        // The byline leads to how guides are written and checked.
+        expect(html).toContain((lang === 'fr' ? 'Par' : 'By') + ' <a class="link" href="/about#guides">CanQuery</a> · ');
     }
 });
 

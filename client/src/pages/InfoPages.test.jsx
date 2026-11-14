@@ -57,7 +57,22 @@ test.each(['en', 'fr'])('About preserves attribution and distinguishes software 
   expect(container.querySelector('a[href="https://github.com/RyuPrad/canquery"]')).not.toBeNull();
   expect(container.querySelector('a[href="/datasets"]')).not.toBeNull();
   expect(container.querySelector('a[href="/faq"]')).not.toBeNull();
-  expect(screen.getByRole('link', { name: 'support@canquery.com' })).toHaveAttribute('href', 'mailto:support@canquery.com');
+  // Where the data comes from, how guides are checked, who runs the site and how to get something corrected.
+  const section = name => screen.getByRole('heading', { level: 2, name }).closest('section');
+  const en = lang === 'en';
+  expect(section(en ? 'Where the data comes from and how often it is refreshed' : 'D’où viennent les données et à quelle fréquence elles sont mises à jour'))
+    .toHaveAttribute('id', 'data-sources');
+  const guides = section(en ? 'How guides are written and checked' : 'Comment les guides sont rédigés et vérifiés');
+  expect(guides).toHaveAttribute('id', 'guides');
+  expect(guides).toHaveTextContent(en ? 'checked against the official source' : 'vérifiés auprès de la source officielle');
+  expect(guides).toHaveTextContent(en ? 'Every guide shows three dates' : 'Chaque guide affiche trois dates');
+  expect(guides.querySelector('a')).toHaveAttribute('href', en ? '/blog' : '/fr/blog');
+  expect(section(en ? 'Who runs CanQuery' : 'Qui est derrière CanQuery')).toHaveAttribute('id', 'who');
+  const corrections = section('Corrections');
+  expect(corrections).toHaveAttribute('id', 'corrections');
+  expect(corrections.querySelector('a[href="mailto:support@canquery.com"]')).not.toBeNull();
+  expect(corrections).toHaveTextContent(en ? 'can only be corrected by its publisher' : 'ne peut être corrigée que par leur éditeur');
+  for (const link of screen.getAllByRole('link', { name: 'support@canquery.com' })) expect(link).toHaveAttribute('href', 'mailto:support@canquery.com');
   expect(fetch).not.toHaveBeenCalled();
 });
 
