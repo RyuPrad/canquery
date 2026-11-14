@@ -1,3 +1,7 @@
+// The featured charts of prepared Top 100 tables: the public previews of
+// GET /api/v1/insights/featured, which keep their published shape, and the
+// website's chart cards. Both come from the chart engine; the table scans are
+// computed by the fixture evaluator.
 jest.mock('../db/catalogReadQueries', () => ({ getResourceById: jest.fn() }));
 jest.mock('../db/snapshotRead', () => ({
     withSnapshot: jest.fn(async (_id, callback) => callback()),
@@ -11,52 +15,63 @@ jest.mock('../db/topDownloadsQueries', () => ({
     prunePins: jest.fn()
 }));
 jest.mock('../db/storeQueries', () => ({
+    ...jest.requireActual('../db/storeQueries'),
     profileStoreTable: jest.fn(),
     aggregateStoreTable: jest.fn(),
     queryStoreTable: jest.fn(),
-    touchLastAccessed: jest.fn(() => Promise.resolve()),
-    TABLE_NAME_RE: /^r_[0-9a-f_]+$/
+    touchLastAccessed: jest.fn(() => Promise.resolve())
 }));
+jest.mock('../db/chartQueries', () => ({ readSample: jest.fn(), runBatch: jest.fn() }));
 const request = require('supertest');
+const fixtures = require('./fixtures/charts/tables');
 
 const PREPARED_AT = '2026-09-29T12:00:00.000Z';
-const candidate = (extra = {}) => ({ dataset_id: 'd1', title_en: 'Grants', title_fr: 'Subventions', resource_id: 'r1', ...extra });
-const categoryProfile = (extra = {}) => ({ rowCount: 100, columns: [
-    { id: 'status', type: 'TEXT', distinct: 3, nulls: 0 },
-    { id: 'amount', type: 'NUMERIC', distinct: 80, nulls: 0, avg: 5, min: 1, max: 9 }
-], ...extra });
-const timeProfile = (extra = {}) => ({ rowCount: 100, columns: [
-    { id: 'Year', type: 'INTEGER', distinct: 3, nulls: 0, min: 2023, max: 2025 },
-    { id: 'temperature_departure', type: 'NUMERIC', distinct: 20, nulls: 0, min: -2, max: 3 }
-], ...extra });
-const categoricalAggregate = () => ({ records: [
-    { key: 'Approved', value: '60' }, { key: 'Pending', value: '30' }, { key: 'Rejected', value: '10' }
-], total: 3 });
-const timeAggregate = () => ({ records: [
-    { key: 2025, value: '2.5' }, { key: 2024, value: '0' }, { key: 2023, value: '-1.25' }
-], total: 3 });
+const text = id => ({ id, type: 'TEXT', original_label: id });
+const integer = id => ({ id, type: 'INTEGER', original_label: id });
+const date = id => ({ id, type: 'DATE', original_label: id });
 
-let topq, store, catalog, snapshots, app, service;
+// Permits: a table of things, with a status and an issue date.
+function permits() {
+    const statuses = [...Array(60).fill('Approved'), ...Array(30).fill('Pending'), ...Array(10).fill('Rejected')];
+    const rows = statuses.map((status, i) => [i + 1, String(500000 + i * 7), status,
+        new Date(Date.UTC(2019 + (i % 5), (i * 5) % 12, 1 + (i % 27))).toISOString().slice(0, 10), String(1 + (i % 4))]);
+    return { columns: [integer('Permit number'), text('Status'), date('Issued'), integer('Storeys')], rows };
+}
+
+const TABLES = { permits, panel: () => fixtures.balancedPanel(12), counts: fixtures.suppressedCounts, events: fixtures.cleanEvents, codes: fixtures.codes };
+const candidate = (name, extra = {}) => ({ dataset_id: 'd-' + name, title_en: 'Title ' + name, title_fr: 'Titre ' + name, resource_id: 'r-' + name, ...extra });
+const tableName = name => 'r_' + Buffer.from(name).toString('hex').slice(0, 24);
+
+let topq, catalog, snapshots, chartQueries, app, service, tables, fake;
 beforeEach(() => {
-    // Each test gets a real, independent language-keyed featured cache.
+    // Each test gets fresh featured and engine caches.
     jest.resetModules();
     topq = require('../db/topDownloadsQueries');
-    store = require('../db/storeQueries');
     catalog = require('../db/catalogReadQueries');
     snapshots = require('../db/snapshotRead');
+    chartQueries = require('../db/chartQueries');
     service = require('../services/insightsService');
     app = require('../app');
+    const { fakeQueries } = require('./fixtures/charts/evaluate');
+    tables = new Map();
+    fake = fakeQueries(tables);
+    chartQueries.readSample.mockImplementation(fake.readSample);
+    chartQueries.runBatch.mockImplementation(fake.runBatch);
 });
 afterEach(() => jest.restoreAllMocks());
 
-function seed(profile = categoryProfile(), aggregate = categoricalAggregate(), candidates = [candidate()]) {
-    topq.listIngestedTop.mockResolvedValue(candidates);
-    catalog.getResourceById.mockResolvedValue({
-        ingest_status: 'ready', table_name: 'r_aaa', ingested_at: PREPARED_AT,
-        ingested_columns: profile.columns.map(({ id, type }) => ({ id, type }))
-    });
-    store.profileStoreTable.mockResolvedValue(profile);
-    store.aggregateStoreTable.mockResolvedValue(aggregate);
+// Candidates whose resources are prepared copies of the named fixtures.
+function seed(names, extra = {}) {
+    const rows = new Map();
+    for (const name of names) {
+        const fixture = TABLES[name.split(':')[0]]();
+        tables.set(tableName(name), fixture);
+        rows.set('r-' + name, { ingest_status: 'ready', table_name: tableName(name), ingested_at: PREPARED_AT, ingested_row_count: fixture.rows.length,
+            ingested_columns: fixture.columns, ...extra });
+    }
+    topq.listIngestedTop.mockResolvedValue(names.map(name => candidate(name)));
+    catalog.getResourceById.mockImplementation(async id => rows.get(id) || null);
+    return rows;
 }
 
 async function fetchFeatured(lang = 'en') {
@@ -65,444 +80,282 @@ async function fetchFeatured(lang = 'en') {
     return response.body.data;
 }
 
+// The website's validator of these previews when they were introduced
+// (client/src/utils/featuredCharts.js at 42559f5), frozen: every preview the
+// engine projects must pass it, so older pages and the app keep reading them.
+const FROZEN = (() => {
+    const KINDS = ['donut', 'bars', 'line'];
+    const GROUP_TYPES = ['TEXT', 'INTEGER', 'BIGINT', 'SMALLINT', 'NUMERIC', 'REAL', 'DOUBLE PRECISION', 'BOOLEAN', 'DATE', 'TIMESTAMPTZ', 'TIMESTAMP',
+        'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP WITHOUT TIME ZONE'];
+    const DATE_TYPE = /^(?:DATE|TIMESTAMPTZ|TIMESTAMP(?: WITH(?:OUT)? TIME ZONE)?)$/i;
+    const FOOTNOTE = /^(?:notes?|sources?|footnotes?|nota|remarques?|commentaires?|copyright)\s*[:–—-]|^©/i;
+    const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+    const SNAPSHOT_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+    const filled = value => typeof value === 'string' && value.trim().length > 0;
+    const count = value => Number.isSafeInteger(value) && value >= 0;
+    function periodTime(key) {
+        if (typeof key !== 'string') return null;
+        if (/^\d{4}$/.test(key)) return Date.UTC(Number(key), 0, 1);
+        const parts = key.match(ISO_DATE);
+        if (!parts) return null;
+        const calendar = new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])));
+        if (calendar.getUTCFullYear() !== Number(parts[1]) || calendar.getUTCMonth() !== Number(parts[2]) - 1 || calendar.getUTCDate() !== Number(parts[3])) return null;
+        const time = Date.parse(key);
+        return Number.isFinite(time) ? time : null;
+    }
+    return function isValidFeaturedChart(item) {
+        if (!item || !KINDS.includes(item.kind) || !filled(item.dataset_id)) return false;
+        if (!item.title || ![item.title.en, item.title.fr].some(filled)) return false;
+        const { context, points } = item;
+        if (!context || !Array.isArray(points) || points.length < 2) return false;
+        if (!filled(context.resource_id) || !filled(context.group_by) || !filled(context.group_type) || !GROUP_TYPES.includes(context.group_type.toUpperCase())) return false;
+        if (!['count', 'avg'].includes(context.agg) || (context.agg === 'count' ? context.agg_column !== null : !filled(context.agg_column))) return false;
+        if (context.bucket !== null && !['year', 'month', 'day'].includes(context.bucket)) return false;
+        if (!filled(context.snapshot_at) || !SNAPSHOT_DATE.test(context.snapshot_at) || periodTime(context.snapshot_at) === null) return false;
+        if (!count(context.snapshot_rows) || context.snapshot_rows < 2 || !count(context.total_groups) || !count(context.displayed_groups)) return false;
+        if (context.displayed_groups !== points.length || context.total_groups < points.length || context.total_groups > context.snapshot_rows) return false;
+        if (context.limited !== (context.total_groups > context.displayed_groups) || !Array.isArray(context.missing_periods)) return false;
+        if (context.missing_periods.length + points.length > context.total_groups || new Set(context.missing_periods).size !== context.missing_periods.length) return false;
+        if (points.some(point => !point || (point.key !== null && !filled(point.key)) || !filled(point.label) || point.label.length > 200 ||
+            FOOTNOTE.test(point.label.trim()) || typeof point.value !== 'number' || !Number.isFinite(point.value))) return false;
+        if (new Set(points.map(point => point.key)).size !== points.length || points.every(point => point.value === points[0].value)) return false;
+        if (context.agg === 'count' && points.some(point => !count(point.value) || point.value === 0 || point.value > context.snapshot_rows)) return false;
+        const total = context.agg === 'count' ? points.reduce((sum, point) => sum + point.value, 0) : null;
+        if (total !== null && (total > context.snapshot_rows || (!context.limited && total !== context.snapshot_rows))) return false;
+        if (item.kind === 'line') {
+            if (points.length > 30 || points.some(point => point.key === null) || context.group_type.toUpperCase() === 'BOOLEAN') return false;
+            if (context.bucket !== null && !DATE_TYPE.test(context.group_type)) return false;
+            const times = points.map(point => periodTime(point.key));
+            if (times.some(time => time === null) || times.some((time, index) => index > 0 && time <= times[index - 1])) return false;
+            if (context.missing_periods.some(key => periodTime(key) === null || points.some(point => point.key === key))) return false;
+            const allTimes = [...times, ...context.missing_periods.map(periodTime)];
+            return new Set(allTimes).size === allTimes.length;
+        }
+        if (context.agg !== 'count' || context.bucket !== null || DATE_TYPE.test(context.group_type) || context.missing_periods.length > 0) return false;
+        if (points.some(point => point.key === null && !['Not recorded', 'Non renseigné'].includes(point.label))) return false;
+        if (item.kind === 'donut') return points.length <= 6 && !context.limited && total > 0;
+        return points.length <= 5;
+    };
+})();
+
 describe('GET /api/v1/insights/featured', () => {
-    it('preserves the existing chart fields and adds exact snapshot/grouping context', async () => {
-        seed();
+    it('keeps the published shape: a count of records by one column', async () => {
+        seed(['permits']);
         const items = await fetchFeatured();
-        expect(items).toHaveLength(1);
-        expect(items[0]).toEqual({
-            dataset_id: 'd1', title: { en: 'Grants', fr: 'Subventions' }, kind: 'donut',
+        expect(items).toEqual([{
+            dataset_id: 'd-permits', title: { en: 'Title permits', fr: 'Titre permits' }, kind: 'donut',
             points: [
                 { key: 'Approved', label: 'Approved', value: 60 },
                 { key: 'Pending', label: 'Pending', value: 30 },
                 { key: 'Rejected', label: 'Rejected', value: 10 }
             ],
             context: {
-                resource_id: 'r1', group_by: 'status', agg: 'count', agg_column: null, bucket: null,
-                group_type: 'TEXT', snapshot_at: PREPARED_AT, snapshot_rows: 100,
-                total_groups: 3, displayed_groups: 3, limited: false, missing_periods: []
+                resource_id: 'r-permits', group_by: 'Status', agg: 'count', agg_column: null, bucket: null, group_type: 'TEXT',
+                snapshot_at: PREPARED_AT, snapshot_rows: 100, total_groups: 3, displayed_groups: 3, limited: false, missing_periods: []
             }
-        });
-        expect(topq.listIngestedTop).toHaveBeenCalledWith(24, 'en');
-        expect(snapshots.withSnapshot).toHaveBeenCalledWith('r1', expect.any(Function));
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith({
-            tableName: 'r_aaa', knownColumns: ['status', 'amount'], q: undefined, filters: [],
-            groupBy: 'status', agg: 'count', aggColumn: null, bucket: null,
-            sortSql: '"value" DESC', limit: 7, offset: 0
-        });
-        expect(store.queryStoreTable).not.toHaveBeenCalled();
-        expect(store.touchLastAccessed).not.toHaveBeenCalled();
+        }]);
+        expect(FROZEN(items[0])).toBe(true);
     });
 
-    it.each([['en', 'Not recorded'], ['fr', 'Non renseigné']])('includes the real NULL category in a complete %s donut', async (lang, nullLabel) => {
-            seed(categoryProfile({ columns: [{ id: 'status', type: 'TEXT', distinct: 2, nulls: 10 }] }), {
-                total: 3, records: [
-                    { key: 'Approved', value: 60 }, { key: 'Pending', value: 30 }, { key: null, value: 10 }
-                ]
-            });
-            const [item] = await fetchFeatured(lang);
-            expect(item.kind).toBe('donut');
-            expect(item.points[2]).toEqual({ key: null, label: nullLabel, value: 10 });
-            expect(item.context).toMatchObject({ total_groups: 3, displayed_groups: 3, limited: false });
-            expect(topq.listIngestedTop).toHaveBeenCalledWith(24, lang);
-        });
-
-    it('falls back to five bars when six named categories plus NULL do not fit a donut', async () => {
-        seed(categoryProfile({ columns: [{ id: 'status', type: 'TEXT', distinct: 6, nulls: 2 }] }), {
-            total: 7, records: [40, 25, 15, 10, 5, 3, 2].map((value, index) => ({
-                key: index === 6 ? null : ['Approved', 'Pending', 'Rejected', 'Review', 'Cancelled', 'Withdrawn'][index], value
-            }))
-        });
+    it('an average over the years of one column is a line, keyed by year', async () => {
+        seed(['panel']);
         const [item] = await fetchFeatured();
-        expect(item.kind).toBe('bars');
-        expect(item.points.map(point => point.value)).toEqual([40, 25, 15, 10, 5]);
-        expect(item.context).toMatchObject({ total_groups: 7, displayed_groups: 5, limited: true });
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
+        expect(item).toMatchObject({ kind: 'line', context: { group_by: 'Year', agg: 'avg', agg_column: 'Unemployment rate', bucket: null, group_type: 'INTEGER',
+            total_groups: 12, displayed_groups: 12, limited: false, missing_periods: [] } });
+        expect(item.points.map(point => point.key)).toEqual(['1960', '1961', '1962', '1963', '1964', '1965', '1966', '1967', '1968', '1969', '1970', '1971']);
+        expect(item.points.map(point => point.label)).toEqual(item.points.map(point => point.key));
+        expect(FROZEN(item)).toBe(true);
     });
 
-    it('discloses partial categorical coverage and reuses the same aggregate', async () => {
-        seed(categoryProfile({ columns: [{ id: 'status', type: 'TEXT', distinct: 4, nulls: 0 }] }), {
-            total: 8, records: [50, 20, 10, 5, 4, 3, 2].map((value, index) => ({ key: 'Category ' + String.fromCharCode(65 + index), value }))
-        });
-        const [item] = await fetchFeatured();
-        expect(item.kind).toBe('bars');
-        expect(item.points).toHaveLength(5);
-        expect(item.context).toMatchObject({ total_groups: 8, displayed_groups: 5, limited: true });
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
-    });
-
-    it('can display a NULL category among the top five limited bars', async () => {
-        seed(categoryProfile({ columns: [{ id: 'status', type: 'TEXT', distinct: 10, nulls: 30 }] }), {
-            total: 11, records: [
-                { key: null, value: 30 }, { key: 'Approved', value: 20 }, { key: 'Pending', value: 10 },
-                { key: 'Rejected', value: 8 }, { key: 'Cancelled', value: 7 }
-            ]
-        });
-        const [item] = await fetchFeatured();
-        expect(item.kind).toBe('bars');
-        expect(item.points[0]).toEqual({ key: null, label: 'Not recorded', value: 30 });
-        expect(item.context.limited).toBe(true);
-    });
-
-    it('keeps full readable category labels rather than truncating the chart meaning', async () => {
-        const label = 'Canadian federal assistance for community infrastructure projects';
-        const rawKey = '  ' + label.replace(' assistance ', '\n\tassistance  ') + '  ';
-        seed(categoryProfile({ rowCount: 500, columns: [{ id: 'department', type: 'TEXT', distinct: 10, nulls: 0 }] }), {
-            total: 10, records: [
-                { key: rawKey, value: 200 }, { key: 'Health and social programmes', value: 100 },
-                { key: 'Research and development programmes', value: 60 },
-                { key: 'Transport infrastructure programmes', value: 40 }, { key: 'Education and training programmes', value: 25 }
-            ]
-        });
-        const [item] = await fetchFeatured();
-        expect(item.points[0]).toEqual({ key: rawKey, label, value: 200 });
-        expect(item.context).toMatchObject({ total_groups: 10, displayed_groups: 5, limited: true });
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }));
-    });
-
-    it('does not chart the flat study-permit category preview or its footnote', async () => {
-        seed(categoryProfile({ rowCount: 179, columns: [{ id: 'Province', type: 'TEXT', distinct: 25, nulls: 0 }] }), {
-            total: 25, records: [
-                'Alberta Total', 'British Columbia Total', 'For further information, please contact the publisher',
-                'Manitoba Total', 'New Brunswick Total'
-            ].map(key => ({ key, value: 1 }))
-        }, [candidate({ dataset_id: '90115b00-f9b8-49e8-afa3-b4cff8facaee' })]);
+    it('sums have no place in the published shape, so a table of totals has no preview, but it has a card', async () => {
+        seed(['counts']);
         expect(await fetchFeatured()).toEqual([]);
+        const [card] = await service.cards('en');
+        expect(card.chart).toMatchObject({ y: { agg: 'sum', column: 'TOTAL', lower_bound: true }, fit: { card: true } });
     });
 
-    it.each([
-        ['all-one', [1, 1, 1]], ['equal counts', [20, 20, 20]],
-        ['zero count', [70, 30, 0]], ['negative count', [71, 30, -1]],
-        ['null count', [60, 30, null]], ['empty count', [60, 30, '']],
-        ['fractional count', [60, 30, 1.5]], ['nonfinite count', [60, 30, Infinity]],
-        ['counts above snapshot rows', [80, 30, 10]], ['incomplete complete split', [40, 30, 10]]
-    ])('omits misleading categorical values: %s', async (_name, values) => {
-        seed(categoryProfile(), { total: 3, records: values.map((value, index) => ({ key: ['Approved', 'Pending', 'Rejected'][index], value })) });
-        expect(await fetchFeatured()).toEqual([]);
-    });
-
-    it.each([
-        'For further information, contact us', 'Note: provisional values', 'Source: original publication',
-        'Pour plus de renseignements, contactez-nous', 'status', 'N/A', 'Not applicable', '---', '  ', '12345', 'x'.repeat(201)
-    ])('omits an ambiguous/header/footnote category: %s', async label => {
-        seed(categoryProfile(), { total: 3, records: [
-            { key: 'Approved', value: 60 }, { key: 'Pending', value: 30 }, { key: label, value: 10 }
-        ] });
-        expect(await fetchFeatured()).toEqual([]);
-    });
-
-    it('rejects duplicate visible category labels after whitespace cleanup', async () => {
-        seed(categoryProfile(), { total: 3, records: [
-            { key: 'Approved', value: 60 }, { key: '  approved  ', value: 30 }, { key: 'Pending', value: 10 }
-        ] });
-        expect(await fetchFeatured()).toEqual([]);
-    });
-
-    it('omits identifier-like unique categories before running an aggregate', async () => {
-        seed(categoryProfile({ rowCount: 10, columns: [{ id: 'Category', type: 'TEXT', distinct: 10, nulls: 0 }] }));
-        expect(await fetchFeatured()).toEqual([]);
-        expect(store.aggregateStoreTable).not.toHaveBeenCalled();
-    });
-
-    it('keeps genuine zero and signed values in a named average time series', async () => {
-        seed(timeProfile(), timeAggregate());
-        const [item] = await fetchFeatured();
-        expect(item.kind).toBe('line');
-        expect(item.points).toEqual([
-            { key: '2023', label: '2023', value: -1.25 },
-            { key: '2024', label: '2024', value: 0 },
-            { key: '2025', label: '2025', value: 2.5 }
-        ]);
-        expect(item.context).toMatchObject({ group_by: 'Year', agg: 'avg', agg_column: 'temperature_departure', group_type: 'INTEGER', missing_periods: [] });
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({
-            groupBy: 'Year', agg: 'avg', aggColumn: 'temperature_departure', limit: 30, sortSql: '"key" DESC NULLS LAST'
-        }));
-    });
-
-    it('reports null, blank and nonfinite dated metrics as gaps without converting them to zero', async () => {
-        seed(timeProfile({ columns: [
-            { id: 'Year', type: 'INTEGER', distinct: 7, nulls: 0, min: 2020, max: 2026 },
-            { id: 'temperature_departure', type: 'NUMERIC', distinct: 20, nulls: 10 }
-        ] }), { total: 7, records: [
-            { key: 2026, value: null }, { key: 2025, value: '  ' },
-            { key: 2024, value: 'Infinity' }, { key: 2023, value: NaN },
-            { key: 2022, value: 0 }, { key: 2021, value: -1.25 }, { key: 2020, value: 0.125 }
-        ] });
-        const [item] = await fetchFeatured();
-        expect(item.points.map(point => point.value)).toEqual([0.125, -1.25, 0]);
-        expect(item.context).toMatchObject({
-            total_groups: 7, displayed_groups: 3, limited: true,
-            missing_periods: ['2023', '2024', '2025', '2026']
-        });
-    });
-
-    it('normalizes typed period keys to ISO and keeps only known missing periods in the window', async () => {
-        seed(timeProfile({ columns: [
-            { id: 'Observation Date', type: 'DATE', distinct: 4, nulls: 0 },
-            { id: 'Temperature Departure', type: 'NUMERIC', distinct: 10, nulls: 10 }
-        ] }), { total: 4, records: [
-            { key: new Date('2026-04-01T00:00:00.000Z'), value: 1.75 },
-            { key: '2026-03-01', value: null },
-            { key: '2026-02-01T00:00:00.000Z', value: 0 },
-            { key: '2026-01-01', value: -0.125 }
-        ] });
-        const [item] = await fetchFeatured();
-        expect(item.points.map(point => point.key)).toEqual([
-            '2026-01-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z'
-        ]);
-        expect(item.points.map(point => point.label)).toEqual(['2026-01', '2026-02', '2026-04']);
-        expect(item.context).toMatchObject({ bucket: 'month', missing_periods: ['2026-03-01T00:00:00.000Z'] });
-    });
-
-    it('selects the newest 30 groups, then returns their points in chronological order', async () => {
-        const latest = Array.from({ length: 30 }, (_value, index) => ({ key: 2026 - index, value: String(index + 1) }));
-        seed(timeProfile({ columns: [
-            { id: 'Year', type: 'INTEGER', distinct: 50, nulls: 0, min: 1977, max: 2026 },
-            { id: 'temperature_departure', type: 'NUMERIC', distinct: 60, nulls: 0 }
-        ] }), { total: 50, records: latest });
-        const [item] = await fetchFeatured();
-        expect(item.points).toHaveLength(30);
-        expect(item.points[0]).toEqual({ key: '1997', label: '1997', value: 30 });
-        expect(item.points[29]).toEqual({ key: '2026', label: '2026', value: 1 });
-        expect(item.context).toMatchObject({ total_groups: 50, displayed_groups: 30, limited: true, missing_periods: [] });
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({ limit: 30, offset: 0, sortSql: '"key" DESC NULLS LAST' }));
-    });
-
-    it.each(['unknown', '2026-02-30', '2026-02-30T00:00:00Z', '2026-13-01', '2025/26', 12])('omits a time series containing an invalid period %s', async key => {
-            seed(timeProfile(), { total: 3, records: [
-                { key: 2025, value: 2.5 }, { key, value: 0 }, { key: 2023, value: -1.25 }
-            ] });
-            expect(await fetchFeatured()).toEqual([]);
-        });
-
-    it.each([1, 0, -2])('omits a nonvarying average series with value %s', async value => {
-        seed(timeProfile(), { total: 3, records: [2025, 2024, 2023].map(key => ({ key, value })) });
-        expect(await fetchFeatured()).toEqual([]);
-    });
-
-    it('uses record counts rather than averaging a measure across mixed currencies', async () => {
-        const profile = timeProfile();
-        profile.columns.push({ id: 'Currency', type: 'TEXT', distinct: 2, nulls: 0 });
-        seed(profile, { total: 3, records: [
-            { key: 2025, value: 60 }, { key: 2024, value: 30 }, { key: 2023, value: 10 }
-        ] });
-        const [item] = await fetchFeatured();
-        expect(item.context).toMatchObject({ agg: 'count', agg_column: null });
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({ agg: 'count', aggColumn: null }));
-    });
-
-    it.each(['Currency', 'Units'])('keeps counts when a recorded %s field falls beyond the 60-column profile', async id => {
-        const profile = timeProfile();
-        profile.columns.push(...Array.from({ length: 58 }, (_value, index) => ({
-            id: 'Unpopulated field ' + index, type: 'TEXT', distinct: 0, nulls: 100
-        })));
-        seed(profile, { total: 3, records: [
-            { key: 2025, value: 60 }, { key: 2024, value: 30 }, { key: 2023, value: 10 }
-        ] });
-        const recorded = [...profile.columns.map(({ id, type }) => ({ id, type })), { id, type: 'TEXT' }];
-        catalog.getResourceById.mockResolvedValue({
-            ingest_status: 'ready', table_name: 'r_aaa', ingested_at: PREPARED_AT, ingested_columns: recorded
-        });
-        const [item] = await fetchFeatured();
-        expect(recorded).toHaveLength(61);
-        expect(item.context).toMatchObject({ agg: 'count', agg_column: null });
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({ agg: 'count', aggColumn: null }));
-    });
-
-    it('does not invent units or meaning for an unknown numeric measure', async () => {
-        seed(timeProfile({ columns: [
-            { id: 'Year', type: 'INTEGER', distinct: 3, nulls: 0, min: 2023, max: 2025 },
-            { id: 'value', type: 'NUMERIC', distinct: 20, nulls: 0 }
-        ] }), { total: 3, records: [
-            { key: 2025, value: 60 }, { key: 2024, value: 30 }, { key: 2023, value: 10 }
-        ] });
-        const [item] = await fetchFeatured();
-        expect(item.context.agg).toBe('count');
-        expect(item.context.agg_column).toBeNull();
-    });
-
-    it.each([null, '', '   ', 'not a date'])('omits a chart without an actual snapshot timestamp: %s', async ingested_at => {
-        seed();
-        catalog.getResourceById.mockResolvedValue({
-            ingest_status: 'ready', table_name: 'r_aaa', ingested_at,
-            ingested_columns: categoryProfile().columns
-        });
-        expect(await fetchFeatured()).toEqual([]);
-    });
-
-    it('checks the current snapshot under the reader lock instead of trusting the candidate table', async () => {
-        seed();
-        catalog.getResourceById.mockResolvedValue({
-            ingest_status: 'ready', table_name: 'r_bbb', ingested_at: PREPARED_AT,
-            ingested_columns: [{ id: 'status', type: 'TEXT' }]
-        });
-        expect(await fetchFeatured()).toHaveLength(1);
-        expect(store.profileStoreTable).toHaveBeenCalledWith({ tableName: 'r_bbb', columns: [{ id: 'status', type: 'TEXT' }] });
-        expect(store.aggregateStoreTable).toHaveBeenCalledWith(expect.objectContaining({ tableName: 'r_bbb', knownColumns: ['status'] }));
-    });
-
-    it('skips vanished or failed snapshots without querying their rows', async () => {
-        seed();
-        catalog.getResourceById.mockResolvedValueOnce(null).mockResolvedValueOnce({ ingest_status: 'failed' });
-        topq.listIngestedTop.mockResolvedValue([candidate(), candidate({ dataset_id: 'd2', resource_id: 'r2' })]);
-        expect(await fetchFeatured()).toEqual([]);
-        expect(store.profileStoreTable).not.toHaveBeenCalled();
-        expect(store.aggregateStoreTable).not.toHaveBeenCalled();
-    });
-
-    it('skips a failed candidate and returns a valid one with no retry or second aggregate', async () => {
-        seed();
-        topq.listIngestedTop.mockResolvedValue([candidate(), candidate({ dataset_id: 'd2', resource_id: 'r2' })]);
-        store.aggregateStoreTable.mockRejectedValueOnce(new Error('snapshot unavailable'));
+    it('every preview passes the website\'s old validator', async () => {
+        seed(Object.keys(TABLES));
         const items = await fetchFeatured();
-        expect(items.map(item => item.dataset_id)).toEqual(['d2']);
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(2);
+        expect(items.length).toBeGreaterThanOrEqual(2);
+        for (const item of items) expect([item.dataset_id, FROZEN(item)]).toEqual([item.dataset_id, true]);
+        for (const item of await fetchFeatured('fr')) expect(FROZEN(item)).toBe(true);
     });
 
-    it('bounds the scan to 24 resources and keeps at most 12 informative previews', async () => {
-        const candidates = Array.from({ length: 24 }, (_value, index) => candidate({ dataset_id: 'd' + index, resource_id: 'r' + index }));
-        seed(categoryProfile(), categoricalAggregate(), candidates);
+    it('reads the current snapshot under the reader lock instead of trusting the candidate list', async () => {
+        const rows = seed(['permits']);
+        // Replaced between the list and the lock.
+        tables.set('r_replaced', permits());
+        catalog.getResourceById.mockImplementationOnce(async () => rows.get('r-permits'))
+            .mockImplementationOnce(async () => ({ ...rows.get('r-permits'), table_name: 'r_replaced' }));
+        expect(await fetchFeatured()).toHaveLength(1);
+        expect(snapshots.withSnapshot).toHaveBeenCalledWith('r-permits', expect.any(Function));
+        expect(chartQueries.readSample).toHaveBeenCalledWith(expect.objectContaining({ tableName: 'r_replaced' }), expect.any(Object));
+        expect(chartQueries.runBatch.mock.calls.every(([plan]) => plan.tableName === 'r_replaced')).toBe(true);
+    });
+
+    it('skips vanished, failed and evicted snapshots without reading them', async () => {
+        seed(['permits', 'panel', 'counts']);
+        catalog.getResourceById.mockImplementation(async id => (id === 'r-permits' ? null : id === 'r-panel' ? { ingest_status: 'failed' } : { ingest_status: 'ready' }));
+        expect(await fetchFeatured()).toEqual([]);
+        expect(chartQueries.readSample).not.toHaveBeenCalled();
+        expect(chartQueries.runBatch).not.toHaveBeenCalled();
+    });
+
+    it('skips a table that cannot be charted now and keeps the others', async () => {
+        seed(['permits', 'panel']);
+        chartQueries.readSample.mockRejectedValueOnce(new Error('snapshot unavailable'));
+        const items = await fetchFeatured();
+        expect(items.map(item => item.dataset_id)).toEqual(['d-panel']);
+    });
+
+    it('bounds the scan to 24 tables and keeps at most 12 previews and 12 cards', async () => {
+        const names = Array.from({ length: 30 }, (_, i) => 'permits:' + i);
+        seed(names);
         expect(await fetchFeatured()).toHaveLength(12);
+        expect(await service.cards('en')).toHaveLength(12);
         expect(topq.listIngestedTop).toHaveBeenCalledWith(24, 'en');
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(12);
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(12);
         expect(snapshots.withSnapshot).toHaveBeenCalledTimes(12);
     });
 
-    it('caches responses by language while sharing computation for the same prepared representative', async () => {
-        seed();
+    it('caches by language; a second language reuses the charts the engine already chose', async () => {
+        seed(['permits']);
         const first = await fetchFeatured();
+        const reads = chartQueries.runBatch.mock.calls.length;
         expect(await fetchFeatured()).toEqual(first);
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
         expect(snapshots.withSnapshot).toHaveBeenCalledTimes(1);
         await fetchFeatured('fr');
         expect(topq.listIngestedTop).toHaveBeenCalledWith(24, 'fr');
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
         expect(snapshots.withSnapshot).toHaveBeenCalledTimes(2);
-        expect(catalog.getResourceById).toHaveBeenCalledTimes(2);
+        expect(chartQueries.runBatch.mock.calls.length).toBe(reads);
+        expect(chartQueries.readSample).toHaveBeenCalledTimes(1);
     });
 
-    it('reuses immutable snapshot work after a response expires, then recomputes after 24 hours', async () => {
-        const clock = jest.spyOn(Date, 'now').mockReturnValue(0);
-        seed();
-        await service.featured('en');
-        clock.mockReturnValue(10 * 60 * 1000);
-        topq.listIngestedTop.mockResolvedValue([candidate({ title_en: 'Updated title' })]);
-        expect((await service.featured('en'))[0].title.en).toBe('Updated title');
-        expect(catalog.getResourceById).toHaveBeenCalledTimes(2);
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
-        clock.mockReturnValue(24 * 60 * 60 * 1000);
-        await service.featured('en');
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
-        expect(store.touchLastAccessed).not.toHaveBeenCalled();
+    it('labels the blank group in the reader\'s language', async () => {
+        const fixture = permits();
+        fixture.rows.forEach((row, i) => { if (i % 10 === 9) row[2] = ''; });
+        seed(['permits']);
+        tables.set(tableName('permits'), fixture);
+        const [en] = await service.featured('en');
+        const [fr] = await service.featured('fr');
+        expect(en.points.find(point => point.key === null).label).toBe('Not recorded');
+        expect(fr.points.find(point => point.key === null).label).toBe('Non renseigné');
+        expect(FROZEN(en) && FROZEN(fr)).toBe(true);
     });
 
-    it.each([
-        { table_name: 'r_bbb' },
-        { ingested_at: '2026-10-02T00:00:00Z' },
-        { ingested_columns: [{ id: 'status', type: 'TEXT' }] }
-    ])('recomputes when the serving snapshot identity or schema changes: %j', async change => {
-        seed();
-        await service.featured('en');
-        catalog.getResourceById.mockResolvedValue({
-            ingest_status: 'ready', table_name: 'r_aaa', ingested_at: PREPARED_AT,
-            ingested_columns: categoryProfile().columns.map(({ id, type }) => ({ id, type })), ...change
-        });
-        await service.featured('fr');
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(2);
-    });
-
-    it('rechecks eviction under the reader lock before using cached snapshot work', async () => {
-        seed();
-        await service.featured('en');
-        catalog.getResourceById.mockResolvedValue({ ingest_status: null });
-        expect(await service.featured('fr')).toEqual([]);
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
-        expect(snapshots.withSnapshot).toHaveBeenCalledTimes(2);
-    });
-
-    it('retries failed snapshot computation instead of retaining a false unchartable result', async () => {
-        seed();
-        store.profileStoreTable.mockRejectedValueOnce(new Error('temporary read failure'));
-        expect(await service.featured('en')).toEqual([]);
-        expect(await service.featured('fr')).toHaveLength(1);
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(2);
-    });
-
-    it('deduplicates simultaneous language misses and localizes NULL labels afterward', async () => {
-        seed(categoryProfile(), { total: 3, records: [
-            { key: null, value: 60 }, { key: 'Approved', value: 30 }, { key: 'Pending', value: 10 }
-        ] });
-        const [en, fr] = await Promise.all([service.featured('en'), service.featured('fr')]);
-        expect(en[0].points[0].label).toBe('Not recorded');
-        expect(fr[0].points[0].label).toBe('Non renseigné');
-        expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
-        expect(store.aggregateStoreTable).toHaveBeenCalledTimes(1);
-    });
-
-    it('returns no charts when no representative is prepared', async () => {
+    it('returns nothing when no representative is prepared', async () => {
         topq.listIngestedTop.mockResolvedValue([]);
         expect(await fetchFeatured('fr')).toEqual([]);
-        expect(topq.listIngestedTop).toHaveBeenCalledWith(24, 'fr');
         expect(snapshots.withSnapshot).not.toHaveBeenCalled();
     });
 });
 
+describe('GET /web-api/v1/insights/charts', () => {
+    it('answers the website with the engine\'s best card-sized chart of each table, and nothing to the developer API', async () => {
+        seed(['permits', 'counts']);
+        const res = await request(app).get('/web-api/v1/insights/charts?lang=fr');
+        expect(res.status).toBe(200);
+        expect(res.headers['cache-control']).toBe('public, max-age=300');
+        expect(res.body.data.map(card => card.dataset_id)).toEqual(['d-permits', 'd-counts']);
+        const [card] = res.body.data;
+        expect(Object.keys(card)).toEqual(['dataset_id', 'title', 'resource_id', 'snapshot_at', 'rows', 'kpis', 'chart']);
+        expect(card).toMatchObject({ title: { en: 'Title permits', fr: 'Titre permits' }, resource_id: 'r-permits', snapshot_at: PREPARED_AT, rows: 100 });
+        expect(card.chart.fit.card).toBe(true);
+        expect(card.kpis.length).toBeLessThanOrEqual(3);
+        expect((await request(app).get('/api/v1/insights/charts')).status).toBe(404);
+        // The shared insights routes still answer under the website's prefix.
+        expect((await request(app).get('/web-api/v1/insights/featured')).status).toBe(200);
+    });
+
+    it('neither renews a copy nor counts a visit', async () => {
+        seed(['permits']);
+        await request(app).get('/web-api/v1/insights/charts');
+        expect(require('../db/storeQueries').touchLastAccessed).not.toHaveBeenCalled();
+    });
+
+    it('a visitor who starts the shared work cannot cut it short for everyone', async () => {
+        seed(['permits', 'counts']);
+        const { runWithRequestSignal } = require('../utils/requestContext');
+        const gone = new AbortController();
+        gone.abort(new Error('The visitor left'));
+        // A cold cache: the request that asks first runs the work, inside its own context.
+        const cards = await runWithRequestSignal(gone.signal, () => service.cards('en'));
+        expect(cards.map(card => card.dataset_id)).toEqual(['d-permits', 'd-counts']);
+        // And what was cached is the whole answer.
+        expect((await service.cards('en')).map(card => card.dataset_id)).toEqual(['d-permits', 'd-counts']);
+    });
+
+    it('a table replaced between the first look and the lock is scanned with a slot, not while holding the lock', async () => {
+        const rows = seed(['permits']);
+        const engine = require('../services/charts/chartEngine');
+        const acquire = jest.spyOn(engine, 'acquireSlot');
+        // Warm the engine on this copy, then let the copy change under the lock.
+        expect((await service.cards('en')).length).toBe(1);
+        acquire.mockClear();
+        let looks = 0;
+        const replaced = { ...rows.get('r-permits'), table_name: tableName('permits:2'), ingested_at: '2026-09-30T12:00:00.000Z' };
+        tables.set(tableName('permits:2'), TABLES.permits());
+        catalog.getResourceById.mockImplementation(async () => (++looks === 1 ? rows.get('r-permits') : replaced));
+        await service.refreshFeatured('en');
+        // The first look found it warm; under the lock it was not, so the lock was let go and a slot taken first.
+        expect(acquire).toHaveBeenCalledTimes(1);
+        expect((await service.cards('en'))[0].snapshot_at).toBe('2026-09-30T12:00:00.000Z');
+    });
+});
+
 describe('pure featured preview builder', () => {
-    it('uses the same validated output for isolated browser fixtures without database activity', () => {
-        const profile = categoryProfile();
+    it('stays available, with the same output, to the hosted social pool until it moves to the engine', () => {
+        const profile = { rowCount: 100, columns: [{ id: 'status', type: 'TEXT', distinct: 3, nulls: 0 }, { id: 'amount', type: 'NUMERIC', distinct: 80, nulls: 0, avg: 5, min: 1, max: 9 }] };
         const spec = require('../services/featuredChart').pickChartSpec({ row_count: profile.rowCount, columns: profile.columns });
         const item = service.buildFeaturedPreview({
-            candidate: candidate(), current: { ingested_at: PREPARED_AT },
-            profile, spec, aggregate: categoricalAggregate(), lang: 'en'
+            candidate: { dataset_id: 'd1', title_en: 'Grants', title_fr: 'Subventions', resource_id: 'r1' }, current: { ingested_at: PREPARED_AT },
+            profile, spec, aggregate: { records: [{ key: 'Approved', value: '60' }, { key: 'Pending', value: '30' }, { key: 'Rejected', value: '10' }], total: 3 },
+            lang: 'en'
         });
         expect(item.points[0]).toEqual({ key: 'Approved', label: 'Approved', value: 60 });
         expect(item.context.snapshot_at).toBe(PREPARED_AT);
-        expect(store.aggregateStoreTable).not.toHaveBeenCalled();
+        expect(FROZEN(item)).toBe(true);
         expect(snapshots.withSnapshot).not.toHaveBeenCalled();
     });
 });
 
 describe('startFeaturedWarming', () => {
     const flush = async () => {
-        for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+        for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
     };
 
-    it('builds both languages as soon as it starts, sharing the snapshot work, so the first request is served from cache', async () => {
-        seed();
+    it('builds both languages as soon as it starts, so the first request is served from cache', async () => {
+        seed(['permits']);
         const stop = service.startFeaturedWarming({ intervalMs: 60 * 60 * 1000 });
         try {
+            for (let i = 0; i < 20 && topq.listIngestedTop.mock.calls.length < 2; i++) await flush();
             await flush();
             expect(topq.listIngestedTop.mock.calls.map(([, lang]) => lang)).toEqual(['en', 'fr']);
-            expect(store.profileStoreTable).toHaveBeenCalledTimes(1);
             const res = await request(app).get('/api/v1/insights/featured?lang=fr');
-            expect(res.status).toBe(200);
-            expect(res.body.data.map(item => item.dataset_id)).toEqual(['d1']);
+            expect(res.body.data.map(item => item.dataset_id)).toEqual(['d-permits']);
             expect(topq.listIngestedTop).toHaveBeenCalledTimes(2);
         } finally {
             stop();
         }
     });
 
-    it('refreshFeatured replaces the cached previews while requests keep the previous ones', async () => {
-        seed();
+    it('a refresh replaces the cached charts while requests keep the previous ones', async () => {
+        seed(['permits', 'panel']);
+        topq.listIngestedTop.mockResolvedValueOnce([candidate('permits')]);
         expect(await service.featured('en')).toHaveLength(1);
         let release;
         topq.listIngestedTop.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
         const refreshed = service.refreshFeatured('en');
         await flush();
         expect(await service.featured('en')).toHaveLength(1);
-        release([candidate(), candidate({ dataset_id: 'd2', resource_id: 'r2', title_en: 'Loans', title_fr: 'Prêts' })]);
+        release([candidate('permits'), candidate('panel')]);
         expect(await refreshed).toHaveLength(2);
         expect(await service.featured('en')).toHaveLength(2);
-        expect(topq.listIngestedTop).toHaveBeenCalledTimes(2);
+        expect(await service.cards('en')).toHaveLength(2);
     });
 
-    it('a failed refresh keeps the previous previews and never throws', async () => {
-        seed();
+    it('a failed refresh keeps the previous charts and never throws', async () => {
+        seed(['permits']);
         await service.featured('en');
         topq.listIngestedTop.mockRejectedValueOnce(new Error('db down'));
         jest.spyOn(console, 'warn').mockImplementation(() => {});

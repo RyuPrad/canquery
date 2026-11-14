@@ -11,13 +11,36 @@ const OP_BY_PREFIX = { '>=': 'gte', '<=': 'lte', '>': 'gt', '<': 'lt', '=': 'eq'
 // Longer prefixes first so ">=" is not read as ">" followed by "=".
 const PREFIX_RE = /^(>=|<=|>|<|=)\s*(.+)$/;
 
+// A value in double quotes after an operator is taken exactly as written
+// inside the quotes (JSON string syntax), spaces included: `="CAD "`.
+function exactValue(value) {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'string' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseColumnFilter(raw) {
   const text = (raw == null ? '' : String(raw)).trim();
   const match = PREFIX_RE.exec(text);
   if (match) {
-    return { op: OP_BY_PREFIX[match[1]], value: match[2].trim() };
+    const value = match[2].trim();
+    const exact = exactValue(value);
+    return { op: OP_BY_PREFIX[match[1]], value: exact ?? value };
   }
   return { op: 'contains', value: text };
+}
+
+/**
+ * The filter text that matches exactly one stored value. Plain when the
+ * value reads back unchanged, in quotes when trimming or quotes would alter it.
+ */
+export function equalsFilterText(value) {
+  const text = String(value);
+  return text.trim() === text && text !== '' && !text.startsWith('"') ? '=' + text : '=' + JSON.stringify(text);
 }
 
 // Turn the per-column input map ({ colId: rawText }) into the API `filters`

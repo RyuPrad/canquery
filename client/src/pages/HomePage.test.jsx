@@ -11,9 +11,10 @@ vi.mock('../components/PopularRail.jsx', () => ({ default: () => null }));
 vi.mock('../components/HeroChartWidget.jsx', () => ({ default: () => null }));
 vi.mock('../api/catalog.js', () => ({
   searchDatasets: vi.fn(), fetchOrganizations: vi.fn(), fetchStats: vi.fn(),
-  fetchFeatured: vi.fn(), fetchFeaturedPlaces: vi.fn(), fetchPlaces: vi.fn(), fetchSources: vi.fn()
+  fetchInsightCards: vi.fn(), fetchFeaturedPlaces: vi.fn(), fetchPlaces: vi.fn(), fetchSources: vi.fn()
 }));
-import { searchDatasets, fetchOrganizations, fetchStats, fetchFeatured, fetchFeaturedPlaces, fetchPlaces, fetchSources } from '../api/catalog.js';
+import { searchDatasets, fetchOrganizations, fetchStats, fetchInsightCards, fetchFeaturedPlaces, fetchPlaces, fetchSources } from '../api/catalog.js';
+import { SHARE } from '../test/chartAnalysis.js';
 
 const row = query => ({ id: query || 'all', name: query || 'all', title: { en: 'Results for ' + (query || 'all') },
   resource_count: 1, queryable_count: 0, places: [] });
@@ -43,7 +44,7 @@ beforeEach(() => {
     { id: 'o2', name: 'new', title: { en: 'New publisher', fr: 'Nouveau diffuseur' }, dataset_count: 2 }
   ], pagination: { nextCursor: null } });
   fetchStats.mockResolvedValue(null);
-  fetchFeatured.mockResolvedValue({ data: [] });
+  fetchInsightCards.mockResolvedValue({ data: [] });
   fetchFeaturedPlaces.mockResolvedValue({ data: [
     { id: 'p1', slug: 'oshawa-on', kind: 'municipality', name: { en: 'Oshawa' }, dataset_count: 1 },
     { id: 'p2', slug: 'toronto-on', kind: 'municipality', name: { en: 'Toronto' }, dataset_count: 2 }
@@ -66,12 +67,10 @@ const facetMeta = (organizations = [], sources = [], extra = {}) => ({
 });
 const group = name => screen.getByRole('group', { name });
 
+// A chart card of the engine, as GET /web-api/v1/insights/charts answers.
 const contextualPreview = () => ({
-  dataset_id: 'chart-dataset', title: { en: 'Grants by status' }, kind: 'donut',
-  points: [{ key: 'Approved', label: 'Approved', value: 3 }, { key: 'Pending', label: 'Pending', value: 1 }],
-  context: { resource_id: 'chart-resource', group_by: 'status', agg: 'count', agg_column: null,
-    bucket: null, group_type: 'TEXT', snapshot_at: '2026-09-29T23:30:00.000Z', snapshot_rows: 4,
-    total_groups: 2, displayed_groups: 2, limited: false, missing_periods: [] },
+  dataset_id: 'chart-dataset', title: { en: 'Grants by status' }, resource_id: 'chart-resource', snapshot_at: '2026-09-29T23:30:00.000Z',
+  rows: 288, kpis: [], chart: SHARE,
 });
 
 test.each([
@@ -96,21 +95,21 @@ test.each([
   expect(screen.getByText(copy.query)).toBeInTheDocument();
 });
 
-test('invalid previews settle with an empty state without rendering a misleading chart', async () => {
-  const flat = contextualPreview();
-  flat.points = flat.points.map(point => ({ ...point, value: 2 }));
+test('invalid cards settle with an empty state without rendering a misleading chart', async () => {
+  const empty = contextualPreview();
+  empty.chart = { ...SHARE, points: [] };
   const legacy = contextualPreview();
-  delete legacy.context;
-  fetchFeatured.mockResolvedValue({ data: [legacy, flat, { ...contextualPreview(), kind: 'unknown' }] });
+  delete legacy.chart;
+  fetchInsightCards.mockResolvedValue({ data: [legacy, empty, { ...contextualPreview(), chart: { ...SHARE, kind: 'unknown' } }] });
   start();
   expect(await screen.findByText('Results for all')).toBeInTheDocument();
-  await waitFor(() => expect(fetchFeatured).toHaveBeenCalled());
+  await waitFor(() => expect(fetchInsightCards).toHaveBeenCalled());
   expect(await screen.findByText('No chart previews are available yet.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Pause|Resume/ })).not.toBeInTheDocument();
 });
 
-test('one explainable preview is enough to display the chart section', async () => {
-  fetchFeatured.mockResolvedValue({ data: [contextualPreview()] });
+test('one card is enough to display the chart section', async () => {
+  fetchInsightCards.mockResolvedValue({ data: [contextualPreview()] });
   start();
   expect(await screen.findByRole('heading', { name: 'A closer look at the data' })).toBeInTheDocument();
 });

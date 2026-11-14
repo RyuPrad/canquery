@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseColumnFilter, buildColumnFilters } from './columnFilter.js';
+import { parseColumnFilter, buildColumnFilters, equalsFilterText } from './columnFilter.js';
 
 describe('parseColumnFilter', () => {
   it('maps comparison prefixes to the backend ops', () => {
@@ -33,6 +33,13 @@ describe('parseColumnFilter', () => {
     expect(parseColumnFilter('=K1A 0B1')).toEqual({ op: 'eq', value: 'K1A 0B1' });
   });
 
+  it('takes a quoted value exactly as written, spaces included', () => {
+    expect(parseColumnFilter('="CAD "')).toEqual({ op: 'eq', value: 'CAD ' });
+    expect(parseColumnFilter('= " leading"')).toEqual({ op: 'eq', value: ' leading' });
+    // Not a whole quoted string: read as typed.
+    expect(parseColumnFilter('="CAD')).toEqual({ op: 'eq', value: '"CAD' });
+  });
+
   it('handles null and undefined input', () => {
     expect(parseColumnFilter(null)).toEqual({ op: 'contains', value: '' });
     expect(parseColumnFilter(undefined)).toEqual({ op: 'contains', value: '' });
@@ -52,5 +59,15 @@ describe('buildColumnFilters', () => {
   it('returns an empty object for no active filters', () => {
     expect(buildColumnFilters({})).toEqual({});
     expect(buildColumnFilters(null)).toEqual({});
+  });
+});
+
+describe('equalsFilterText', () => {
+  it('pins one stored value exactly, quoting only when it must', () => {
+    for (const value of ['Net income', 'CAD ', ' x', '"quoted"', 'a "b"', '>5 years', '=x']) {
+      expect(parseColumnFilter(equalsFilterText(value))).toEqual({ op: 'eq', value });
+    }
+    expect(equalsFilterText('Net income')).toBe('=Net income');
+    expect(equalsFilterText('CAD ')).toBe('="CAD "');
   });
 });

@@ -5,16 +5,16 @@ import InsightsPage from './InsightsPage.jsx';
 
 vi.mock('../api/catalog.js', () => ({
   fetchTopDownloads: vi.fn(),
-  fetchFeatured: vi.fn(),
-  fetchResourceProfile: vi.fn(),
-  queryResource: vi.fn(),
+  fetchInsightCards: vi.fn(),
+  fetchResourceCharts: vi.fn(),
 }));
-import { fetchTopDownloads, fetchFeatured, fetchResourceProfile, queryResource } from '../api/catalog.js';
+vi.mock('../components/charts/ChartView.jsx', () => ({ default: ({ chart }) => <div>Chart {chart.id}</div> }));
+import { fetchTopDownloads, fetchInsightCards, fetchResourceCharts } from '../api/catalog.js';
+import { ANALYSIS, SHARE } from '../test/chartAnalysis.js';
 
-const PROFILE = { row_count: 420, columns: [
-  { id: 'status', type: 'TEXT', distinct: 3, nulls: 0 },
-  { id: 'amount', type: 'NUMERIC', distinct: 400, nulls: 0, avg: 25000, min: 0, max: 500000 },
-] };
+// The engine's card of a dataset, as GET /web-api/v1/insights/charts answers.
+const cardOf = (it) => ({ dataset_id: it.dataset_id, title: it.title, resource_id: it.resource_id, snapshot_at: '2026-09-29T12:00:00.000Z',
+  rows: 288, kpis: ANALYSIS.kpis, chart: SHARE });
 
 const mkItem = (rank, over = {}) => ({
   rank,
@@ -33,9 +33,8 @@ const mkItem = (rank, over = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: nothing is chartable, so no carousel renders unless a test opts in.
-  fetchFeatured.mockResolvedValue({ data: [] });
-  fetchResourceProfile.mockResolvedValue({ data: PROFILE });
-  queryResource.mockResolvedValue({ data: { records: [{ key: 'Approved', value: '200' }, { key: 'Pending', value: '120' }], total: 2 } });
+  fetchInsightCards.mockResolvedValue({ data: [] });
+  fetchResourceCharts.mockResolvedValue({ data: ANALYSIS });
 });
 
 const renderPage = () => render(<MemoryRouter><InsightsPage /></MemoryRouter>);
@@ -60,42 +59,52 @@ describe('InsightsPage top-100', () => {
     await screen.findByText(/May 2026/i);
   });
 
-  test('the carousel charts only the chartable datasets; the full ranking lists them all', async () => {
+  test('the carousel draws the engine\'s cards, with no request per card; the full ranking lists every dataset', async () => {
     const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4), mkItem(5)];
     fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
-    // Only d1 + d2 produce a chart server-side, so only those go in the carousel.
-    fetchFeatured.mockResolvedValue({ data: [{ dataset_id: 'd1' }, { dataset_id: 'd2' }] });
+    // Only d1 + d2 have a card, so only those go in the carousel.
+    fetchInsightCards.mockResolvedValue({ data: [cardOf(items[0]), cardOf(items[1])] });
     renderPage();
-    // The carousel card for d1 profiles its representative resource...
-    await waitFor(() => expect(fetchResourceProfile).toHaveBeenCalledWith('r1'));
-    // ...and the leaderboard is fetched in the active UI language (default en).
+    expect(await screen.findAllByText('Chart c_aaaaaaaaaaaa')).toHaveLength(2);
+    // Both are fetched in the active UI language (default en).
     expect(fetchTopDownloads).toHaveBeenCalledWith('en');
-    expect(fetchFeatured).toHaveBeenCalledWith('en');
-    // ...but a non-chartable dataset (only a list row) never profiles.
-    expect(fetchResourceProfile).not.toHaveBeenCalledWith('r4');
+    expect(fetchInsightCards).toHaveBeenCalledWith('en');
+    expect(fetchResourceCharts).not.toHaveBeenCalled();
     // The full ranking still lists every dataset, including rank 5.
     await screen.findByText('Dataset 5');
     expect(screen.getAllByText('downloads').length).toBeGreaterThan(0);
   });
 
-  test('a download-only dataset (no resource) does not profile', async () => {
+  test('a card charts the file its tile links to, or the tile has no chart', async () => {
+    const items = [mkItem(1), mkItem(2)];
+    fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
+    // d2's representative file changed since its card was cached.
+    fetchInsightCards.mockResolvedValue({ data: [cardOf(items[0]), { ...cardOf(items[1]), resource_id: 'r-previous' }] });
+    renderPage();
+    expect(await screen.findAllByText('Chart c_aaaaaaaaaaaa')).toHaveLength(1);
+    await screen.findByText('Dataset 2');
+  });
+
+  test('without cards the gallery still lists the ranking, and a download-only dataset charts nothing', async () => {
+    fetchInsightCards.mockRejectedValue(new Error('Unavailable'));
     fetchTopDownloads.mockResolvedValue({ data: [mkItem(1, { resource_id: null, ingest_status: null })], meta: { period: { year: 2026, month: 5 } } });
     renderPage();
     await screen.findByText('Dataset 1');
-    await waitFor(() => expect(fetchResourceProfile).not.toHaveBeenCalled());
+    await waitFor(() => expect(fetchResourceCharts).not.toHaveBeenCalled());
+    expect(document.getElementById('featured-section')).toBeNull();
   });
 
   test('empty state when the leaderboard is not seeded yet', async () => {
     fetchTopDownloads.mockResolvedValue({ data: [], meta: { period: null } });
     renderPage();
     await screen.findByText(/leaderboard is being prepared/i);
-    expect(fetchResourceProfile).not.toHaveBeenCalled();
+    expect(fetchResourceCharts).not.toHaveBeenCalled();
   });
 
   test('a ?focus= deep-link highlights the matching carousel card', async () => {
     const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4)];
     fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
-    fetchFeatured.mockResolvedValue({ data: items.map((it) => ({ dataset_id: it.dataset_id })) });
+    fetchInsightCards.mockResolvedValue({ data: items.map(cardOf) });
     render(<MemoryRouter initialEntries={['/insights?focus=d2']}><InsightsPage /></MemoryRouter>);
     await waitFor(() => {
       const el = document.getElementById('ds-d2');
@@ -111,7 +120,7 @@ describe('InsightsPage top-100', () => {
   test('the deep-link highlight ring clears after the pulse', async () => {
     const items = [mkItem(1), mkItem(2), mkItem(3), mkItem(4)];
     fetchTopDownloads.mockResolvedValue({ data: items, meta: { period: { year: 2026, month: 5 } } });
-    fetchFeatured.mockResolvedValue({ data: items.map((it) => ({ dataset_id: it.dataset_id })) });
+    fetchInsightCards.mockResolvedValue({ data: items.map(cardOf) });
     vi.useFakeTimers();
     try {
       render(<MemoryRouter initialEntries={['/insights?focus=d2']}><InsightsPage /></MemoryRouter>);

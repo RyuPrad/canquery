@@ -1,6 +1,7 @@
 import { getJSON, postJSON } from './client.js';
-import { resourceResponse, queryResponse, previewResponse, rowsResponse, listResponse, datasetResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse } from './responseContracts.js';
+import { resourceResponse, queryResponse, previewResponse, rowsResponse, listResponse, datasetResponse, datasetListResponse, profileResponse, jobResponse, preparationResponse, chartsResponse, customChartResponse, insightCardsResponse } from './responseContracts.js';
 import { normalizeResource } from './resourceEnvelope.js';
+import { isInsightCard } from '../utils/chartContract.js';
 
 const DATASET_PARAMS = ['q', 'org', 'format', 'keyword', 'place', 'source', 'level', 'mappable', 'queryable', 'sort', 'lang', 'facets', 'limit', 'cursor'];
 
@@ -51,6 +52,21 @@ export function fetchResourcePreview(id, options) {
 
 export function fetchResourceProfile(id, options = {}) {
   return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/profile', { snapshot: options.snapshot }, { ...options, validate: profileResponse });
+}
+
+// The charts of a table, chosen and computed by the chart engine on the rows a
+// search and filters leave. `background: true` marks a look the visitor did
+// not ask for: it neither renews the copy nor counts a visit.
+export function fetchResourceCharts(id, { q, filters, lang, purpose, limit, snapshot } = {}, options) {
+  const { background, ...rest } = options || {};
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/charts', { q, filters, lang, purpose, limit, snapshot },
+    { ...rest, validate: chartsResponse, ...(background ? { headers: { 'X-CanQuery-Read': 'background' } } : {}) });
+}
+
+// One chart built by hand: `spec` is the request the custom builder describes.
+export function fetchCustomChart(id, spec, { q, filters, lang, snapshot } = {}, options) {
+  return getJSON('/web-api/v1/resources/' + encodeURIComponent(id) + '/charts/custom', { spec: JSON.stringify(spec), q, filters, lang, snapshot },
+    { ...options, validate: customChartResponse });
 }
 
 export function prepareResource(id) {
@@ -156,6 +172,14 @@ export async function fetchFeatured(lang = 'en', options) {
   } catch {
     return null;
   }
+}
+
+// The homepage and Insights gallery cards: the chart engine's best card-sized
+// chart of each prepared Top 100 table. Cards that do not hold together are
+// dropped here, so a page only ever draws whole ones.
+export async function fetchInsightCards(lang = 'en', options) {
+  const env = await getJSON('/web-api/v1/insights/charts', { lang }, { ...options, validate: insightCardsResponse });
+  return { ...env, data: env.data.filter(isInsightCard) };
 }
 
 export async function fetchPopular(place) {

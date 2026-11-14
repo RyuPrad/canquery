@@ -18,4 +18,12 @@ const getFeatured = async (req, res) => {
     res.json(envelope(items));
 };
 
-module.exports = { getTopDownloads: catchAsync(getTopDownloads), getFeatured: catchAsync(getFeatured) };
+// The chart cards of the homepage and the Insights gallery: the chart
+// engine's best card-sized chart of each prepared Top 100 table.
+const getChartCards = async (req, res) => {
+    const items = await insightsService.cards(pickLang(req));
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(envelope(items));
+};
+
+module.exports = { getTopDownloads: catchAsync(getTopDownloads), getFeatured: catchAsync(getFeatured), getChartCards: catchAsync(getChartCards) };

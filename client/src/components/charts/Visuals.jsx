@@ -194,18 +194,20 @@ export function CategoryBar({ records, lang, colorOffset = 0, height = 260 }) {
 }
 
 // ── Time series (area or line over buckets) ─────────────────────────────────
-export function TimeSeriesChart({ records, lang, bucket, type = 'area', categorical = false, colorOffset = 0, height = 260 }) {
+// gaps: a record without a value is a period with no number, drawn as a gap
+// in the line rather than as zero.
+export function TimeSeriesChart({ records, lang, bucket, type = 'area', categorical = false, colorOffset = 0, height = 260, gaps = false }) {
   const { dark } = useTheme();
   const gradId = useId();
   const color = colorAt(colorOffset);
   const narrow = useNarrow();
   const data = records.map((r) => ({
     label: categorical ? fmtCategory(r.key) : fmtBucketKey(r.key, bucket, lang),
-    value: Number(r.value || 0),
+    value: gaps && (r.value === null || r.value === undefined) ? null : Number(r.value || 0),
   }));
   // Size the value axis from the widest number it can show; rounded "nice"
   // ticks can add a digit beyond the data extremes, hence the extra 0 padding.
-  const values = data.map((d) => d.value);
+  const values = data.map((d) => d.value).filter((value) => value !== null);
   const extremes = values.length ? [Math.max(...values), Math.min(...values), 0] : [0];
   const yWidth = axisWidthFor(extremes.map((v) => fmtNum(v, lang) + '0'), { min: 40, max: 96 });
   const xChars = narrow ? 10 : 16;

@@ -49,6 +49,15 @@ describe('MiniChart', () => {
     expect(container.querySelector('.cq-chart-ring-unit')).toHaveTextContent('Records');
   });
 
+  test('a donut of a sum keeps the fractions of its values', () => {
+    const { container } = render(<MiniChart kind="donut" points={[{ key: 'a', label: 'A', value: 12.4 }, { key: 'b', label: 'B', value: 7.8 },
+      { key: 'c', label: 'C', value: 3.1 }]} context={{ agg: 'avg', limited: false, totalLabel: 'Tonnes' }} animate={false} />);
+    const legend = screen.getByRole('list', { name: 'Categories and values' });
+    expect(within(legend).getByText('12.4')).toBeInTheDocument();
+    expect(within(legend).getByText('7.8')).toBeInTheDocument();
+    expect(container.querySelector('.cq-chart-ring-total')).toHaveTextContent('23.3');
+  });
+
   test('incomplete, oversized and signed distributions do not render a misleading donut', () => {
     const { container, rerender } = render(<MiniChart kind="donut" points={points} context={{ ...count, limited: true }} animate={false} />);
     expect(container).toBeEmptyDOMElement();

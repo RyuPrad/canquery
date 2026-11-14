@@ -1,3 +1,5 @@
+import { isChartsData, isCustomChartData } from '../utils/chartContract.js';
+
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const field = value => record(value) && typeof value.id === 'string' && typeof value.type === 'string' &&
   (value.legacy_ids === undefined || (Array.isArray(value.legacy_ids) && value.legacy_ids.every(alias => typeof alias === 'string')));
@@ -37,6 +39,11 @@ export const datasetListResponse = ({ data, meta }) => listResponse({ data }) &&
   (meta === undefined || ((meta.total === undefined || meta.total === null || count(meta.total)) &&
     (meta.facets === undefined || meta.facets === null || (record(meta.facets) &&
       Object.values(meta.facets).every(group => Array.isArray(group) && group.every(facetValue))))));
+
+// The chart engine's answers: see utils/chartContract.js.
+export const chartsResponse = ({ data }) => isChartsData(data);
+export const customChartResponse = ({ data }) => isCustomChartData(data);
+export const insightCardsResponse = ({ data }) => Array.isArray(data);
 
 export const profileResponse = ({ data }) => record(data) && Array.isArray(data.columns) &&
   data.columns.every(field) && Number.isSafeInteger(data.row_count) && data.row_count >= 0;

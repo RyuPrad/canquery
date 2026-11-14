@@ -80,6 +80,21 @@ export function fmtBucketKey(key, bucket, lang) {
   return d.toLocaleDateString(loc, { year: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
+// A period from the first day the chart engine gives it and its grain:
+// "2021", "2021–22", "Q3 2021", "Mar 2021", "Mar 4, 2021".
+export function fmtPeriod(start, grain, lang) {
+  const match = /^(-?\d{1,6})-(\d{2})-(\d{2})/.exec(String(start ?? ''));
+  if (!match) return start === null || start === undefined ? '-' : String(start);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (grain === 'year') return String(year);
+  if (grain === 'fiscal_year') return year + '–' + String((year + 1) % 100).padStart(2, '0');
+  if (grain === 'quarter') return (lang === 'fr' ? 'T' : 'Q') + (Math.floor((month - 1) / 3) + 1) + ' ' + year;
+  const date = new Date(Date.UTC(year, month - 1, Number(match[3])));
+  if (grain === 'month') return date.toLocaleDateString(localeFor(lang), { year: 'numeric', month: 'short', timeZone: 'UTC' });
+  return date.toLocaleDateString(localeFor(lang), { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 export function fmtCategory(key) {
   if (key === null || key === undefined || key === '') return '(empty)';
   return String(key);

@@ -1,21 +1,13 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchResourceProfile } from '../api/catalog.js';
+import { fetchResourceCharts } from '../api/catalog.js';
 import { useLang } from '../i18n.jsx';
-import { classifyColumns, buildInsights, buildKpis } from './charts/classify.js';
 import { ChartEmpty } from './charts/Visuals.jsx';
-import InsightChart from './charts/InsightChart.jsx';
+import ChartView from './charts/ChartView.jsx';
 import Sparkline from './charts/Sparkline.jsx';
-import { kpiView, fmtInt } from './charts/theme.js';
+import { kpiText } from './charts/chartText.js';
+import { fmtInt } from './charts/theme.js';
 import { ArrowRightIcon } from './Icons.jsx';
-
-// Most instantly legible visual first: a donut, then a trend, then anything.
-function pickHero(insights) {
-  return insights.find((i) => i.kind === 'donut')
-    || insights.find((i) => i.kind === 'timeseries')
-    || insights[0]
-    || null;
-}
 
 // Podium ranks 1-3 get a coloured medal; brand tokens so they flip light/dark.
 function RankBadge({ rank }) {
@@ -30,12 +22,15 @@ function RankBadge({ rank }) {
   );
 }
 
-// A gallery tile: profiles its resource (lazily, once scrolled near) and shows a
-// KPI strip + one hero chart, so a visitor grasps the dataset at a glance.
+// A gallery tile: a KPI strip and one chart, so a visitor grasps the dataset at
+// a glance. The chart is the card the chart engine chose for the dataset;
+// without one, the tile asks the engine for its table's best card-sized chart
+// once scrolled near, as a background read that neither renews the copy nor
+// counts a visit.
 // Optional rank/downloads/featured drive the Top 100 podium; fallbackValues
 // renders a download-trend sparkline when there is no chartable insight (or the
 // resource is download-only / still ingesting).
-export default function InsightCard({ item, showDataset = true, rank = null, downloads = null, featured = false, fallbackValues = null }) {
+export default function InsightCard({ item, card = null, showDataset = true, rank = null, downloads = null, featured = false, fallbackValues = null }) {
   const { t, lang } = useLang();
   const id = item.resource_id;
   const name = item.name?.[lang] || item.name?.en || item.name?.fr || item.dataset?.title?.en || item.dataset?.name || id;
@@ -48,12 +43,16 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
   const ref = useRef(null);
   // Eager when IntersectionObserver is unavailable (tests / old browsers).
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
-  const [profile, setProfile] = useState(null);
-  const classified = profile?.resourceId === id ? profile.classified : null;
-  const error = profile?.resourceId === id && profile.error;
+  const [fetched, setFetched] = useState(null);
+  // Only the answer for this resource counts: a replaced representative never shows the previous one.
+  const own = !card && fetched?.resourceId === id ? fetched : null;
+  const chart = card ? card.chart : own?.chart || null;
+  const kpis = (card ? card.kpis : own?.kpis || []).slice(0, 3);
+  const error = Boolean(own?.error);
+  const loaded = Boolean(card) || Boolean(own);
 
   useEffect(() => {
-    if (!id || visible) return;
+    if (!id || card || visible) return;
     const el = ref.current;
     if (!el) return;
     const obs = new IntersectionObserver((entries) => {
@@ -61,24 +60,21 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
     }, { rootMargin: '250px' });
     obs.observe(el);
     return () => obs.disconnect();
-  }, [visible, id]);
+  }, [visible, id, card]);
 
   useEffect(() => {
-    if (!id || !visible) return;
+    if (!id || card || !visible) return;
     let cancelled = false;
-    fetchResourceProfile(id)
-      .then((env) => { if (!cancelled) setProfile({ resourceId: id, classified: classifyColumns(env.data), error: false }); })
-      .catch(() => { if (!cancelled) setProfile({ resourceId: id, classified: null, error: true }); });
+    fetchResourceCharts(id, { lang, purpose: 'card', limit: 1 }, { background: true })
+      .then((env) => { if (!cancelled) setFetched({ resourceId: id, chart: env.data.charts[0] || null, kpis: env.data.kpis, error: false }); })
+      .catch(() => { if (!cancelled) setFetched({ resourceId: id, chart: null, kpis: [], error: true }); });
     return () => { cancelled = true; };
-  }, [visible, id]);
-
-  const hero = useMemo(() => (classified ? pickHero(buildInsights(classified)) : null), [classified]);
-  const kpis = useMemo(() => (classified ? buildKpis(classified).slice(0, 3) : []), [classified]);
+  }, [visible, id, card, lang]);
 
   // A download-only dataset has no table to chart, so we tease it with the
-  // dataset's download-popularity trend. Anything that IS ingested but has no
-  // auto-chart (or failed to profile) shows the same graceful empty state the
-  // resource page does - never the download trend, which would read like data.
+  // dataset's download-popularity trend. Anything that IS prepared but has no
+  // chart worth a card (or failed to load) shows the same graceful empty state
+  // the resource page does - never the download trend, which would read like data.
   const emptyChart = (label) => <ChartEmpty label={label} height={featured ? 200 : 160} />;
   const downloadTrend = (fallbackValues && fallbackValues.length) ? (
     <div className="space-y-1.5">
@@ -94,7 +90,7 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
     body = downloadTrend || emptyChart(t('badge.fileonly'));
   } else if (error) {
     body = emptyChart(t('chart.profile_failed'));
-  } else if (!classified) {
+  } else if (!loaded) {
     body = (
       <div className="space-y-3">
         <div className="cq-skel h-5 w-2/3 rounded" />
@@ -107,7 +103,8 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
         {kpis.length > 0 && (
           <div className="flex flex-wrap gap-x-5 gap-y-1.5">
             {kpis.map((k, i) => {
-              const v = kpiView(k, lang, t);
+              const v = kpiText(k, t, lang);
+              if (!v) return null;
               return (
                 <div key={k.role + i} className="flex items-baseline gap-1.5">
                   <span className="font-display font-bold tabular-nums text-[0.95rem]">{v.value}</span>
@@ -117,8 +114,8 @@ export default function InsightCard({ item, showDataset = true, rank = null, dow
             })}
           </div>
         )}
-        {hero
-          ? <InsightChart resourceId={id} spec={hero} framed={false} height={chartHeight} />
+        {chart
+          ? <ChartView chart={chart} framed={false} height={chartHeight} />
           : emptyChart(t('chart.no_insights'))}
       </>
     );
