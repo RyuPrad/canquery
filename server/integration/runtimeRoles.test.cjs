@@ -74,6 +74,16 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
                 VALUES (190003, 1, 1900, 1, 1899, 'forbidden', 'v', repeat('0', 64), 1)`), { code: '42501' });
             await assert.rejects(client.query('DELETE FROM oas_rows WHERE false'), { code: '42501' });
             await assert.rejects(client.query('UPDATE oas_files SET source_version = source_version WHERE false'), { code: '42501' });
+            // Every runtime identity reads a resource through the same function: the map worker's role cannot
+            // read pins, so the read names that table only when the caller asks for the pin.
+            const resource = await getResourceById(prefix, dbFor(client));
+            assert.equal(resource.id, prefix);
+            assert.equal('pinned' in resource, false);
+            if (role === 'canquery_map') {
+                await assert.rejects(getResourceById(prefix, dbFor(client), { pinned: true }), { code: '42501' });
+            } else {
+                assert.equal(typeof (await getResourceById(prefix, dbFor(client), { pinned: true })).pinned, 'boolean');
+            }
             // Only the API reads which pages Google showed, for the noindex sitemap, and only these two columns;
             // and only the API reads the samples a resource page shows, the LMIA history and the OAS benefit amounts.
             if (role !== 'canquery_api') {
@@ -116,7 +126,6 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             const changed = await listChangedSitemapPages({ since: new Date(0), until: new Date(), limit: 10, ids: [prefix] }, db);
             assert.ok(Array.isArray(changed.datasets) && Array.isArray(changed.resources));
             assert.ok((await listResourcesForDataset(prefix, db)).every(row => typeof row.pinned === 'boolean'));
-            assert.equal(typeof (await getResourceById(prefix, db)).pinned, 'boolean');
         }
     });
     test('API admits work and takes narrow catalogue locks without arbitrary writes', async () => {

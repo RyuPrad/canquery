@@ -36,7 +36,10 @@ const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 function policySince(value = process.env.INDEX_POLICY_SINCE) {
     const text = (value || '').trim();
     if (!text) return POLICY_SINCE;
-    if (!INSTANT_RE.test(text) || Number.isNaN(Date.parse(text))) {
+    // A date that does not exist (November 31) parses by rolling over; PostgreSQL
+    // would refuse it in every recrawl read, so it is refused here.
+    const time = INSTANT_RE.test(text) ? Date.parse(text) : NaN;
+    if (Number.isNaN(time) || new Date(time).toISOString().slice(0, 19) !== text.slice(0, 19)) {
         throw new Error('INDEX_POLICY_SINCE must be a UTC time such as 2026-11-16T07:59:59Z');
     }
     return text;

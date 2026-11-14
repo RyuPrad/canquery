@@ -14,8 +14,9 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         pool = new Pool({ connectionString: url });
         db = await pool.connect();
         await db.query('BEGIN');
-        // dataset008 has no file at all; a guide is about it, so its page is indexable.
-        jest.spyOn(blogContent, 'listArticles').mockReturnValue([{ datasetId: id('dataset008') }]);
+        // dataset008 has no file at all; a guide is about it, so its page is indexable. Guides name a
+        // dataset by its id: dataset009's name is in the list too, and must not count.
+        jest.spyOn(blogContent, 'listArticles').mockReturnValue([{ datasetId: id('dataset008') }, { datasetId: id('named-nine') }]);
         ids = indexPolicy.alwaysIndexableDatasetIds();
         datasetCount = await queries.countSitemapDatasets({ ids }, db);
         resourceCount = await queries.countSitemapResources(db);
@@ -38,9 +39,16 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
             ($1 || '5', $2 || '005', 'CSV', 'https://example.test/data', false),
             ($1 || '6', $2 || '006', 'PDF', 'https://example.test/report.pdf', false),
             ($1 || '7', $2 || '007', 'CSV', 'https://example.test/data', true)`, [id('resource'), id('dataset')]);
-        await db.query(`INSERT INTO ingested_resources (resource_id, table_name, status) VALUES ($1, $2, 'ready'), ($3, $4, 'ready')`,
+        // The pinned copy was pinned on September 10 and prepared on September 12: its page became indexable then.
+        await db.query(`INSERT INTO ingested_resources (resource_id, table_name, status, ingested_at) VALUES
+            ($1, $2, 'ready', '2026-09-12T00:00:00Z'), ($3, $4, 'ready', '2026-10-05T00:00:00Z')`,
             [id('resource5'), id('table5'), id('resource7'), id('table7')]);
-        await db.query('INSERT INTO pinned_resources (resource_id, reason) VALUES ($1, $3), ($2, $3)', [id('resource5'), id('resource6'), 'test']);
+        await db.query(`INSERT INTO pinned_resources (resource_id, reason, created_at) VALUES
+            ($1, 'test', '2026-09-10T00:00:00Z'), ($2, 'test', '2026-09-20T00:00:00Z')`, [id('resource5'), id('resource6')]);
+        // Names that differ from ids: a page's address carries the name, a guide names the id.
+        await db.query('UPDATE datasets SET name = $2 WHERE id = $1', [id('dataset001'), id('named-one')]);
+        await db.query('UPDATE datasets SET name = $2 WHERE id = $1', [id('dataset008'), id('named-eight')]);
+        await db.query('UPDATE datasets SET name = $2 WHERE id = $1', [id('dataset009'), id('named-nine')]);
     });
     afterAll(async () => {
         jest.restoreAllMocks();
@@ -58,14 +66,28 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         const listed = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         // The PDF, the CSV CanQuery could prepare, the unpinned copy, the map, the pin without a copy and the orphan stay out.
         expect(mine(listed)).toEqual([2, 5, 7].map(n => id('resource' + n)));
-        expect(listed.find(row => row.id === id('resource2')).lastmod.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+        // A page is dated by its record, or by the pinned copy that made it indexable when that is newer:
+        // the later of the pin and the copy. An unpinned copy (resource7's) and a pin without a copy do not count.
+        const date = (rows, key) => rows.find(row => row.id === id(key)).lastmod.toISOString();
+        expect(date(listed, 'resource2')).toBe('2026-08-01T00:00:00.000Z');
+        expect(date(listed, 'resource5')).toBe('2026-09-12T00:00:00.000Z');
+        expect(date(listed, 'resource7')).toBe('2026-08-01T00:00:00.000Z');
+        const datasetRows = await queries.listDatasetSitemap({ limit: 25000, offset: 0, ids }, db);
+        expect(date(datasetRows, 'dataset002')).toBe('2026-08-01T00:00:00.000Z');
+        expect(date(datasetRows, 'dataset005')).toBe('2026-09-12T00:00:00.000Z');
+        expect(date(datasetRows, 'dataset008')).toBe('2026-08-01T00:00:00.000Z');
+        // A dataset is always indexable by its id, never because its name is in the list.
+        expect(datasetRows.find(row => row.id === id('dataset008')).name).toBe(id('named-eight'));
+        expect(datasets).not.toContain(id('dataset009'));
 
         for (let n = 0; n <= 7; n++) {
-            const row = await queries.getResourceById(id('resource' + n), db);
+            // The page's read asks for the pin; the read the workers share does not carry it.
+            const row = await queries.getResourceById(id('resource' + n), db, { pinned: true });
             expect([n, typeof row.pinned]).toEqual([n, 'boolean']);
+            expect('pinned' in await queries.getResourceById(id('resource' + n), db)).toBe(false);
             expect([n, indexPolicy.isIndexableResource(row)]).toEqual([n, mine(listed).includes(row.id)]);
         }
-        for (const n of ['000', '001', '002', '003', '004', '005', '006', '007', '008', '050']) {
+        for (const n of ['000', '001', '002', '003', '004', '005', '006', '007', '008', '009', '050']) {
             const files = await queries.listResourcesForDataset(id('dataset' + n), db);
             expect([n, indexPolicy.isIndexableDataset({ id: id('dataset' + n) }, files)]).toEqual([n, datasets.includes(id('dataset' + n))]);
         }
@@ -145,7 +167,7 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
                 ('2099-03-03', 'web', 'page', $13, 0, 6, 0, 7.0)`,
                 [page('resource0'), page('resource1'), page('stale'), page('blank'), page('newer'), page('orphan'),
                     page('resource0') + '?view=table', id('resource0'), page('resource4') + '?view=map',
-                    datasetPage('dataset000'), datasetPage('dataset001') + '?page=2', datasetPage('dataset002'), datasetPage('dataset003')]);
+                    datasetPage('dataset000'), datasetPage('named-one') + '?page=2', datasetPage('dataset002'), datasetPage('dataset003')]);
             const since = '2026-10-17T04:41:02Z';
             const list = async days => Object.fromEntries((await queries.listNoindexResourceSitemap(
                 { pagePrefix: 'https://canquery.com/resources/', days, since, limit: 1000 }, db))
@@ -166,8 +188,9 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
                 { pagePrefix: 'https://canquery.com/resources/', days: 28, since: policySince, limit: 1000, scope: 'policy' }, db))
                 .filter(row => row.id.startsWith(prefix)).map(row => [row.id, row.lastmod.toISOString()]));
             expect(policy).toEqual({ [id('resource1')]: '2026-11-01T00:00:00.000Z', [id('resource4')]: '2026-11-01T00:00:00.000Z' });
-            // Dataset pages: by the name in the address, with or without a query string. The dataset with a live
-            // table is indexable, and dataset003 was last shown outside the window.
+            // Dataset pages: by the name in the address (dataset001's differs from its id) or by the id, with or
+            // without a query string. The dataset with a live table is indexable, and dataset003 was last shown
+            // outside the window.
             const shownDatasets = await queries.listShownNoindexDatasets(
                 { ids, pagePrefix: 'https://canquery.com/datasets/', days: 28, since: policySince, limit: 1000 }, db);
             expect(Object.fromEntries(shownDatasets.filter(row => row.id.startsWith(prefix)).map(row => [row.id, row.lastmod.toISOString()])))
@@ -205,14 +228,19 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
     test('reads the changed indexable dataset and resource pages in a window', async () => {
         const window = (since, until) => queries.listChangedSitemapPages({ since: new Date(since), until: new Date(until), limit: 1000, ids }, db);
         const changed = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z');
-        // All 101 fixture datasets changed in the window; only the indexable ones are sent to IndexNow.
-        expect(mine(changed.datasets).sort()).toEqual(['002', '005', '007', '008'].map(n => id('dataset' + n)));
-        expect(mine(changed.resources)).toEqual([2, 5, 7].map(n => id('resource' + n)));
+        // All 101 fixture datasets changed in the window; only the indexable ones are sent to IndexNow, and
+        // the page a pin made indexable in September is not among them.
+        expect(mine(changed.datasets).sort()).toEqual(['002', '007', '008'].map(n => id('dataset' + n)));
+        expect(mine(changed.resources)).toEqual([2, 7].map(n => id('resource' + n)));
+        // It is sent in the window that holds the day its copy was ready, though its record did not change.
+        const pinned = await window('2026-09-11T00:00:00Z', '2026-09-12T00:00:00Z');
+        expect(mine(pinned.datasets)).toEqual([id('dataset005')]);
+        expect(mine(pinned.resources)).toEqual([id('resource5')]);
         // The window's start is exclusive and its end inclusive.
         const later = await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z');
         expect(mine(later.datasets)).toHaveLength(0);
         const ending = await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z');
-        expect(mine(ending.datasets)).toHaveLength(4);
+        expect(mine(ending.datasets)).toHaveLength(3);
     });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);

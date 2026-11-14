@@ -78,7 +78,9 @@ describe('index policy - the date pages turned noindex', () => {
         expect(policy.POLICY_RECRAWL_DAYS).toBe(90);
     });
 
-    test.each(['tomorrow', '2026-12-01', '2026-12-01T05:00:00', '2026-12-01T05:00:00+00:00', '2026-13-40T05:00:00Z', '1'])(
+    // The last three do not exist: JavaScript would roll them over, PostgreSQL would refuse them in every read.
+    test.each(['tomorrow', '2026-12-01', '2026-12-01T05:00:00', '2026-12-01T05:00:00+00:00', '2026-13-40T05:00:00Z', '1',
+        '2026-11-31T00:00:00Z', '2026-02-30T10:00:00Z', '2026-11-30T24:00:00Z'])(
         'refuses %s instead of dating the recrawl sitemaps wrongly', value => {
             expect(() => policy.policySince(value)).toThrow('INDEX_POLICY_SINCE must be a UTC time');
         });

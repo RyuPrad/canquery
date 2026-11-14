@@ -110,5 +110,27 @@ function indexableDataset(idsParam) {
         SELECT unnest(${idsParam}::text[]))`;
 }
 
+// When an indexable page last changed for a crawler: the record's own change,
+// or the moment a pinned prepared copy made the page indexable (the pin, or the
+// copy it waited for). A page that turns indexable would otherwise keep an old
+// date, and a crawler that last saw it noindex would have no reason to return.
+// The joins read the few pinned copies once; `r` and `d` are the caller's rows.
+const RESOURCE_PIN_JOIN = `LEFT JOIN (
+        SELECT pc.resource_id, GREATEST(pc.created_at, pi.ingested_at) AS changed
+        FROM pinned_resources pc
+        JOIN ingested_resources pi ON pi.resource_id = pc.resource_id AND pi.status = 'ready'
+    ) pin ON pin.resource_id = r.id`;
+const DATASET_PIN_JOIN = `LEFT JOIN (
+        SELECT pr.dataset_id, max(GREATEST(pc.created_at, pi.ingested_at)) AS changed
+        FROM pinned_resources pc
+        JOIN ingested_resources pi ON pi.resource_id = pc.resource_id AND pi.status = 'ready'
+        JOIN resources pr ON pr.id = pc.resource_id
+        GROUP BY pr.dataset_id
+    ) pin ON pin.dataset_id = d.id`;
+// A file's own publisher-reported change when recorded, else its dataset
+// record's; never in the future.
+const RESOURCE_LASTMOD = 'LEAST(GREATEST(COALESCE(r.last_modified, d.metadata_modified), pin.changed), now())';
+const DATASET_LASTMOD = 'GREATEST(d.metadata_modified, pin.changed)';
+
 module.exports = { LEVELS, listParam, upper, selectedPlaceCte, levelFromKinds, DATASET_LEVEL, HAS_TABLE, HAS_MAP, match, dataBearingResource,
-    INDEXABLE_RESOURCE, indexableDataset };
+    INDEXABLE_RESOURCE, indexableDataset, RESOURCE_PIN_JOIN, DATASET_PIN_JOIN, RESOURCE_LASTMOD, DATASET_LASTMOD };

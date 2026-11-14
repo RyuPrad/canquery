@@ -41,6 +41,17 @@ const expectIndexableDataset = (sql, idsParam) => {
     expect(sql).toContain('JOIN pinned_resources tp ON tp.resource_id = ti.resource_id');
     expect(sql).toContain('SELECT unnest(' + idsParam + '::text[])');
 };
+// The pinned copy that made a page indexable, read once for the statement.
+const expectResourcePinDate = sql => {
+    expect(sql).toContain('SELECT pc.resource_id, GREATEST(pc.created_at, pi.ingested_at) AS changed');
+    expect(sql).toContain("JOIN ingested_resources pi ON pi.resource_id = pc.resource_id AND pi.status = 'ready'");
+    expect(sql).toContain(') pin ON pin.resource_id = r.id');
+};
+const expectDatasetPinDate = sql => {
+    expect(sql).toContain('SELECT pr.dataset_id, max(GREATEST(pc.created_at, pi.ingested_at)) AS changed');
+    expect(sql).toContain("JOIN ingested_resources pi ON pi.resource_id = pc.resource_id AND pi.status = 'ready'");
+    expect(sql).toContain(') pin ON pin.dataset_id = d.id');
+};
 const NOINDEX_LASTMOD = param => 'LEAST(GREATEST(COALESCE(r.last_modified, d.metadata_modified, ' + param + '::timestamptz), ' +
     param + '::timestamptz), now()) AS lastmod';
 
@@ -60,7 +71,9 @@ describe('resource sitemap queries', () => {
         await expect(queries.listResourceSitemap({ limit: 25000, offset: 50000 })).resolves.toEqual(rows);
         const [sql, params] = pool.query.mock.calls[1];
         expectIndexableResource(sql);
-        expect(sql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod');
+        // Dated by its own change, or by the pinned copy that made the page indexable when that is newer.
+        expectResourcePinDate(sql);
+        expect(sql).toContain('LEAST(GREATEST(COALESCE(r.last_modified, d.metadata_modified), pin.changed), now()) AS lastmod');
         expect(sql).toContain('ORDER BY r.id LIMIT $1 OFFSET $2');
         expect(params).toEqual([25000, 50000]);
     });
@@ -79,6 +92,8 @@ describe('resource sitemap queries', () => {
         await expect(queries.listDatasetSitemap({ limit: 25000, offset: 0, ids: ['d9'] })).resolves.toEqual(rows);
         const [sql, params] = pool.query.mock.calls[2];
         expectIndexableDataset(sql, '$3');
+        expectDatasetPinDate(sql);
+        expect(sql).toContain('GREATEST(d.metadata_modified, pin.changed) AS lastmod');
         expect(sql).toContain('ORDER BY d.id LIMIT $1 OFFSET $2');
         expect(params).toEqual([25000, 0, ['d9']]);
     });
@@ -89,13 +104,17 @@ describe('resource sitemap queries', () => {
         const [sql, params] = pool.query.mock.calls[0];
         expectIndexableResource(sql);
         expect(sql).toContain('(row_number() OVER (ORDER BY r.id) - 1) / $1 + 1 AS chunk');
-        expect(sql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod');
+        // A chunk is dated like its entries.
+        expectResourcePinDate(sql);
+        expect(sql).toContain('LEAST(GREATEST(COALESCE(r.last_modified, d.metadata_modified), pin.changed), now()) AS lastmod');
         expect(params).toEqual([25000]);
 
         await queries.listDatasetSitemapChunkLastmods({ pageSize: 25000, ids: ['d9'] });
         const [datasetSql, datasetParams] = pool.query.mock.calls[1];
         expect(datasetSql).toContain('(row_number() OVER (ORDER BY d.id) - 1) / $1 + 1 AS chunk');
         expect(datasetSql).toContain('max(lastmod) AS lastmod');
+        expectDatasetPinDate(datasetSql);
+        expect(datasetSql).toContain('GREATEST(d.metadata_modified, pin.changed) AS lastmod');
         // The chunks are numbered over the same pages the chunk files list.
         expectIndexableDataset(datasetSql, '$2');
         expect(datasetParams).toEqual([25000, ['d9']]);
@@ -108,12 +127,15 @@ describe('resource sitemap queries', () => {
         await expect(queries.listChangedSitemapPages({ since, until, limit: 50001, ids: ['d9'] }))
             .resolves.toEqual({ datasets: [{ id: 'd1', name: 'roads' }], resources: [{ id: 'r1' }] });
         const [datasetSql, datasetParams] = pool.query.mock.calls[0];
-        expect(datasetSql).toContain('d.metadata_modified > $1 AND d.metadata_modified <= $2');
+        // The window is over the date the sitemap entry carries, so a page a new pin made indexable is sent.
+        expectDatasetPinDate(datasetSql);
+        expect(datasetSql).toContain('GREATEST(d.metadata_modified, pin.changed) > $1 AND GREATEST(d.metadata_modified, pin.changed) <= $2');
         expectIndexableDataset(datasetSql, '$4');
         expect(datasetParams).toEqual([since, until, 50001, ['d9']]);
         const [resourceSql, resourceParams] = pool.query.mock.calls[1];
         expectIndexableResource(resourceSql);
-        expect(resourceSql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $1');
+        expectResourcePinDate(resourceSql);
+        expect(resourceSql).toContain('LEAST(GREATEST(COALESCE(r.last_modified, d.metadata_modified), pin.changed), now()) > $1');
         expect(resourceParams).toEqual([since, until, 50001]);
     });
 
@@ -186,13 +208,17 @@ describe('resource sitemap queries', () => {
         expect(params).toEqual([['d9'], 'https://canquery.com/datasets/', 28, '2026-11-16T07:59:59Z', 50000]);
     });
 
-    it('reads whether a prepared copy is pinned with a file, for the index policy', async () => {
+    it('reads whether a prepared copy is pinned for the pages, and never in the read the workers share', async () => {
         pool.query.mockResolvedValue({ rows: [] });
+        const pinned = 'EXISTS (SELECT 1 FROM pinned_resources pin WHERE pin.resource_id = r.id) AS pinned';
         await queries.listResourcesForDataset('d1');
+        expect(pool.query.mock.calls[0][0]).toContain(pinned);
+        await queries.getResourceById('r1', pool, { pinned: true });
+        expect(pool.query.mock.calls[1][0]).toContain(pinned);
+        // The map worker reads resources through this function and its role cannot read pins.
         await queries.getResourceById('r1', pool);
-        for (const [sql] of pool.query.mock.calls) {
-            expect(sql).toContain('EXISTS (SELECT 1 FROM pinned_resources pin WHERE pin.resource_id = r.id) AS pinned');
-        }
+        await queries.getResourceById('r1', pool, {});
+        for (const [sql] of pool.query.mock.calls.slice(2)) expect(sql).not.toContain('pinned_resources');
     });
 
     it('reads the newest catalogue change for sitemap dates', async () => {

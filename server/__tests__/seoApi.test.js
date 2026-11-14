@@ -49,10 +49,13 @@ const { serveSpa, resolvePage, resolveMeta, injectAnalytics } = require('../cont
 const { resetSitemapCache } = require('../controllers/sitemapController');
 const catalogReadCache = require('../services/catalogReadCache');
 const { listArticles } = require('../services/blogContent');
-const { alwaysIndexableDatasetIds, POLICY_SINCE } = require('../services/indexPolicy');
+const { alwaysIndexableDatasetIds, policySince } = require('../services/indexPolicy');
 
-// The recrawl files of the index policy last 90 days from POLICY_SINCE; tests
-// that depend on the window set the clock instead of trusting today's date.
+// The recrawl files of the index policy last 90 days from the policy's date
+// (the one the controller read at load, INDEX_POLICY_SINCE included). Every
+// sitemap test sets the clock instead of trusting today's date: after those 90
+// days the same requests read different lists.
+const POLICY_SINCE = policySince();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const atPolicyDay = async (day, run) => {
     const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(POLICY_SINCE) + day * DAY_MS);
@@ -61,6 +64,12 @@ const atPolicyDay = async (day, run) => {
     } finally {
         clock.mockRestore();
     }
+};
+// For a describe block: every test runs on the policy's first day.
+const onPolicyDayOne = () => {
+    let clock;
+    beforeEach(() => { clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(POLICY_SINCE) + DAY_MS); });
+    afterEach(() => clock.mockRestore());
 };
 
 beforeEach(() => {
@@ -120,6 +129,7 @@ describe('robots.txt', () => {
 });
 
 describe('sitemap index', () => {
+    onPolicyDayOne();
     const noRows = () => {
         catalogRead.listDatasetSitemapChunkLastmods.mockResolvedValue([]);
         catalogRead.listResourceSitemapChunkLastmods.mockResolvedValue([]);
@@ -229,6 +239,34 @@ describe('sitemap index', () => {
         }
     });
 
+    it('does not keep an index built without a recrawl list: the files are back as soon as the list reads again', async () => {
+        noRows();
+        catalogRead.countSitemapDatasets.mockResolvedValue(10);
+        catalogRead.countSitemapResources.mockResolvedValue(10);
+        catalogRead.getCatalogLastModified.mockResolvedValue('2026-10-01T00:00:00Z');
+        catalogRead.listPolicyNoindexResources.mockResolvedValue([{ id: 'r1', lastmod: '2026-11-17T00:00:00Z' }]);
+        catalogRead.listPolicyNoindexDatasets.mockRejectedValueOnce(new Error('private database detail'))
+            .mockResolvedValue([{ id: 'd1', name: 'roads', lastmod: '2026-11-17T00:00:00Z' }]);
+        const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const first = await request(app).get('/sitemap.xml');
+            expect(first.status).toBe(200);
+            expect(first.text).not.toContain('sitemap-noindex-datasets-1.xml');
+            expect(first.text).toContain('sitemap-noindex-resources-1.xml');
+            // Not held for an hour by a crawler or a cache in front either.
+            expect(first.headers['cache-control']).toBe('public, max-age=60');
+            const second = await request(app).get('/sitemap.xml');
+            expect(second.text).toContain('<loc>https://canquery.com/sitemap-noindex-datasets-1.xml</loc>');
+            expect(second.headers['cache-control']).toBe('public, max-age=3600');
+            // A complete index is kept: the third request reads nothing.
+            const reads = catalogRead.countSitemapDatasets.mock.calls.length;
+            expect((await request(app).get('/sitemap.xml')).text).toBe(second.text);
+            expect(catalogRead.countSitemapDatasets).toHaveBeenCalledTimes(reads);
+        } finally {
+            log.mockRestore();
+        }
+    });
+
     it('tells crawlers to retry when the catalogue cannot be read, without leaking the error', async () => {
         catalogRead.countSitemapDatasets.mockResolvedValue(10);
         catalogRead.countSitemapResources.mockRejectedValue(new Error('private database detail'));
@@ -288,8 +326,8 @@ describe('analytics configuration injection', () => {
 describe('dataset sitemap chunk', () => {
     it('emits a url per dataset using its slug + lastmod, id as fallback', async () => {
         catalogRead.listDatasetSitemap.mockResolvedValue([
-            { id: 'd1', name: 'water-quality', metadata_modified: '2026-01-02T00:00:00Z' },
-            { id: 'd2', name: null, metadata_modified: null },
+            { id: 'd1', name: 'water-quality', lastmod: '2026-01-02T00:00:00Z' },
+            { id: 'd2', name: null, lastmod: null },
         ]);
         const res = await request(app).get('/sitemap-datasets-1.xml');
         expect(res.status).toBe(200);
@@ -300,7 +338,7 @@ describe('dataset sitemap chunk', () => {
     });
 
     it('computes the offset from the chunk number', async () => {
-        catalogRead.listDatasetSitemap.mockResolvedValue([{ id: 'd9', name: 'x', metadata_modified: null }]);
+        catalogRead.listDatasetSitemap.mockResolvedValue([{ id: 'd9', name: 'x', lastmod: null }]);
         await request(app).get('/sitemap-datasets-3.xml');
         expect(catalogRead.listDatasetSitemap).toHaveBeenCalledWith({ limit: 25000, offset: 50000, ids: alwaysIndexableDatasetIds() });
     });
@@ -361,6 +399,7 @@ describe('resource sitemap chunk', () => {
 });
 
 describe('noindex resource sitemap', () => {
+    onPolicyDayOne();
     it('lists the noindex resource pages Google still shows with the date their pages changed', async () => {
         catalogRead.listNoindexResourceSitemap.mockResolvedValue([
             { id: 'r1', lastmod: '2026-10-17T04:41:02Z' }, { id: 'r/2', lastmod: '2026-10-21T08:00:00Z' }]);
@@ -475,6 +514,37 @@ describe('recrawl sitemaps of the index policy', () => {
             log.mockRestore();
         }
     }));
+
+    it('keeps serving the numbered files for two hours after the index stops naming them', async () => {
+        const rows = () => {
+            totals();
+            catalogRead.listPolicyNoindexDatasets.mockResolvedValue(pages(3, 'd', '2026-11-16T07:59:59Z'));
+            catalogRead.listPolicyNoindexResources.mockResolvedValue(pages(3, 'r', '2026-11-16T07:59:59Z'));
+        };
+        // One minute before the end: listed and served.
+        await atPolicyDay(90 - 1 / 1440, async () => {
+            rows();
+            expect((await request(app).get('/sitemap.xml')).text).toContain('sitemap-noindex-datasets-1.xml');
+            expect((await request(app).get('/sitemap-noindex-datasets-1.xml')).status).toBe(200);
+        });
+        // An hour after the end, with every cache expired: an index built before the end may still be
+        // in a crawler's hands, so the files answer, though a new index no longer names them.
+        resetSitemapCache();
+        await atPolicyDay(90 + 1 / 24, async () => {
+            rows();
+            const index = (await request(app).get('/sitemap.xml')).text;
+            expect(index).not.toContain('sitemap-noindex-datasets-1.xml');
+            expect(index).not.toContain('sitemap-noindex-resources-1.xml');
+            expect((await request(app).get('/sitemap-noindex-datasets-1.xml')).status).toBe(200);
+            expect((await request(app).get('/sitemap-noindex-resources-1.xml')).status).toBe(200);
+        });
+        resetSitemapCache();
+        await atPolicyDay(90 + 3 / 24, async () => {
+            rows();
+            expect((await request(app).get('/sitemap-noindex-datasets-1.xml')).status).toBe(404);
+            expect((await request(app).get('/sitemap-noindex-resources-1.xml')).status).toBe(404);
+        });
+    });
 
     it('ends the numbered files after 90 days and lists the pages Google still shows instead', async () => atPolicyDay(91, async () => {
         totals();
@@ -692,10 +762,13 @@ describe('resolvePage crawl responses', () => {
     it('keeps file pages out of the index unless they carry a live table or a pinned prepared copy', async () => {
         const base = { id: 'r1', name_en: 'Report', dataset_id: 'd1', dataset_name: 'limits', dataset_title_en: 'Limits',
             url: 'https://example.test/report.pdf', places: [] };
-        const resolve = resource => resolvePage('/resources/r1', { getResourceById: jest.fn().mockResolvedValue(resource) });
+        const read = jest.fn();
+        const resolve = resource => resolvePage('/resources/r1', { getResourceById: read.mockResolvedValue(resource) });
         const pdf = await resolve({ ...base, format: 'PDF' });
         expect(pdf.status).toBe(200);
         expect(pdf.meta.noindex).toBe(true);
+        // Only the page asks for the pin: the shared read leaves it out for the workers.
+        expect(read).toHaveBeenCalledWith('r1', undefined, { pinned: true });
         expect(pdf.meta.canonical).toBe('https://canquery.com/resources/r1');
         expect(pdf.body).toContain('href="https://example.test/report.pdf"');
         // A file CanQuery could prepare, a map and a copy that eviction may take stay usable and noindex.

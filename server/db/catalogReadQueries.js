@@ -1,7 +1,8 @@
 const { searchExpression, literalPatterns } = require('../services/localSearch');
 const pool = require('./pool');
 const catalogReadCache = require('../services/catalogReadCache');
-const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match, dataBearingResource, INDEXABLE_RESOURCE, indexableDataset } = require('./catalogSqlFragments');
+const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match, dataBearingResource, INDEXABLE_RESOURCE, indexableDataset,
+    RESOURCE_PIN_JOIN, DATASET_PIN_JOIN, RESOURCE_LASTMOD, DATASET_LASTMOD } = require('./catalogSqlFragments');
 const { ingestLimits } = require('../config/ingest');
 
 function cachedRows(name, sql, values, db) {
@@ -247,7 +248,8 @@ const RESOURCE_NAME_KEY = alias => `lower(btrim(coalesce(nullif(btrim(${alias}.n
 const SAME_NAME_PARTITION = `${RESOURCE_NAME_KEY('r')}, upper(coalesce(r.format, '')), coalesce(r.language, '')`;
 
 // A pinned prepared copy is kept through eviction, which is what lets its page
-// be indexed (services/indexPolicy.js).
+// be indexed (services/indexPolicy.js). Only the API and the ingest worker may
+// read pins: a statement that names the table fails for the map worker.
 const PINNED = 'EXISTS (SELECT 1 FROM pinned_resources pin WHERE pin.resource_id = r.id)';
 
 async function listResourcesForDataset(datasetId, db = pool) {
@@ -280,7 +282,10 @@ async function listResourcesForDataset(datasetId, db = pool) {
     return result.rows;
 }
 
-async function getResourceById(id, db = require('./snapshotRead').snapshotDb()) {
+// `pinned: true` adds whether the resource is pinned, for the page that decides
+// its indexability. The workers read resources through this function too, and
+// the map worker's role cannot read pins, so it is never read unasked.
+async function getResourceById(id, db = require('./snapshotRead').snapshotDb(), { pinned = false } = {}) {
     const result = await db.query(`
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
@@ -294,7 +299,7 @@ async function getResourceById(id, db = require('./snapshotRead').snapshotDb()) 
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
                ir.byte_size AS ingested_byte_size, ir.columns AS ingested_columns,
                ir.ingested_at, ir.last_accessed_at, ir.source_version AS ingested_source_version,
-               ${PINNED} AS pinned,
+               ${pinned ? PINNED + ' AS pinned,' : ''}
                (SELECT jsonb_build_object('id', j.id, 'status', j.status, 'source_version', j.source_version, 'retry_at', j.retry_at, 'failure_code', j.failure_code)
                 FROM ingest_jobs j WHERE j.resource_id = r.id
                 ORDER BY (j.status IN ('pending','running')) DESC, j.id DESC LIMIT 1) AS preparation_job,
@@ -647,9 +652,12 @@ async function countSitemapDatasets({ ids = [] } = {}, db = pool) {
     return result.rows[0].n;
 }
 
+// An entry is dated by its record's change, or by the pinned copy that made the
+// page indexable when that is newer (catalogSqlFragments.js).
 async function listDatasetSitemap({ limit, offset, ids = [] }, db = pool) {
     const result = await db.query(`
-        SELECT d.id, d.name, d.metadata_modified FROM datasets d
+        SELECT d.id, d.name, ${DATASET_LASTMOD} AS lastmod FROM datasets d
+        ${DATASET_PIN_JOIN}
         WHERE ${indexableDataset('$3')}
         ORDER BY d.id LIMIT $1 OFFSET $2
     `, [limit, offset, ids]);
@@ -665,11 +673,13 @@ async function countSitemapResources(db = pool) {
 }
 
 // lastmod is the file's own publisher-reported change when recorded, else the
-// dataset record's; a future-dated value is clamped to now.
+// dataset record's, or the pinned copy that made the page indexable when that
+// is newer; a future-dated value is clamped to now.
 async function listResourceSitemap({ limit, offset }, db = pool) {
     const result = await db.query(`
-        SELECT r.id, LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod FROM resources r
+        SELECT r.id, ${RESOURCE_LASTMOD} AS lastmod FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
+        ${RESOURCE_PIN_JOIN}
         WHERE ${INDEXABLE_RESOURCE}
         ORDER BY r.id LIMIT $1 OFFSET $2
     `, [limit, offset]);
@@ -750,9 +760,9 @@ async function listNoindexResourceSitemap({ pagePrefix, days, since, limit, scop
     return result.rows;
 }
 
-// A dataset page's address carries its name, or its id when it has none; the
-// name is matched as stored, so one that the address encodes differently is
-// missed.
+// A dataset page's address carries its name, and a visit by id redirects to
+// it; both are matched. The name is matched as stored, so one that the address
+// encodes differently is missed.
 async function listShownNoindexDatasets({ ids = [], pagePrefix, days, since, limit }, db = pool) {
     const result = await db.query(`
         WITH ${shownPages('$2', '$3')}
@@ -770,8 +780,9 @@ async function listShownNoindexDatasets({ ids = [], pagePrefix, days, since, lim
 async function listDatasetSitemapChunkLastmods({ pageSize, ids = [] }, db = pool) {
     const result = await db.query(`
         SELECT chunk::int AS chunk, max(lastmod) AS lastmod FROM (
-            SELECT (row_number() OVER (ORDER BY d.id) - 1) / $1 + 1 AS chunk, d.metadata_modified AS lastmod
+            SELECT (row_number() OVER (ORDER BY d.id) - 1) / $1 + 1 AS chunk, ${DATASET_LASTMOD} AS lastmod
             FROM datasets d
+            ${DATASET_PIN_JOIN}
             WHERE ${indexableDataset('$2')}
         ) chunks GROUP BY chunk ORDER BY chunk
     `, [pageSize, ids]);
@@ -781,30 +792,32 @@ async function listDatasetSitemapChunkLastmods({ pageSize, ids = [] }, db = pool
 async function listResourceSitemapChunkLastmods(pageSize, db = pool) {
     const result = await db.query(`
         SELECT chunk::int AS chunk, max(lastmod) AS lastmod FROM (
-            SELECT (row_number() OVER (ORDER BY r.id) - 1) / $1 + 1 AS chunk,
-                   LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod
+            SELECT (row_number() OVER (ORDER BY r.id) - 1) / $1 + 1 AS chunk, ${RESOURCE_LASTMOD} AS lastmod
             FROM resources r JOIN datasets d ON d.id = r.dataset_id
+            ${RESOURCE_PIN_JOIN}
             WHERE ${INDEXABLE_RESOURCE}
         ) chunks GROUP BY chunk ORDER BY chunk
     `, [pageSize]);
     return result.rows;
 }
 
-// Pages whose sitemap entry changed in (since, until], for IndexNow: indexable
-// datasets by their record change and indexable resources by the date their
-// sitemap entry carries.
+// Pages whose sitemap entry changed in (since, until], for IndexNow: the
+// indexable datasets and resources, by the date their sitemap entry carries, so
+// a page a new pin made indexable is sent too.
 async function listChangedSitemapPages({ since, until, limit, ids = [] }, db = pool) {
     const datasets = await db.query(`
         SELECT d.id, d.name FROM datasets d
-        WHERE d.metadata_modified > $1 AND d.metadata_modified <= $2
+        ${DATASET_PIN_JOIN}
+        WHERE ${DATASET_LASTMOD} > $1 AND ${DATASET_LASTMOD} <= $2
           AND ${indexableDataset('$4')}
-        ORDER BY d.metadata_modified, d.id LIMIT $3
+        ORDER BY ${DATASET_LASTMOD}, d.id LIMIT $3
     `, [since, until, limit, ids]);
     const resources = await db.query(`
         SELECT r.id FROM resources r JOIN datasets d ON d.id = r.dataset_id
+        ${RESOURCE_PIN_JOIN}
         WHERE ${INDEXABLE_RESOURCE}
-          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $1
-          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) <= $2
+          AND ${RESOURCE_LASTMOD} > $1
+          AND ${RESOURCE_LASTMOD} <= $2
         ORDER BY r.id LIMIT $3
     `, [since, until, limit]);
     return { datasets: datasets.rows, resources: resources.rows };

@@ -4,6 +4,9 @@ This release keeps developer and website API responses crawlable for rendering
 while returning `X-Robots-Tag: noindex`. An unprepared CSV export still returns
 409; it does not enqueue preparation for a crawler. Browser CSV exports carry
 `rel="nofollow"`. Public resource pages remain self-canonical and indexable.
+(Since November 2026 only resource and dataset pages with a table are
+indexable: see "Index policy" below, which replaces what this section and
+"Crawl focus" say about which pages are indexed and listed.)
 
 Recognized English/French download boilerplate uses the parent dataset subject
 in resource presentation, metadata, breadcrumbs and structured data. File
@@ -65,7 +68,9 @@ dates are finalized; account for other releases and recrawling lag.
 
 ## Crawl focus (October 2026)
 
-The resource sitemaps list only data-bearing resource pages: a live DataStore
+Which pages are indexable and listed changed again in November 2026; see
+"Index policy" below. At this release, the resource sitemaps listed only
+data-bearing resource pages: a live DataStore
 table, a prepared copy, a map, or a CSV/XLSX/XLS file CanQuery can prepare
 within its configured caps (`dataBearingResource` in
 `server/db/catalogSqlFragments.js`, sharing its caps with the capability
@@ -117,7 +122,10 @@ the two in step: `server/services/indexPolicy.js` for the pages, and
 organization pages keep their own rule.
 
 The regular sitemaps (`/sitemap-datasets-N.xml`, `/sitemap-resources-N.xml`)
-and the daily IndexNow submission list only indexable pages. A noindex tag
+and the daily IndexNow submission list only indexable pages. An entry is dated
+by its record's change, or by the pinned copy that made the page indexable when
+that is newer, so a page a new pin brings into the index is fetched again. A
+noindex tag
 takes effect only when a crawler fetches the page again, so for 90 days from
 the policy's date every page it turned noindex is listed in recrawl files,
 dated by the change: `/sitemap-noindex-datasets-N.xml` and
@@ -136,6 +144,15 @@ recrawl files date their pages by the time they are built; once it has passed
 they carry it. A release that goes out after the built-in date sets the
 variable to its promotion time, and so does another deployment adopting the
 policy.
+
+Known limits. A page that stops being indexable after the policy's date (a
+publisher withdraws its live table, a pin is removed) is listed in the recrawl
+files dated by the policy, which can be older than a crawler's last visit: it
+is dropped at that crawler's next visit of its own. When a guide is published
+for a dataset without a table, its dataset page turns indexable with its old
+date: request indexing for it by hand. Only the API reads pins for a page
+(`getResourceById(id, db, { pinned: true })`); the map worker's role cannot
+read `pinned_resources`, so the shared read never names it unasked.
 
 After promotion, resubmit `https://canquery.com/sitemap.xml` once and submit
 none of the noindex files. In Search Console, "Excluded by noindex" and
