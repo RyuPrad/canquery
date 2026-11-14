@@ -194,4 +194,4 @@ async function touchLastAccessed(resourceId, tableName) {
 }
 
 module.exports = { queryStoreTable, readStoreRows, matchingRowHashes, readStoreRowsByIds, touchLastAccessed, TABLE_NAME_RE,
-    aggregateStoreTable, profileStoreTable };
+    aggregateStoreTable, profileStoreTable, buildWhereAndParams };

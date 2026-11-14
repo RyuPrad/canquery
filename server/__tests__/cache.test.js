@@ -112,4 +112,25 @@ describe('createCache refresh', () => {
         await expect(cache.get('k', async () => 'unused')).resolves.toBe('first');
         expect(cache.stats().size).toBe(1);
     });
+
+    it('peeks at a fresh value without computing, waiting, or counting a hit', async () => {
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(0);
+        try {
+            const cache = createCache({ name: 'peek', ttlMs: 1000, negativeTtlMs: 1000, maxEntries: 2 });
+            expect(cache.peek('a')).toBeUndefined();
+            let release;
+            const pending = cache.get('a', () => new Promise(resolve => { release = resolve; }));
+            // The work starts on the next tick; in flight, it is not there yet.
+            while (!release) await Promise.resolve();
+            expect(cache.peek('a')).toBeUndefined();
+            release('value');
+            await pending;
+            expect(cache.peek('a')).toBe('value');
+            expect(cache.stats().hits).toBe(0);
+            clock.mockReturnValue(1001);
+            expect(cache.peek('a')).toBeUndefined();
+        } finally {
+            clock.mockRestore();
+        }
+    });
 });

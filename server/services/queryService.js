@@ -291,4 +291,4 @@ async function recordResourceActivity(id) {
 }
 
 module.exports = { queryResource, queryResourceForExport, readSnapshotRows, profileResource, datastoreTarget,
-    recordResourceActivity, planQuery, queryLimits };
+    recordResourceActivity, planQuery, queryLimits, withResource, resultContext, validateQueryText, asInputError };
