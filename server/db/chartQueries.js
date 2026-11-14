@@ -164,8 +164,16 @@ function buildBatchSql({ tableName, where, scope = null, excluded = [], totals =
     // as groups are, so the rows are exactly those of the group the set found.
     const scoped = scope && Array.isArray(scope.keys) ? ' WHERE ' + fold(keyOf(scope.key)) + ' = ANY(' + param(scope.keys) + '::text[])' : '';
 
-    // Rows that add other rows up are counted apart, in every set.
-    const totalParts = totals.map(total => 'coalesce(' + fold(groupKey(total.column)) + ' = ANY(' + foldAll(total.labels) + '), false)');
+    // Rows that add other rows up are counted apart, in every set. Folding a
+    // long text cell costs more than everything else a row goes through, so
+    // the spellings that are one of the labels are found once, among the
+    // column's distinct values, and each row is compared with those as stored.
+    const totalParts = totals.map(total => {
+        const raw = total.column.type === 'TEXT' ? 'left(' + quoteIdent(total.column.id) + ', ' + KEY_CUT + ')' : quoteIdent(total.column.id) + '::text';
+        const spellings = 'ARRAY(SELECT v FROM (SELECT DISTINCT ' + raw + ' AS v FROM ' + tableOf(tableName) + ') d WHERE ' + fold('v') +
+            ' = ANY(' + foldAll(total.labels) + '))';
+        return 'coalesce(' + groupKey(total.column) + ' = ANY(' + spellings + '), false)';
+    });
     const live = totalParts.length ? ' FILTER (WHERE NOT x)' : '';
     const and = totalParts.length ? ' AND NOT x' : '';
 

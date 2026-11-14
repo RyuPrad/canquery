@@ -769,6 +769,30 @@ describe('fourth reading: tables the rules had never seen', () => {
         expect(line.notes.map(note => note.code)).not.toContain('placeholders_left_out');
     });
 
+    test('a name that is nearly every row\'s own in a large table is not ranked', async () => {
+        const rows = range(60).map(i => ['21 ' + (126000 + i) + ' BLD', ['House', 'Apartment', 'Store'][i % 3], String(1000 + scatter(i, 900000))]);
+        const { model } = await read(table([text('Permit'), text('Structure'), integer('Estimated construction cost')], rows));
+        const permit = column(model, 'Permit');
+        expect(permit.role).toBe('label');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Permit')).toBe(true);
+        // The same column as the sample of a 450,000-row table estimates it: some 400,000 permits.
+        permit.category.distinct = 400000;
+        expect(listCandidates(model).some(spec => spec.x.column === 'Permit')).toBe(false);
+    });
+
+    test('a list of people under "Name" is not ranked by name: several people share one', async () => {
+        const people = ['Singh,Gurpreet', 'Charlesworth,Jennifer', 'Lakey,William', 'Burns,Aaron', 'Wright,Robert H', 'Buchanan,Alison', 'Li,Wei', 'Tremblay,Marc',
+            "O'Neil,Sean", 'Smith-Jones,Anne', 'Nguyen,Thi', 'Roy,Julie'];
+        const rows = range(120).map(i => [people[i % people.length].replace(',', i % 7 === 0 ? ', ' : ','), ['Analyst', 'Manager', 'Director'][i % 3],
+            String(75000 + scatter(i, 90000))]);
+        const { model } = await read(table([text('Name'), text('Position Title'), integer('Amount')], rows));
+        expect(reasons(model, 'Name')).toContain('person_names');
+        expect(listCandidates(model).some(spec => spec.x.column === 'Name')).toBe(false);
+        // "City, Province" under another header is a place, and a company's name is one thing.
+        const places = range(60).map(i => [['Toronto, Ontario', 'Laval, Quebec', 'Surrey, British Columbia'][i % 3], String(10 + i)]);
+        expect(reasons((await read(table([text('Location'), integer('Count of permits')], places))).model, 'Location')).not.toContain('person_names');
+    });
+
     test('"Numéro de permis" names a permit and "Nombre de permis" counts them', async () => {
         for (const name of ['Numéro de permis (LOPC)', 'No de dossier', 'N° de lot', '# de client', 'Numéro du lot']) {
             expect([name, nameEvidence(name).identifier, nameEvidence(name).additive]).toEqual([name, true, false]);

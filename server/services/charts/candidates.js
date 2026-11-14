@@ -8,6 +8,8 @@ const { nameEvidence } = require('./tokens');
 const LIMITS = { bars: 12, donut: 6, ranking: 10, periods: 60 };
 const ADDITIVE_RANK = { yes: 3, probable: 2, no: 1, unknown: 0 };
 const RANKER_MAX = 20000;
+// The most names a ranking groups by: beyond it the groups are the rows themselves.
+const LABEL_GROUPS_MAX = 50000;
 
 const GRAIN_ORDER = { day: 0, month: 1, quarter: 2, fiscal_year: 3, year: 3 };
 const thin = axis => axis.periods !== undefined && axis.periods < 4;
@@ -86,8 +88,12 @@ function listCandidates(model, { lang = 'en', pinned = [] } = {}) {
     const breakdowns = groups.filter(column => column.category.breakdown)
         .sort((a, b) => cardinalityFit(b.category.distinct) - cardinalityFit(a.category.distinct) || a.blank_share - b.blank_share);
     // What rows are called: a near-unique name, or a category with too many values for a share chart.
+    // A name that is nearly every row's own in a large table (a permit number
+    // on 400,000 permits) is not ranked: one group per row is the table again,
+    // and grouping it costs seconds.
     const names = model.columns.filter(column => visible(column) && !isHeld(column.id) && readableGroups(column) && !column.generic_name &&
-        (column.role === 'label' || ((column.role === 'category' || column.role === 'code') && !column.category.breakdown &&
+        ((column.role === 'label' && column.category.distinct <= LABEL_GROUPS_MAX) ||
+            ((column.role === 'category' || column.role === 'code') && !column.category.breakdown &&
             !column.category.numeric && column.category.distinct <= RANKER_MAX)))
         .sort((a, b) => Number(b.role === 'label') - Number(a.role === 'label'));
     const rankers = names;

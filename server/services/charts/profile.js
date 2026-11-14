@@ -71,9 +71,13 @@ const TAIL_ROWS = 60;
 
 // The Chao1 estimate of how many distinct values the whole column holds, from
 // how many were seen once and twice in the sample.
-function estimateDistinct(distinct, once, twice, complete) {
+function estimateDistinct(distinct, once, twice, complete, scale = Infinity) {
     if (complete || once === 0) return distinct;
-    return Math.round(distinct + (twice > 0 ? (once * once) / (2 * twice) : (once * (once - 1)) / 2));
+    const chao = Math.round(distinct + (twice > 0 ? (once * once) / (2 * twice) : (once * (once - 1)) / 2));
+    // Never more than the sample's distinct values scaled up to the table: a
+    // sample of most of a table of names has few seen twice, and the estimate
+    // runs to millions on a table of twenty thousand rows.
+    return Math.min(chao, Math.max(distinct, Math.round(distinct * scale)));
 }
 
 // FNV-1a: enough to count values that are not kept.
@@ -138,7 +142,7 @@ function placeholderDates(real) {
     return out;
 }
 
-function profileColumn(column, values, raw, { complete, skip = new Set() }) {
+function profileColumn(column, values, raw, { complete, skip = new Set(), scale = Infinity }) {
     const cells = values.length;
     const counts = new Map();
     // Values past the cap are not read one by one, but they are still
@@ -319,7 +323,7 @@ function profileColumn(column, values, raw, { complete, skip = new Set() }) {
         cast_failed: column.cast_failed === true,
         cells, blank, filled, padded,
         distinct, exact_distinct: overflow === 0,
-        est_distinct: estimateDistinct(distinct, once, twice, complete),
+        est_distinct: estimateDistinct(distinct, once, twice, complete, scale),
         spellings: counts.size - folded.size,
         top,
         length: { avg: counted ? lengthSum / counted : 0, p90 },
@@ -1094,7 +1098,8 @@ async function profileSample({ columns, rows, plan }, { signal } = {}) {
         const out = [];
         const skip = new Set(aside.keys());
         for (let c = 0; c < used.length; c += 1) {
-            out.push(profileColumn(used[c], matrix[c], raws[c], { complete: plan.complete, skip }));
+            out.push(profileColumn(used[c], matrix[c], raws[c], { complete: plan.complete, skip,
+                scale: plan.rows > 0 && count > 0 ? Math.max(1, plan.rows / count) : Infinity }));
             await pause();
         }
         return out;

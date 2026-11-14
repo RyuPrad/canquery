@@ -17,6 +17,10 @@ const AUTO_CATEGORY_MAX = 60;
 // The profile keeps a column's 30 most frequent values: a rule that needs all
 // of them reads only columns with no more.
 const TOP_VALUES_READ = 30;
+// A list of people by its header and its values: "Last, First" under "Name" or "Employee".
+const PERSON_HEADER_RE = /(?:^| )(?:name|names|nom|noms|employee|employees|employe|employes|recipient name|member|membre)$/;
+const ORGANISATION_HEADER_RE = /(?:^| )(?:company|compagnie|organization|organisation|organisme|business|entreprise|vendor|supplier|fournisseur|societe|product|produit|street|rue|place|lieu|program|programme|project|projet|department|ministere|institution|school|ecole|facility|site|station)(?: |$)/;
+const PERSON_VALUE_RE = /^[\p{Lu}][\p{L}'’.\- ]*, ?[\p{Lu}][\p{L}'’.\- ]*$/u;
 const PROVINCE_CODE_RE = /^(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT|PEI|NFLD|QUE|ONT|ALTA|SASK|MAN|CB|NÉ|NE|TNL|IPE|TN-O|TNO)$/i;
 // Answers chosen from a list: at most this many.
 const OPTIONS_MAX = 12;
@@ -249,6 +253,9 @@ function decideRole(stat, context) {
     }
     // People's first or last names repeat, but a group of every "John" is no group.
     if (name.personName && !stat.number) return decide('text', 'high', 'person_names');
+    // "Singh,Gurpreet" under "Name": people, and seven of them share that one.
+    if (!stat.number && PERSON_HEADER_RE.test(name.normal) && !ORGANISATION_HEADER_RE.test(name.normal) && stat.top.length >= 3 &&
+        stat.top.filter(entry => PERSON_VALUE_RE.test(entry.v)).length >= stat.top.length * 0.8) return decide('text', 'high', 'person_names');
 
     // Shapes on a map written as text are neither names nor groups.
     if (share(stat.patterns.shapes || 0, stat.filled) >= 0.9) return decide('geometry', 'high', 'shape_text');
