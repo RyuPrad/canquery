@@ -69,11 +69,13 @@ const match = {
     level: param => `${DATASET_LEVEL} = ANY(${param}::text[])`
 };
 
-// A resource page worth a crawler's visit: a live DataStore table, a prepared
-// copy, a map, or a CSV/XLSX/XLS file CanQuery can prepare within its caps.
-// Mirrors resourceCapabilities.isIngestableFile; the caps arrive as positional
-// parameters so the SQL tracks config/ingest.js. Download-only files keep their
-// pages, which carry noindex and are reached from the dataset page.
+// A data-bearing resource: a live DataStore table, a prepared copy, a map, or a
+// CSV/XLSX/XLS file CanQuery can prepare within its caps. Mirrors
+// resourceCapabilities.isIngestableFile; the caps arrive as positional
+// parameters so the SQL tracks config/ingest.js. It tells the two kinds of
+// noindex resource page apart in the recrawl sitemaps: download-only pages
+// (not data-bearing, noindex since October 2026) and the data-bearing pages
+// the index policy below turned noindex.
 function dataBearingResource({ csvCap, xlsxCap, maxRows, maxCols }) {
     return `(r.datastore_active
      OR EXISTS (SELECT 1 FROM ingested_resources ir WHERE ir.resource_id = r.id AND ir.status = 'ready')
@@ -87,4 +89,26 @@ function dataBearingResource({ csvCap, xlsxCap, maxRows, maxCols }) {
               OR (r.raw->>'field_count')::int <= ${maxCols}::int)))`;
 }
 
-module.exports = { LEVELS, listParam, upper, selectedPlaceCte, levelFromKinds, DATASET_LEVEL, HAS_TABLE, HAS_MAP, match, dataBearingResource };
+// The pages a search engine may index (services/indexPolicy.js is the same
+// rule in JavaScript). A resource page: a live DataStore table, or a prepared
+// copy that is pinned; an unpinned copy lasts a day without use, so it never
+// counts (HAS_TABLE above counts it, for the catalogue's "queryable" filter).
+// A dataset page: at least one such resource, or an id the caller passes
+// (datasets a guide or a hub is about). Uncorrelated sets, hashed once.
+const INDEXABLE_RESOURCE_IDS = `SELECT tr.id FROM resources tr WHERE tr.datastore_active
+        UNION
+        SELECT ti.resource_id FROM ingested_resources ti
+        JOIN pinned_resources tp ON tp.resource_id = ti.resource_id
+        WHERE ti.status = 'ready'`;
+const INDEXABLE_RESOURCE = `r.id IN (
+        ${INDEXABLE_RESOURCE_IDS})`;
+function indexableDataset(idsParam) {
+    return `d.id IN (
+        SELECT td.dataset_id FROM resources td WHERE td.id IN (
+        ${INDEXABLE_RESOURCE_IDS})
+        UNION
+        SELECT unnest(${idsParam}::text[]))`;
+}
+
+module.exports = { LEVELS, listParam, upper, selectedPlaceCte, levelFromKinds, DATASET_LEVEL, HAS_TABLE, HAS_MAP, match, dataBearingResource,
+    INDEXABLE_RESOURCE, indexableDataset };

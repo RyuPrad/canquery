@@ -3,6 +3,7 @@ const { createCache } = require('../utils/cache');
 const catalogRead = require('../db/catalogReadQueries');
 const { listArticles } = require('../services/blogContent');
 const { SITE_URL } = require('../services/seoMeta');
+const indexPolicy = require('../services/indexPolicy');
 const { hostedRoutes } = require('../extensions');
 const lmiaPages = require('../services/lmiaPages');
 const oasPages = require('../services/oasPages');
@@ -50,19 +51,32 @@ const isoDate = value => {
     return date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
 };
 const latest = (...values) => values.filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || '';
+// The newest lastmod among many rows, without spreading them into arguments.
+const newestLastmod = rows => {
+    let newest = 0;
+    for (const row of rows) {
+        const time = row.lastmod ? new Date(row.lastmod).getTime() : NaN;
+        if (time > newest) newest = time;
+    }
+    return newest ? new Date(newest).toISOString() : '';
+};
 
 // Crawlers fetch the index and every chunk in bursts, and each count or
 // lastmod read is a full scan, so they are read once an hour per process.
 const sitemapCache = createCache({ name: 'sitemap', ttlMs: 60 * 60 * 1000, negativeTtlMs: 0, maxEntries: 16 });
+// The regular files list only the pages a search engine may index
+// (services/indexPolicy.js); guide and hub datasets are passed by id.
+const alwaysIds = () => indexPolicy.alwaysIndexableDatasetIds();
 const catalogueTotals = () => sitemapCache.get('totals', async () => {
-    const [datasets, resources] = await Promise.all([catalogRead.countSitemapDatasets(), catalogRead.countSitemapResources()]);
+    const [datasets, resources] = await Promise.all([
+        catalogRead.countSitemapDatasets({ ids: alwaysIds() }), catalogRead.countSitemapResources()]);
     return { datasets, resources };
 });
 const catalogueLastmod = () => sitemapCache.get('lastmod', async () => isoDate(await catalogRead.getCatalogLastModified()));
 // The newest change inside each dataset or resource chunk, by chunk number.
 const chunkLastmods = family => sitemapCache.get('chunks:' + family, async () => {
     const rows = await (family === 'datasets'
-        ? catalogRead.listDatasetSitemapChunkLastmods(PAGE_SIZE)
+        ? catalogRead.listDatasetSitemapChunkLastmods({ pageSize: PAGE_SIZE, ids: alwaysIds() })
         : catalogRead.listResourceSitemapChunkLastmods(PAGE_SIZE));
     return new Map(rows.map(row => [Number(row.chunk), isoDate(row.lastmod)]));
 });
@@ -72,8 +86,43 @@ const chunkLastmods = family => sitemapCache.get('chunks:' + family, async () =>
 // crawls them again and lets them go.
 const NOINDEX_SINCE = '2026-10-17T04:41:02Z';
 const NOINDEX_SHOWN_DAYS = 28;
-const noindexRows = () => sitemapCache.get('noindex-resources', () => catalogRead.listNoindexResourceSitemap({
-    pagePrefix: SITE_URL + '/resources/', days: NOINDEX_SHOWN_DAYS, since: NOINDEX_SINCE, limit: 50000 }));
+const NOINDEX_LIMIT = 50000;
+// The index policy (services/indexPolicy.js) turned every other dataset page
+// and every file page without a live or pinned table noindex at POLICY_SINCE.
+// For POLICY_RECRAWL_DAYS all of those pages are listed in numbered recrawl
+// files, dated by the change, whether or not Google ever showed them. After
+// that the files are gone and the "still shown" rule above covers these pages
+// too: the resource list gains them and the dataset list starts.
+const POLICY_SINCE = indexPolicy.policySince();
+const POLICY_UNTIL_MS = Date.parse(POLICY_SINCE) + indexPolicy.POLICY_RECRAWL_DAYS * 24 * 60 * 60 * 1000;
+const POLICY_MAX_URLS = 8 * PAGE_SIZE;
+const policyOpen = () => Date.now() < POLICY_UNTIL_MS;
+const datasetLoc = row => SITE_URL + '/datasets/' + encodeURIComponent(row.name || row.id);
+const resourceLoc = row => SITE_URL + '/resources/' + encodeURIComponent(row.id);
+const noindexUrlset = (rows, loc) => urlset(rows.map(row => ({ loc: loc(row), lastmod: isoDate(row.lastmod) || null })));
+// One read per family an hour, cut into files of PAGE_SIZE URLs.
+const policyFiles = family => sitemapCache.get('policy-noindex:' + family, async () => {
+    if (!policyOpen()) return [];
+    const rows = family === 'datasets'
+        ? await catalogRead.listPolicyNoindexDatasets({ ids: alwaysIds(), since: POLICY_SINCE, limit: POLICY_MAX_URLS })
+        : await catalogRead.listPolicyNoindexResources({ since: POLICY_SINCE, limit: POLICY_MAX_URLS });
+    const files = [];
+    for (let start = 0; start < rows.length; start += PAGE_SIZE) {
+        const slice = rows.slice(start, start + PAGE_SIZE);
+        files.push({ lastmod: newestLastmod(slice), body: noindexUrlset(slice, family === 'datasets' ? datasetLoc : resourceLoc) });
+    }
+    return files;
+});
+const noindexRows = () => sitemapCache.get('noindex-resources', async () => {
+    const shown = { pagePrefix: SITE_URL + '/resources/', days: NOINDEX_SHOWN_DAYS };
+    const download = await catalogRead.listNoindexResourceSitemap({ ...shown, since: NOINDEX_SINCE, limit: NOINDEX_LIMIT });
+    if (policyOpen()) return download;
+    const policy = await catalogRead.listNoindexResourceSitemap({ ...shown, since: POLICY_SINCE, limit: NOINDEX_LIMIT, scope: 'policy' });
+    return [...download, ...policy].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, NOINDEX_LIMIT);
+});
+const noindexDatasetRows = () => sitemapCache.get('noindex-datasets', async () => (policyOpen() ? [] :
+    catalogRead.listShownNoindexDatasets({ ids: alwaysIds(), pagePrefix: SITE_URL + '/datasets/', days: NOINDEX_SHOWN_DAYS,
+        since: POLICY_SINCE, limit: NOINDEX_LIMIT })));
 // The place and organization files and their index dates share one read.
 const placeRows = () => sitemapCache.get('places', () => catalogRead.listPlaceSitemap());
 const organizationRows = () => sitemapCache.get('organizations', () => catalogRead.listOrganizationSitemap());
@@ -138,22 +187,25 @@ const robots = (req, res) => {
         '\nAllow: /\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
 };
 
-// GET /sitemap.xml - the index: hub pages, places, organizations, guides and
-// the complete dataset chunks plus the data-bearing resource chunks, and the
-// noindex pages Google still shows while there are any. Each entry carries the
-// newest change its file holds, so a crawler can skip unchanged files. The
-// noindex list is optional: when it cannot be read the index goes without it.
+// GET /sitemap.xml - the index: hub pages, places, organizations, guides, the
+// chunks of indexable dataset and resource pages, and the recrawl files of
+// noindex pages while there are any. Each entry carries the newest change its
+// file holds, so a crawler can skip unchanged files. The recrawl lists are
+// optional: when one cannot be read the index goes without it.
+const optionalList = list => list.catch(err => {
+    console.error('Sitemap noindex list unavailable:', err.message);
+    return [];
+});
 const sitemapIndex = crawlFile(async (req, res) => {
     const body = await fileCache.get('index', async () => {
-        const [totals, catalogue, datasetChunks, resourceChunks, places, organizations, noindex] = await Promise.all([
+        const [totals, catalogue, datasetChunks, resourceChunks, places, organizations, noindex, noindexDatasets,
+            policyDatasets, policyResources] = await Promise.all([
             catalogueTotals(), catalogueLastmod(), chunkLastmods('datasets'), chunkLastmods('resources'),
-            placeRows(), organizationRows(), noindexRows().catch(err => {
-                console.error('Sitemap noindex list unavailable:', err.message);
-                return [];
-            })
+            placeRows(), organizationRows(), optionalList(noindexRows()), optionalList(noindexDatasetRows()),
+            optionalList(policyFiles('datasets')), optionalList(policyFiles('resources'))
         ]);
         const blog = blogLastmod();
-        const datasetPages = Math.max(1, Math.ceil(totals.datasets / PAGE_SIZE));
+        const datasetPages = Math.ceil(totals.datasets / PAGE_SIZE);
         const resourcePages = Math.ceil(totals.resources / PAGE_SIZE);
         const entries = [
             ['/sitemap-pages.xml', latest(catalogue, blog)],
@@ -163,7 +215,10 @@ const sitemapIndex = crawlFile(async (req, res) => {
         ];
         for (let i = 1; i <= datasetPages; i++) entries.push(['/sitemap-datasets-' + i + '.xml', datasetChunks.get(i) || '']);
         for (let i = 1; i <= resourcePages; i++) entries.push(['/sitemap-resources-' + i + '.xml', resourceChunks.get(i) || '']);
-        if (noindex.length) entries.push(['/sitemap-noindex-resources.xml', latest(...noindex.map(row => isoDate(row.lastmod)))]);
+        if (noindex.length) entries.push(['/sitemap-noindex-resources.xml', newestLastmod(noindex)]);
+        if (noindexDatasets.length) entries.push(['/sitemap-noindex-datasets.xml', newestLastmod(noindexDatasets)]);
+        policyDatasets.forEach((file, i) => entries.push(['/sitemap-noindex-datasets-' + (i + 1) + '.xml', file.lastmod]));
+        policyResources.forEach((file, i) => entries.push(['/sitemap-noindex-resources-' + (i + 1) + '.xml', file.lastmod]));
         return '<?xml version="1.0" encoding="UTF-8"?>\n' +
             '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
             entries.map(([path, lastmod]) => '  <sitemap><loc>' + xmlEscape(SITE_URL + path) + '</loc>' +
@@ -231,7 +286,7 @@ const sitemapOrganizations = crawlFile(async (req, res) => {
     sendXml(res, body, 3600);
 });
 
-// GET /sitemap-datasets-:n.xml - one chunk of dataset URLs.
+// GET /sitemap-datasets-:n.xml - one chunk of the indexable dataset pages.
 const sitemapDatasets = crawlFile(async (req, res, next) => {
     const n = chunkNumber(req.params.n);
     if (n === null) return next(new AppError('Not found', 404));
@@ -239,9 +294,10 @@ const sitemapDatasets = crawlFile(async (req, res, next) => {
         const rows = await catalogRead.listDatasetSitemap({
             limit: PAGE_SIZE,
             offset: (n - 1) * PAGE_SIZE,
+            ids: alwaysIds(),
         });
         return rows.length ? urlset(rows.map((d) => ({
-            loc: SITE_URL + '/datasets/' + encodeURIComponent(d.name || d.id),
+            loc: datasetLoc(d),
             lastmod: isoDate(d.metadata_modified) || null,
             changefreq: 'monthly',
         }))) : null;
@@ -250,7 +306,8 @@ const sitemapDatasets = crawlFile(async (req, res, next) => {
     sendXml(res, body, 3600);
 });
 
-// GET /sitemap-resources-:n.xml - the data-bearing resource detail pages.
+// GET /sitemap-resources-:n.xml - the indexable resource pages: live tables and
+// pinned prepared copies.
 const sitemapResources = crawlFile(async (req, res, next) => {
     const n = chunkNumber(req.params.n);
     if (n === null) return next(new AppError('Not found', 404));
@@ -260,7 +317,7 @@ const sitemapResources = crawlFile(async (req, res, next) => {
             offset: (n - 1) * PAGE_SIZE,
         });
         return rows.length ? urlset(rows.map(resource => ({
-            loc: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
+            loc: resourceLoc(resource),
             lastmod: isoDate(resource.lastmod) || null,
             changefreq: 'monthly',
         }))) : null;
@@ -269,15 +326,29 @@ const sitemapResources = crawlFile(async (req, res, next) => {
     sendXml(res, body, 3600);
 });
 
-// GET /sitemap-noindex-resources.xml - download-only resource pages that Google
-// still shows. They carry noindex; listing them dated by that change asks the
+// GET /sitemap-noindex-resources.xml - noindex resource pages that Google still
+// shows. Listing them dated by the change that made them noindex asks the
 // crawler to fetch them again. An empty list is a valid, empty file.
 const sitemapNoindexResources = crawlFile(async (req, res) => {
-    const body = await fileCache.get('noindex-resources', async () => urlset((await noindexRows()).map(resource => ({
-        loc: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
-        lastmod: isoDate(resource.lastmod) || null
-    }))));
+    const body = await fileCache.get('noindex-resources', async () => noindexUrlset(await noindexRows(), resourceLoc));
     sendXml(res, body, 3600);
+});
+
+// GET /sitemap-noindex-datasets.xml - the same for dataset pages, once the
+// numbered recrawl files below have ended; empty until then.
+const sitemapNoindexDatasets = crawlFile(async (req, res) => {
+    const body = await fileCache.get('noindex-datasets', async () => noindexUrlset(await noindexDatasetRows(), datasetLoc));
+    sendXml(res, body, 3600);
+});
+
+// GET /sitemap-noindex-datasets-:n.xml and /sitemap-noindex-resources-:n.xml -
+// every page the index policy turned noindex, for POLICY_RECRAWL_DAYS. The
+// files live in the hourly list cache, already built.
+const sitemapPolicyNoindex = family => crawlFile(async (req, res, next) => {
+    const n = chunkNumber(req.params.n);
+    const file = n === null ? null : (await policyFiles(family))[n - 1];
+    if (!file) return next(new AppError('Not found', 404));
+    sendXml(res, file.body, 3600);
 });
 
 const sitemapBlog = (req, res) => {
@@ -298,6 +369,9 @@ module.exports = {
     sitemapPages,
     sitemapPlaces,
     sitemapOrganizations,
+    sitemapNoindexDatasets,
+    sitemapPolicyNoindexDatasets: sitemapPolicyNoindex('datasets'),
+    sitemapPolicyNoindexResources: sitemapPolicyNoindex('resources'),
     sitemapDatasets,
     sitemapResources,
     sitemapNoindexResources

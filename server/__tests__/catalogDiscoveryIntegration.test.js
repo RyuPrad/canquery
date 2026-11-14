@@ -1,17 +1,23 @@
 const { Pool } = require('pg');
 const queries = require('../db/catalogReadQueries');
+const blogContent = require('../services/blogContent');
+const indexPolicy = require('../services/indexPolicy');
 const url = process.env.SPATIAL_TEST_DATABASE_URL;
 const integrationDescribe = url ? describe : describe.skip;
 
 integrationDescribe('complete catalogue discovery PostgreSQL integration', () => {
-    let pool, db, datasetCount, resourceCount;
+    let pool, db, datasetCount, resourceCount, ids;
     const prefix = 'discovery_test_' + process.pid;
     const id = name => prefix + '_' + name;
+    const mine = rows => rows.filter(row => row.id.startsWith(prefix)).map(row => row.id);
     beforeAll(async () => {
         pool = new Pool({ connectionString: url });
         db = await pool.connect();
         await db.query('BEGIN');
-        datasetCount = await queries.countSitemapDatasets(db);
+        // dataset008 has no file at all; a guide is about it, so its page is indexable.
+        jest.spyOn(blogContent, 'listArticles').mockReturnValue([{ datasetId: id('dataset008') }]);
+        ids = indexPolicy.alwaysIndexableDatasetIds();
+        datasetCount = await queries.countSitemapDatasets({ ids }, db);
         resourceCount = await queries.countSitemapResources(db);
         await db.query(`INSERT INTO organizations (id, name, title_fr) VALUES
             ($1, $1, 'Organisme principal'), ($2, $2, 'ÉTUDES DU NORD')`, [prefix, id('publisher')]);
@@ -26,21 +32,68 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         await db.query(`INSERT INTO resource_maps (resource_id, provider, service_url, geometry_type)
             VALUES ($1, 'arcgis', 'https://example.test/FeatureServer/0', 'polygon')`, [id('resource4')]);
         await db.query(`INSERT INTO resources (id, dataset_id) VALUES ($1, $2)`, [id('orphan'), id('missing')]);
+        // The index policy's cases: a pinned prepared copy (5), a pin without a copy (6, a PDF), and a live
+        // table that also has an unpinned copy (7). resource3 above is a prepared copy nobody pinned.
+        await db.query(`INSERT INTO resources (id, dataset_id, format, url, datastore_active) VALUES
+            ($1 || '5', $2 || '005', 'CSV', 'https://example.test/data', false),
+            ($1 || '6', $2 || '006', 'PDF', 'https://example.test/report.pdf', false),
+            ($1 || '7', $2 || '007', 'CSV', 'https://example.test/data', true)`, [id('resource'), id('dataset')]);
+        await db.query(`INSERT INTO ingested_resources (resource_id, table_name, status) VALUES ($1, $2, 'ready'), ($3, $4, 'ready')`,
+            [id('resource5'), id('table5'), id('resource7'), id('table7')]);
+        await db.query('INSERT INTO pinned_resources (resource_id, reason) VALUES ($1, $3), ($2, $3)', [id('resource5'), id('resource6'), 'test']);
     });
     afterAll(async () => {
+        jest.restoreAllMocks();
         if (db) { await db.query('ROLLBACK'); db.release(); }
         if (pool) await pool.end();
     });
-    test('includes metadata-only datasets and the data-bearing resources, excluding download-only and orphan resources', async () => {
-        expect(await queries.countSitemapDatasets(db)).toBe(datasetCount + 101);
-        // The PDF (resource0) is download-only; the preparable, DataStore, prepared and mapped CSVs qualify.
-        expect(await queries.countSitemapResources(db)).toBe(resourceCount + 4);
-        const datasets = await queries.listDatasetSitemap({ limit: 25000, offset: 0 }, db);
-        expect(datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(101);
-        const resources = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
-        expect(resources.filter(row => row.id.startsWith(prefix)).map(row => row.id)).toEqual(
-            [1, 2, 3, 4].map(n => id('resource' + n)));
-        expect(resources.find(row => row.id === id('resource1')).lastmod.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    test('lists only the pages a search engine may index, and the JavaScript rule agrees file by file', async () => {
+        // Datasets 002 (live table), 005 (pinned copy), 007 (live table) and 008 (a guide's dataset).
+        expect(await queries.countSitemapDatasets({ ids }, db)).toBe(datasetCount + 4);
+        // Without the guide's id, dataset008 has nothing to show.
+        expect(await queries.countSitemapDatasets({}, db)).toBe(datasetCount + 3);
+        expect(await queries.countSitemapResources(db)).toBe(resourceCount + 3);
+        const datasets = mine(await queries.listDatasetSitemap({ limit: 25000, offset: 0, ids }, db));
+        expect(datasets).toEqual(['002', '005', '007', '008'].map(n => id('dataset' + n)));
+        const listed = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
+        // The PDF, the CSV CanQuery could prepare, the unpinned copy, the map, the pin without a copy and the orphan stay out.
+        expect(mine(listed)).toEqual([2, 5, 7].map(n => id('resource' + n)));
+        expect(listed.find(row => row.id === id('resource2')).lastmod.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+
+        for (let n = 0; n <= 7; n++) {
+            const row = await queries.getResourceById(id('resource' + n), db);
+            expect([n, typeof row.pinned]).toEqual([n, 'boolean']);
+            expect([n, indexPolicy.isIndexableResource(row)]).toEqual([n, mine(listed).includes(row.id)]);
+        }
+        for (const n of ['000', '001', '002', '003', '004', '005', '006', '007', '008', '050']) {
+            const files = await queries.listResourcesForDataset(id('dataset' + n), db);
+            expect([n, indexPolicy.isIndexableDataset({ id: id('dataset' + n) }, files)]).toEqual([n, datasets.includes(id('dataset' + n))]);
+        }
+    });
+    test('lists every page the policy turned noindex: the complement of the indexable pages', async () => {
+        const since = '2026-09-01T00:00:00Z';
+        const noindexDatasets = await queries.listPolicyNoindexDatasets({ ids, since, limit: 200000 }, db);
+        const indexable = mine(await queries.listDatasetSitemap({ limit: 25000, offset: 0, ids }, db));
+        // 101 fixture datasets: each is in exactly one of the two lists.
+        expect(mine(noindexDatasets)).toHaveLength(97);
+        expect(mine(noindexDatasets).filter(row => indexable.includes(row))).toEqual([]);
+        expect(new Set([...mine(noindexDatasets), ...indexable]).size).toBe(101);
+        // Data-bearing files that are not indexable: the preparable CSV, the unpinned copy and the map.
+        // Download-only files (the PDFs) have had their own list since they turned noindex.
+        const noindexResources = await queries.listPolicyNoindexResources({ since, limit: 200000 }, db);
+        expect(mine(noindexResources)).toEqual([1, 3, 4].map(n => id('resource' + n)));
+        // A page is dated by the policy unless its own change is newer, and never in the future.
+        const dated = async policyDate => (await queries.listPolicyNoindexDatasets({ ids, since: policyDate, limit: 200000 }, db))
+            .find(row => row.id === id('dataset000')).lastmod;
+        expect((await dated(since)).toISOString()).toBe('2026-09-01T00:00:00.000Z');
+        expect((await dated('2026-07-01T00:00:00Z')).toISOString()).toBe('2026-08-01T00:00:00.000Z');
+        const ahead = await dated('2999-01-01T00:00:00Z');
+        expect(ahead.getTime()).toBeLessThanOrEqual(Date.now() + 60000);
+        expect(ahead.getTime()).toBeGreaterThan(Date.now() - 10 * 60000);
+        const resourceAhead = (await queries.listPolicyNoindexResources({ since: '2999-01-01T00:00:00Z', limit: 200000 }, db))
+            .find(row => row.id === id('resource1')).lastmod;
+        expect(resourceAhead.getTime()).toBeLessThanOrEqual(Date.now() + 60000);
+        expect((await queries.listPolicyNoindexDatasets({ ids, since, limit: 2 }, db))).toHaveLength(2);
     });
     test('counts the files of a dataset that share a name, format and language', async () => {
         // A savepoint keeps these rows out of the counts the later tests take.
@@ -64,10 +117,11 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
             await db.query('ROLLBACK TO SAVEPOINT yearly_files');
         }
     });
-    test('lists the download-only pages Google still showed, by the latest four weeks of Search Console data', async () => {
+    test('lists the noindex pages Google still showed, by the latest four weeks of Search Console data', async () => {
         await db.query('SAVEPOINT noindex_pages');
         try {
             const page = name => 'https://canquery.com/resources/' + id(name);
+            const datasetPage = name => 'https://canquery.com/datasets/' + id(name);
             await db.query(`INSERT INTO resources (id, dataset_id, format, url, last_modified) VALUES
                 ($1, $4, 'PDF', 'https://example.test/stale.pdf', NULL),
                 ($2, $4, 'PDF', 'https://example.test/blank.pdf', NULL),
@@ -83,21 +137,41 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
                 ('2099-03-30', 'web', 'page', $5, 0, 1, 0, 6.0),
                 ('2099-03-31', 'web', 'page', $6, 0, 3, 0, 8.0),
                 ('2099-03-31', 'web', 'page', $7, 0, 4, 0, 5.0),
-                ('2099-03-31', 'web', 'query', $8, 0, 7, 0, 2.0)`,
+                ('2099-03-31', 'web', 'query', $8, 0, 7, 0, 2.0),
+                ('2099-03-30', 'web', 'page', $9, 0, 4, 0, 5.0),
+                ('2099-03-31', 'web', 'page', $10, 0, 6, 0, 7.0),
+                ('2099-03-31', 'web', 'page', $11, 0, 6, 0, 7.0),
+                ('2099-03-31', 'web', 'page', $12, 0, 6, 0, 7.0),
+                ('2099-03-03', 'web', 'page', $13, 0, 6, 0, 7.0)`,
                 [page('resource0'), page('resource1'), page('stale'), page('blank'), page('newer'), page('orphan'),
-                    page('resource0') + '?view=table', id('resource0')]);
+                    page('resource0') + '?view=table', id('resource0'), page('resource4') + '?view=map',
+                    datasetPage('dataset000'), datasetPage('dataset001') + '?page=2', datasetPage('dataset002'), datasetPage('dataset003')]);
             const since = '2026-10-17T04:41:02Z';
             const list = async days => Object.fromEntries((await queries.listNoindexResourceSitemap(
                 { pagePrefix: 'https://canquery.com/resources/', days, since, limit: 1000 }, db))
                 .filter(row => row.id.startsWith(prefix)).map(row => [row.id, row.lastmod.toISOString()]));
-            // The preparable CSV is indexed, the stale page was last shown outside the window, the blank one had
-            // no impressions, the orphan has no dataset, and neither a URL with a query string nor a query row
-            // names a page. An older file date gives way to the noindex date; a newer one stays.
+            // Download-only pages. The preparable CSV belongs to the policy's list below, the stale page was last
+            // shown outside the window, the blank one had no impressions, the orphan has no dataset, and a query
+            // row names no page. An older file date gives way to the noindex date; a newer one stays.
             expect(await list(28)).toEqual({
                 [id('resource0')]: '2026-10-17T04:41:02.000Z',
                 [id('newer')]: '2026-10-21T08:00:00.000Z'
             });
             expect(await list(1)).toEqual({ [id('resource0')]: '2026-10-17T04:41:02.000Z' });
+            // The pages the index policy turned noindex, dated by the policy: the preparable CSV, and the map,
+            // which Google showed only at an address with a query string.
+            // A date already past: one still ahead would date the pages by the time of the read.
+            const policySince = '2026-11-01T00:00:00Z';
+            const policy = Object.fromEntries((await queries.listNoindexResourceSitemap(
+                { pagePrefix: 'https://canquery.com/resources/', days: 28, since: policySince, limit: 1000, scope: 'policy' }, db))
+                .filter(row => row.id.startsWith(prefix)).map(row => [row.id, row.lastmod.toISOString()]));
+            expect(policy).toEqual({ [id('resource1')]: '2026-11-01T00:00:00.000Z', [id('resource4')]: '2026-11-01T00:00:00.000Z' });
+            // Dataset pages: by the name in the address, with or without a query string. The dataset with a live
+            // table is indexable, and dataset003 was last shown outside the window.
+            const shownDatasets = await queries.listShownNoindexDatasets(
+                { ids, pagePrefix: 'https://canquery.com/datasets/', days: 28, since: policySince, limit: 1000 }, db);
+            expect(Object.fromEntries(shownDatasets.filter(row => row.id.startsWith(prefix)).map(row => [row.id, row.lastmod.toISOString()])))
+                .toEqual({ [id('dataset000')]: '2026-11-01T00:00:00.000Z', [id('dataset001')]: '2026-11-01T00:00:00.000Z' });
         } finally {
             await db.query('ROLLBACK TO SAVEPOINT noindex_pages');
         }
@@ -128,17 +202,17 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         expect(maps[0].mappable_count).toBe(1);
         expect(maps[0].preview_map_id).toBe(id('resource4'));
     });
-    test('reads the changed dataset and data-bearing resource pages in a window', async () => {
-        const window = (since, until) => queries.listChangedSitemapPages({ since: new Date(since), until: new Date(until), limit: 1000 }, db);
+    test('reads the changed indexable dataset and resource pages in a window', async () => {
+        const window = (since, until) => queries.listChangedSitemapPages({ since: new Date(since), until: new Date(until), limit: 1000, ids }, db);
         const changed = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z');
-        expect(changed.datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(101);
-        expect(changed.resources.filter(row => row.id.startsWith(prefix)).map(row => row.id)).toEqual(
-            [1, 2, 3, 4].map(n => id('resource' + n)));
+        // All 101 fixture datasets changed in the window; only the indexable ones are sent to IndexNow.
+        expect(mine(changed.datasets).sort()).toEqual(['002', '005', '007', '008'].map(n => id('dataset' + n)));
+        expect(mine(changed.resources)).toEqual([2, 5, 7].map(n => id('resource' + n)));
         // The window's start is exclusive and its end inclusive.
         const later = await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z');
-        expect(later.datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(0);
+        expect(mine(later.datasets)).toHaveLength(0);
         const ending = await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z');
-        expect(ending.datasets.filter(row => row.id.startsWith(prefix))).toHaveLength(101);
+        expect(mine(ending.datasets)).toHaveLength(4);
     });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
@@ -158,7 +232,7 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
             }
         };
         check(await queries.listResourceSitemapChunkLastmods(2, db), await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db), 2);
-        check(await queries.listDatasetSitemapChunkLastmods(40, db), await queries.listDatasetSitemap({ limit: 25000, offset: 0 }, db), 40);
+        check(await queries.listDatasetSitemapChunkLastmods({ pageSize: 2, ids }, db), await queries.listDatasetSitemap({ limit: 25000, offset: 0, ids }, db), 2);
     });
 });
 

@@ -17,6 +17,9 @@ router.get('/sitemap-organizations.xml', sitemap.sitemapOrganizations);
 router.get('/sitemap-datasets-:n.xml', sitemap.sitemapDatasets);
 router.get('/sitemap-resources-:n.xml', sitemap.sitemapResources);
 router.get('/sitemap-noindex-resources.xml', sitemap.sitemapNoindexResources);
+router.get('/sitemap-noindex-datasets.xml', sitemap.sitemapNoindexDatasets);
+router.get('/sitemap-noindex-datasets-:n.xml', sitemap.sitemapPolicyNoindexDatasets);
+router.get('/sitemap-noindex-resources-:n.xml', sitemap.sitemapPolicyNoindexResources);
 // IndexNow's key file, only when INDEXNOW_KEY is set; any other .txt falls through.
 router.get('/:key.txt', keyFile);
 

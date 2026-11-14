@@ -88,6 +88,67 @@ not indexed" should fall as the submitted set shrinks from about 329,000 to
 about 115,000 URLs. Do not validate the noindex exclusions, and compare the
 indexed count only against the new submitted total.
 
+## Index policy (November 2026)
+
+Google's November 2026 core update lowered the whole site in its results,
+guides and hubs included. Until then about 123,000 catalogue pages were
+indexable (every dataset page and every data-bearing resource page), and over
+three months fewer than 300 of them had brought a visitor from search. Most
+repeat the publisher's record with a download link. The catalogue pages a
+search engine may index are now only those where CanQuery has a table a reader
+can query on the page:
+
+- **A resource page** is indexable when it has a live DataStore table, or a
+  prepared copy that is pinned. An unpinned copy appears when a visitor opens a
+  file and is evicted after a day without use, so it never counts: pages would
+  move in and out of the index.
+- **A dataset page** is indexable when at least one of its files is, or when a
+  published guide (`datasetId` in `content/blog/index.json`) or a hub
+  (`server/utils/datasetHubs.js`) is about it.
+- **Later pages of a list** (`?page=2` and up, on `/datasets`, `/places`,
+  `/organizations` and on dataset, place and organization pages) are
+  `noindex, follow` with their self-canonical kept.
+
+Every other catalogue page keeps working, keeps its structured data and its
+links, and carries `noindex, follow`. The rule is written twice and tests keep
+the two in step: `server/services/indexPolicy.js` for the pages, and
+`INDEXABLE_RESOURCE` and `indexableDataset` in
+`server/db/catalogSqlFragments.js` for the sitemaps and IndexNow. Place and
+organization pages keep their own rule.
+
+The regular sitemaps (`/sitemap-datasets-N.xml`, `/sitemap-resources-N.xml`)
+and the daily IndexNow submission list only indexable pages. A noindex tag
+takes effect only when a crawler fetches the page again, so for 90 days from
+the policy's date every page it turned noindex is listed in recrawl files,
+dated by the change: `/sitemap-noindex-datasets-N.xml` and
+`/sitemap-noindex-resources-N.xml`, 25,000 URLs each, built from one read per
+family an hour and linked from the index while they have entries. After the 90
+days those files answer 404 and the older rule covers these pages too:
+`/sitemap-noindex-resources.xml` and `/sitemap-noindex-datasets.xml` list the
+noindex pages Google showed in the latest 28 days of imported Search Console
+data.
+
+The policy's date is `POLICY_SINCE` in `server/services/indexPolicy.js`, or
+`INDEX_POLICY_SINCE` in the API environment (a UTC time such as
+`2026-11-16T07:59:59Z`; a malformed value stops startup). It must not be
+earlier than the release that carries the policy. While it is still ahead, the
+recrawl files date their pages by the time they are built; once it has passed
+they carry it. A release that goes out after the built-in date sets the
+variable to its promotion time, and so does another deployment adopting the
+policy.
+
+After promotion, resubmit `https://canquery.com/sitemap.xml` once and submit
+none of the noindex files. In Search Console, "Excluded by noindex" and
+"Submitted URL marked noindex" grow by about 115,000 by design: do not
+validate them. The indexed count should fall toward the roughly 8,000 pages in
+the regular sitemaps over the following weeks, as the recrawl files are read.
+Sitemap chunk numbers above the new totals (`sitemap-datasets-2.xml`,
+`sitemap-resources-2.xml` and up) answer 404.
+
+The row sampler no longer reads CSV files that are not prepared, whose pages
+are noindex: set `ROW_SAMPLE_FILES=true` in the scheduled jobs' environment to
+sample them again. Samples already stored stay on those pages.
+
 ## Console review fixes (October 2026)
 
 Search Console reported 954 resource pages as duplicates of other resource

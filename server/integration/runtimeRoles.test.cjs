@@ -15,7 +15,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { prepareResource } = require('../services/preparationService');
     const { cleanRetiredTables } = require('../services/retiredIngestTables');
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
-    const { listNoindexResourceSitemap } = require('../db/catalogReadQueries');
+    const { listNoindexResourceSitemap, listShownNoindexDatasets, listPolicyNoindexDatasets, listPolicyNoindexResources,
+        countSitemapDatasets, countSitemapResources, listDatasetSitemap, listResourceSitemap, listChangedSitemapPages,
+        listResourcesForDataset, getResourceById } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
     const { readSample, runBatch } = require('../db/chartQueries');
     const { samplePlan } = require('../services/charts/profile');
@@ -98,6 +100,23 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             assert.deepEqual(fields.map(field => field.name), ['data_date', 'page']);
             assert.ok(Array.isArray(await listNoindexResourceSitemap({ pagePrefix: 'https://canquery.com/resources/', days: 28,
                 since: '2026-10-17T04:41:02Z', limit: 10 }, dbFor(client))));
+            // The index policy reads pins and, for its recrawl lists, the same page-dates view: every statement
+            // the API runs for it, as the API.
+            const db = dbFor(client);
+            const policy = { ids: [prefix], since: '2026-11-16T07:59:59Z', limit: 10 };
+            assert.equal(typeof await countSitemapDatasets({ ids: [prefix] }, db), 'number');
+            assert.equal(typeof await countSitemapResources(db), 'number');
+            assert.ok(Array.isArray(await listDatasetSitemap({ limit: 10, offset: 0, ids: [prefix] }, db)));
+            assert.ok(Array.isArray(await listResourceSitemap({ limit: 10, offset: 0 }, db)));
+            assert.ok(Array.isArray(await listPolicyNoindexDatasets(policy, db)));
+            assert.ok(Array.isArray(await listPolicyNoindexResources(policy, db)));
+            assert.ok(Array.isArray(await listNoindexResourceSitemap({ pagePrefix: 'https://canquery.com/resources/', days: 28,
+                since: policy.since, limit: 10, scope: 'policy' }, db)));
+            assert.ok(Array.isArray(await listShownNoindexDatasets({ ...policy, pagePrefix: 'https://canquery.com/datasets/', days: 28 }, db)));
+            const changed = await listChangedSitemapPages({ since: new Date(0), until: new Date(), limit: 10, ids: [prefix] }, db);
+            assert.ok(Array.isArray(changed.datasets) && Array.isArray(changed.resources));
+            assert.ok((await listResourcesForDataset(prefix, db)).every(row => typeof row.pinned === 'boolean'));
+            assert.equal(typeof (await getResourceById(prefix, db)).pinned, 'boolean');
         }
     });
     test('API admits work and takes narrow catalogue locks without arbitrary writes', async () => {

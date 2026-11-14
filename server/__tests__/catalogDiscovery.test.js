@@ -15,7 +15,8 @@ const records = Array.from({ length: 101 }, (_, i) => ({
     title_en: 'Catalogue record ' + i, name_en: 'Catalogue record ' + i,
     kind: 'municipality', dataset_count: 1
 }));
-const files = records.map(row => ({ ...row, format: 'PDF', url: 'https://example.test/' + row.id + '.pdf' }));
+// One file has a live table, so the dataset's first page is one a search engine may index.
+const files = records.map((row, i) => ({ ...row, format: 'PDF', url: 'https://example.test/' + row.id + '.pdf', datastore_active: i === 0 }));
 const listing = ({ limit, offset }) => Promise.resolve(records.slice(offset, offset + limit));
 const dependencies = () => ({
     searchDatasets: jest.fn(listing), listOrganizations: jest.fn(listing), listPlaces: jest.fn(listing),
@@ -36,6 +37,8 @@ test.each([
         const page = await resolvePage(url, deps);
         expect(page.status).toBe(200);
         expect(page.meta.canonical).toBe('https://canquery.com' + url);
+        // Page one is the landing page; later pages are followed, not indexed.
+        expect(Boolean(page.meta.noindex)).toBe(number > 1);
         const collection = page.meta.jsonLd?.find(item => item['@type'] === 'CollectionPage');
         if (collection) {
             expect(collection.url).toBe(page.meta.canonical);
@@ -73,6 +76,10 @@ test('normalizes page one and aliases together, preserving unrelated deep-link s
         const next = await request(app).get('/datasets/example?page=2');
         expect(next.status).toBe(200);
         expect(next.text).toContain('rel="canonical" href="https://canquery.com/datasets/example?page=2"');
+        expect(next.text).toContain('<meta name="robots" content="noindex, follow" />');
+        const landing = await request(app).get('/datasets/example');
+        expect(landing.status).toBe(200);
+        expect(landing.text).not.toContain('name="robots"');
         const absent = await request(app).get('/datasets/example?page=4');
         expect(absent.status).toBe(404);
         expect(absent.text).toContain('name="robots" content="noindex');

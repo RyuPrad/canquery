@@ -34,7 +34,7 @@ async function main() {
         summary = await runSampler({ dryRun, limit, settings, now: startedAt, deps: {
             readProgress: () => getProgress(pool, PROGRESS_KEY),
             writeProgress: value => setProgress(pool, PROGRESS_KEY, value),
-            listShown: () => listShownCandidates({ pagePrefix: SITE_URL + '/resources/' }),
+            listShown: options => listShownCandidates({ pagePrefix: SITE_URL + '/resources/', ...options }),
             listDue: options => listDueCandidates(options),
             listSweep: options => listSweepCandidates(options),
             saveSample: result => saveSample(result),

@@ -1,7 +1,7 @@
 const { searchExpression, literalPatterns } = require('../services/localSearch');
 const pool = require('./pool');
 const catalogReadCache = require('../services/catalogReadCache');
-const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match, dataBearingResource } = require('./catalogSqlFragments');
+const { listParam, upper, selectedPlaceCte, HAS_TABLE, HAS_MAP, match, dataBearingResource, INDEXABLE_RESOURCE, indexableDataset } = require('./catalogSqlFragments');
 const { ingestLimits } = require('../config/ingest');
 
 function cachedRows(name, sql, values, db) {
@@ -246,12 +246,17 @@ async function getDatasetByIdOrName(idOrName) {
 const RESOURCE_NAME_KEY = alias => `lower(btrim(coalesce(nullif(btrim(${alias}.name_en), ''), ${alias}.name_fr, '')))`;
 const SAME_NAME_PARTITION = `${RESOURCE_NAME_KEY('r')}, upper(coalesce(r.format, '')), coalesce(r.language, '')`;
 
+// A pinned prepared copy is kept through eviction, which is what lets its page
+// be indexed (services/indexPolicy.js).
+const PINNED = 'EXISTS (SELECT 1 FROM pinned_resources pin WHERE pin.resource_id = r.id)';
+
 async function listResourcesForDataset(datasetId, db = pool) {
     const result = await db.query(`
         SELECT r.id, r.dataset_id, r.name_en, r.name_fr, r.format, r.url, r.size_bytes, r.raw,
                r.datastore_active, r.language, r.last_modified,
                (count(*) OVER (PARTITION BY ${SAME_NAME_PARTITION}) - 1)::int AS same_name_siblings,
                ir.status AS ingest_status, ir.row_count AS ingested_row_count, ir.ingested_at, ir.source_version AS ingested_source_version,
+               ${PINNED} AS pinned,
                rm.provider AS map_provider, rm.geometry_type AS map_geometry_type,
                rm.extent AS map_extent, rm.fields AS map_fields,
                rm.indexed_at AS map_indexed_at,
@@ -289,6 +294,7 @@ async function getResourceById(id, db = require('./snapshotRead').snapshotDb()) 
                ir.status AS ingest_status, ir.table_name, ir.row_count AS ingested_row_count,
                ir.byte_size AS ingested_byte_size, ir.columns AS ingested_columns,
                ir.ingested_at, ir.last_accessed_at, ir.source_version AS ingested_source_version,
+               ${PINNED} AS pinned,
                (SELECT jsonb_build_object('id', j.id, 'status', j.status, 'source_version', j.source_version, 'retry_at', j.retry_at, 'failure_code', j.failure_code)
                 FROM ingest_jobs j WHERE j.resource_id = r.id
                 ORDER BY (j.status IN ('pending','running')) DESC, j.id DESC LIMIT 1) AS preparation_job,
@@ -626,34 +632,35 @@ async function getStats() {
     return result.rows[0];
 }
 
-// Every dataset page is eligible, including metadata-only records. Resource
-// pages are listed only when they offer more than their dataset page does: a
-// live table, a prepared copy, a map, or a file CanQuery can prepare. The
-// predicate shares its caps with the capability classifier through config/ingest.
-async function countSitemapDatasets(db = pool) {
-    const result = await db.query('SELECT count(*)::int AS n FROM datasets');
+// The regular sitemaps list the pages a search engine may index
+// (services/indexPolicy.js; the SQL twins are in catalogSqlFragments.js):
+// dataset pages with a table CanQuery can query now, or whose id the caller
+// passes in `ids` (datasets a guide or a hub is about), and the resource pages
+// that carry such a table. Every other catalogue page keeps working and
+// carries noindex.
+
+async function countSitemapDatasets({ ids = [] } = {}, db = pool) {
+    const result = await db.query(`
+        SELECT count(*)::int AS n FROM datasets d
+        WHERE ${indexableDataset('$1')}
+    `, [ids]);
     return result.rows[0].n;
 }
 
-async function listDatasetSitemap({ limit, offset }, db = pool) {
+async function listDatasetSitemap({ limit, offset, ids = [] }, db = pool) {
     const result = await db.query(`
         SELECT d.id, d.name, d.metadata_modified FROM datasets d
+        WHERE ${indexableDataset('$3')}
         ORDER BY d.id LIMIT $1 OFFSET $2
-    `, [limit, offset]);
+    `, [limit, offset, ids]);
     return result.rows;
-}
-
-const DATA_BEARING_RESOURCE = dataBearingResource({ csvCap: '$1', xlsxCap: '$2', maxRows: '$3', maxCols: '$4' });
-function dataBearingParams() {
-    const limits = ingestLimits();
-    return [limits.maxFileBytes, limits.maxXlsxBytes, limits.maxRows, limits.maxCols];
 }
 
 async function countSitemapResources(db = pool) {
     const result = await db.query(`
         SELECT count(*)::int AS n FROM resources r JOIN datasets d ON d.id = r.dataset_id
-        WHERE ${DATA_BEARING_RESOURCE}
-    `, dataBearingParams());
+        WHERE ${INDEXABLE_RESOURCE}
+    `);
     return result.rows[0].n;
 }
 
@@ -663,82 +670,146 @@ async function listResourceSitemap({ limit, offset }, db = pool) {
     const result = await db.query(`
         SELECT r.id, LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
-        WHERE ${DATA_BEARING_RESOURCE}
-        ORDER BY r.id LIMIT $5 OFFSET $6
-    `, [...dataBearingParams(), limit, offset]);
+        WHERE ${INDEXABLE_RESOURCE}
+        ORDER BY r.id LIMIT $1 OFFSET $2
+    `, [limit, offset]);
     return result.rows;
 }
 
-// Download-only resource pages that Google still showed in the last `days` of
-// imported Search Console data. They carry noindex, which Google applies only
-// once it crawls a page again, so a sitemap entry dated by that change brings
-// the crawler back. A page Google has dropped stops appearing in the data and
-// leaves this list `days` later. Undated files and files dated before `since`,
-// when their pages turned noindex, carry `since`. The API reads only the
-// search_console_page_dates view (migration 046), not the Search Console tables.
-async function listNoindexResourceSitemap({ pagePrefix, days, since, limit }, db = pool) {
+// A file CanQuery could show as a table or a map, or prepare: the pages the
+// index policy turned noindex are the data-bearing ones that are not indexable.
+// The caps arrive as positional parameters so the SQL tracks config/ingest.js.
+const DATA_BEARING_RESOURCE = dataBearingResource({ csvCap: '$1', xlsxCap: '$2', maxRows: '$3', maxCols: '$4' });
+function dataBearingParams() {
+    const limits = ingestLimits();
+    return [limits.maxFileBytes, limits.maxXlsxBytes, limits.maxRows, limits.maxCols];
+}
+
+// A noindex page's sitemap date: its own change, but never before `since`, when
+// the page turned noindex, and never in the future. The clamp to now goes last,
+// so a `since` that is still ahead (a policy date set before its release)
+// dates the page by the time the file is built.
+const noindexLastmod = (own, since) => `LEAST(GREATEST(COALESCE(${own}, ${since}::timestamptz), ${since}::timestamptz), now())`;
+
+// Every page the index policy turned noindex, for the recrawl sitemaps: a
+// noindex tag takes effect only when a crawler fetches the page again, and an
+// entry dated by the change brings it back. One read per family; the caller
+// slices it into files.
+async function listPolicyNoindexDatasets({ ids = [], since, limit }, db = pool) {
     const result = await db.query(`
-        WITH latest AS (
-            SELECT max(data_date) AS data_date FROM search_console_page_dates
-        ), shown AS (
-            SELECT DISTINCT substr(s.page, length($5) + 1) AS id
-            FROM search_console_page_dates s, latest
-            WHERE s.data_date > latest.data_date - $6::int AND starts_with(s.page, $5)
-        )
-        SELECT r.id, GREATEST(LEAST(COALESCE(r.last_modified, d.metadata_modified, $7::timestamptz), now()), $7::timestamptz) AS lastmod
+        SELECT d.id, d.name, ${noindexLastmod('d.metadata_modified', '$2')} AS lastmod
+        FROM datasets d
+        WHERE (${indexableDataset('$1')}) IS NOT TRUE
+        ORDER BY d.id LIMIT $3
+    `, [ids, since, limit]);
+    return result.rows;
+}
+
+async function listPolicyNoindexResources({ since, limit }, db = pool) {
+    const result = await db.query(`
+        SELECT r.id, ${noindexLastmod('r.last_modified, d.metadata_modified', '$5')} AS lastmod
         FROM resources r
         JOIN datasets d ON d.id = r.dataset_id
-        JOIN shown ON shown.id = r.id
-        WHERE ${DATA_BEARING_RESOURCE} IS NOT TRUE
+        WHERE ${DATA_BEARING_RESOURCE} AND (${INDEXABLE_RESOURCE}) IS NOT TRUE
+        ORDER BY r.id LIMIT $6
+    `, [...dataBearingParams(), since, limit]);
+    return result.rows;
+}
+
+// Noindex pages that Google still showed in the last `days` of imported Search
+// Console data. A page Google has dropped stops appearing in the data and
+// leaves these lists `days` later. The API reads only the
+// search_console_page_dates view (migration 046), not the Search Console
+// tables. A resource list has a scope: 'download' is the download-only pages
+// (noindex since 2026-10-17), 'policy' the data-bearing pages the index policy
+// turned noindex; each is dated from its own `since`.
+const NOINDEX_RESOURCE_SCOPES = {
+    download: `${DATA_BEARING_RESOURCE} IS NOT TRUE`,
+    policy: `${DATA_BEARING_RESOURCE} AND (${INDEXABLE_RESOURCE}) IS NOT TRUE`
+};
+// The page's path after `prefix`, without a query string.
+const shownPages = (prefix, days) => `latest AS (
+            SELECT max(data_date) AS data_date FROM search_console_page_dates
+        ), shown AS (
+            SELECT DISTINCT split_part(substr(s.page, length(${prefix}) + 1), '?', 1) AS slug
+            FROM search_console_page_dates s, latest
+            WHERE s.data_date > latest.data_date - ${days}::int AND starts_with(s.page, ${prefix})
+        )`;
+
+async function listNoindexResourceSitemap({ pagePrefix, days, since, limit, scope = 'download' }, db = pool) {
+    if (!Object.hasOwn(NOINDEX_RESOURCE_SCOPES, scope)) throw new Error('Unknown noindex scope');
+    const result = await db.query(`
+        WITH ${shownPages('$5', '$6')}
+        SELECT r.id, ${noindexLastmod('r.last_modified, d.metadata_modified', '$7')} AS lastmod
+        FROM resources r
+        JOIN datasets d ON d.id = r.dataset_id
+        JOIN shown ON shown.slug = r.id
+        WHERE ${NOINDEX_RESOURCE_SCOPES[scope]}
         ORDER BY r.id LIMIT $8
     `, [...dataBearingParams(), pagePrefix, days, since, limit]);
     return result.rows;
 }
 
+// A dataset page's address carries its name, or its id when it has none; the
+// name is matched as stored, so one that the address encodes differently is
+// missed.
+async function listShownNoindexDatasets({ ids = [], pagePrefix, days, since, limit }, db = pool) {
+    const result = await db.query(`
+        WITH ${shownPages('$2', '$3')}
+        SELECT d.id, d.name, ${noindexLastmod('d.metadata_modified', '$4')} AS lastmod
+        FROM datasets d
+        WHERE (d.name IN (SELECT slug FROM shown) OR d.id IN (SELECT slug FROM shown))
+          AND (${indexableDataset('$1')}) IS NOT TRUE
+        ORDER BY d.id LIMIT $5
+    `, [ids, pagePrefix, days, since, limit]);
+    return result.rows;
+}
+
 // The newest change each sitemap chunk holds, numbered like the chunk files
 // (1-based, in id order, pageSize URLs each) and dated like their entries.
-async function listDatasetSitemapChunkLastmods(pageSize, db = pool) {
+async function listDatasetSitemapChunkLastmods({ pageSize, ids = [] }, db = pool) {
     const result = await db.query(`
         SELECT chunk::int AS chunk, max(lastmod) AS lastmod FROM (
             SELECT (row_number() OVER (ORDER BY d.id) - 1) / $1 + 1 AS chunk, d.metadata_modified AS lastmod
             FROM datasets d
+            WHERE ${indexableDataset('$2')}
         ) chunks GROUP BY chunk ORDER BY chunk
-    `, [pageSize]);
+    `, [pageSize, ids]);
     return result.rows;
 }
 
 async function listResourceSitemapChunkLastmods(pageSize, db = pool) {
     const result = await db.query(`
         SELECT chunk::int AS chunk, max(lastmod) AS lastmod FROM (
-            SELECT (row_number() OVER (ORDER BY r.id) - 1) / $5 + 1 AS chunk,
+            SELECT (row_number() OVER (ORDER BY r.id) - 1) / $1 + 1 AS chunk,
                    LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) AS lastmod
             FROM resources r JOIN datasets d ON d.id = r.dataset_id
-            WHERE ${DATA_BEARING_RESOURCE}
+            WHERE ${INDEXABLE_RESOURCE}
         ) chunks GROUP BY chunk ORDER BY chunk
-    `, [...dataBearingParams(), pageSize]);
+    `, [pageSize]);
     return result.rows;
 }
 
-// Pages whose sitemap entry changed in (since, until], for IndexNow: datasets by
-// their record change and data-bearing resources by the date their sitemap
-// entry carries.
-async function listChangedSitemapPages({ since, until, limit }, db = pool) {
+// Pages whose sitemap entry changed in (since, until], for IndexNow: indexable
+// datasets by their record change and indexable resources by the date their
+// sitemap entry carries.
+async function listChangedSitemapPages({ since, until, limit, ids = [] }, db = pool) {
     const datasets = await db.query(`
         SELECT d.id, d.name FROM datasets d
         WHERE d.metadata_modified > $1 AND d.metadata_modified <= $2
+          AND ${indexableDataset('$4')}
         ORDER BY d.metadata_modified, d.id LIMIT $3
-    `, [since, until, limit]);
+    `, [since, until, limit, ids]);
     const resources = await db.query(`
         SELECT r.id FROM resources r JOIN datasets d ON d.id = r.dataset_id
-        WHERE ${DATA_BEARING_RESOURCE}
-          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $5
-          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) <= $6
-        ORDER BY r.id LIMIT $7
-    `, [...dataBearingParams(), since, until, limit]);
+        WHERE ${INDEXABLE_RESOURCE}
+          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $1
+          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) <= $2
+        ORDER BY r.id LIMIT $3
+    `, [since, until, limit]);
     return { datasets: datasets.rows, resources: resources.rows };
 }
 
-// The newest catalogue record change, for sitemap <lastmod> entries.
 async function getCatalogLastModified(db = pool) {
     const result = await db.query('SELECT max(metadata_modified) AS modified FROM datasets');
     return result.rows[0].modified || null;
@@ -917,6 +988,9 @@ module.exports = {
     countSitemapResources,
     listResourceSitemap,
     listNoindexResourceSitemap,
+    listShownNoindexDatasets,
+    listPolicyNoindexDatasets,
+    listPolicyNoindexResources,
     listPlaceSitemap,
     listOrganizationSitemap,
     getCatalogLastModified,

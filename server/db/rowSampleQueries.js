@@ -17,12 +17,15 @@ const CANDIDATE_JOINS = `JOIN datasets d ON d.id = r.dataset_id
     LEFT JOIN ingested_resources ir ON ir.resource_id = r.id
     LEFT JOIN resource_row_samples s ON s.resource_id = r.id`;
 
-// Only live tables and CSV files can be sampled; the rest is classified in JS.
-const SAMPLEABLE = `(r.datastore_active OR r.format = 'CSV')`;
+// Only live tables can be sampled, and CSV files when the run samples files;
+// the rest is classified in JS. The due list applies it too: a stored file
+// sample that is no longer refreshed would otherwise stay due for ever, ahead
+// of the live tables.
+const sampleable = files => (files ? `(r.datastore_active OR r.format = 'CSV')` : 'r.datastore_active');
 
 // The resource pages Google showed most often in the last 28 days of imported
 // Search Console data, by the number of days each was shown.
-async function listShownCandidates({ pagePrefix, days = 28, limit = 200 }, db = pool) {
+async function listShownCandidates({ pagePrefix, days = 28, limit = 200, files = false }, db = pool) {
     const { rows } = await db.query(`
         WITH shown AS (
             SELECT substr(split_part(page, '?', 1), length($1) + 1) AS id, count(DISTINCT data_date) AS days
@@ -36,19 +39,19 @@ async function listShownCandidates({ pagePrefix, days = 28, limit = 200 }, db = 
         FROM shown
         JOIN resources r ON r.id = shown.id
         ${CANDIDATE_JOINS}
-        WHERE ${SAMPLEABLE}
+        WHERE ${sampleable(files)}
         ORDER BY shown.days DESC, r.id
     `, [pagePrefix, days, limit]);
     return rows;
 }
 
-async function listDueCandidates({ limit }, db = pool) {
+async function listDueCandidates({ limit, files = false }, db = pool) {
     const { rows } = await db.query(`
         SELECT ${CANDIDATE_COLUMNS}
         FROM resource_row_samples due
         JOIN resources r ON r.id = due.resource_id
         ${CANDIDATE_JOINS}
-        WHERE due.next_check_at <= now()
+        WHERE due.next_check_at <= now() AND ${sampleable(files)}
         ORDER BY due.next_check_at, r.id
         LIMIT $1
     `, [limit]);
@@ -57,12 +60,12 @@ async function listDueCandidates({ limit }, db = pool) {
 
 // One step of a sweep over every resource in id order, so unsampled resources
 // and changed versions are found without scanning the catalogue in one go.
-async function listSweepCandidates({ after = '', limit }, db = pool) {
+async function listSweepCandidates({ after = '', limit, files = false }, db = pool) {
     const { rows } = await db.query(`
         SELECT ${CANDIDATE_COLUMNS}
         FROM resources r
         ${CANDIDATE_JOINS}
-        WHERE r.id > $1 AND ${SAMPLEABLE}
+        WHERE r.id > $1 AND ${sampleable(files)}
         ORDER BY r.id
         LIMIT $2
     `, [after, limit]);
