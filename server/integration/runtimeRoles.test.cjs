@@ -17,7 +17,7 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
     const { claimJob: claimMapJob } = require('../db/mapIndexQueries');
     const { listNoindexResourceSitemap, listShownNoindexDatasets, listPolicyNoindexDatasets, listPolicyNoindexResources,
         countSitemapDatasets, countSitemapResources, listDatasetSitemap, listResourceSitemap, listChangedSitemapPages,
-        listResourcesForDataset, getResourceById } = require('../db/catalogReadQueries');
+        listResourcesForDataset, getResourceById, listPortalDirectory } = require('../db/catalogReadQueries');
     const { getResourceRowSample } = require('../db/rowSampleQueries');
     const { readSample, runBatch } = require('../db/chartQueries');
     const { samplePlan } = require('../services/charts/profile');
@@ -126,6 +126,9 @@ if (!enabled || enabled !== process.env.CANQUERY_DATABASE_URL || enabled !== pro
             const changed = await listChangedSitemapPages({ since: new Date(0), until: new Date(), limit: 10, ids: [prefix] }, db);
             assert.ok(Array.isArray(changed.datasets) && Array.isArray(changed.resources));
             assert.ok((await listResourcesForDataset(prefix, db)).every(row => typeof row.pinned === 'boolean'));
+            // The portal directory reads sources, their records, tables, maps, places and sync history in one
+            // statement, as the API.
+            assert.ok(Array.isArray(await listPortalDirectory({ homes: [[prefix, prefix]] }, db)));
         }
     });
     test('API admits work and takes narrow catalogue locks without arbitrary writes', async () => {

@@ -1,6 +1,16 @@
 const { sources, getSource } = require('../config/catalogSources');
 
 describe('configured municipal catalogue sources', () => {
+    test('French portal names contract their article: du District, never de le District', () => {
+        const french = sources.map(source => source.nameFr);
+        expect(french.filter(name => /\bde les? /i.test(name))).toEqual([]);
+        expect(getSource('squamish-hub').nameFr).toBe('Données ouvertes du District de Squamish');
+        // Names whose article does not contract are as they were.
+        expect(getSource('kamloops-hub').nameFr).toBe('Données ouvertes de la Ville de Kamloops');
+        expect(getSource('abbotsford-hub').nameFr).toBe('Données ouvertes de la Ville d’Abbotsford');
+        expect(getSource('gatineau-open-data').nameFr).toBe('Données ouvertes de la Ville de Gatineau');
+    });
+
     test('syncs city portals before the authoritative portal in each regional cluster', () => {
         expect(sources.map(source => source.id)).toEqual([
             'toronto-open-data', 'montreal-open-data', 'quebec-city-open-data', 'laval-open-data',

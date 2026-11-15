@@ -7,6 +7,7 @@ const indexPolicy = require('../services/indexPolicy');
 const { hostedRoutes } = require('../extensions');
 const lmiaPages = require('../services/lmiaPages');
 const oasPages = require('../services/oasPages');
+const portalPages = require('../services/portalPages');
 const { TABLE_NUMBERS, oasPath, oasTablePath } = require('../utils/oasLabels');
 
 // Sitemap files cap at 50,000 URLs each; we chunk datasets well under that and
@@ -257,12 +258,17 @@ const sitemapPages = crawlFile(async (req, res) => {
         const oasLastmod = oas && isoDate(oas.updated_at);
         const oasEntry = (path, priority) => ({ loc: SITE_URL + path, changefreq: 'monthly', priority,
             ...(oasLastmod ? { lastmod: oasLastmod } : {}) });
+        // The portal directory, once a catalogue has been read (until then it is noindex), dated by
+        // the last successful read of a portal.
+        const portals = await portalPages.directory().catch(() => null);
+        const portalsLastmod = portals && isoDate(portals.updated_at);
         return urlset([
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', ...hub },
             { loc: SITE_URL + '/datasets', changefreq: 'daily', priority: '0.9', ...hub },
             { loc: SITE_URL + '/insights', changefreq: 'daily', priority: '0.9', ...hub },
             { loc: SITE_URL + '/organizations', changefreq: 'weekly', priority: '0.7', ...hub },
             { loc: SITE_URL + '/places', changefreq: 'weekly', priority: '0.8', ...hub },
+            ...(portals ? [{ loc: SITE_URL + '/portals', changefreq: 'daily', priority: '0.8', ...(portalsLastmod ? { lastmod: portalsLastmod } : {}) }] : []),
             ...(lmia ? [{ loc: SITE_URL + '/lmia', changefreq: 'weekly', priority: '0.8', ...(lmiaLastmod ? { lastmod: lmiaLastmod } : {}) }] : []),
             ...(oas ? ['en', 'fr'].flatMap(lang => [oasEntry(oasPath(lang), '0.8'),
                 ...TABLE_NUMBERS.map(table => oasEntry(oasTablePath(lang, table), '0.6'))]) : []),

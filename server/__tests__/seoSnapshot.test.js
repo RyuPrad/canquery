@@ -285,8 +285,11 @@ describe('server-rendered crawl snapshots', () => {
     it('opens every snapshot with one section nav and lists the Top 100 beyond the usual link bound', () => {
         const nav = snapshot.sectionNav();
         expect(nav).toContain('<nav aria-label="CanQuery sections"');
-        expect(nav.match(/<li>/g)).toHaveLength(8);
+        expect(nav.match(/<li>/g)).toHaveLength(9);
         expect(nav).toContain('<a href="/fr/blog">Guides des données</a>');
+        // The portal directory sits with the other catalogue sections, before Insights.
+        expect(nav).toContain('<li><a href="/organizations">Organizations</a></li><li><a href="/portals">Portals</a></li>' +
+            '<li><a href="/insights">Insights</a></li>');
         expect(snapshot.staticSnapshot('about').match(/<nav aria-label="CanQuery sections"/g)).toHaveLength(1);
         const items = Array.from({ length: 13 }, (_, i) => ({ rank: i + 1, dataset_id: 'd' + i, dataset_name: i ? 'name-' + i : null,
             title_en: 'Title ' + i, downloads: 1000 - i }));

@@ -495,11 +495,11 @@ describe('links to the hub', () => {
 
     test('every page the server renders links the hub in both languages, only while it has data', async () => {
         const count = html => (/<nav aria-label="CanQuery sections"[^>]*><ul>(.*?)<\/ul><\/nav>/s.exec(html)[1].match(/<li>/g) || []).length;
-        expect(count(seoSnapshot.sectionNav())).toBe(8);
+        expect(count(seoSnapshot.sectionNav())).toBe(9);
         expect(seoSnapshot.sectionNav()).not.toContain('/oas');
         await oas.summary();
         const nav = seoSnapshot.sectionNav();
-        expect(count(nav)).toBe(10);
+        expect(count(nav)).toBe(11);
         expect(nav).toContain('<li><a href="/insights">Insights</a></li><li><a href="/oas">OAS and GIS amounts</a></li>' +
             '<li><a href="/fr/sv">Montants de la SV et du SRG</a></li><li><a href="/blog">Data guides</a></li>');
         expect(seoSnapshot.errorSnapshot('Page not found', 'Nothing here.')).toContain('<a href="/oas">OAS and GIS amounts</a>');
@@ -507,7 +507,7 @@ describe('links to the hub', () => {
         oas.cache.clear();
         hold();
         await oas.summary();
-        expect(count(seoSnapshot.sectionNav())).toBe(8);
+        expect(count(seoSnapshot.sectionNav())).toBe(9);
     });
 
     test('the dataset and its files lead to the hub while it has data; the LMIA callout is as it was', async () => {

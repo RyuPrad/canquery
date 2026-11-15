@@ -6,7 +6,7 @@ const { hostedRoute } = require('../extensions');
 const ROUTE_MODULES = Object.freeze({
     datasets: 'DatasetsPage', dataset: 'DatasetPage', resource: 'ResourcePage',
     organizations: 'OrganizationsPage', organization: 'OrganizationPage',
-    places: 'PlacesPage', place: 'PlacePage', insights: 'InsightsPage',
+    places: 'PlacesPage', place: 'PlacePage', portals: 'PortalsPage', insights: 'InsightsPage',
     docs: 'DocsPage', privacy: 'PrivacyPage', faq: 'FaqPage', about: 'AboutPage', blog: 'BlogPage',
     lmia: 'LmiaPage', 'lmia-employer': 'LmiaEmployerPage', oas: 'OasPage', 'oas-table': 'OasPage'
 });

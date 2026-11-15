@@ -465,3 +465,145 @@ integrationDescribe('federal provincial places PostgreSQL integration', () => {
         }
     });
 });
+
+integrationDescribe('portal directory PostgreSQL integration', () => {
+    let pool, db;
+    const prefix = 'portal_directory_' + process.pid;
+    const id = name => prefix + '_' + name;
+    const mine = rows => rows.filter(row => row.id.startsWith(prefix));
+    const find = (rows, name) => rows.find(row => row.id === id(name));
+
+    beforeAll(async () => {
+        pool = new Pool({ connectionString: url });
+        db = await pool.connect();
+        await db.query('BEGIN');
+        for (const [name, kind, parent, enabled] of [
+            ['country', 'country', null, true], ['province', 'province', 'country', true], ['region', 'region', 'province', true],
+            ['city', 'municipality', 'region', true], ['territory', 'territory', 'country', true], ['closed', 'municipality', 'province', false]
+        ]) {
+            await db.query(`INSERT INTO places (id, slug, kind, parent_id, name_en, name_fr, enabled) VALUES ($1,$1,$2,$3,$4,$5,$6)`,
+                [id(name), kind, parent ? id(parent) : null, prefix + ' ' + name, name === 'territory' ? prefix + ' territoire' : null, enabled]);
+        }
+        for (const [name, kind, enabled, licence] of [
+            ['federal', 'ckan', true, null], ['city', 'ckan', true, ['City licence', 'Licence de la ville', 'https://example.test/licence']],
+            ['regional', 'arcgis-hub', true, null], ['territorial', 'ckan', true, null], ['unplaced', 'socrata', true, null],
+            ['closedplace', 'opendatasoft', true, null], ['empty', 'arcgis-hub', true, null], ['off', 'ckan', false, null]
+        ]) {
+            await db.query(`INSERT INTO catalog_sources (id, kind, name_en, name_fr, homepage_url, upstream_host, enabled,
+                    default_license_title_en, default_license_title_fr, default_license_url)
+                VALUES ($1, $2, $3, $4, $5, 'example.test', $6, $7, $8, $9)`,
+                [id(name), kind, prefix + ' ' + name, name === 'city' ? prefix + ' ville' : null, 'https://example.test/' + name, enabled,
+                    ...(licence || [null, null, null])]);
+        }
+        const datasets = { f1: '2026-01-01', f2: '2026-02-01', f3: '2026-03-01', c1: '2026-04-01', c2: '2026-05-01', shared: '2026-06-01',
+            r1: '2026-07-01', t1: '2026-08-01', u1: '2026-09-01', p1: '2026-10-01', o1: '2026-11-01' };
+        for (const [name, modified] of Object.entries(datasets)) {
+            await db.query('INSERT INTO datasets (id, name, title_en, metadata_modified) VALUES ($1,$1,$1,$2::timestamptz)', [id(name), modified]);
+        }
+        // c1 is listed under two external ids of the same portal; `shared` is listed by the city's and the region's portal.
+        for (const [source, external, dataset] of [
+            ['federal', 'f1', 'f1'], ['federal', 'f2', 'f2'], ['federal', 'f3', 'f3'],
+            ['city', 'c1', 'c1'], ['city', 'c1-again', 'c1'], ['city', 'c2', 'c2'], ['city', 'shared', 'shared'],
+            ['regional', 'shared', 'shared'], ['regional', 'r1', 'r1'], ['territorial', 't1', 't1'], ['unplaced', 'u1', 'u1'],
+            ['closedplace', 'p1', 'p1'], ['off', 'o1', 'o1']
+        ]) {
+            await db.query('INSERT INTO dataset_sources (source_id, external_id, dataset_id, is_authoritative) VALUES ($1,$2,$3,$4)',
+                [id(source), external, id(dataset), source !== 'regional']);
+        }
+        // Tables: a live one (f1, c1) and a prepared copy (c2). Maps: two on the shared dataset. r1 has a download only.
+        await db.query(`INSERT INTO resources (id, dataset_id, format, url, datastore_active) VALUES
+            ($1, $2, 'CSV', 'https://example.test/a.csv', true), ($3, $4, 'CSV', 'https://example.test/a.csv', true),
+            ($5, $6, 'CSV', 'https://example.test/a.csv', false), ($7, $8, 'GEOJSON', 'https://example.test/a.geojson', false),
+            ($9, $8, 'GEOJSON', 'https://example.test/b.geojson', false), ($10, $11, 'PDF', 'https://example.test/a.pdf', false)`,
+            [id('rf1'), id('f1'), id('rc1'), id('c1'), id('rc2'), id('c2'), id('rs1'), id('shared'), id('rs2'), id('r1'), id('r1')]);
+        await db.query(`INSERT INTO ingested_resources (resource_id, table_name, status) VALUES ($1, $2, 'ready')`, [id('rc2'), id('table')]);
+        for (const resource of ['rs1', 'rs2']) {
+            await db.query(`INSERT INTO resource_maps (resource_id, provider, service_url, geometry_type)
+                VALUES ($1, 'arcgis', 'https://example.test/FeatureServer/0', 'polygon')`, [id(resource)]);
+        }
+        // The federal portal's provincial records sit in their province (migration 047); the region's portal has one
+        // record of its own and two it only covers; the city's are its own.
+        for (const [source, dataset, place, relationship] of [
+            ['federal', 'f1', 'province', 'direct'], ['federal', 'f2', 'province', 'direct'],
+            ['city', 'c1', 'city', 'direct'], ['city', 'c2', 'city', 'direct'], ['city', 'shared', 'region', 'coverage'],
+            ['regional', 'r1', 'region', 'direct'], ['regional', 'shared', 'city', 'coverage'], ['regional', 'r1', 'city', 'coverage'],
+            ['territorial', 't1', 'territory', 'direct'], ['closedplace', 'p1', 'closed', 'direct']
+        ]) {
+            await db.query(`INSERT INTO dataset_places (source_id, dataset_id, place_id, relationship, includes_descendants, assignment_method)
+                VALUES ($1,$2,$3,$4,false,'source')`, [id(source), id(dataset), id(place), relationship]);
+        }
+        // The last successful read counts; a later failed one and an unfinished one do not.
+        await db.query(`INSERT INTO sync_runs (kind, source_id, started_at, finished_at, ok) VALUES
+            ('source', $1, '2026-11-10T06:00:00Z', '2026-11-10T06:30:00Z', true),
+            ('source', $1, '2026-11-12T06:00:00Z', '2026-11-12T06:30:00Z', true),
+            ('source', $1, '2026-11-13T06:00:00Z', '2026-11-13T06:30:00Z', false),
+            ('source', $1, '2026-11-14T06:00:00Z', NULL, NULL),
+            ('full', $2, '2026-11-14T02:15:00Z', '2026-11-14T03:11:00Z', true),
+            ('incremental', $2, '2026-11-14T20:30:00Z', '2026-11-14T20:30:04Z', true)`, [id('city'), id('federal')]);
+    });
+    afterAll(async () => {
+        if (db) { await db.query('ROLLBACK'); db.release(); }
+        if (pool) await pool.end();
+    });
+
+    // Each portal's own place, as the source registry would name it.
+    const homes = [['city', 'city'], ['regional', 'region'], ['territorial', 'territory'], ['closedplace', 'closed'], ['unplaced', 'nowhere'],
+        ['off', 'city']].map(([source, place]) => [id(source), id(place)]);
+
+    test('lists every enabled portal with what is mirrored from it, largest first', async () => {
+        const rows = mine(await queries.listPortalDirectory({ homes }, db));
+        // A disabled source is not a portal the site mirrors; an enabled one without records is listed with zeros.
+        expect(rows.map(row => row.id)).toEqual(['city', 'federal', 'regional', 'closedplace', 'territorial', 'unplaced', 'empty'].map(id));
+        expect(rows.map(row => [row.dataset_count, row.table_count, row.map_count])).toEqual([
+            // c1 counts once though it is listed twice; c1 has a live table, c2 a prepared copy; the shared
+            // dataset's two maps make one dataset with a map.
+            [3, 2, 1], [3, 1, 0],
+            // The shared dataset counts for the region's portal too, with its map.
+            [2, 0, 1], [1, 0, 0], [1, 0, 0], [1, 0, 0], [0, 0, 0]]);
+        const city = find(rows, 'city');
+        expect(city).toMatchObject({ kind: 'ckan', name_en: prefix + ' city', name_fr: prefix + ' ville', homepage_url: 'https://example.test/city',
+            default_license_title_en: 'City licence', default_license_title_fr: 'Licence de la ville', default_license_url: 'https://example.test/licence' });
+        expect(city.last_synced_at.toISOString()).toBe('2026-11-12T06:30:00.000Z');
+        expect(find(rows, 'federal').last_synced_at.toISOString()).toBe('2026-11-14T20:30:04.000Z');
+        expect(find(rows, 'regional').last_synced_at).toBeNull();
+        expect(find(rows, 'empty')).toMatchObject({ place_slug: null, default_license_title_en: null, last_synced_at: null });
+    });
+
+    test('a portal belongs to the place it is given, with its province; where its records are placed does not decide', async () => {
+        const rows = mine(await queries.listPortalDirectory({ homes }, db));
+        const place = name => { const row = find(rows, name); return [row.place_slug, row.place_kind, row.province_slug]; };
+        expect(place('city')).toEqual([id('city'), 'municipality', id('province')]);
+        // The region's portal is the region's, though two of its three placed records are in the city.
+        expect(place('regional')).toEqual([id('region'), 'region', id('province')]);
+        // A territory is its own province.
+        expect(place('territorial')).toEqual([id('territory'), 'territory', id('territory')]);
+        expect(find(rows, 'territorial')).toMatchObject({ place_name_en: prefix + ' territory', place_name_fr: prefix + ' territoire',
+            province_name_en: prefix + ' territory', province_name_fr: prefix + ' territoire' });
+        // A place that does not exist, or one that is switched off: no place.
+        expect(place('unplaced')).toEqual([null, null, null]);
+        expect(place('closedplace')).toEqual([null, null, null]);
+        // A portal that is given none has none, though its records sit in a province (the federal portal's do).
+        expect(place('federal')).toEqual([null, null, null]);
+        expect(place('empty')).toEqual([null, null, null]);
+        // The place changes nothing else, and no place at all is every portal without one.
+        const strip = list => list.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !/^(place|province)_/.test(key))));
+        const bare = mine(await queries.listPortalDirectory({}, db));
+        expect(strip(bare)).toEqual(strip(rows));
+        expect(bare.every(row => row.place_slug === null && row.province_slug === null)).toBe(true);
+        // A source named twice keeps one row.
+        const twice = mine(await queries.listPortalDirectory({ homes: [...homes, [id('city'), id('region')]] }, db));
+        expect(twice.map(row => row.id)).toEqual(rows.map(row => row.id));
+    });
+
+    test('every row carries the catalogue\'s distinct dataset total', async () => {
+        const all = await queries.listPortalDirectory({ homes }, db);
+        const { rows: [{ n }] } = await db.query(`SELECT count(DISTINCT ds.dataset_id)::int AS n FROM dataset_sources ds JOIN datasets d ON d.id = ds.dataset_id`);
+        expect(new Set(all.map(row => row.catalogue_datasets))).toEqual(new Set([n]));
+        // Eleven fixture datasets, one of them listed by two portals and one by a disabled source: counted once each.
+        const { rows: [{ outside }] } = await db.query(`SELECT count(DISTINCT ds.dataset_id)::int AS outside FROM dataset_sources ds
+            JOIN datasets d ON d.id = ds.dataset_id WHERE NOT starts_with(ds.source_id, $1)`, [prefix]);
+        expect(n - outside).toBe(11);
+        // The portals' own counts add up to more: 3 + 3 + 2 + 1 + 1 + 1.
+        expect(mine(all).reduce((sum, row) => sum + row.dataset_count, 0)).toBe(11);
+    });
+});

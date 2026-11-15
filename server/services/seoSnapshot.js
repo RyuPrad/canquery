@@ -57,14 +57,16 @@ function safeHttpUrl(value) {
 // Every snapshot opens with links to the site's sections, so a crawler that
 // never runs the application still reaches the hubs and both guide indexes.
 const SECTION_LINKS = [
-    ['/datasets', 'Datasets'], ['/places', 'Places'], ['/organizations', 'Organizations'], ['/insights', 'Insights'],
+    ['/datasets', 'Datasets'], ['/places', 'Places'], ['/organizations', 'Organizations'], ['/portals', 'Portals'],
+    ['/insights', 'Insights'],
     ['/blog', 'Data guides'], ['/fr/blog', 'Guides des données'], ['/docs', 'API docs'], ['/about', 'About']
 ];
 // A dataset hub joins them, after Insights, only while it has data to show.
 function sectionLinks() {
     if (!hubAvailable('oas')) return SECTION_LINKS;
     const hubs = [[oas.oasPath('en'), oas.copy('en').hub], [oas.oasPath('fr'), oas.copy('fr').hub]];
-    return [...SECTION_LINKS.slice(0, 4), ...hubs, ...SECTION_LINKS.slice(4)];
+    const after = SECTION_LINKS.findIndex(([path]) => path === '/insights') + 1;
+    return [...SECTION_LINKS.slice(0, after), ...hubs, ...SECTION_LINKS.slice(after)];
 }
 function sectionNav() {
     return '<nav aria-label="CanQuery sections" data-cq-sections="true"><ul>' +
@@ -780,7 +782,98 @@ function lmiaEmployerSnapshot(employer) {
     });
 }
 
+// The portal directory (/portals): what CanQuery mirrors from each open-data
+// portal, as one table. Names and licences are printed as recorded; the
+// official site and the licence are links only when they are plain web
+// addresses.
+const PORTAL_PLATFORMS = { ckan: 'CKAN', 'arcgis-hub': 'ArcGIS Hub', socrata: 'Socrata', opendatasoft: 'Opendatasoft', other: 'Other' };
+const PORTAL_LEVELS = { federal: 'Federal', provincial: 'Provincial and territorial', municipal: 'Municipal and regional' };
+const PORTALS_TITLE = 'Canadian open data portals';
+const PORTALS_METHOD = [
+    'Datasets is the number of records CanQuery holds from the portal. A record from a municipal, regional or territorial ' +
+        'portal is listed only when it is published under a recognized open licence, so a portal can publish more datasets ' +
+        'than the number shown here. A dataset that two portals list is counted for each of them.',
+    'With a table counts the datasets that have a table to query on CanQuery now: one hosted by the source portal, or one ' +
+        'CanQuery has prepared from a CSV or Excel file. With a map counts the datasets that have a map on CanQuery.',
+    'Licence is the portal’s general open-data licence. Some portals license each dataset on its own, and every dataset ' +
+        'page names the licence that applies. Last read is the last day CanQuery read the portal’s catalogue successfully.'
+];
+const portalCount = value => catalogFacts.formatCount(value);
+const portalDay = value => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : '');
+
+function portalPlace(portal) {
+    if (portal.level === 'federal') return text('Canada');
+    if (!portal.place) return '';
+    const province = portal.province && portal.province.slug !== portal.place.slug ? ', ' + text(verbatim(portal.province.name.en)) : '';
+    return pathLink('/places/' + encodeURIComponent(portal.place.slug), verbatim(portal.place.name.en)) + province;
+}
+
+function portalsTable(portals) {
+    const name = portal => {
+        const url = safeHttpUrl(portal.homepage_url);
+        return url ? pathLink(url, verbatim(portal.name.en)) : text(verbatim(portal.name.en));
+    };
+    const licence = portal => {
+        if (!portal.licence) return text('Set on each dataset');
+        const url = safeHttpUrl(portal.licence.url);
+        return url ? pathLink(url, verbatim(portal.licence.title.en)) : text(verbatim(portal.licence.title.en));
+    };
+    // The level of government is in the table below this one: four rows in five would repeat "municipal".
+    const headers = ['Portal', 'Place', 'Platform', 'Datasets', 'With a table', 'With a map', 'Licence', 'Last read'];
+    return '<section><h2>' + text('Every portal') + '</h2><table><thead><tr>' +
+        headers.map(header => '<th scope="col">' + text(header) + '</th>').join('') + '</tr></thead><tbody>' +
+        portals.map(portal => '<tr><th scope="row">' + name(portal) + '</th><td>' + portalPlace(portal) + '</td><td>' +
+            text(PORTAL_PLATFORMS[portal.platform] || PORTAL_PLATFORMS.other) +
+            '</td><td>' + text(portalCount(portal.datasets)) + '</td><td>' + text(portalCount(portal.tables)) + '</td><td>' +
+            text(portalCount(portal.maps)) + '</td><td>' + licence(portal) + '</td><td>' + text(portalDay(portal.last_synced_at)) +
+            '</td></tr>').join('') + '</tbody></table></section>';
+}
+
+function portalsSnapshot(directory) {
+    const breadcrumbs = [{ path: '/', label: 'CanQuery' }, { label: 'Open data portals' }];
+    const related = [{ path: '/places', label: 'Open data by place' }, { path: '/organizations', label: 'Publishing organizations' },
+        { path: '/datasets', label: 'Browse all datasets' }, { path: '/about#data-sources', label: 'How CanQuery reads its sources' }];
+    if (!directory) {
+        return shell({ breadcrumbs, title: PORTALS_TITLE,
+            lead: 'No open data portal is mirrored here yet. Once a catalogue has been read, this page lists every portal ' +
+                'with its datasets, licence and last refresh.',
+            relatedTitle: 'Explore CanQuery', relatedLinks: related });
+    }
+    const { totals, levels, platforms, provinces } = directory;
+    const level = id => (levels.find(row => row.id === id) || { portals: 0 }).portals;
+    const groupTable = (title, header, rows, label) => lmiaTable(title, [header, 'Portals', 'Datasets'],
+        rows.map(row => [label(row), portalCount(row.portals), portalCount(row.datasets)]));
+    return shell({
+        breadcrumbs,
+        title: PORTALS_TITLE,
+        lead: totals.portals === 1
+            ? `CanQuery mirrors one Canadian open data portal, ${portalCount(totals.datasets)} datasets in all. This page gives the ` +
+                'datasets CanQuery holds from it, how many have a table or a map here, its licence and the last day it was read.'
+            : `CanQuery mirrors ${portalCount(totals.portals)} Canadian open data portals: ${portalCount(level('federal'))} federal, ` +
+                `${portalCount(level('provincial'))} provincial or territorial and ${portalCount(level('municipal'))} municipal or regional, ` +
+                `${portalCount(totals.datasets)} datasets in all. For each portal this page gives the datasets CanQuery holds, how many ` +
+                'have a table or a map here, its licence and the last day it was read.',
+        facts: [
+            { label: 'Portals', value: portalCount(totals.portals) },
+            { label: 'Datasets', value: portalCount(totals.datasets) },
+            { label: 'Provinces and territories represented', value: portalCount(totals.provinces) },
+            { label: 'Last read', value: portalDay(directory.updated_at) }
+        ],
+        overviewHtml: portalsTable(directory.portals) +
+            groupTable('Portals by level of government', 'Level', levels, row => PORTAL_LEVELS[row.id] || row.id) +
+            groupTable('Portals by platform', 'Platform', platforms, row => PORTAL_PLATFORMS[row.id] || PORTAL_PLATFORMS.other) +
+            groupTable('Portals by province or territory', 'Province or territory', provinces, row => row.name.en) +
+            '<section><h2>' + text('What the numbers mean') + '</h2>' +
+            PORTALS_METHOD.map(paragraph => '<p>' + text(paragraph) + '</p>').join('') + '</section>',
+        relatedTitle: 'Explore CanQuery', relatedLinks: related
+    });
+}
+
 module.exports = {
+    portalsSnapshot,
+    PORTALS_METHOD,
+    PORTAL_PLATFORMS,
+    PORTAL_LEVELS,
     lmiaSnapshot,
     lmiaEmployerSnapshot,
     MAX_LINKS,

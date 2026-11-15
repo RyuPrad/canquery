@@ -212,3 +212,33 @@ Two reasons pointed at the site:
   the year or fiscal year from its file name when the name has none ("Key
   ratios 2023 — Government of Ontario (French, XLSX table)"). About 1,070
   files change; a file alone in its dataset keeps its title.
+
+## Portal directory (November 2026)
+
+`/portals` lists every enabled catalogue source as a portal: its place and
+province, its platform, the datasets held from it, how many of them have a
+table or a map here, its general licence and the last day it was read. The
+page is original reference content for a visitor who is choosing a portal and
+for a site that wants one page to link to; it is listed in
+`/sitemap-pages.xml` with the latest successful read as its date, linked from
+the navigation menu and the footer, and described by a `DataCatalog` item
+list.
+
+- **One read.** `listPortalDirectory` counts each portal's records from
+  `dataset_sources` and applies the catalogue's own "has a table" and "has a
+  map" rules, so the counts are the ones `/datasets?source=…` shows with the
+  same filters. A dataset two portals list counts for both and once in the
+  total. The service caches the result for ten minutes.
+- **A portal's place** comes from the source registry
+  (`server/config/catalogSources.js`): the place its entry names, or names
+  first. Where its records are placed does not decide it, so a region's
+  portal that mostly holds its cities' records is still the region's. The
+  federal portal is in no registry entry and has no place.
+- **Website-only data.** The page embeds the directory in its first HTML and
+  an in-app visit reads `/web-api/v1/portals`; the route is not part of
+  `/api/v1`, is not metered and is not in the OpenAPI document.
+- **Nothing to list.** With no portal read yet the page answers 200 with a
+  `noindex` tag and stays out of the sitemap; a failed read answers 503.
+
+Below 1024 pixels the application draws each portal as a card instead of a
+table row, so no figure is off screen; the server's HTML keeps the table.
