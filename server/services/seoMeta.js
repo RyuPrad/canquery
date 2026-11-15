@@ -1,12 +1,15 @@
 // Pure SEO helpers: route classification, safe HTML/JSON-LD escaping, per-page
 // <head> building (title/description/canonical/OpenGraph/Twitter) and
-// schema.org JSON-LD (Dataset / WebSite / Organization). No DB, no fs, no
+// schema.org JSON-LD (Dataset / WebSite / Organization). No DB and no
 // Express - so it is fully unit-testable and reused by both the SPA head
-// injector (controllers/spaController.js) and any other caller.
+// injector (controllers/spaController.js) and any other caller. Whether a
+// catalogue page may be indexed comes from services/indexPolicy.js, which
+// reads the guide manifest.
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 const { classifyResource } = require('./resourceCapabilities');
 const { plainText, collapse, truncate, resourceLanguages } = require('./catalogText');
 const facts = require('./catalogFacts');
+const indexPolicy = require('./indexPolicy');
 const { hostedRoutes, hostedRoute, pageOverride } = require('../extensions');
 
 const SITE_URL = (process.env.SITE_URL || 'https://canquery.com').replace(/\/+$/, '');
@@ -195,7 +198,8 @@ function fitTitleTiers(tiers, { soft = TITLE_SOFT, hard = TITLE_HARD } = {}) {
 }
 
 // Later pages of a paginated page carry "(page N)" in their title and
-// description, so they never duplicate page one's snippet.
+// description, so they never duplicate page one's snippet. They are lists a
+// reader pages through, not landing pages: noindex, with their links followed.
 function pagedMeta(meta, page) {
     if (!(page > 1)) return meta;
     const label = ' (page ' + page + ')';
@@ -205,7 +209,8 @@ function pagedMeta(meta, page) {
     return {
         ...meta,
         title: body + label + TITLE_SUFFIX,
-        description: truncate(meta.description || DEFAULT_DESC, DESCRIPTION_MAX - label.length) + label
+        description: truncate(meta.description || DEFAULT_DESC, DESCRIPTION_MAX - label.length) + label,
+        noindex: true
     };
 }
 
@@ -873,6 +878,7 @@ function datasetMeta(dataset, resources, { page = 1, pageItems = null } = {}) {
         description: datasetSnippet(title, info),
         canonical: datasetUrl,
         ogType: 'website',
+        ...(indexPolicy.isIndexableDataset(dataset, resources) ? {} : { noindex: true }),
         jsonLd: page > 1
             ? [buildDatasetPageJsonLd(dataset, resources, pageItems, page, datasetUrl), breadcrumb]
             : [buildDatasetJsonLd(dataset, resources), breadcrumb],
@@ -976,21 +982,20 @@ function buildResourceJsonLd(resource, description) {
     };
 }
 
-// A download-only file's page repeats its dataset page with one link added, so
-// it stays out of the index (its links are still followed); pages that offer
-// a table or a map are indexed.
+// A file's page repeats its dataset page, so it is indexed only when it carries
+// a table CanQuery can query now (services/indexPolicy.js). Every other file
+// page stays out of the index, with its links still followed.
 function resourceMeta(resource) {
     const name = resourceTitleBase(resource);
     const ds = pick(resource.dataset_title_en, resource.dataset_title_fr);
     const datasetSlug = resource.dataset_name || resource.dataset_id;
     const description = resourceDescription(resource);
-    const downloadOnly = classifyResource(resource).capability === 'file-only';
     return {
         title: resourceTitle(resource),
         description,
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',
-        ...(downloadOnly ? { noindex: true } : {}),
+        ...(indexPolicy.isIndexableResource(resource) ? {} : { noindex: true }),
         jsonLd: [buildResourceJsonLd(resource, description), buildBreadcrumbJsonLd([
             { name: 'Datasets', path: '/datasets' },
             datasetSlug && ds ? {

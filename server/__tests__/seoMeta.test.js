@@ -90,6 +90,33 @@ describe('seoMeta - dataset meta + JSON-LD', () => {
         { id: 'r2', url: 'https://example.com/b.xlsx', format: 'XLSX', name_en: null, name_fr: null },
     ];
 
+    it('indexes a dataset page only when a file has a table now, or a guide or hub is about it', () => {
+        const blogContent = require('../services/blogContent');
+        const guides = jest.spyOn(blogContent, 'listArticles').mockReturnValue([{ datasetId: 'guide-dataset' }, { datasetId: undefined }]);
+        try {
+            const noindex = (record, files) => seo.datasetMeta({ ...dataset, ...record }, files).noindex;
+            // Files a reader can only download or could prepare, maps and unpinned copies.
+            expect(noindex({}, [])).toBe(true);
+            expect(noindex({}, resources)).toBe(true);
+            expect(noindex({}, [{ id: 'r', format: 'PDF', url: 'https://example.com/a.pdf' }])).toBe(true);
+            expect(noindex({}, [{ ...resources[0], map_provider: 'arcgis' }])).toBe(true);
+            expect(noindex({}, [{ ...resources[0], ingest_status: 'ready' }])).toBe(true);
+            // One file with a table is enough.
+            expect(noindex({}, [resources[1], { ...resources[0], datastore_active: true }])).toBeUndefined();
+            expect(noindex({}, [{ ...resources[0], ingest_status: 'ready', pinned: true }])).toBeUndefined();
+            // A guide's dataset by its id, never by its name; a hub's dataset whatever its files are.
+            expect(noindex({ id: 'guide-dataset' }, [])).toBeUndefined();
+            expect(noindex({ id: 'other', name: 'guide-dataset' }, [])).toBe(true);
+            expect(noindex({ id: require('../utils/lmiaLabels').LMIA_DATASET_ID }, [])).toBeUndefined();
+            expect(noindex({ id: require('../utils/oasLabels').OAS_DATASET_ID }, [])).toBeUndefined();
+            expect(guides).toHaveBeenCalledWith({ lang: 'en' });
+            // The structured data stays on a noindex page.
+            expect(seo.datasetMeta(dataset, resources).jsonLd[0]['@type']).toBe('Dataset');
+        } finally {
+            guides.mockRestore();
+        }
+    });
+
     it('builds a title that states what CanQuery adds, and a slug canonical', () => {
         const meta = seo.datasetMeta(dataset, resources);
         expect(meta.title).toBe('Water Quality (Environment Canada): 2 tables (CSV, XLSX) - CanQuery');
@@ -245,7 +272,8 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
         });
         expect(JSON.stringify(meta.jsonLd)).not.toContain('"@type":"Dataset"');
         expect(meta.canonical).toBe('https://canquery.com/resources/r1');
-        expect(meta.noindex).not.toBe(true);
+        // A file that is not loaded is noindex; its page still describes the download.
+        expect(meta.noindex).toBe(true);
     });
 
     it('omits the parent reference when no dataset identity is available', () => {
@@ -274,14 +302,23 @@ describe('seoMeta - resource titles, capabilities and breadcrumbs', () => {
             .toBe('Water Quality — Report (PDF) - CanQuery');
     });
 
-    it('keeps download-only pages out of the index and table or map pages in it', () => {
+    it('indexes only file pages with a live table or a pinned prepared copy', () => {
+        // Downloads, files CanQuery could prepare, maps and unpinned copies stay out.
         expect(seo.resourceMeta({ ...base, format: 'PDF' }).noindex).toBe(true);
         expect(seo.resourceMeta({ ...base, format: 'HTML', url: 'https://example.test/guide.html' }).noindex).toBe(true);
         expect(seo.resourceMeta({ ...base, format: 'CSV', url: 'https://example.test/archive.zip' }).noindex).toBe(true);
-        expect(seo.resourceMeta(base).noindex).toBeUndefined();
-        expect(seo.resourceMeta({ ...base, format: 'PDF', map_provider: 'arcgis' }).noindex).toBeUndefined();
+        expect(seo.resourceMeta(base).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, format: 'XLSX' }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, format: 'PDF', map_provider: 'arcgis' }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, ingest_status: 'ready' }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, ingest_status: 'ready', pinned: false }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, pinned: true }).noindex).toBe(true);
+        expect(seo.resourceMeta({ ...base, ingest_status: 'failed', pinned: true }).noindex).toBe(true);
+        // A table a reader can query now.
+        expect(seo.resourceMeta({ ...base, datastore_active: true }).noindex).toBeUndefined();
         expect(seo.resourceMeta({ ...base, format: 'PDF', datastore_active: true }).noindex).toBeUndefined();
-        expect(seo.resourceMeta({ ...base, format: 'PDF', ingest_status: 'ready' }).noindex).toBeUndefined();
+        expect(seo.resourceMeta({ ...base, ingest_status: 'ready', pinned: true }).noindex).toBeUndefined();
+        expect(seo.resourceMeta({ ...base, ingest_status: 'ready', datastore_active: true }).noindex).toBeUndefined();
     });
 
     it('names the table or map a resource becomes on CanQuery in its title', () => {
@@ -736,6 +773,10 @@ describe('seoMeta - title compaction, paging and place names', () => {
         expect(meta.description.endsWith(' (page 3)')).toBe(true);
         expect(meta.description.length).toBeLessThanOrEqual(160);
         expect(seo.pagedMeta({ title: 'Roads - CanQuery', description: 'D' }, 1).title).toBe('Roads - CanQuery');
+        // Later pages are lists to page through, not landing pages; page one keeps its own rule.
+        expect(meta.noindex).toBe(true);
+        expect(seo.pagedMeta({ title: 'Roads - CanQuery', description: 'D' }, 1)).not.toHaveProperty('noindex');
+        expect(seo.pagedMeta({ title: 'Roads - CanQuery', description: 'D', noindex: true }, 1).noindex).toBe(true);
         const long = seo.pagedMeta({ title: 'W'.repeat(69) + ' - CanQuery', description: 'D' }, 12);
         expect(long.title.length).toBeLessThanOrEqual(80);
         expect(long.title.endsWith(' (page 12) - CanQuery')).toBe(true);

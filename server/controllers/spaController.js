@@ -224,7 +224,8 @@ async function resolvePage(requestTarget, deps = catalogRead) {
             pagination => seoSnapshot.datasetSnapshot(dataset, resources, pagination)), datasetRows: { dataset, resources } };
     }
     if (route.type === 'resource') {
-        const resource = await deps.getResourceById(route.id);
+        // The pin decides whether a prepared copy's page may be indexed (services/indexPolicy.js).
+        const resource = await deps.getResourceById(route.id, undefined, { pinned: true });
         if (!resource) return {
             status: 404,
             meta: seoMeta.notFoundMeta(reqPath),

@@ -19,4 +19,8 @@ function hubSections(datasetId) {
     return hub && hub.available() ? [hub.section] : [];
 }
 
-module.exports = { hubSections };
+// Every dataset that has a hub, whether or not the hub has data yet: the same
+// answer in every process, so the pages and the owner's jobs agree.
+const hubDatasetIds = () => Object.keys(HUBS);
+
+module.exports = { hubSections, hubDatasetIds };

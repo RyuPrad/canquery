@@ -4,9 +4,10 @@ const pool = require('../db/pool');
 const { listChangedSitemapPages } = require('../db/catalogReadQueries');
 const { getProgress, setProgress } = require('../db/catalogWriteQueries');
 const { indexNowKey, submitChanges, PROGRESS_KEY } = require('../services/indexNow');
+const { alwaysIndexableDatasetIds } = require('../services/indexPolicy');
 
 // Sends the canonical URLs whose sitemap entry changed since the last run to
-// IndexNow. Without INDEXNOW_KEY it does nothing. --dry-run prints the count
+// IndexNow: only pages a search engine may index (services/indexPolicy.js). Without INDEXNOW_KEY it does nothing. --dry-run prints the count
 // and a sample, sends nothing and leaves the watermark.
 async function main() {
     const startedAt = new Date();
@@ -28,7 +29,7 @@ async function main() {
             now: startedAt,
             readProgress: () => getProgress(pool, PROGRESS_KEY),
             writeProgress: value => setProgress(pool, PROGRESS_KEY, value),
-            readChanges: window => listChangedSitemapPages(window, pool)
+            readChanges: window => listChangedSitemapPages({ ...window, ids: alwaysIndexableDatasetIds() }, pool)
         });
         submitted = result.submitted;
         ok = true;
