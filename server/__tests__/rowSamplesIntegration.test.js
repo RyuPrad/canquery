@@ -31,7 +31,8 @@ integrationDescribe('resource row samples PostgreSQL integration', () => {
             [id(key), id('dataset'), format, 'https://files.example.test/' + key + '.' + format.toLowerCase(), live, raw]);
         }
         await db.query(`INSERT INTO ingested_resources (resource_id, table_name, status) VALUES ($1, $2, 'ready')`, [id('d_ready'), 'r_' + prefix]);
-        for (const [key, days] of [['b_live', 3], ['a_csv', 1]]) {
+        // The PDF is the page Google showed on the most days; it cannot be sampled.
+        for (const [key, days] of [['b_live', 3], ['a_csv', 1], ['e_pdf', 5]]) {
             for (let day = 0; day < days; day += 1) {
                 await db.query(`INSERT INTO search_console_breakdowns (data_date, search_type, dimension, value, impressions)
                     VALUES (current_date - $1::int, 'web', 'page', $2, 5)`, [day + 1, pagePrefix + id(key) + (day ? '?view=table' : '')]);
@@ -43,10 +44,15 @@ integrationDescribe('resource row samples PostgreSQL integration', () => {
         if (pool) await pool.end();
     });
 
-    test('lists live tables and CSV files in id order with the slice the version needs', async () => {
-        const rows = mine(await queries.listSweepCandidates({ after: prefix, limit: 1000 }, db));
+    test('lists live tables, and CSV files when files are sampled, in id order with the slice the version needs', async () => {
+        // By default only live tables are candidates: a CSV that is not prepared has a noindex page.
+        const live = mine(await queries.listSweepCandidates({ after: prefix, limit: 1000 }, db));
+        expect(live.map(row => row.id)).toEqual([id('b_live')]);
+        expect(live.map(row => sampleOrigin(row))).toEqual(['datastore']);
+        const rows = mine(await queries.listSweepCandidates({ after: prefix, limit: 1000, files: true }, db));
         expect(rows.map(row => row.id)).toEqual(['a_csv', 'b_live', 'd_ready'].map(id));
-        expect(rows.map(sampleOrigin)).toEqual(['file', 'datastore', null]);
+        expect(rows.map(row => sampleOrigin(row, { files: true }))).toEqual(['file', 'datastore', null]);
+        expect(rows.map(row => sampleOrigin(row))).toEqual([null, 'datastore', null]);
         const { rows: [full] } = await db.query('SELECT * FROM resources WHERE id = $1', [id('a_csv')]);
         expect(resourceVersion(rows[0])).toBe(resourceVersion(full));
         expect(rows[0].raw.unrelated).toBeUndefined();
@@ -55,12 +61,15 @@ integrationDescribe('resource row samples PostgreSQL integration', () => {
     });
 
     test('ranks the pages Google showed by days shown, query strings included', async () => {
-        const rows = mine(await queries.listShownCandidates({ pagePrefix, days: 28, limit: 200 }, db));
+        const rows = mine(await queries.listShownCandidates({ pagePrefix, days: 28, limit: 200, files: true }, db));
         expect(rows.map(row => row.id)).toEqual([id('b_live'), id('a_csv')]);
+        expect(mine(await queries.listShownCandidates({ pagePrefix, days: 28, limit: 200 }, db)).map(row => row.id)).toEqual([id('b_live')]);
+        // The limit counts pages that can be sampled: the PDF, shown on more days, does not take the only place.
+        expect(mine(await queries.listShownCandidates({ pagePrefix, days: 28, limit: 1 }, db)).map(row => row.id)).toEqual([id('b_live')]);
     });
 
     test('a failed recheck keeps the last good sample, and due samples come back', async () => {
-        const row = mine(await queries.listSweepCandidates({ after: prefix, limit: 10 }, db))[0];
+        const row = mine(await queries.listSweepCandidates({ after: prefix, limit: 10, files: true }, db))[0];
         const version = resourceVersion(row);
         await queries.saveSample({ resourceId: row.id, origin: 'file', status: 'ok', version, sample, bytesRead: 512, attempts: 0,
             nextCheckAt: new Date(Date.now() + 14 * 864e5) }, db);
@@ -71,8 +80,20 @@ integrationDescribe('resource row samples PostgreSQL integration', () => {
         const kept = await db.query('SELECT status, failure_code, attempts, checked_version, source_version, records, bytes_read FROM resource_row_samples WHERE resource_id = $1', [row.id]);
         expect(kept.rows[0]).toEqual({ status: 'failed', failure_code: 'timeout', attempts: 1, checked_version: 'newer',
             source_version: version, records: sample.records, bytes_read: 512 });
-        const due = mine(await queries.listDueCandidates({ limit: 1000 }, db));
+        const due = mine(await queries.listDueCandidates({ limit: 1000, files: true }, db));
         expect(due.map(item => [item.id, item.sample_checked_version, item.sample_attempts, item.sample_stored])).toEqual([[row.id, 'newer', 1, true]]);
+        // A stored file sample that is due is not handed out while files are not sampled: it would never be
+        // saved again and would stay ahead of every live table in the due list.
+        expect(mine(await queries.listDueCandidates({ limit: 1000 }, db))).toEqual([]);
+        await queries.saveSample({ resourceId: id('b_live'), origin: 'datastore', status: 'failed', failureCode: 'timeout', version: 'v',
+            attempts: 1, nextCheckAt: new Date(Date.now() - 1000) }, db);
+        expect(mine(await queries.listDueCandidates({ limit: 1000 }, db)).map(item => item.id)).toEqual([id('b_live')]);
+        // A resource with a prepared copy shows the copy's rows and is never sampled again: its old sample must not
+        // stay at the head of the due list either.
+        await queries.saveSample({ resourceId: id('d_ready'), origin: 'file', status: 'failed', failureCode: 'timeout', version: 'v',
+            attempts: 1, nextCheckAt: new Date(Date.now() - 5000) }, db);
+        expect(mine(await queries.listDueCandidates({ limit: 1000, files: true }, db)).map(item => item.id).sort())
+            .toEqual([id('a_csv'), id('b_live')]);
     });
 
     test('rejects inconsistent samples and removes a sample with its resource', async () => {

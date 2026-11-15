@@ -10,8 +10,8 @@ const { sleep } = require('../utils/fetchWithBackoff');
 // Two signed int32 keys spelling "canq" / "rows": one sampler at a time.
 const LOCK_KEYS = [1667329649, 1919907699];
 
-// Reads the first rows of live DataStore tables and CSV files that resource
-// pages show to crawlers (services/rowSampler.js). --dry-run lists the next
+// Reads the first rows of live DataStore tables that resource pages show to
+// crawlers, and of CSV files when ROW_SAMPLE_FILES is true (services/rowSampler.js). --dry-run lists the next
 // batch and reads nothing; --limit=N takes N instead of ROW_SAMPLE_BATCH.
 async function main() {
     const startedAt = new Date();
@@ -34,7 +34,7 @@ async function main() {
         summary = await runSampler({ dryRun, limit, settings, now: startedAt, deps: {
             readProgress: () => getProgress(pool, PROGRESS_KEY),
             writeProgress: value => setProgress(pool, PROGRESS_KEY, value),
-            listShown: () => listShownCandidates({ pagePrefix: SITE_URL + '/resources/' }),
+            listShown: options => listShownCandidates({ pagePrefix: SITE_URL + '/resources/', ...options }),
             listDue: options => listDueCandidates(options),
             listSweep: options => listSweepCandidates(options),
             saveSample: result => saveSample(result),

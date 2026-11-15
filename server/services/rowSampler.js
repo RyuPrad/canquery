@@ -7,12 +7,15 @@ const { previewRecords } = require('./csvPreview');
 const { fromDatastore, fromPreview, SAMPLE_ROWS } = require('./rowSamples');
 const { toAbsoluteUrl } = require('../utils/resolveUrl');
 
-// Reads the first rows of live DataStore tables and CSV files for the resource
-// pages (services/rowSamples.js), politely: a run takes a bounded batch, at most
+// Reads the first rows of live DataStore tables for the resource pages
+// (services/rowSamples.js), politely: a run takes a bounded batch, at most
 // two reads at a time, a gap between two reads of one host and a cap per host,
 // and a host that answers 429 or Retry-After is left alone until it asks.
 // Successful samples are rechecked after ROW_SAMPLE_REFRESH_DAYS, failures back
-// off, and a resource whose version changes is read again.
+// off, and a resource whose version changes is read again. CSV files that are
+// not prepared are read only when ROW_SAMPLE_FILES is exactly true: their pages
+// are noindex (services/indexPolicy.js), so their rows serve no crawler, and
+// the samples already stored stay on those pages.
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function integerSetting(name, fallback, min, max) {
@@ -35,16 +38,18 @@ function samplerSettings() {
         timeoutMs: integerSetting('ROW_SAMPLE_TIMEOUT_MS', 10000, 1000, 30000),
         runMs: integerSetting('ROW_SAMPLE_RUN_MS', 600000, 10000, 3600000),
         refreshDays: integerSetting('ROW_SAMPLE_REFRESH_DAYS', 14, 1, 365),
-        sweep: integerSetting('ROW_SAMPLE_SWEEP', 500, 1, 5000)
+        sweep: integerSetting('ROW_SAMPLE_SWEEP', 500, 1, 5000),
+        files: process.env.ROW_SAMPLE_FILES === 'true'
     };
 }
 
-// A live table, the start of a CSV file, or nothing (prepared copies already
-// show their rows; Excel files cannot be read from their first bytes).
-function sampleOrigin(row) {
+// A live table, the start of a CSV file when files are sampled, or nothing
+// (prepared copies already show their rows; Excel files cannot be read from
+// their first bytes).
+function sampleOrigin(row, { files = false } = {}) {
     const capability = classifyResource(row).capability;
     if (capability === 'datastore') return 'datastore';
-    if (capability === 'ingestable' && String(row.format || '').toUpperCase() === 'CSV') return 'file';
+    if (files && capability === 'ingestable' && String(row.format || '').toUpperCase() === 'CSV') return 'file';
     return null;
 }
 
@@ -159,6 +164,7 @@ function isDue(row, version, now) {
 // timing so tests can drive every step; the script passes the real ones.
 async function runSampler({ dryRun = false, limit, settings = samplerSettings(), now = new Date(), deps }) {
     const batch = limit || settings.batch;
+    const files = settings.files === true;
     const progress = (await deps.readProgress()) || {};
     const cooldowns = new Map(Object.entries(progress.cooldowns || {})
         .map(([host, until]) => [host, Date.parse(until)])
@@ -170,18 +176,18 @@ async function runSampler({ dryRun = false, limit, settings = samplerSettings(),
             if (work.length >= batch) return false;
             if (seen.has(row.id)) continue;
             seen.add(row.id);
-            const origin = sampleOrigin(row);
+            const origin = sampleOrigin(row, { files });
             if (!origin) continue;
             const version = resourceVersion(row);
             if (isDue(row, version, now)) work.push({ row, origin, version });
         }
         return work.length < batch;
     };
-    consider(await deps.listShown());
-    if (work.length < batch) consider(await deps.listDue({ limit: batch }));
+    consider(await deps.listShown({ files }));
+    if (work.length < batch) consider(await deps.listDue({ limit: batch, files }));
     let cursor = progress.cursor || '';
     if (work.length < batch) {
-        const swept = await deps.listSweep({ after: cursor, limit: settings.sweep });
+        const swept = await deps.listSweep({ after: cursor, limit: settings.sweep, files });
         let index = 0;
         for (; index < swept.length && work.length < batch; index += 1) consider([swept[index]]);
         // Continue after the last row looked at; wrap once the sweep reached the end.

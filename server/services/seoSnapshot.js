@@ -197,8 +197,8 @@ function datasetSnapshot(dataset, resources, pagination) {
     const organization = seo.plainText(dataset.org_title_en) || seo.plainText(dataset.org_title_fr);
     const links = (pagination?.items || (resources || []).slice(0, MAX_LINKS)).map(resource => {
         const capability = classifyResource(resource).capability;
-        // A download-only file's own page is not indexed, so its download is
-        // offered here, from the dataset page that is.
+        // A download-only file's own page offers nothing but its download, so
+        // the download is offered here too, one click nearer.
         const download = capability === 'file-only' ? safeHttpUrl(resource.url) : '';
         return {
             path: '/resources/' + encodeURIComponent(resource.id),

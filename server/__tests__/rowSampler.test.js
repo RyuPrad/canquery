@@ -1,10 +1,11 @@
-const { runSampler, sampleOrigin, classifyFailure, nextCheck, createHostGate, SampleFailure } = require('../services/rowSampler');
+const { runSampler, samplerSettings, sampleOrigin, classifyFailure, nextCheck, createHostGate, SampleFailure } = require('../services/rowSampler');
 const { resourceVersion } = require('../services/resourceVersion');
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-10-31T12:00:00Z');
+// These runs sample CSV files too (ROW_SAMPLE_FILES=true); the default is tested on its own below.
 const settings = { batch: 50, concurrency: 1, hostGapMs: 3000, hostMax: 10, headBytes: 65536, timeoutMs: 10000,
-    runMs: 600000, refreshDays: 14, sweep: 500 };
+    runMs: 600000, refreshDays: 14, sweep: 500, files: true };
 const csv = (id, host = 'files.example.test', extra = {}) => ({ id, format: 'CSV', url: 'https://' + host + '/' + id + '.csv',
     datastore_active: false, size_bytes: 1000, raw: {}, ...extra });
 const live = (id, extra = {}) => ({ id, format: 'CSV', url: 'https://example.test/' + id + '.csv', datastore_active: true,
@@ -19,8 +20,8 @@ function harness({ shown = [], due = [], swept = [], readers, progress = {} } = 
     const deps = {
         readProgress: async () => progress,
         writeProgress: async value => { writes.push(value); },
-        listShown: async () => shown,
-        listDue: async () => due,
+        listShown: jest.fn(async () => shown),
+        listDue: jest.fn(async () => due),
         listSweep: jest.fn(async () => swept),
         saveSample: async result => { saved.push(result); },
         readers: readers || { file: jest.fn(async () => ({ sample, bytesRead: 512 })), datastore: jest.fn(async () => ({ sample, bytesRead: null })) },
@@ -31,13 +32,34 @@ function harness({ shown = [], due = [], swept = [], readers, progress = {} } = 
 }
 
 describe('row sampler classification', () => {
-    test('samples live tables and preparable CSV files only', () => {
+    test('samples live tables, and preparable CSV files only when files are sampled', () => {
+        const files = { files: true };
         expect(sampleOrigin(live('a'))).toBe('datastore');
-        expect(sampleOrigin(csv('b'))).toBe('file');
-        expect(sampleOrigin(csv('c', 'x.test', { format: 'XLSX', url: 'https://x.test/c.xlsx' }))).toBeNull();
-        expect(sampleOrigin(csv('d', 'x.test', { ingest_status: 'ready' }))).toBeNull();
-        expect(sampleOrigin(csv('e', 'x.test', { url: 'https://x.test/e.zip' }))).toBeNull();
-        expect(sampleOrigin({ id: 'f', format: 'PDF', url: 'https://x.test/f.pdf' })).toBeNull();
+        expect(sampleOrigin(live('a'), files)).toBe('datastore');
+        // A CSV that is not prepared has a noindex page: its rows are read only on request.
+        expect(sampleOrigin(csv('b'))).toBeNull();
+        expect(sampleOrigin(csv('b'), { files: false })).toBeNull();
+        expect(sampleOrigin(csv('b'), files)).toBe('file');
+        expect(sampleOrigin(csv('c', 'x.test', { format: 'XLSX', url: 'https://x.test/c.xlsx' }), files)).toBeNull();
+        expect(sampleOrigin(csv('d', 'x.test', { ingest_status: 'ready' }), files)).toBeNull();
+        expect(sampleOrigin(csv('e', 'x.test', { url: 'https://x.test/e.zip' }), files)).toBeNull();
+        expect(sampleOrigin({ id: 'f', format: 'PDF', url: 'https://x.test/f.pdf' }, files)).toBeNull();
+    });
+
+    test('samples files only when ROW_SAMPLE_FILES is exactly true', () => {
+        const before = process.env.ROW_SAMPLE_FILES;
+        try {
+            delete process.env.ROW_SAMPLE_FILES;
+            expect(samplerSettings().files).toBe(false);
+            for (const value of ['', '1', 'TRUE', 'yes', 'false']) {
+                process.env.ROW_SAMPLE_FILES = value;
+                expect(samplerSettings().files).toBe(false);
+            }
+            process.env.ROW_SAMPLE_FILES = 'true';
+            expect(samplerSettings().files).toBe(true);
+        } finally {
+            if (before === undefined) delete process.env.ROW_SAMPLE_FILES; else process.env.ROW_SAMPLE_FILES = before;
+        }
     });
 
     test('names each failure and keeps a host\'s Retry-After', () => {
@@ -85,6 +107,20 @@ describe('host gate', () => {
 });
 
 describe('row sampler runs', () => {
+    test('by default reads live tables only and asks every list for them alone', async () => {
+        const { deps, saved } = harness({ shown: [csv('a'), live('b')], due: [csv('c', 'other.test')], swept: [csv('d', 'd.test'), live('e')] });
+        const defaults = { ...settings };
+        delete defaults.files;
+        const summary = await runSampler({ settings: defaults, now: NOW, deps });
+        expect(saved.map(result => [result.resourceId, result.origin])).toEqual([['b', 'datastore'], ['e', 'datastore']]);
+        expect(summary).toMatchObject({ candidates: 2, ok: 2, by_origin: { datastore: 2 } });
+        expect(deps.readers.file).not.toHaveBeenCalled();
+        // The lists filter in SQL too, so stored file samples that are due do not crowd out live tables.
+        expect(deps.listShown).toHaveBeenCalledWith({ files: false });
+        expect(deps.listDue).toHaveBeenCalledWith({ limit: 50, files: false });
+        expect(deps.listSweep).toHaveBeenCalledWith({ after: '', limit: 500, files: false });
+    });
+
     test('takes Search Console pages first, then due samples, then the sweep, once each', async () => {
         const a = csv('a'); const b = csv('b', 'other.test'); const c = live('c');
         const fresh = { ...csv('fresh'), sample_checked_version: resourceVersion(csv('fresh')),
@@ -114,7 +150,7 @@ describe('row sampler runs', () => {
         expect(writes[0].cursor).toBe('b');
         const full = harness({ swept, progress: { cursor: 'b' } });
         await runSampler({ settings: { ...settings, sweep: 4 }, limit: 10, now: NOW, deps: full.deps });
-        expect(full.deps.listSweep).toHaveBeenCalledWith({ after: 'b', limit: 4 });
+        expect(full.deps.listSweep).toHaveBeenCalledWith({ after: 'b', limit: 4, files: true });
         expect(full.writes[0].cursor).toBe('d');
         const end = harness({ swept: swept.slice(0, 3) });
         await runSampler({ settings: { ...settings, sweep: 4 }, limit: 10, now: NOW, deps: end.deps });
