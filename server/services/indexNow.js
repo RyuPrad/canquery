@@ -2,9 +2,10 @@ const { listArticles } = require('./blogContent');
 const { SITE_URL } = require('./seoMeta');
 
 // IndexNow (Bing, Yandex, Seznam, Naver and others): once a day the job sends
-// the canonical URLs whose sitemap entry changed. Off unless INDEXNOW_KEY is
-// set. The key is served at /<key>.txt, which proves the site owns it; a
-// malformed value stops startup (app.js) instead of quietly sending nothing.
+// the canonical URLs that changed among the pages those engines may index. Off
+// unless INDEXNOW_KEY is set. The key is served at /<key>.txt, which proves the
+// site owns it; a malformed value stops startup (app.js) instead of quietly
+// sending nothing.
 const KEY_RE = /^[A-Za-z0-9-]{8,128}$/;
 const ENDPOINT = 'https://api.indexnow.org/indexnow';
 const PROGRESS_KEY = 'indexnow';
@@ -22,6 +23,13 @@ function indexNowKey(value = process.env.INDEXNOW_KEY) {
     if (!KEY_RE.test(key)) throw new Error('INDEXNOW_KEY must be 8 to 128 letters, digits or hyphens');
     return key;
 }
+
+// Where a run reads its pages. IndexNow never reaches Google, so when the
+// index policy speaks to Google alone (services/indexPolicy.js: policyEngines)
+// its engines may index every catalogue page that carries data, and the run
+// reads those ('catalogue'); otherwise it reads the policy's pages, which are
+// the regular sitemaps' entries ('policy').
+const changesSource = engines => (engines === 'google' ? 'catalogue' : 'policy');
 
 // GET /:key.txt - the key file IndexNow fetches to verify a submission.
 function keyFile(req, res, next) {
@@ -87,4 +95,4 @@ async function submitChanges({ key, readProgress, writeProgress, readChanges, fe
     return { ...summary, submitted: urls.length };
 }
 
-module.exports = { indexNowKey, keyFile, submitChanges, changedUrls, ENDPOINT, PROGRESS_KEY, BATCH_SIZE, MAX_BATCHES, OVERLAP_MS };
+module.exports = { indexNowKey, keyFile, submitChanges, changedUrls, changesSource, ENDPOINT, PROGRESS_KEY, BATCH_SIZE, MAX_BATCHES, OVERLAP_MS };

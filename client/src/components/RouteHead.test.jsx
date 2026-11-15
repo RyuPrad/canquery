@@ -135,6 +135,37 @@ test('copies a robots directive from a 200 response and drops it on the next nav
   expect(document.querySelector('meta[name=robots]')).toBeNull();
 });
 
+// The index policy can address its noindex to Google's crawler alone (meta name "googlebot").
+test('copies a noindex addressed to Google alone and drops it on the next navigation', async () => {
+  fetch.mockImplementation(async path => response(path, path.startsWith('/resources') ? 'Not loaded' : 'Roads', 200,
+    path.startsWith('/resources') ? '<meta name="googlebot" content="noindex, follow">' : ''));
+  start();
+  fireEvent.click(screen.getByText('Resource'));
+  await waitFor(() => expect(document.title).toBe('Not loaded'));
+  expect(document.querySelector('meta[name=googlebot]').content).toBe('noindex, follow');
+  // Other engines read no tag on this page.
+  expect(document.querySelector('meta[name=robots]')).toBeNull();
+  fireEvent.click(screen.getByText('Dataset'));
+  await waitFor(() => expect(document.title).toBe('Roads'));
+  expect(document.querySelector('meta[name=googlebot]')).toBeNull();
+  expect(document.querySelector('meta[name=robots]')).toBeNull();
+});
+
+test('a robots tag for every engine replaces one addressed to Google alone, and no other crawler name is copied', async () => {
+  fetch.mockImplementation(async path => response(path, path.includes('page=2') ? 'Roads (page 2)' : 'Roads', 200,
+    path.includes('page=2') ? '<meta name="robots" content="noindex, follow"><meta name="bingbot" content="noindex">'
+      : '<meta name="googlebot" content="noindex, follow">'));
+  start();
+  fireEvent.click(screen.getByText('Dataset'));
+  await waitFor(() => expect(document.title).toBe('Roads'));
+  expect(document.querySelector('meta[name=googlebot]').content).toBe('noindex, follow');
+  fireEvent.click(screen.getByText('Second page'));
+  await waitFor(() => expect(document.title).toBe('Roads (page 2)'));
+  expect(document.querySelector('meta[name=robots]').content).toBe('noindex, follow');
+  expect(document.querySelector('meta[name=googlebot]')).toBeNull();
+  expect(document.querySelector('meta[name=bingbot]')).toBeNull();
+});
+
 test.each([404, 503])('uses the server noindex response for status %i', async status => {
   fetch.mockResolvedValue(response('/datasets/roads', 'Unavailable', status, '<meta name="robots" content="noindex">'));
   start();

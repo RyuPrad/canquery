@@ -97,3 +97,92 @@ describe('index policy - the date pages turned noindex', () => {
         }
     });
 });
+
+describe('index policy - which search engines it speaks to', () => {
+    const csv = { format: 'CSV', url: 'https://example.test/a.csv', size_bytes: 1000 };
+    const files = {
+        'file-only': { format: 'PDF', url: 'https://example.test/a.pdf' },
+        ingestable: csv,
+        mapped: { format: 'PDF', url: 'https://example.test/a.pdf', map_provider: 'arcgis' },
+        datastore: { ...csv, datastore_active: true },
+        ingested: { ...csv, ingest_status: 'ready' }
+    };
+
+    test('is every engine unless INDEX_POLICY_ENGINES names Google', () => {
+        expect(policy.policyEngines(undefined)).toBe('all');
+        expect(policy.policyEngines('')).toBe('all');
+        expect(policy.policyEngines('   ')).toBe('all');
+        expect(policy.policyEngines('all')).toBe('all');
+        expect(policy.policyEngines(' google ')).toBe('google');
+    });
+
+    // A value nobody chose must not quietly pick an audience for 115,000 noindex tags.
+    test.each(['Google', 'GOOGLE', 'googlebot', 'bing', 'google,bing', 'true', 'none', 'All', '1'])(
+        'refuses %s instead of guessing', value => {
+            expect(() => policy.policyEngines(value)).toThrow('INDEX_POLICY_ENGINES must be all or google');
+        });
+
+    test('reads the environment when called without a value', () => {
+        const before = process.env.INDEX_POLICY_ENGINES;
+        try {
+            delete process.env.INDEX_POLICY_ENGINES;
+            expect(policy.policyEngines()).toBe('all');
+            expect(policy.resourceRobots(csv)).toEqual({ noindex: true });
+            expect(policy.datasetRobots({ id: 'd' }, [csv])).toEqual({ noindex: true });
+            process.env.INDEX_POLICY_ENGINES = 'google';
+            expect(policy.policyEngines()).toBe('google');
+            expect(policy.resourceRobots(csv)).toEqual({ noindex: true, noindexFor: 'googlebot' });
+            expect(policy.datasetRobots({ id: 'd' }, [csv])).toEqual({ noindex: true, noindexFor: 'googlebot' });
+            process.env.INDEX_POLICY_ENGINES = 'everyone';
+            expect(() => policy.policyEngines()).toThrow('INDEX_POLICY_ENGINES');
+            expect(() => policy.resourceRobots(csv)).toThrow('INDEX_POLICY_ENGINES');
+            expect(() => policy.datasetRobots({ id: 'd' }, [csv])).toThrow('INDEX_POLICY_ENGINES');
+        } finally {
+            if (before === undefined) delete process.env.INDEX_POLICY_ENGINES; else process.env.INDEX_POLICY_ENGINES = before;
+        }
+    });
+
+    test.each(Object.entries(files))('a %s file page: who its noindex tag names', (capability, row) => {
+        expect(classifyResource(row).capability).toBe(capability);
+        for (const pinned of [false, true]) {
+            const file = { ...row, pinned };
+            const indexable = policy.isIndexableResource(file);
+            // To every engine, the rule is the policy's and nothing else.
+            expect(policy.resourceRobots(file, 'all')).toEqual(indexable ? {} : { noindex: true });
+            // To Google alone: a page that is only a download repeats its dataset page for
+            // every engine, as before the policy; the pages the policy turned noindex name Google.
+            const google = policy.resourceRobots(file, 'google');
+            if (indexable) expect(google).toEqual({});
+            else if (capability === 'file-only') expect(google).toEqual({ noindex: true });
+            else expect(google).toEqual({ noindex: true, noindexFor: 'googlebot' });
+        }
+    });
+
+    test('an indexable page carries no tag for anyone, whoever the policy speaks to', () => {
+        for (const engines of ['all', 'google']) {
+            expect(policy.resourceRobots(files.datastore, engines)).toEqual({});
+            expect(policy.resourceRobots({ ...files.ingested, pinned: true }, engines)).toEqual({});
+            expect(policy.datasetRobots({ id: 'd' }, [files.datastore], engines)).toEqual({});
+            expect(policy.datasetRobots({ id: OAS_DATASET_ID }, [], engines)).toEqual({});
+        }
+        expect(policy.resourceRobots(undefined, 'google')).toEqual({ noindex: true });
+        expect(policy.resourceRobots(undefined, 'all')).toEqual({ noindex: true });
+    });
+
+    test('a dataset page without a table names Google alone when the policy does, whatever its files are', () => {
+        jest.spyOn(blogContent, 'listArticles').mockReturnValue([{ datasetId: 'guide' }]);
+        for (const list of [[], [files['file-only']], [csv, files.mapped, files.ingested]]) {
+            expect(policy.datasetRobots({ id: 'd' }, list, 'all')).toEqual({ noindex: true });
+            expect(policy.datasetRobots({ id: 'd' }, list, 'google')).toEqual({ noindex: true, noindexFor: 'googlebot' });
+            expect(policy.datasetRobots({ id: 'guide' }, list, 'google')).toEqual({});
+        }
+        expect(policy.datasetRobots(undefined, undefined, 'google')).toEqual({ noindex: true, noindexFor: 'googlebot' });
+    });
+
+    test('the shared results cannot be changed by a caller', () => {
+        const first = policy.resourceRobots(csv, 'google');
+        expect(() => { 'use strict'; first.noindexFor = 'robots'; }).toThrow(TypeError);
+        expect(policy.resourceRobots(csv, 'google')).toEqual({ noindex: true, noindexFor: 'googlebot' });
+        expect(Object.isFrozen(policy.resourceRobots(csv, 'all'))).toBe(true);
+    });
+});

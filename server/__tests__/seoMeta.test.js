@@ -853,3 +853,107 @@ describe('seoMeta - title compaction, paging and place names', () => {
         expect(seo.staticMeta('faq').jsonLd).toBeUndefined();
     });
 });
+
+describe('seoMeta - the search engines a noindex tag names', () => {
+    const template = '<html><head>\n    <!-- seo:start -->\n    <title>x</title>\n    <!-- seo:end -->\n</head><body><div id="root"></div></body></html>';
+    const dataset = { id: 'ds-1', name: 'water-quality', title_en: 'Water Quality', notes_en: 'Samples.', org_title_en: 'Environment Canada' };
+    const file = { id: 'r-1', dataset_id: 'ds-1', dataset_name: 'water-quality', dataset_title_en: 'Water Quality',
+        name_en: 'Measurements', format: 'CSV', url: 'https://example.test/a.csv', size_bytes: 1000 };
+    const robots = html => [...html.matchAll(/<meta name="(robots|googlebot)" content="([^"]*)" \/>/g)].map(match => match[1] + ': ' + match[2]);
+    const withEngines = (value, run) => {
+        const before = process.env.INDEX_POLICY_ENGINES;
+        try {
+            if (value === undefined) delete process.env.INDEX_POLICY_ENGINES; else process.env.INDEX_POLICY_ENGINES = value;
+            return run();
+        } finally {
+            if (before === undefined) delete process.env.INDEX_POLICY_ENGINES; else process.env.INDEX_POLICY_ENGINES = before;
+        }
+    };
+    const pages = () => ({
+        notLoaded: seo.renderHtml(template, seo.resourceMeta(file)),
+        unpinned: seo.renderHtml(template, seo.resourceMeta({ ...file, ingest_status: 'ready' })),
+        mapped: seo.renderHtml(template, seo.resourceMeta({ ...file, format: 'GEOJSON', url: 'https://example.test/a.geojson', map_provider: 'canquery' })),
+        download: seo.renderHtml(template, seo.resourceMeta({ ...file, format: 'PDF', url: 'https://example.test/a.pdf' })),
+        live: seo.renderHtml(template, seo.resourceMeta({ ...file, datastore_active: true })),
+        pinned: seo.renderHtml(template, seo.resourceMeta({ ...file, ingest_status: 'ready', pinned: true })),
+        datasetNoTable: seo.renderHtml(template, seo.datasetMeta(dataset, [file])),
+        datasetDownloads: seo.renderHtml(template, seo.datasetMeta(dataset, [{ ...file, format: 'PDF', url: 'https://example.test/a.pdf' }])),
+        datasetTable: seo.renderHtml(template, seo.datasetMeta(dataset, [{ ...file, datastore_active: true }]))
+    });
+
+    it.each([undefined, '', 'all'])('tells every engine when INDEX_POLICY_ENGINES is %p, as before', value => {
+        const html = withEngines(value, pages);
+        for (const page of ['notLoaded', 'unpinned', 'mapped', 'download', 'datasetNoTable', 'datasetDownloads']) {
+            expect([page, robots(html[page])]).toEqual([page, ['robots: noindex, follow']]);
+        }
+        for (const page of ['live', 'pinned', 'datasetTable']) expect([page, robots(html[page])]).toEqual([page, []]);
+        expect(withEngines(value, () => seo.resourceMeta(file))).not.toHaveProperty('noindexFor');
+        expect(withEngines(value, () => seo.datasetMeta(dataset, [file]))).not.toHaveProperty('noindexFor');
+    });
+
+    it('names Google alone on the pages the policy turned noindex when it speaks to Google', () => {
+        const html = withEngines('google', pages);
+        // Other engines read no tag at all on these pages: they index them as they did before the policy.
+        for (const page of ['notLoaded', 'unpinned', 'mapped', 'datasetNoTable', 'datasetDownloads']) {
+            expect([page, robots(html[page])]).toEqual([page, ['googlebot: noindex, follow']]);
+        }
+        // A page that is only a download was noindex for every engine before the policy, and stays so.
+        expect(robots(html.download)).toEqual(['robots: noindex, follow']);
+        for (const page of ['live', 'pinned', 'datasetTable']) expect([page, robots(html[page])]).toEqual([page, []]);
+    });
+
+    it('changes nothing else on the page', () => {
+        const all = withEngines('all', pages);
+        const google = withEngines('google', pages);
+        for (const page of Object.keys(all)) {
+            expect([page, google[page].replace('<meta name="googlebot"', '<meta name="robots"')]).toEqual([page, all[page]]);
+        }
+    });
+
+    it('keeps later pages of a dataset out of every engine, and never tells Google what it tells no one', () => {
+        withEngines('google', () => {
+            const first = seo.datasetMeta(dataset, [file]);
+            expect(first).toMatchObject({ noindex: true, noindexFor: 'googlebot' });
+            const later = seo.pagedMeta(first, 2);
+            expect(later.noindex).toBe(true);
+            expect(later).not.toHaveProperty('noindexFor');
+            expect(robots(seo.renderHtml(template, later))).toEqual(['robots: noindex, follow']);
+            // Page one is returned as it came, and is not changed by paging.
+            expect(seo.pagedMeta(first, 1)).toBe(first);
+            expect(first.noindexFor).toBe('googlebot');
+            // Later pages of an indexable dataset.
+            expect(robots(seo.renderHtml(template, seo.pagedMeta(seo.datasetMeta(dataset, [{ ...file, datastore_active: true }]), 3))))
+                .toEqual(['robots: noindex, follow']);
+        });
+    });
+
+    it('writes only the two crawler names it knows, and only on a noindex page', () => {
+        const tags = meta => robots(seo.renderHtml(template, { title: 'T - CanQuery', description: 'D', canonical: 'https://canquery.com/x', ...meta }));
+        expect(tags({ noindex: true, noindexFor: 'googlebot' })).toEqual(['googlebot: noindex, follow']);
+        expect(tags({ noindex: true })).toEqual(['robots: noindex, follow']);
+        for (const other of ['bingbot', 'Googlebot', 'googlebot" content="index', '', null, true, 'robots']) {
+            expect([other, tags({ noindex: true, noindexFor: other })]).toEqual([other, ['robots: noindex, follow']]);
+        }
+        expect(tags({ noindexFor: 'googlebot' })).toEqual([]);
+        expect(tags({ noindex: false, noindexFor: 'googlebot' })).toEqual([]);
+    });
+
+    it('leaves pages that are noindex for other reasons addressed to every engine', () => {
+        withEngines('google', () => {
+            expect(robots(seo.renderHtml(template, seo.notFoundMeta('/x')))).toEqual(['robots: noindex, follow']);
+            expect(robots(seo.renderHtml(template, seo.staticMeta('nope', '/nope')))).toEqual(['robots: noindex, follow']);
+            expect(robots(seo.renderHtml(template, seo.placeMeta({ id: 'p0', slug: 'empty', name_en: 'Empty', dataset_count: 0 }))))
+                .toEqual(['robots: noindex, follow']);
+            expect(robots(seo.renderHtml(template, seo.organizationMeta({ id: 'o0', name: 'empty', title_en: 'Empty', dataset_count: 0 }))))
+                .toEqual(['robots: noindex, follow']);
+            expect(robots(seo.renderHtml(template, seo.lmiaEmployerMeta({ slug: 'a', employer: 'A', periods: [] })))).toEqual(['robots: noindex, follow']);
+        });
+    });
+
+    it('stops on a value nobody chose instead of serving a page', () => {
+        withEngines('bing', () => {
+            expect(() => seo.resourceMeta(file)).toThrow('INDEX_POLICY_ENGINES must be all or google');
+            expect(() => seo.datasetMeta(dataset, [file])).toThrow('INDEX_POLICY_ENGINES must be all or google');
+        });
+    });
+});

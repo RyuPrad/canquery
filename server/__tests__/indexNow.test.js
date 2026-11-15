@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../app');
-const { indexNowKey, submitChanges, changedUrls, ENDPOINT, BATCH_SIZE, MAX_BATCHES } = require('../services/indexNow');
+const { indexNowKey, submitChanges, changedUrls, changesSource, ENDPOINT, BATCH_SIZE, MAX_BATCHES } = require('../services/indexNow');
 const { listArticles } = require('../services/blogContent');
 
 const KEY = '0123456789abcdef0123456789abcdef';
@@ -109,5 +109,14 @@ describe('IndexNow submission', () => {
         await expect(refused.promise).rejects.toThrow('more than 50000 changed URLs');
         expect(refused.deps.fetchImpl).not.toHaveBeenCalled();
         expect(refused.deps.writeProgress).not.toHaveBeenCalled();
+    });
+});
+
+describe('IndexNow pages', () => {
+    // IndexNow reaches Bing, Yandex and others, never Google.
+    it('are the index policy pages unless the policy speaks to Google alone', () => {
+        expect(changesSource('all')).toBe('policy');
+        expect(changesSource('google')).toBe('catalogue');
+        expect(changesSource(undefined)).toBe('policy');
     });
 });

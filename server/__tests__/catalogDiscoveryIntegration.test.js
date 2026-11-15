@@ -242,6 +242,38 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         const ending = await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z');
         expect(mine(ending.datasets)).toHaveLength(3);
     });
+    test('reads every changed dataset page and data-bearing file page for the engines the policy does not speak to', async () => {
+        const window = (since, until, limit = 1000) => queries.listChangedCataloguePages({ since: new Date(since), until: new Date(until), limit }, db);
+        const changed = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z');
+        // When the policy speaks to Google alone, IndexNow's engines may index every dataset page...
+        expect(mine(changed.datasets)).toHaveLength(101);
+        // ...and every file page that carries data: the CSV CanQuery could prepare, the live tables, both prepared
+        // copies and the map. The PDFs (one of them pinned) and the orphan are never sent.
+        expect(mine(changed.resources)).toEqual([1, 2, 3, 4, 5, 7].map(n => id('resource' + n)));
+        // The tag each page carries says the same, file by file: sent exactly when no tag keeps other engines out.
+        for (let n = 0; n <= 7; n++) {
+            const row = await queries.getResourceById(id('resource' + n), db, { pinned: true });
+            const robots = indexPolicy.resourceRobots(row, 'google');
+            const othersMayIndex = !robots.noindex || robots.noindexFor === 'googlebot';
+            expect([n, othersMayIndex]).toEqual([n, mine(changed.resources).includes(row.id)]);
+        }
+        for (const n of ['000', '005', '006', '008', '050']) {
+            const files = await queries.listResourcesForDataset(id('dataset' + n), db);
+            const robots = indexPolicy.datasetRobots({ id: id('dataset' + n) }, files, 'google');
+            expect([n, !robots.noindex || robots.noindexFor === 'googlebot']).toEqual([n, true]);
+        }
+        // A page is dated by its record alone: a pin changes nothing for these engines.
+        const september = await window('2026-09-11T00:00:00Z', '2026-09-12T00:00:00Z');
+        expect(mine(september.datasets)).toEqual([]);
+        expect(mine(september.resources)).toEqual([]);
+        // The window's start is exclusive and its end inclusive, and the limit holds for each family.
+        expect(mine((await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z')).datasets)).toHaveLength(0);
+        expect(mine((await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z')).resources)).toHaveLength(0);
+        expect(mine((await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z')).datasets)).toHaveLength(101);
+        const capped = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z', 3);
+        expect(capped.datasets).toHaveLength(3);
+        expect(capped.resources).toHaveLength(3);
+    });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         const first = await queries.listResourceSitemap({ limit: 2, offset: 0 }, db);

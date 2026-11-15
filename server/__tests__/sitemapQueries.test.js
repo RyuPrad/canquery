@@ -139,6 +139,30 @@ describe('resource sitemap queries', () => {
         expect(resourceParams).toEqual([since, until, 50001]);
     });
 
+    it('reads every dataset page and every data-bearing file page changed in a window, for engines the policy does not speak to', async () => {
+        pool.query.mockResolvedValueOnce({ rows: [{ id: 'd1', name: 'roads' }] }).mockResolvedValueOnce({ rows: [{ id: 'r1' }] });
+        const since = new Date('2026-10-24T07:45:00Z');
+        const until = new Date('2026-10-26T07:45:00Z');
+        await expect(queries.listChangedCataloguePages({ since, until, limit: 50001 }))
+            .resolves.toEqual({ datasets: [{ id: 'd1', name: 'roads' }], resources: [{ id: 'r1' }] });
+        expect(pool.query).toHaveBeenCalledTimes(2);
+        const [datasetSql, datasetParams] = pool.query.mock.calls[0];
+        // Every dataset page, by its record's change: no table is asked for and no pin is read.
+        expect(datasetSql).toContain('WHERE d.metadata_modified > $1 AND d.metadata_modified <= $2');
+        expect(datasetSql).toContain('ORDER BY d.metadata_modified, d.id LIMIT $3');
+        expect(datasetSql).not.toContain('pinned_resources');
+        expect(datasetSql).not.toContain('datastore_active');
+        expect(datasetParams).toEqual([since, until, 50001]);
+        const [resourceSql, resourceParams] = pool.query.mock.calls[1];
+        // A file page that carries data; a download-only page is noindex for every engine and is never sent.
+        expectDataBearing(resourceSql);
+        expect(resourceSql).not.toContain('pinned_resources');
+        expect(resourceSql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $5');
+        expect(resourceSql).toContain('LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) <= $6');
+        expect(resourceSql).toContain('ORDER BY r.id LIMIT $7');
+        expect(resourceParams).toEqual([...caps(), since, until, 50001]);
+    });
+
     it('lists every page the index policy turned noindex, dated by the policy and never in the future', async () => {
         pool.query.mockResolvedValue({ rows: [{ id: 'd1', name: 'roads', lastmod: '2026-11-16T07:59:59Z' }] });
         await queries.listPolicyNoindexDatasets({ ids: ['d9'], since: '2026-11-16T07:59:59Z', limit: 200000 });

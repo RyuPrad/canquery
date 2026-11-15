@@ -89,6 +89,55 @@ test('normalizes page one and aliases together, preserving unrelated deep-link s
     }
 });
 
+// The index policy answers Google; with INDEX_POLICY_ENGINES=google its noindex tags name Google's crawler
+// alone, so other engines read the pages as they did before the policy.
+test.each([[undefined, 'robots'], ['all', 'robots'], ['google', 'googlebot']])(
+    'with INDEX_POLICY_ENGINES %p a page the policy turned noindex is served with a %s tag', async (engines, name) => {
+        const before = process.env.INDEX_POLICY_ENGINES;
+        if (engines === undefined) delete process.env.INDEX_POLICY_ENGINES; else process.env.INDEX_POLICY_ENGINES = engines;
+        const csv = { id: 'r1', dataset_id: 'd', dataset_name: 'example', dataset_title_en: 'Example data', name_en: 'Rows',
+            format: 'CSV', url: 'https://example.test/rows.csv', size_bytes: 1000 };
+        const pdf = { ...csv, id: 'r2', name_en: 'Report', format: 'PDF', url: 'https://example.test/report.pdf' };
+        const live = { ...csv, id: 'r3', name_en: 'Live rows', datastore_active: true };
+        const byId = { r1: csv, r2: pdf, r3: live };
+        const deps = {
+            ...dependencies(),
+            // Files a reader can download or CanQuery could prepare: no table now, so the dataset page is noindex.
+            listResourcesForDataset: jest.fn().mockResolvedValue(Array.from({ length: 60 }, (_, i) => ({ ...csv, id: 'file-' + i }))),
+            getResourceById: jest.fn(id => Promise.resolve(byId[id] || null))
+        };
+        const spies = Object.entries(deps).map(([key, value]) => jest.spyOn(catalogRead, key).mockImplementation(value));
+        // No stored row sample for the file pages.
+        const pool = require('../db/pool');
+        pool.query.mockResolvedValue({ rows: [] });
+        const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'canquery-engines-'));
+        fs.writeFileSync(path.join(dist, 'index.html'), '<html><head><!-- seo:start --><!-- seo:end --></head><body><div id="root"></div></body></html>');
+        const tags = text => [...text.matchAll(/<meta name="(robots|googlebot)" content="([^"]*)" \/>/g)].map(match => match[1] + ': ' + match[2]);
+        try {
+            const app = express();
+            app.get(/.*/, serveSpa(dist));
+            const dataset = await request(app).get('/datasets/example');
+            expect(dataset.status).toBe(200);
+            expect(tags(dataset.text)).toEqual([name + ': noindex, follow']);
+            const notLoaded = await request(app).get('/resources/r1');
+            expect(notLoaded.status).toBe(200);
+            expect(tags(notLoaded.text)).toEqual([name + ': noindex, follow']);
+            // Later pages of the file list, a download-only file and a missing page tell every engine.
+            expect(tags((await request(app).get('/datasets/example?page=2')).text)).toEqual(['robots: noindex, follow']);
+            expect(tags((await request(app).get('/resources/r2')).text)).toEqual(['robots: noindex, follow']);
+            const missing = await request(app).get('/resources/nope');
+            expect(missing.status).toBe(404);
+            expect(tags(missing.text)).toEqual(['robots: noindex, follow']);
+            // A file with a table is indexable by everyone.
+            expect(tags((await request(app).get('/resources/r3')).text)).toEqual([]);
+        } finally {
+            spies.forEach(spy => spy.mockRestore());
+            pool.query.mockReset();
+            fs.rmSync(dist, { recursive: true, force: true });
+            if (before === undefined) delete process.env.INDEX_POLICY_ENGINES; else process.env.INDEX_POLICY_ENGINES = before;
+        }
+    });
+
 test('download-only initial HTML contains a usable original link and cleaned publisher context', () => {
     const row = { id: 'r', dataset_id: 'd', dataset_name: 'example', name_en: 'Report', format: 'PDF',
         url: 'https://example.test/report.pdf?a=1&b=2', dataset_notes_en: '<p>Quarterly <b>waiting times</b>.</p><script>bad()</script>' };

@@ -823,6 +823,27 @@ async function listChangedSitemapPages({ since, until, limit, ids = [] }, db = p
     return { datasets: datasets.rows, resources: resources.rows };
 }
 
+// The same window when the index policy speaks to Google alone
+// (INDEX_POLICY_ENGINES=google): IndexNow's engines may then index every
+// dataset page and every data-bearing file page, as before the policy, so each
+// is sent by its record's change. A download-only file page is noindex for
+// every engine and is never sent.
+async function listChangedCataloguePages({ since, until, limit }, db = pool) {
+    const datasets = await db.query(`
+        SELECT d.id, d.name FROM datasets d
+        WHERE d.metadata_modified > $1 AND d.metadata_modified <= $2
+        ORDER BY d.metadata_modified, d.id LIMIT $3
+    `, [since, until, limit]);
+    const resources = await db.query(`
+        SELECT r.id FROM resources r JOIN datasets d ON d.id = r.dataset_id
+        WHERE ${DATA_BEARING_RESOURCE}
+          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) > $5
+          AND LEAST(COALESCE(r.last_modified, d.metadata_modified), now()) <= $6
+        ORDER BY r.id LIMIT $7
+    `, [...dataBearingParams(), since, until, limit]);
+    return { datasets: datasets.rows, resources: resources.rows };
+}
+
 async function getCatalogLastModified(db = pool) {
     const result = await db.query('SELECT max(metadata_modified) AS modified FROM datasets');
     return result.rows[0].modified || null;
@@ -1010,6 +1031,7 @@ module.exports = {
     listDatasetSitemapChunkLastmods,
     listResourceSitemapChunkLastmods,
     listChangedSitemapPages,
+    listChangedCataloguePages,
     listTopDownloadLinks,
     pingDb,
     getLastSyncTime,

@@ -145,6 +145,44 @@ they carry it. A release that goes out after the built-in date sets the
 variable to its promotion time, and so does another deployment adopting the
 policy.
 
+### Which search engines the policy speaks to
+
+The policy answers a ranking change at Google. Bing was not part of it: from
+October 12 to November 13, 2026 it kept sending about two visitors a day, and
+27 of the 65 clicks it reported by page had landed on pages the policy then
+turned noindex (24 of them dataset pages without a table). A robots tag can
+name one crawler, so `INDEX_POLICY_ENGINES` says who the policy's tag is
+written for:
+
+- `all`, the default: `<meta name="robots" content="noindex, follow">`, read by
+  every search engine. Nothing changes from the rule above.
+- `google`: the pages the policy turned noindex carry
+  `<meta name="googlebot" content="noindex, follow">` instead. Google reads it
+  exactly as it reads the general tag; every other engine reads no tag and
+  indexes the page as it did before the policy.
+
+Three kinds of page keep the general tag whatever the setting: a file page that
+is only a download (it repeats its dataset page for every engine and has been
+noindex since October 2026), later pages of a list, and pages that are noindex
+for another reason (not found, empty hubs, employer pages). So with `google`,
+engines other than Google see exactly what they saw before the policy.
+
+The sitemaps do not change: the regular files list the pages Google may index
+and the recrawl files the pages it should fetch again, which the other engines
+read as ordinary entries. IndexNow reaches Bing, Yandex, Seznam and Naver and
+never Google, so with `google` the daily job sends what those engines may
+index: every dataset page and every data-bearing file page whose record
+changed (`listChangedCataloguePages`), as it did before the policy. The job
+reads the setting from its own environment, so set it in the API environment
+and in the scheduled jobs' environment; a value other than `all` or `google`
+stops the API at startup and fails the job's run.
+
+`server/services/indexPolicy.js` holds the rule (`policyEngines`,
+`resourceRobots`, `datasetRobots`); `catalogDiscoveryIntegration.test.js` checks
+on PostgreSQL that the pages the job sends are the pages whose tag lets other
+engines in. To go back, remove the variable from both environments and restart
+the API: every engine reads the tag again at its next visit.
+
 Known limits. A page that stops being indexable after the policy's date (a
 publisher withdraws its live table, a pin is removed) is listed in the recrawl
 files dated by the policy, which can be older than a crawler's last visit: it
@@ -164,7 +202,8 @@ Sitemap chunk numbers above the new totals (`sitemap-datasets-2.xml`,
 
 The row sampler no longer reads CSV files that are not prepared, whose pages
 are noindex: set `ROW_SAMPLE_FILES=true` in the scheduled jobs' environment to
-sample them again. Samples already stored stay on those pages.
+sample them again, for example when `INDEX_POLICY_ENGINES=google` leaves those
+pages to the other engines. Samples already stored stay on those pages.
 
 ## Console review fixes (October 2026)
 

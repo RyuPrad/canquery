@@ -1,14 +1,20 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const pool = require('../db/pool');
-const { listChangedSitemapPages } = require('../db/catalogReadQueries');
+const { listChangedSitemapPages, listChangedCataloguePages } = require('../db/catalogReadQueries');
 const { getProgress, setProgress } = require('../db/catalogWriteQueries');
-const { indexNowKey, submitChanges, PROGRESS_KEY } = require('../services/indexNow');
-const { alwaysIndexableDatasetIds } = require('../services/indexPolicy');
+const { indexNowKey, submitChanges, changesSource, PROGRESS_KEY } = require('../services/indexNow');
+const { alwaysIndexableDatasetIds, policyEngines } = require('../services/indexPolicy');
 
-// Sends the canonical URLs whose sitemap entry changed since the last run to
-// IndexNow: only pages a search engine may index (services/indexPolicy.js). Without INDEXNOW_KEY it does nothing. --dry-run prints the count
-// and a sample, sends nothing and leaves the watermark.
+// Sends the canonical URLs that changed since the last run to IndexNow: only
+// pages its engines may index (services/indexNow.js: changesSource). Without
+// INDEXNOW_KEY it does nothing. --dry-run prints the count and a sample, sends
+// nothing and leaves the watermark.
+const READERS = {
+    policy: window => listChangedSitemapPages({ ...window, ids: alwaysIndexableDatasetIds() }, pool),
+    catalogue: window => listChangedCataloguePages(window, pool)
+};
+
 async function main() {
     const startedAt = new Date();
     const dryRun = process.argv.includes('--dry-run');
@@ -23,13 +29,14 @@ async function main() {
             ok = true;
             return;
         }
+        const readChanges = READERS[changesSource(policyEngines())];
         const result = await submitChanges({
             key,
             dryRun,
             now: startedAt,
             readProgress: () => getProgress(pool, PROGRESS_KEY),
             writeProgress: value => setProgress(pool, PROGRESS_KEY, value),
-            readChanges: window => listChangedSitemapPages({ ...window, ids: alwaysIndexableDatasetIds() }, pool)
+            readChanges
         });
         submitted = result.submitted;
         ok = true;
@@ -52,4 +59,5 @@ async function main() {
     if (!ok) process.exitCode = 1;
 }
 
-main();
+if (require.main === module) main();
+module.exports = { main, READERS };
