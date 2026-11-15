@@ -985,9 +985,11 @@ function buildResourceJsonLd(resource, description) {
     };
 }
 
-// A file's page repeats its dataset page, so it is indexed only when it carries
-// a table CanQuery can query now (services/indexPolicy.js). Every other file
-// page stays out of the index, with its links still followed.
+// A file's page repeats its dataset page, so it is indexable only when it
+// carries a table CanQuery can query now (services/indexPolicy.js). Every other
+// file page carries noindex, follow: a page that is only a download for every
+// engine, the others for every engine or for Google alone, as the policy's
+// setting says (policyEngines).
 function resourceMeta(resource) {
     const name = resourceTitleBase(resource);
     const ds = pick(resource.dataset_title_en, resource.dataset_title_fr);

@@ -97,6 +97,20 @@ describe('IndexNow submission', () => {
         expect(log.mock.calls[0][0]).toContain('would submit ' + firstRunUrls() + ' URLs');
     });
 
+    it('names the list it read in its log lines, when it is told which', async () => {
+        const log = jest.fn();
+        await run({ dryRun: true, log, source: 'catalogue' }).promise;
+        await run({ log, source: 'policy' }).promise;
+        // A caller that names no list gets the lines as they were.
+        await run({ dryRun: true, log }).promise;
+        await run({ log }).promise;
+        const lines = log.mock.calls.map(([line]) => line);
+        expect(lines[0]).toMatch(/^would submit \d+ URLs changed since \S+ \(dry-run, list: catalogue\): https:/);
+        expect(lines[1]).toMatch(/^submitted \d+ URLs changed since \S+ \(list: policy\)$/);
+        expect(lines[2]).toMatch(/^would submit \d+ URLs changed since \S+ \(dry-run\): https:/);
+        expect(lines[3]).toMatch(/^submitted \d+ URLs changed since \S+$/);
+    });
+
     it('splits a large window into 10,000-URL batches and refuses one beyond the cap', async () => {
         const many = { datasets: Array.from({ length: 15000 }, (_, i) => ({ id: 'd' + i, name: null })), resources: [] };
         const { deps, promise } = run({ readChanges: jest.fn().mockResolvedValue(many) });

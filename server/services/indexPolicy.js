@@ -3,7 +3,8 @@
 // something a reader can use on the page itself: a table it can query now.
 // Everything else stays reachable and carries noindex, follow.
 //
-// The same rule is written in SQL for the sitemaps and IndexNow
+// The same rule is written in SQL for the sitemaps and, unless the policy
+// speaks to Google alone (policyEngines below), for IndexNow
 // (db/catalogSqlFragments.js: INDEXABLE_RESOURCE and indexableDataset); tests
 // keep the two in step. No database, no Express.
 const blogContent = require('./blogContent');
@@ -50,11 +51,12 @@ const POLICY_RECRAWL_DAYS = 90;
 
 // Which search engines the policy speaks to. It answers a ranking change at
 // Google, and a robots tag can name one crawler. With
-// INDEX_POLICY_ENGINES=google the pages the policy turned noindex address
-// their tag to Google alone (<meta name="googlebot">), so every other engine
-// indexes what it did before the policy: each dataset page, and each file page
-// that carries data. "all", the default, tells every engine. A malformed value
-// stops startup (app.js).
+// INDEX_POLICY_ENGINES=google the dataset pages and data-bearing file pages
+// the policy turned noindex address their tag to Google alone
+// (<meta name="googlebot">), so every other engine may index them as before
+// the policy. Later pages of a list stay noindex for all of them
+// (seoMeta.pagedMeta). "all", the default, tells every engine. A malformed
+// value stops startup (app.js).
 const POLICY_ENGINES = ['all', 'google'];
 function policyEngines(value = process.env.INDEX_POLICY_ENGINES) {
     const text = (value || '').trim();

@@ -26,9 +26,10 @@ function indexNowKey(value = process.env.INDEXNOW_KEY) {
 
 // Where a run reads its pages. IndexNow never reaches Google, so when the
 // index policy speaks to Google alone (services/indexPolicy.js: policyEngines)
-// its engines may index every catalogue page that carries data, and the run
-// reads those ('catalogue'); otherwise it reads the policy's pages, which are
-// the regular sitemaps' entries ('policy').
+// its engines may index every dataset page and every file page that carries
+// data, and the run reads those ('catalogue'); otherwise it reads the policy's
+// pages, which are the regular sitemaps' entries ('policy'). A run's log line
+// names the list, so the job's setting can be checked against the API's.
 const changesSource = engines => (engines === 'google' ? 'catalogue' : 'policy');
 
 // GET /:key.txt - the key file IndexNow fetches to verify a submission.
@@ -59,7 +60,7 @@ function changedUrls({ datasets, resources }, since) {
 
 // One run: read the window, collect its URLs, send them in batches and move
 // the watermark only after every batch was accepted (200 or 202).
-async function submitChanges({ key, readProgress, writeProgress, readChanges, fetchImpl = fetch,
+async function submitChanges({ key, readProgress, writeProgress, readChanges, source = null, fetchImpl = fetch,
     now = new Date(), dryRun = false, log = console.log }) {
     const progress = await readProgress();
     const through = progress && progress.submitted_through ? new Date(progress.submitted_through) : null;
@@ -75,7 +76,8 @@ async function submitChanges({ key, readProgress, writeProgress, readChanges, fe
     const summary = { since: since.toISOString(), until: now.toISOString(), urls: urls.length,
         datasets: changes.datasets.length, resources: changes.resources.length };
     if (dryRun) {
-        log('would submit ' + urls.length + ' URLs changed since ' + summary.since + ' (dry-run): ' + urls.slice(0, 5).join(' '));
+        log('would submit ' + urls.length + ' URLs changed since ' + summary.since + ' (dry-run' + (source ? ', list: ' + source : '') + '): ' +
+            urls.slice(0, 5).join(' '));
         return { ...summary, submitted: 0 };
     }
     const host = new URL(SITE_URL).host;
@@ -91,7 +93,7 @@ async function submitChanges({ key, readProgress, writeProgress, readChanges, fe
         }
     }
     await writeProgress({ submitted_through: now.toISOString(), urls: urls.length });
-    log('submitted ' + urls.length + ' URLs changed since ' + summary.since);
+    log('submitted ' + urls.length + ' URLs changed since ' + summary.since + (source ? ' (list: ' + source + ')' : ''));
     return { ...summary, submitted: urls.length };
 }
 

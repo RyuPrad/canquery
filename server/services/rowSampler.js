@@ -14,8 +14,9 @@ const { toAbsoluteUrl } = require('../utils/resolveUrl');
 // Successful samples are rechecked after ROW_SAMPLE_REFRESH_DAYS, failures back
 // off, and a resource whose version changes is read again. CSV files that are
 // not prepared are read only when ROW_SAMPLE_FILES is exactly true: their pages
-// are noindex (services/indexPolicy.js), so their rows serve no crawler, and
-// the samples already stored stay on those pages.
+// are noindex for Google, and for every engine unless the index policy speaks
+// to Google alone (services/indexPolicy.js: policyEngines), so by default
+// their rows serve no crawler. The samples already stored stay on those pages.
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function integerSetting(name, fallback, min, max) {

@@ -109,7 +109,8 @@ describe('index policy - which search engines it speaks to', () => {
     };
 
     test('is every engine unless INDEX_POLICY_ENGINES names Google', () => {
-        expect(policy.policyEngines(undefined)).toBe('all');
+        // A value is passed each time: no value at all would read this machine's environment (the next test's subject).
+        expect(policy.policyEngines(null)).toBe('all');
         expect(policy.policyEngines('')).toBe('all');
         expect(policy.policyEngines('   ')).toBe('all');
         expect(policy.policyEngines('all')).toBe('all');

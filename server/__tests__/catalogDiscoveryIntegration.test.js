@@ -274,6 +274,60 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         expect(capped.datasets).toHaveLength(3);
         expect(capped.resources).toHaveLength(3);
     });
+    test('the list and the tag agree on the unusual files too, and no publisher value can fail the read', async () => {
+        const limits = require('../config/ingest').ingestLimits();
+        // [name, format, address, size, publisher record, has a map, other engines may index it]
+        const files = [
+            // A map without a table: data-bearing by its map alone.
+            ['maponly', 'GEOJSON', 'https://example.test/a.geojson', null, null, true, true],
+            // A CSV label on a ZIP archive is only a download, unless it has a map.
+            ['zipcsv', 'CSV', 'https://example.test/a.zip', null, null, false, false],
+            ['zipquery', 'CSV', 'https://example.test/a.ZIP?download=1', null, null, false, false],
+            ['zipmap', 'CSV', 'https://example.test/a.zip', null, null, true, true],
+            // Each format against its own size cap.
+            ['capcsv', 'CSV', 'https://example.test/a.csv', limits.maxFileBytes, null, false, true],
+            ['bigcsv', 'CSV', 'https://example.test/a.csv', limits.maxFileBytes + 1, null, false, false],
+            ['xlsx', 'XLSX', 'https://example.test/a.xlsx', limits.maxXlsxBytes, null, false, true],
+            ['bigxlsx', 'XLSX', 'https://example.test/a.xlsx', limits.maxXlsxBytes + 1, null, false, false],
+            ['xls', 'XLS', 'https://example.test/a.xls', null, null, false, true],
+            // The publisher's own counts, as a number or as text.
+            ['rows', 'CSV', 'https://example.test/a.csv', null, { record_count: limits.maxRows }, false, true],
+            ['manyrows', 'CSV', 'https://example.test/a.csv', null, { record_count: limits.maxRows + 1 }, false, false],
+            ['textrows', 'CSV', 'https://example.test/a.csv', null, { record_count: String(limits.maxRows + 1) }, false, false],
+            ['cols', 'XLSX', 'https://example.test/a.xlsx', null, { field_count: String(limits.maxCols) }, false, true],
+            ['manycols', 'XLSX', 'https://example.test/a.xlsx', null, { field_count: limits.maxCols + 1 }, false, false],
+            // Runs of digits no integer type holds are over any cap, and never an error.
+            ['hugerows', 'CSV', 'https://example.test/a.csv', null, { record_count: '99999999999999999999' }, false, false],
+            ['hugecols', 'CSV', 'https://example.test/a.csv', null, { field_count: '3000000000' }, false, false],
+            // Text that is not a count says nothing.
+            ['wordrows', 'CSV', 'https://example.test/a.csv', null, { record_count: 'many', field_count: '' }, false, true]
+        ];
+        await db.query('SAVEPOINT unusual_files');
+        try {
+            for (const [name, format, address, size, raw, map] of files) {
+                await db.query(`INSERT INTO resources (id, dataset_id, format, url, size_bytes, raw, datastore_active)
+                    VALUES ($1, $2, $3, $4, $5, $6, false)`, [id(name), id('dataset020'), format, address, size, raw ? JSON.stringify(raw) : null]);
+                if (map) {
+                    await db.query(`INSERT INTO resource_maps (resource_id, provider, service_url, geometry_type)
+                        VALUES ($1, 'arcgis', 'https://example.test/FeatureServer/1', 'point')`, [id(name)]);
+                }
+            }
+            const changed = await queries.listChangedCataloguePages({ since: new Date('2026-07-31T00:00:00Z'), until: new Date('2026-08-02T00:00:00Z'),
+                limit: 1000 }, db);
+            const sent = mine(changed.resources);
+            for (const [name, , , , , , expected] of files) {
+                const row = await queries.getResourceById(id(name), db, { pinned: true });
+                const robots = indexPolicy.resourceRobots(row, 'google');
+                expect([name, !robots.noindex || robots.noindexFor === 'googlebot', sent.includes(id(name))]).toEqual([name, expected, expected]);
+            }
+            // The recrawl list of the policy's pages reads the same rule, and holds too.
+            const recrawl = mine(await queries.listPolicyNoindexResources({ since: '2026-07-01T00:00:00Z', limit: 1000 }, db));
+            expect(files.filter(([name]) => recrawl.includes(id(name))).map(([name]) => name))
+                .toEqual(files.filter(file => file[6]).map(([name]) => name));
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT unusual_files');
+        }
+    });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         const first = await queries.listResourceSitemap({ limit: 2, offset: 0 }, db);

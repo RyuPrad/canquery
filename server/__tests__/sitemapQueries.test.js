@@ -20,8 +20,11 @@ const expectDataBearing = sql => {
     expect(sql).toContain("r.format IN ('CSV', 'XLSX', 'XLS')");
     expect(sql).toContain("split_part(coalesce(r.url, ''), '?', 1) ~* '\\.zip$'");
     expect(sql).toContain("CASE WHEN r.format = 'CSV' THEN $1::bigint ELSE $2::bigint END");
-    expect(sql).toContain("(r.raw->>'record_count')::bigint <= $3::bigint");
-    expect(sql).toContain("(r.raw->>'field_count')::int <= $4::int");
+    // A count is cast only when it is a run of digits its type can hold, so no publisher value fails the read.
+    expect(sql).toContain("WHEN coalesce(r.raw->>'record_count', '') ~ '^\\d{1,18}$' THEN (r.raw->>'record_count')::bigint <= $3::bigint");
+    expect(sql).toContain("WHEN coalesce(r.raw->>'field_count', '') ~ '^\\d{1,9}$' THEN (r.raw->>'field_count')::int <= $4::int");
+    expect(sql.match(/::bigint <= \$3::bigint/g)).toHaveLength(1);
+    expect(sql.match(/::int <= \$4::int/g)).toHaveLength(1);
 };
 
 // The index policy in SQL (services/indexPolicy.js is its JavaScript twin): a

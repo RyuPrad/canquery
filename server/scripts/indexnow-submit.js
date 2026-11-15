@@ -9,7 +9,9 @@ const { alwaysIndexableDatasetIds, policyEngines } = require('../services/indexP
 // Sends the canonical URLs that changed since the last run to IndexNow: only
 // pages its engines may index (services/indexNow.js: changesSource). Without
 // INDEXNOW_KEY it does nothing. --dry-run prints the count and a sample, sends
-// nothing and leaves the watermark.
+// nothing and leaves the watermark. Both lines name the list that was read
+// ("list: policy" or "list: catalogue"): the job reads INDEX_POLICY_ENGINES from
+// its own environment, and the list must match the tag the API writes.
 const READERS = {
     policy: window => listChangedSitemapPages({ ...window, ids: alwaysIndexableDatasetIds() }, pool),
     catalogue: window => listChangedCataloguePages(window, pool)
@@ -29,9 +31,11 @@ async function main() {
             ok = true;
             return;
         }
-        const readChanges = READERS[changesSource(policyEngines())];
+        const source = changesSource(policyEngines());
+        const readChanges = READERS[source];
         const result = await submitChanges({
             key,
+            source,
             dryRun,
             now: startedAt,
             readProgress: () => getProgress(pool, PROGRESS_KEY),

@@ -76,6 +76,16 @@ const match = {
 // noindex resource page apart in the recrawl sitemaps: download-only pages
 // (not data-bearing, noindex since October 2026) and the data-bearing pages
 // the index policy below turned noindex.
+//
+// A publisher's count is text. Only a run of digits short enough for its type
+// is cast (a CASE, whose order PostgreSQL keeps), so no value can fail the
+// read; a longer run of digits is over any cap, and text that is not a count
+// says nothing, as in the JavaScript rule. The two rules still part on values
+// no adapter writes: a count such as "1e9", " 500 " or 5000000.5, a file
+// address that is not an absolute http(s) one, or one with text after ".zip".
+const withinCap = (value, digits, type, cap) => `CASE
+              WHEN coalesce(${value}, '') ~ '^\\d{1,${digits}}$' THEN (${value})::${type} <= ${cap}::${type}
+              ELSE coalesce(${value}, '') !~ '^\\d+$' END`;
 function dataBearingResource({ csvCap, xlsxCap, maxRows, maxCols }) {
     return `(r.datastore_active
      OR EXISTS (SELECT 1 FROM ingested_resources ir WHERE ir.resource_id = r.id AND ir.status = 'ready')
@@ -83,10 +93,8 @@ function dataBearingResource({ csvCap, xlsxCap, maxRows, maxCols }) {
      OR (r.format IN ('CSV', 'XLSX', 'XLS')
          AND NOT (r.format = 'CSV' AND split_part(coalesce(r.url, ''), '?', 1) ~* '\\.zip$')
          AND (r.size_bytes IS NULL OR r.size_bytes <= CASE WHEN r.format = 'CSV' THEN ${csvCap}::bigint ELSE ${xlsxCap}::bigint END)
-         AND (jsonb_typeof(r.raw) IS DISTINCT FROM 'object' OR coalesce(r.raw->>'record_count', '') !~ '^\\d+$'
-              OR (r.raw->>'record_count')::bigint <= ${maxRows}::bigint)
-         AND (jsonb_typeof(r.raw) IS DISTINCT FROM 'object' OR coalesce(r.raw->>'field_count', '') !~ '^\\d+$'
-              OR (r.raw->>'field_count')::int <= ${maxCols}::int)))`;
+         AND (jsonb_typeof(r.raw) IS DISTINCT FROM 'object' OR ${withinCap("r.raw->>'record_count'", 18, 'bigint', maxRows)})
+         AND (jsonb_typeof(r.raw) IS DISTINCT FROM 'object' OR ${withinCap("r.raw->>'field_count'", 9, 'int', maxCols)})))`;
 }
 
 // The pages a search engine may index (services/indexPolicy.js is the same

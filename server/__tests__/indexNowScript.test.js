@@ -60,12 +60,31 @@ describe('the IndexNow job reads the pages its engines may index', () => {
             expect(queries[reader]).toHaveBeenCalledTimes(1);
             expect(queries[other]).not.toHaveBeenCalled();
             expect(log.mock.calls.flat().join(' ')).toContain('https://canquery.com/datasets/' + name);
+            // The line names the list that was read, so the job's setting can be checked against the API's.
+            expect(log.mock.calls.flat().join(' ')).toContain('(dry-run, list: ' + (reader === 'listChangedSitemapPages' ? 'policy' : 'catalogue') + ')');
             // A dry run sends nothing, leaves the watermark and is logged as one.
             expect(progress.setProgress).not.toHaveBeenCalled();
             expect(runLog().slice(2)).toEqual([true, 0, 'dry-run']);
             expect(process.exitCode).toBe(saved.exitCode);
             expect(pool.end).toHaveBeenCalledTimes(1);
         });
+
+    test('a real run sends the list, moves the watermark and names the list in its line', async () => {
+        process.env.INDEX_POLICY_ENGINES = 'google';
+        process.argv = ['node', 'indexnow-submit.js'];
+        const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ status: 200 });
+        try {
+            await main();
+            const sent = fetchSpy.mock.calls.flatMap(([, request]) => JSON.parse(request.body).urlList);
+            expect(sent).toEqual(expect.arrayContaining(['https://canquery.com/datasets/every', 'https://canquery.com/resources/every-r']));
+            expect(sent).not.toContain('https://canquery.com/datasets/policy');
+            expect(log.mock.calls.flat().join(' ')).toMatch(new RegExp('submitted ' + sent.length + ' URLs changed since \\S+ \\(list: catalogue\\)'));
+            expect(progress.setProgress).toHaveBeenCalledTimes(1);
+            expect(runLog().slice(2)).toEqual([true, sent.length, null]);
+        } finally {
+            fetchSpy.mockRestore();
+        }
+    });
 
     test('a setting nobody chose fails the run before anything is read or sent', async () => {
         process.env.INDEX_POLICY_ENGINES = 'bing';

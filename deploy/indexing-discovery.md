@@ -122,7 +122,9 @@ the two in step: `server/services/indexPolicy.js` for the pages, and
 organization pages keep their own rule.
 
 The regular sitemaps (`/sitemap-datasets-N.xml`, `/sitemap-resources-N.xml`)
-and the daily IndexNow submission list only indexable pages. An entry is dated
+list only indexable pages, and so does the daily IndexNow submission unless
+the policy speaks to Google alone (see "Which search engines the policy speaks
+to" below). An entry is dated
 by its record's change, or by the pinned copy that made the page indexable when
 that is newer, so a page a new pin brings into the index is fetched again. A
 noindex tag
@@ -145,44 +147,6 @@ they carry it. A release that goes out after the built-in date sets the
 variable to its promotion time, and so does another deployment adopting the
 policy.
 
-### Which search engines the policy speaks to
-
-The policy answers a ranking change at Google. Bing was not part of it: from
-October 12 to November 13, 2026 it kept sending about two visitors a day, and
-27 of the 65 clicks it reported by page had landed on pages the policy then
-turned noindex (24 of them dataset pages without a table). A robots tag can
-name one crawler, so `INDEX_POLICY_ENGINES` says who the policy's tag is
-written for:
-
-- `all`, the default: `<meta name="robots" content="noindex, follow">`, read by
-  every search engine. Nothing changes from the rule above.
-- `google`: the pages the policy turned noindex carry
-  `<meta name="googlebot" content="noindex, follow">` instead. Google reads it
-  exactly as it reads the general tag; every other engine reads no tag and
-  indexes the page as it did before the policy.
-
-Three kinds of page keep the general tag whatever the setting: a file page that
-is only a download (it repeats its dataset page for every engine and has been
-noindex since October 2026), later pages of a list, and pages that are noindex
-for another reason (not found, empty hubs, employer pages). So with `google`,
-engines other than Google see exactly what they saw before the policy.
-
-The sitemaps do not change: the regular files list the pages Google may index
-and the recrawl files the pages it should fetch again, which the other engines
-read as ordinary entries. IndexNow reaches Bing, Yandex, Seznam and Naver and
-never Google, so with `google` the daily job sends what those engines may
-index: every dataset page and every data-bearing file page whose record
-changed (`listChangedCataloguePages`), as it did before the policy. The job
-reads the setting from its own environment, so set it in the API environment
-and in the scheduled jobs' environment; a value other than `all` or `google`
-stops the API at startup and fails the job's run.
-
-`server/services/indexPolicy.js` holds the rule (`policyEngines`,
-`resourceRobots`, `datasetRobots`); `catalogDiscoveryIntegration.test.js` checks
-on PostgreSQL that the pages the job sends are the pages whose tag lets other
-engines in. To go back, remove the variable from both environments and restart
-the API: every engine reads the tag again at its next visit.
-
 Known limits. A page that stops being indexable after the policy's date (a
 publisher withdraws its live table, a pin is removed) is listed in the recrawl
 files dated by the policy, which can be older than a crawler's last visit: it
@@ -204,6 +168,79 @@ The row sampler no longer reads CSV files that are not prepared, whose pages
 are noindex: set `ROW_SAMPLE_FILES=true` in the scheduled jobs' environment to
 sample them again, for example when `INDEX_POLICY_ENGINES=google` leaves those
 pages to the other engines. Samples already stored stay on those pages.
+
+### Which search engines the policy speaks to
+
+The policy answers a ranking change at Google. Bing was not part of it: from
+October 12 to November 13, 2026 it kept sending about two visitors a day, and
+27 of the 65 clicks it reported by page had landed on pages the policy then
+turned noindex (24 of them dataset pages without a table). A robots tag can
+name one crawler, so `INDEX_POLICY_ENGINES` says who the policy's tag is
+written for:
+
+- `all`, the default: `<meta name="robots" content="noindex, follow">`, read by
+  every search engine. Nothing changes from the rule above.
+- `google`: the dataset pages and data-bearing file pages the policy turned
+  noindex carry `<meta name="googlebot" content="noindex, follow">` instead.
+  Google documents `googlebot` as the name that addresses its crawler alone
+  and applies the rule as it applies the general tag. The other engines
+  document `robots` and their own crawler's name (`bingbot`, `yandex`), so
+  they find no tag addressed to them and may index the page.
+
+Three kinds of page keep the general tag whatever the setting: a file page that
+is only a download (it repeats its dataset page for every engine and has been
+noindex since October 2026), later pages of a list, and pages that are noindex
+for another reason (not found, empty hubs, employer pages). So with `google`,
+engines other than Google get back the tags they had before the policy on
+every dataset page and every data-bearing file page. Later pages of a list,
+which the policy also turned noindex, stay noindex for everyone.
+
+The sitemaps do not change, and they stay Google's: the regular files list the
+pages Google may index, and the recrawl files list the others for 90 days,
+which the other engines read as ordinary entries. After those 90 days an
+engine other than Google learns of a page the policy keeps from Google only
+through links and IndexNow.
+
+IndexNow reaches Bing, Yandex, Seznam and Naver and never Google, so with
+`google` the daily job sends what those engines may index: every dataset page
+and every data-bearing file page whose record changed
+(`listChangedCataloguePages`), as it did before the policy. The job reads the
+setting from its own environment, so set it in the API environment and in the
+scheduled jobs' environment; a value other than `all` or `google` stops the
+API at startup and fails the job's run. The job's log line and its
+`--dry-run` line name the list that was read: after setting the variable, run
+`node scripts/indexnow-submit.js --dry-run` in the jobs' environment and check
+that it says `list: catalogue` (`list: policy` with `all`). The API's side
+shows on any dataset page without a table, whose tag is then named
+`googlebot`.
+
+Switching announces nothing by itself. Both lists share one watermark, so the
+first run after the switch sends only the records changed in the last day or
+two. A page another engine fetched while it carried the general tag comes back
+at that engine's next visit of its own, or when its record next changes; for
+the pages that matter, submit their addresses by hand (URL Submission in Bing
+Webmaster Tools).
+
+`server/services/indexPolicy.js` holds the rule (`policyEngines`,
+`resourceRobots`, `datasetRobots`). The JavaScript rule decides a page's tag
+and the SQL list decides what the job sends; `catalogDiscoveryIntegration.test.js`
+compares the two on PostgreSQL file by file, maps, archives and the size and
+count caps included. They can part only on values no source adapter writes: a
+count written as `1e9`, as a decimal or with spaces, a file address that is not
+an absolute `http(s)` one, or text after `.zip`. Such a page would be sent
+while noindex, or indexable for those engines and never sent; no file in the
+catalogue had one on November 15, 2026. A count too long for its integer type
+is over any cap and cannot fail the read. To go back, remove the variable from
+both environments and restart the API: every engine reads the tag again at its
+next visit.
+
+Whether an engine honours a tag addressed to another crawler is its own
+choice. Bing and Yandex document only `robots` and their own names. Apple says
+Applebot follows Googlebot's instructions when none mention it (it says so of
+`robots.txt`; for the meta tag it names `robots` and `applebot`), and Brave
+Search does not crawl what Googlebot may not, so either may treat the
+`googlebot` tag as its own. After enabling, inspect one tagged page with URL
+Inspection in Bing Webmaster Tools and confirm Bing may index it.
 
 ## Console review fixes (October 2026)
 
