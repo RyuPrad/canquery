@@ -30,6 +30,57 @@ describe('server-rendered crawl snapshots', () => {
         for (const path of ['/datasets', '/faq', 'https://github.com/RyuPrad', 'https://github.com/RyuPrad/canquery']) {
             expect(html).toContain('href="' + path + '"');
         }
+        // Who runs the site, where its data comes from, how guides are checked and how to get one corrected:
+        // each in a section other pages can link to.
+        expect(html).toContain('<section id="who"><h2>Who runs CanQuery</h2><p>CanQuery is an independent project');
+        expect(html).toContain('<section id="data-sources"><h2>Where the data comes from and how often it is refreshed</h2>');
+        // The federal portal carries the provinces' records; the licence gate is on the other portals' records.
+        expect(html).toContain('which also carries records from provincial and territorial governments');
+        expect(html).toContain('A record from a municipal, regional or territorial portal is listed only when it is published under a recognized open licence.');
+        expect(html).toContain('checked for changes every 30 minutes and read in full once a day, and the other portals are read once a day');
+        // Both kinds of table are called live on the site, so the copy says where each is read from instead.
+        expect(html).toContain('A table hosted by its source portal is read from that portal when you open it, and answers are kept for up to five minutes.');
+        expect(html).toContain('A table prepared from a CSV or Excel file is a copy of that file');
+        expect(html).not.toContain('A live table is read');
+        expect(html).toContain('<section id="guides"><h2>How guides are written and checked</h2>');
+        expect(html).toContain('checked against the official source');
+        expect(html).toContain('Every guide shows three dates');
+        expect(html).toContain('the guide is updated or withdrawn');
+        const corrections = html.slice(html.indexOf('<section id="corrections">'), html.indexOf('<section id="support">'));
+        expect(corrections).toContain('<h2>Corrections</h2>');
+        expect(corrections).toContain('href="mailto:support@canquery.com"');
+        expect(corrections).toContain('can only be corrected by its publisher');
+        // In the order a reader meets them, before the support contact.
+        const order = ['What is CanQuery?', 'id="data-sources"', 'id="guides"', 'id="who"', 'id="corrections"', 'id="support"'].map(part => html.indexOf(part));
+        expect(order.every(index => index > 0)).toBe(true);
+        expect([...order].sort((a, b) => a - b)).toEqual(order);
+    });
+
+    it('says on the About page the same words as the application, section by section', () => {
+        const fs = require('fs');
+        const path = require('path');
+        const client = fs.readFileSync(path.join(__dirname, '../../client/src/i18n.jsx'), 'utf8');
+        const html = snapshot.staticSnapshot('about');
+        // The English string of a key: the first of its two definitions.
+        const english = key => JSON.parse('"' + new RegExp('^    "' + key.replace('.', '\\.') + '": "(.*)",$', 'm').exec(client)[1] + '"');
+        const keys = ['what_title', 'what_body', 'mission_title', 'mission_body', 'sources_title', 'sources_body', 'context_body',
+            'origin_title', 'origin_body', 'refresh_body', 'guides_title', 'guides_body', 'guides_dates_body',
+            'independent_title', 'independent_body', 'corrections_title', 'corrections_body'];
+        for (const key of keys) expect([key, html.includes('>' + english('about.' + key) + '<')]).toEqual([key, true]);
+    });
+
+    it('states the refresh schedule that the scheduled jobs actually have', () => {
+        const fs = require('fs');
+        const path = require('path');
+        const cron = fs.readFileSync(path.join(__dirname, '../../deploy/canquery.cron.d'), 'utf8').split('\n').filter(line => !line.startsWith('#'));
+        const schedule = job => cron.find(line => line.trim().endsWith(' ' + job)).trim().split(/\s+/).slice(0, 5).join(' ');
+        const html = snapshot.staticSnapshot('about');
+        // "checked for changes every 30 minutes"
+        expect(schedule('incremental-sync')).toBe('*/30 * * * *');
+        // "read in full once a day" and "the other portals are read once a day": one fixed hour and minute, every day.
+        expect(schedule('catalog-sync')).toMatch(/^\d+ \d+ \* \* \*$/);
+        expect(schedule('sync-municipal-sources')).toMatch(/^\d+ \d+ \* \* \*$/);
+        expect(html).toContain('every 30 minutes and read in full once a day, and the other portals are read once a day');
     });
 
     test.each(['faq', 'about'])('makes support available on %s without JavaScript', type => {

@@ -51,8 +51,15 @@ test.each(['en', 'fr'])('renders complete %s articles and metadata without any c
         if (article.place) expect(html.indexOf(homeLabel)).toBeGreaterThan(html.lastIndexOf('/places/' + article.place));
         expect(page.meta.alternates).toHaveProperty('fr-CA');
         expect(page.meta.jsonLd.find(item => item['@type'] === 'BlogPosting')).toMatchObject({
-            author: { '@type': 'Organization', name: 'CanQuery' }, datePublished: article.published
+            author: { '@type': 'Organization', name: 'CanQuery' }, datePublished: article.published,
+            image: { '@type': 'ImageObject', url: 'https://canquery.com/og-image.png', width: 1200, height: 630 },
+            publisher: { '@type': 'Organization', name: 'CanQuery',
+                logo: { '@type': 'ImageObject', url: 'https://canquery.com/android-chrome-512.png', width: 512, height: 512 } }
         });
+        // The byline leads to how guides are written and checked. The server's About page is in English,
+        // and a French guide's link says so.
+        expect(html).toContain(lang === 'fr' ? 'Par <a class="link" href="/about#guides" hreflang="en">CanQuery</a> · '
+            : 'By <a class="link" href="/about#guides">CanQuery</a> · ');
     }
 });
 
@@ -190,4 +197,18 @@ test('relates guides by place first, then by topic, in both languages', async ()
     expect(html).toContain('href="/blog/calgary-flood-map"');
     expect(html).toContain('href="/?place=calgary-ab"');
     expect((await resolvePage(corporations.path)).body).not.toContain('Related guides');
+});
+
+test('the pictures a guide names in its structured data exist at the size it states', () => {
+    // A PNG states its width and height in the first chunk, as two big-endian integers after the signature.
+    const { resolveBlogPage } = require('../services/blogPresentation');
+    const size = name => {
+        const header = fs.readFileSync(path.join(__dirname, '../../client/public', name)).subarray(0, 24);
+        expect(header.subarray(1, 4).toString()).toBe('PNG');
+        return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+    };
+    const posting = resolveBlogPage(listArticles()[0].path).meta.jsonLd.find(item => item['@type'] === 'BlogPosting');
+    const file = url => '/' + url.split('/').pop();
+    expect(size(file(posting.image.url))).toEqual({ width: posting.image.width, height: posting.image.height });
+    expect(size(file(posting.publisher.logo.url))).toEqual({ width: posting.publisher.logo.width, height: posting.publisher.logo.height });
 });

@@ -45,6 +45,8 @@ test('renders the full article, dates, attribution and the actual map action', a
   expect(screen.getByRole('link', { name: /Explore map/ })).toHaveAttribute('href', '/resources/park-map?view=map');
   expect(screen.getByRole('link', { name: 'View the source dataset' })).toHaveAttribute('href', '/datasets/parks');
   expect(document.querySelectorAll('time')).toHaveLength(3);
+  // The byline leads to how guides are written and checked.
+  expect(screen.getByRole('link', { name: 'CanQuery' })).toHaveAttribute('href', '/about#guides');
 });
 
 test('the URL determines article language, including navbar switching and Back', async () => {

@@ -20,6 +20,8 @@ const DEFAULT_DESC =
 // Link previews (Facebook, LinkedIn, X, Bluesky, Slack) need a raster image.
 const DEFAULT_IMAGE = SITE_URL + '/og-image.png';
 const DEFAULT_IMAGE_ALT = 'CanQuery: Canadian open data search, tables and maps';
+const SITE_LOGO = SITE_URL + '/android-chrome-512.png';
+const SUPPORT_EMAIL = 'support@canquery.com';
 const REPO_URL = 'https://github.com/RyuPrad/canquery';
 const BLUESKY_URL = 'https://bsky.app/profile/canquery.com';
 const TITLE_MAX = 80;
@@ -593,7 +595,7 @@ function buildOrganizationJsonLd() {
         '@type': 'Organization',
         name: SITE_NAME,
         url: SITE_URL + '/',
-        logo: SITE_URL + '/android-chrome-512.png',
+        logo: SITE_LOGO,
         sameAs: [REPO_URL, BLUESKY_URL],
     };
 }
@@ -740,7 +742,8 @@ function homeMeta() {
 }
 
 // The about page answers "What is CanQuery?": an AboutPage whose subject is
-// the same Organization the home page describes.
+// the same Organization the home page describes, here with how to reach it and
+// the sections that say how guides are checked and corrected.
 function aboutJsonLd(entry) {
     return [{
         '@context': 'https://schema.org',
@@ -748,7 +751,12 @@ function aboutJsonLd(entry) {
         name: entry.title,
         description: entry.description,
         url: SITE_URL + entry.path,
-        about: buildOrganizationJsonLd(),
+        about: {
+            ...buildOrganizationJsonLd(),
+            contactPoint: { '@type': 'ContactPoint', contactType: 'customer support', email: SUPPORT_EMAIL },
+            publishingPrinciples: SITE_URL + entry.path + '#guides',
+            correctionsPolicy: SITE_URL + entry.path + '#corrections',
+        },
     }, buildBreadcrumbJsonLd([{ name: 'CanQuery', path: '/' }, { name: 'About', path: entry.path }])];
 }
 
@@ -1313,6 +1321,8 @@ function renderHtml(template, meta, bodyHtml = '') {
 module.exports = {
     SITE_URL,
     SITE_NAME,
+    SITE_LOGO,
+    DEFAULT_IMAGE,
     DEFAULT_TITLE,
     DEFAULT_DESC,
     escapeHtml,

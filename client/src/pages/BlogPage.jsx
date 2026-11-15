@@ -84,7 +84,7 @@ export default function BlogPage({ language = 'en' }) {
       <h1 className="font-display text-3xl sm:text-4xl font-bold leading-tight mt-5">{article.title}</h1>
       <p className="text-lg text-base-content/65 leading-relaxed mt-5">{article.description}</p>
       <div className="text-sm text-base-content/60 space-y-1 mt-5">
-        <p>{t('blog.by')} <Link to="/" className="link">CanQuery</Link> · {t('blog.published')} <time dateTime={article.published}>{date(article.published)}</time></p>
+        <p>{t('blog.by')} <Link to="/about#guides" className="link">CanQuery</Link> · {t('blog.published')} <time dateTime={article.published}>{date(article.published)}</time></p>
         <p>{t('blog.updated')} <time dateTime={article.updated}>{date(article.updated)}</time></p>
         <p>{t('blog.verified')} <time dateTime={article.verified}>{date(article.verified)}</time></p>
       </div>
