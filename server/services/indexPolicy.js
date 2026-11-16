@@ -3,10 +3,12 @@
 // something a reader can use on the page itself: a table it can query now.
 // Everything else stays reachable and carries noindex, follow.
 //
-// The same rule is written in SQL for the sitemaps and IndexNow
+// The same rule is written in SQL for the sitemaps and, unless the policy
+// speaks to Google alone (policyEngines below), for IndexNow
 // (db/catalogSqlFragments.js: INDEXABLE_RESOURCE and indexableDataset); tests
 // keep the two in step. No database, no Express.
 const blogContent = require('./blogContent');
+const { classifyResource } = require('./resourceCapabilities');
 const { hubDatasetIds } = require('../utils/datasetHubs');
 
 // A live DataStore table, or a prepared copy that is pinned. An unpinned copy
@@ -47,4 +49,38 @@ function policySince(value = process.env.INDEX_POLICY_SINCE) {
 // How long every page the policy turned noindex stays in the recrawl sitemaps.
 const POLICY_RECRAWL_DAYS = 90;
 
-module.exports = { isIndexableResource, alwaysIndexableDatasetIds, isIndexableDataset, policySince, POLICY_SINCE, POLICY_RECRAWL_DAYS };
+// Which search engines the policy speaks to. It answers a ranking change at
+// Google, and a robots tag can name one crawler. With
+// INDEX_POLICY_ENGINES=google the dataset pages and data-bearing file pages
+// the policy turned noindex address their tag to Google alone
+// (<meta name="googlebot">), so every other engine may index them as before
+// the policy. Later pages of a list stay noindex for all of them
+// (seoMeta.pagedMeta). "all", the default, tells every engine. A malformed
+// value stops startup (app.js).
+const POLICY_ENGINES = ['all', 'google'];
+function policyEngines(value = process.env.INDEX_POLICY_ENGINES) {
+    const text = (value || '').trim();
+    if (!text) return 'all';
+    if (!POLICY_ENGINES.includes(text)) throw new Error('INDEX_POLICY_ENGINES must be all or google');
+    return text;
+}
+
+// The robots part of a page's meta: nothing for an indexable page, noindex for
+// the others, and noindexFor when the tag names Google's crawler alone. A file
+// that is only a download repeats its dataset page for every engine and was
+// noindex before the policy, so its tag always speaks to all of them.
+const NOINDEX = Object.freeze({ noindex: true });
+const NOINDEX_GOOGLE = Object.freeze({ noindex: true, noindexFor: 'googlebot' });
+const policyNoindex = engines => engines === 'google' ? NOINDEX_GOOGLE : NOINDEX;
+
+function resourceRobots(row = {}, engines = policyEngines()) {
+    if (isIndexableResource(row)) return {};
+    return classifyResource(row).capability === 'file-only' ? NOINDEX : policyNoindex(engines);
+}
+
+function datasetRobots(dataset = {}, resources = [], engines = policyEngines()) {
+    return isIndexableDataset(dataset, resources) ? {} : policyNoindex(engines);
+}
+
+module.exports = { isIndexableResource, alwaysIndexableDatasetIds, isIndexableDataset, policySince, POLICY_SINCE, POLICY_RECRAWL_DAYS,
+    policyEngines, resourceRobots, datasetRobots };

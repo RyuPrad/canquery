@@ -18,7 +18,7 @@ export function readSeoElements(html, responseUrl) {
     if (node.tagName === 'LINK') return node.getAttribute('rel') === 'canonical' ||
       (node.getAttribute('rel') === 'alternate' && ['en-CA', 'fr-CA', 'x-default'].includes(node.getAttribute('hreflang')));
     if (node.tagName === 'META') {
-      return /^(description|robots|twitter:.+)$/.test(node.getAttribute('name') || '') ||
+      return /^(description|robots|googlebot|twitter:.+)$/.test(node.getAttribute('name') || '') ||
         /^og:/.test(node.getAttribute('property') || '');
     }
     return node.tagName === 'SCRIPT' && node.getAttribute('type') === 'application/ld+json';

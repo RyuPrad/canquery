@@ -25,17 +25,19 @@ const spaController = require('./controllers/spaController');
 const { CSP_DIRECTIVES } = require('./config/contentSecurityPolicy');
 const { adsenseClient } = require('./services/adsense');
 const { indexNowKey } = require('./services/indexNow');
-const { policySince } = require('./services/indexPolicy');
+const { policySince, policyEngines } = require('./services/indexPolicy');
 const { extension } = require('./extensions');
 
 const app = express();
 
-// A malformed ADSENSE_CLIENT, INDEXNOW_KEY or INDEX_POLICY_SINCE stops startup
-// here rather than leaving ads or IndexNow quietly off, or the recrawl sitemaps
-// misdated.
+// A malformed ADSENSE_CLIENT, INDEXNOW_KEY, INDEX_POLICY_SINCE or
+// INDEX_POLICY_ENGINES stops startup here rather than leaving ads or IndexNow
+// quietly off, the recrawl sitemaps misdated, or the noindex tags addressed to
+// engines nobody chose.
 adsenseClient();
 indexNowKey();
 policySince();
+policyEngines();
 
 app.set('trust proxy', 1);
 // Ad pages replace this policy with their own (controllers/spaController.js).
