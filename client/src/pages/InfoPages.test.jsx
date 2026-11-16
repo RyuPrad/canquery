@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { LangProvider, useLang } from '../i18n.jsx';
@@ -63,6 +63,9 @@ test.each(['en', 'fr'])('About preserves attribution and distinguishes software 
   const sources = section(en ? 'Where the data comes from and how often it is refreshed' : 'D’où viennent les données et à quelle fréquence elles sont mises à jour');
   expect(sources).toHaveAttribute('id', 'data-sources');
   expect(sources.querySelectorAll('p')).toHaveLength(2);
+  // The list of those portals is one link away.
+  expect(within(sources).getByRole('link', { name: en ? 'See every open data portal CanQuery mirrors'
+    : 'Voir tous les portails de données ouvertes que CanQuery reproduit' })).toHaveAttribute('href', '/portals');
   expect(sources).toHaveTextContent(en ? 'which also carries records from provincial and territorial governments'
     : 'qui diffuse aussi des fiches de gouvernements provinciaux et territoriaux');
   expect(sources).toHaveTextContent(en ? 'is listed only when it is published under a recognized open licence'

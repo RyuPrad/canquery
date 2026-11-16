@@ -34,6 +34,9 @@ describe('server-rendered crawl snapshots', () => {
         // each in a section other pages can link to.
         expect(html).toContain('<section id="who"><h2>Who runs CanQuery</h2><p>CanQuery is an independent project');
         expect(html).toContain('<section id="data-sources"><h2>Where the data comes from and how often it is refreshed</h2>');
+        // The section that says where the data comes from links the list of those portals.
+        const sources = html.slice(html.indexOf('<section id="data-sources">'), html.indexOf('<section id="guides">'));
+        expect(sources).toContain('<p><a href="/portals">See every open data portal CanQuery mirrors</a></p></section>');
         // The federal portal carries the provinces' records; the licence gate is on the other portals' records.
         expect(html).toContain('which also carries records from provincial and territorial governments');
         expect(html).toContain('A record from a municipal, regional or territorial portal is listed only when it is published under a recognized open licence.');
@@ -64,7 +67,7 @@ describe('server-rendered crawl snapshots', () => {
         // The English string of a key: the first of its two definitions.
         const english = key => JSON.parse('"' + new RegExp('^    "' + key.replace('.', '\\.') + '": "(.*)",$', 'm').exec(client)[1] + '"');
         const keys = ['what_title', 'what_body', 'mission_title', 'mission_body', 'sources_title', 'sources_body', 'context_body',
-            'origin_title', 'origin_body', 'refresh_body', 'guides_title', 'guides_body', 'guides_dates_body',
+            'origin_title', 'origin_body', 'refresh_body', 'portals_link', 'guides_title', 'guides_body', 'guides_dates_body',
             'independent_title', 'independent_body', 'corrections_title', 'corrections_body'];
         for (const key of keys) expect([key, html.includes('>' + english('about.' + key) + '<')]).toEqual([key, true]);
     });

@@ -125,6 +125,35 @@ describe('portalPages', () => {
         expect(catalogRead.listPortalDirectory).toHaveBeenCalledTimes(2);
     });
 
+    test('the directory is kept ten minutes, and "nothing mirrored" one minute', async () => {
+        const start = Date.parse('2026-11-15T12:00:00Z');
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(start);
+        const reads = () => catalogRead.listPortalDirectory.mock.calls.length;
+        try {
+            await portals.directory();
+            clock.mockReturnValue(start + 10 * 60 * 1000 - 1);
+            await portals.directory();
+            expect(reads()).toBe(1);
+            clock.mockReturnValue(start + 10 * 60 * 1000);
+            await portals.directory();
+            expect(reads()).toBe(2);
+            // A catalogue that has not been read yet is asked again sooner.
+            portals.cache.clear();
+            catalogRead.listPortalDirectory.mockClear();
+            catalogRead.listPortalDirectory.mockResolvedValue([]);
+            clock.mockReturnValue(start);
+            expect(await portals.directory()).toBeNull();
+            clock.mockReturnValue(start + 60 * 1000 - 1);
+            await portals.directory();
+            expect(reads()).toBe(1);
+            clock.mockReturnValue(start + 60 * 1000);
+            await portals.directory();
+            expect(reads()).toBe(2);
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
     test('a portal\'s own place is the one its registry entry names, or names first', () => {
         const homes = new Map(portals.homePlaces());
         // One place.
