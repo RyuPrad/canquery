@@ -590,19 +590,24 @@ integrationDescribe('portal directory PostgreSQL integration', () => {
         const bare = mine(await queries.listPortalDirectory({}, db));
         expect(strip(bare)).toEqual(strip(rows));
         expect(bare.every(row => row.place_slug === null && row.province_slug === null)).toBe(true);
-        // A source named twice keeps one row.
+        // A source named twice keeps one row, with the place it was given first.
         const twice = mine(await queries.listPortalDirectory({ homes: [...homes, [id('city'), id('region')]] }, db));
         expect(twice.map(row => row.id)).toEqual(rows.map(row => row.id));
+        expect(find(twice, 'city').place_slug).toBe(id('city'));
+        const reversed = mine(await queries.listPortalDirectory({ homes: [[id('city'), id('region')], ...homes] }, db));
+        expect(find(reversed, 'city').place_slug).toBe(id('region'));
     });
 
-    test('every row carries the catalogue\'s distinct dataset total', async () => {
+    test('every row carries the number of different datasets the listed portals hold between them', async () => {
         const all = await queries.listPortalDirectory({ homes }, db);
-        const { rows: [{ n }] } = await db.query(`SELECT count(DISTINCT ds.dataset_id)::int AS n FROM dataset_sources ds JOIN datasets d ON d.id = ds.dataset_id`);
-        expect(new Set(all.map(row => row.catalogue_datasets))).toEqual(new Set([n]));
-        // Eleven fixture datasets, one of them listed by two portals and one by a disabled source: counted once each.
-        const { rows: [{ outside }] } = await db.query(`SELECT count(DISTINCT ds.dataset_id)::int AS outside FROM dataset_sources ds
-            JOIN datasets d ON d.id = ds.dataset_id WHERE NOT starts_with(ds.source_id, $1)`, [prefix]);
-        expect(n - outside).toBe(11);
+        const enabled = `FROM dataset_sources ds JOIN catalog_sources cs ON cs.id = ds.source_id AND cs.enabled`;
+        const { rows: [{ n }] } = await db.query(`SELECT count(DISTINCT ds.dataset_id)::int AS n ${enabled}`);
+        expect(new Set(all.map(row => row.distinct_datasets))).toEqual(new Set([n]));
+        // Eleven fixture datasets. One is listed by two portals and counts once. One is listed only by a source that
+        // is switched off: it is no portal's, so it is not in the total of the portals the page lists.
+        const { rows: [{ outside }] } = await db.query(`SELECT count(DISTINCT ds.dataset_id)::int AS outside ${enabled}
+            WHERE NOT starts_with(ds.source_id, $1)`, [prefix]);
+        expect(n - outside).toBe(10);
         // The portals' own counts add up to more: 3 + 3 + 2 + 1 + 1 + 1.
         expect(mine(all).reduce((sum, row) => sum + row.dataset_count, 0)).toBe(11);
     });

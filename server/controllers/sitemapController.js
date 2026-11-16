@@ -8,6 +8,7 @@ const { hostedRoutes } = require('../extensions');
 const lmiaPages = require('../services/lmiaPages');
 const oasPages = require('../services/oasPages');
 const portalPages = require('../services/portalPages');
+const { dayOf } = require('../utils/portalDay');
 const { TABLE_NUMBERS, oasPath, oasTablePath } = require('../utils/oasLabels');
 
 // Sitemap files cap at 50,000 URLs each; we chunk datasets well under that and
@@ -217,8 +218,10 @@ const sitemapIndex = crawlFile(async (req, res) => {
         const blog = blogLastmod();
         const datasetPages = Math.ceil(totals.datasets / PAGE_SIZE);
         const resourcePages = Math.ceil(totals.resources / PAGE_SIZE);
+        // The pages file also holds the LMIA, OAS and portal pages, each with a date of its own.
+        const hubs = await pageHubs();
         const entries = [
-            ['/sitemap-pages.xml', latest(catalogue, blog)],
+            ['/sitemap-pages.xml', latest(catalogue, blog, hubs.lmiaLastmod, hubs.oasLastmod, hubs.portalsLastmod)],
             ['/sitemap-places.xml', newestRow(places)],
             ['/sitemap-organizations.xml', newestRow(organizations)],
             ['/sitemap-blog.xml', blog]
@@ -241,6 +244,23 @@ const sitemapIndex = crawlFile(async (req, res) => {
     sendXml(res, built.body, 60);
 });
 
+// The three hub pages of /sitemap-pages.xml that carry a date of their own, read once for the file
+// and once for the index, which dates the file by its newest entry. A hub that cannot be read is
+// left out, except the portal directory: its page exists whatever one read says, so a failed
+// read lists it without a date and only "no portal mirrored yet" (the page is then noindex)
+// leaves it out. The directory is dated by the day of the last successful read of a portal, the
+// day its page prints: its counts and days change with the day, not with each half-hourly read.
+async function pageHubs() {
+    const [lmia, oas, portals] = await Promise.all([
+        lmiaPages.summary().catch(() => null),
+        oasPages.summary().catch(() => null),
+        portalPages.directory().then(directory => (directory ? { listed: true, updated_at: directory.updated_at } : { listed: false }),
+            () => ({ listed: true, updated_at: null }))
+    ]);
+    return { lmia, lmiaLastmod: lmia && isoDate(lmia.updated_at), oas, oasLastmod: oas && isoDate(oas.updated_at),
+        portals: portals.listed, portalsLastmod: portals.listed ? dayOf(portals.updated_at) : '' };
+}
+
 // GET /sitemap-pages.xml - the hub pages (home + the curated sections). The
 // catalogue hubs change whenever the catalogue does; the documentation pages
 // have no honest change date and carry none. The LMIA employer search is listed
@@ -250,18 +270,12 @@ const sitemapPages = crawlFile(async (req, res) => {
     const body = await fileCache.get('pages', async () => {
         const catalogue = await catalogueLastmod();
         const hub = catalogue ? { lastmod: catalogue } : {};
-        const lmia = await lmiaPages.summary().catch(() => null);
-        const lmiaLastmod = lmia && isoDate(lmia.updated_at);
         // The OAS benefit amounts hub and its table pages, in both languages, once a
-        // quarter is loaded (until then they are noindex), dated by that load.
-        const oas = await oasPages.summary().catch(() => null);
-        const oasLastmod = oas && isoDate(oas.updated_at);
+        // quarter is loaded (until then they are noindex), dated by that load. The
+        // portal directory, once a catalogue has been read (until then it is noindex).
+        const { lmia, lmiaLastmod, oas, oasLastmod, portals, portalsLastmod } = await pageHubs();
         const oasEntry = (path, priority) => ({ loc: SITE_URL + path, changefreq: 'monthly', priority,
             ...(oasLastmod ? { lastmod: oasLastmod } : {}) });
-        // The portal directory, once a catalogue has been read (until then it is noindex), dated by
-        // the last successful read of a portal.
-        const portals = await portalPages.directory().catch(() => null);
-        const portalsLastmod = portals && isoDate(portals.updated_at);
         return urlset([
             { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', ...hub },
             { loc: SITE_URL + '/datasets', changefreq: 'daily', priority: '0.9', ...hub },

@@ -50,7 +50,7 @@ function portalParts(portal, t, lang) {
   const words = name.split(' ');
   const last = words.pop();
   const count = (value, key, only) => (value > 0
-    ? <Link to={cataloguePath(portal.id, only)} aria-label={fill(t(key), { count: formatCount(value, lang), portal: name })}>{formatCount(value, lang)}</Link>
+    ? <Link to={cataloguePath(portal.id, only)} aria-label={fill(t(value === 1 ? key + '_one' : key), { count: formatCount(value, lang), portal: name })}>{formatCount(value, lang)}</Link>
     : formatCount(value, lang));
   const province = portal.province && portal.place && portal.province.slug !== portal.place.slug ? localName(portal.province.name, lang) : '';
   return {
@@ -128,15 +128,16 @@ function Groups({ title, rows, label, t, lang }) {
   const max = Math.max(1, ...rows.map((row) => row.portals));
   return (
     <section className="cq-card p-5">
-      <h3 className="font-display font-semibold">{title}</h3>
+      <h2 className="font-display font-semibold">{title}</h2>
       <ul className="mt-2">
         {rows.map((row) => (
           <li key={row.id} className="py-1.5">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
               <span className="min-w-0 break-words">{label(row)}</span>
               <span className="ml-auto font-mono text-xs text-base-content/65">
-                {row.portals === 1 ? fill(t('portals.group_count_one'), { datasets: formatCount(row.datasets, lang) })
-                  : fill(t('portals.group_count'), { portals: formatCount(row.portals, lang), datasets: formatCount(row.datasets, lang) })}
+                {row.portals === 1 ? t('portals.showing_all_one') : fill(t('portals.showing_all'), { total: formatCount(row.portals, lang) })}
+                {' · '}
+                {row.datasets === 1 ? t('portals.n_datasets_one') : fill(t('portals.n_datasets'), { count: formatCount(row.datasets, lang) })}
               </span>
             </div>
             <div className="h-1.5 mt-1 rounded-full bg-base-content/10 overflow-hidden" aria-hidden="true">
@@ -170,14 +171,23 @@ export default function PortalsPage() {
       .then((data) => { if (current) setPage({ status: 'ready', data }); })
       .catch((error) => {
         if (!current) return;
-        setPage((previous) => (previous.status === 'ready' ? previous
-          : { status: error && error.status === 503 ? 'unavailable' : 'error' }));
+        // Only the server's own "nothing is mirrored yet" is that state. Any other failure, a proxy's 503 during a
+        // restart included, says nothing about the portals and can be tried again.
+        const empty = Boolean(error && error.status === 503 && error.body && error.body.code === 'PORTALS_UNAVAILABLE');
+        setPage((previous) => (previous.status === 'ready' ? previous : { status: empty ? 'unavailable' : 'error' }));
       });
     return () => { current = false; };
   }, [attempt]);
 
-  const filters = { q: params.get('q') || '', level: params.get('level') || '', platform: params.get('platform') || '',
-    province: params.get('province') || '' };
+  const data = page.status === 'ready' ? page.data : null;
+  // A value the lists do not offer (a mistyped or an old link) is not a filter: the controls would say "any" above
+  // an empty table.
+  const offered = (key, rows) => {
+    const value = params.get(key) || '';
+    return data && rows.some((row) => row.id === value) ? value : '';
+  };
+  const filters = { q: params.get('q') || '', level: offered('level', data ? data.levels : []),
+    platform: offered('platform', data ? data.platforms : []), province: offered('province', data ? data.provinces : []) };
   const sortKey = SORT_KEYS.includes(params.get('sort')) ? params.get('sort') : 'datasets';
   const sort = { key: sortKey, descending: params.has('order') ? params.get('order') !== 'asc' : sortKey !== 'name' };
   const update = (changes) => {
@@ -192,9 +202,8 @@ export default function PortalsPage() {
     // The order a column starts with is not written: only a turned one is.
     update({ sort: key === 'datasets' ? '' : key, order: descending === (key !== 'name') ? '' : descending ? 'desc' : 'asc' });
   };
-  const filtered = FILTERS.some((key) => params.get(key));
+  const filtered = FILTERS.some((key) => filters[key]);
 
-  const data = page.status === 'ready' ? page.data : null;
   const rows = useMemo(() => (data ? sortPortals(filterPortals(data.portals, filters), sort, lang) : []),
     [data, filters.q, filters.level, filters.platform, filters.province, sort.key, sort.descending, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -213,6 +222,10 @@ export default function PortalsPage() {
     );
   }
   const level = (id) => (data.levels.find((row) => row.id === id) || { portals: 0 }).portals;
+  // A portal whose place is unknown belongs to no level: the split is given only when it adds up.
+  const split = Boolean(data) && data.levels.reduce((sum, row) => sum + row.portals, 0) === data.totals.portals;
+  // The reader's own alphabet orders the provinces, here as in the filter above the table.
+  const byName = (list) => [...list].sort((a, b) => localName(a.name, lang).localeCompare(localName(b.name, lang), lang));
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 cq-fade">
       <Breadcrumbs className="mb-5" label={t('breadcrumbs.label')} items={crumbs} />
@@ -222,7 +235,7 @@ export default function PortalsPage() {
           <span className="cq-chip">{t('portals.chip')}</span>
           <h1 className="text-3xl sm:text-4xl font-bold font-display mt-3">{t('portals.title')}</h1>
           <p className="text-base-content/70 mt-3 leading-relaxed max-w-3xl">
-            {!data ? t('portals.unavailable') : fill(t(data.totals.portals === 1 ? 'portals.intro_one' : 'portals.intro'), {
+            {!data ? t('portals.unavailable') : fill(t(data.totals.portals === 1 ? 'portals.intro_one' : split ? 'portals.intro' : 'portals.intro_plain'), {
               portals: formatCount(data.totals.portals, lang), federal: formatCount(level('federal'), lang),
               provincial: formatCount(level('provincial'), lang), municipal: formatCount(level('municipal'), lang),
               datasets: formatCount(data.totals.datasets, lang)
@@ -257,8 +270,7 @@ export default function PortalsPage() {
               <select className="select select-bordered w-full" aria-label={t('portals.province_label')} value={filters.province}
                 onChange={(event) => update({ province: event.target.value })}>
                 <option value="">{t('portals.province_any')}</option>
-                {[...data.provinces].sort((a, b) => localName(a.name, lang).localeCompare(localName(b.name, lang), lang))
-                  .map((row) => <option key={row.id} value={row.id}>{localName(row.name, lang)}</option>)}
+                {byName(data.provinces).map((row) => <option key={row.id} value={row.id}>{localName(row.name, lang)}</option>)}
               </select>
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-sm text-base-content/65">
@@ -328,7 +340,7 @@ export default function PortalsPage() {
           <div className="grid gap-4 mt-8 lg:grid-cols-3">
             <Groups title={t('portals.by_level')} rows={data.levels} label={(row) => t('portals.level_' + row.id)} t={t} lang={lang} />
             <Groups title={t('portals.by_platform')} rows={data.platforms} label={(row) => platformName(row.id, t)} t={t} lang={lang} />
-            <Groups title={t('portals.by_province')} rows={data.provinces} label={(row) => localName(row.name, lang)} t={t} lang={lang} />
+            <Groups title={t('portals.by_province')} rows={byName(data.provinces)} label={(row) => localName(row.name, lang)} t={t} lang={lang} />
           </div>
 
           <section className="mt-8 max-w-3xl" aria-labelledby="portals-method">

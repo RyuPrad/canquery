@@ -489,12 +489,13 @@ async function listSources({ place } = {}, db = pool) {
 // The portal directory (/portals): every enabled source with the datasets
 // CanQuery mirrors from it, how many of them have a table or a map here, its
 // last successful sync and the place it belongs to. `homes` pairs a source with
-// its own place, as the source registry names it; a source without one (the
-// federal portal, whose records are placed by their own jurisdiction) has no
-// place. `catalogue_datasets` repeats the catalogue's distinct total on every
-// row: a dataset two portals list counts once there and once for each of
-// them. A source record always has its dataset (the foreign key), so the
-// counts read dataset_sources alone.
+// its own place, as the source registry names it (the first pair wins when a
+// source is named twice); a source without one (the federal portal, whose
+// records are placed by their own jurisdiction) has no place.
+// `distinct_datasets` repeats on every row the number of different datasets
+// the enabled sources list between them: a dataset two portals list counts
+// once there and once for each of them. A source record always has its
+// dataset (the foreign key), so the counts read dataset_sources alone.
 async function listPortalDirectory({ homes = [] } = {}, db = pool) {
     const result = await db.query(`
         WITH listed AS (
@@ -510,8 +511,8 @@ async function listPortalDirectory({ homes = [] } = {}, db = pool) {
             GROUP BY d.source_id
         ), home AS (
             SELECT DISTINCT ON (source_id) source_id, place_id
-            FROM unnest($1::text[], $2::text[]) AS pair(source_id, place_id)
-            ORDER BY source_id
+            FROM unnest($1::text[], $2::text[]) WITH ORDINALITY AS pair(source_id, place_id, position)
+            ORDER BY source_id, position
         )
         SELECT cs.id, cs.kind, cs.name_en, cs.name_fr, cs.homepage_url,
                cs.default_license_title_en, cs.default_license_title_fr, cs.default_license_url,
@@ -521,7 +522,9 @@ async function listPortalDirectory({ homes = [] } = {}, db = pool) {
                (SELECT max(sr.finished_at) FROM sync_runs sr WHERE sr.source_id = cs.id AND sr.ok) AS last_synced_at,
                p.slug AS place_slug, p.kind AS place_kind, p.name_en AS place_name_en, p.name_fr AS place_name_fr,
                province.slug AS province_slug, province.name_en AS province_name_en, province.name_fr AS province_name_fr,
-               (SELECT count(*) FROM (SELECT 1 FROM listed GROUP BY id) once)::int AS catalogue_datasets
+               (SELECT count(*) FROM (
+                    SELECT 1 FROM listed l JOIN catalog_sources shown ON shown.id = l.source_id AND shown.enabled GROUP BY l.id
+                ) once)::int AS distinct_datasets
         FROM catalog_sources cs
         LEFT JOIN counts c ON c.source_id = cs.id
         LEFT JOIN home h ON h.source_id = cs.id

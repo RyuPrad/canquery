@@ -5,7 +5,7 @@ import PortalsPage from './PortalsPage.jsx';
 import { LangProvider } from '../i18n.jsx';
 import { ApiError } from '../api/client.js';
 import { resetPortalData } from '../utils/portalData.js';
-import { DIRECTORY, envelope } from '../test/portalDirectory.js';
+import { DIRECTORY, envelope, PORTALS } from '../test/portalDirectory.js';
 
 vi.mock('../api/portals.js', async (original) => ({ ...(await original()), fetchPortalDirectory: vi.fn() }));
 import { fetchPortalDirectory } from '../api/portals.js';
@@ -43,7 +43,7 @@ function embed(path = '/portals', directory = envelope()) {
 // The portals in the table, top to bottom, by their English or French name.
 const names = () => within(screen.getByRole('table')).getAllByRole('rowheader').map((cell) => cell.textContent);
 const address = () => screen.getByTestId('location').textContent;
-const failure = (status) => new ApiError('failed', status);
+const failure = (status, body) => new ApiError('failed', status, body);
 // The line that says how many portals the table shows (the test's own address readout is a status too).
 const shown = () => screen.getAllByRole('status').find((node) => node.tagName === 'P');
 
@@ -79,7 +79,8 @@ describe('the portal directory page', () => {
   test('says what is mirrored and how the portals divide', async () => {
     embed();
     renderAt('/portals');
-    expect(screen.getByText(/^CanQuery mirrors 6 Canadian open data portals: 1 federal, 1 provincial or territorial and 3 municipal or regional, 64,485 datasets in all\./)).toBeInTheDocument();
+    // One of the six has no known place, so no level: the split by level would not add up, and is left out.
+    expect(screen.getByText(/^CanQuery mirrors 6 Canadian open data portals, 64,485 datasets in all\. For each portal this page gives/)).toBeInTheDocument();
     for (const [label, value] of [['Portals', '6'], ['Datasets', '64,485'], ['Provinces and territories represented', '3'], ['Last read', 'Nov 15, 2026']]) {
       const tile = screen.getAllByText(label).map((node) => node.parentElement).find((node) => node.textContent === value + label);
       expect([label, Boolean(tile)]).toEqual([label, true]);
@@ -91,11 +92,36 @@ describe('the portal directory page', () => {
     const platforms = screen.getByRole('heading', { name: 'Portals by platform' }).parentElement;
     expect(within(platforms).getByText('CKAN').parentElement).toHaveTextContent('4 portals · 49,603 datasets');
     expect(within(platforms).getByText('Other').parentElement).toHaveTextContent('1 portal · 12 datasets');
+    // The three groups are sections of the page, beside "Every portal" and "What the numbers mean".
+    expect(screen.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)).toEqual(['Every portal', 'Portals by level of government',
+      'Portals by platform', 'Portals by province or territory', 'What the numbers mean']);
+    expect(screen.queryAllByRole('heading', { level: 3 })).toEqual([]);
     const provinces = screen.getByRole('heading', { name: 'Portals by province or territory' }).parentElement;
     expect(within(provinces).getByText('Ontario').parentElement).toHaveTextContent('2 portals · 964 datasets');
     expect(screen.getByRole('heading', { name: 'What the numbers mean' })).toBeInTheDocument();
     expect(screen.getByText(/^Datasets is the number of records CanQuery holds from the portal\./)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'How CanQuery reads its sources' })).toHaveAttribute('href', '/about#data-sources');
+  });
+
+  test('the lead splits the portals by level when the split adds up', () => {
+    const levelled = PORTALS.filter((portal) => portal.level);
+    embed('/portals', envelope({ ...DIRECTORY, portals: levelled, totals: { ...DIRECTORY.totals, portals: 5 } }));
+    renderAt('/portals');
+    expect(screen.getByText(/^CanQuery mirrors 5 Canadian open data portals: 1 federal, 1 provincial or territorial and 3 municipal or regional, 64,485 datasets in all\./)).toBeInTheDocument();
+  });
+
+  test('one of something is written as one', () => {
+    const one = { ...DIRECTORY, portals: PORTALS.map((portal) => (portal.id === 'red-deer-hub' ? { ...portal, datasets: 1, tables: 1, maps: 1 } : portal)),
+      platforms: DIRECTORY.platforms.map((row) => (row.id === 'other' ? { ...row, datasets: 1 } : row)) };
+    embed('/portals', envelope(one));
+    renderAt('/portals');
+    const platforms = screen.getByRole('heading', { name: 'Portals by platform' }).parentElement;
+    expect(within(platforms).getByText('Other').parentElement).toHaveTextContent('1 portal · 1 dataset');
+    expect(within(platforms).getByText('Other').parentElement).not.toHaveTextContent('1 datasets');
+    const redDeer = screen.getByRole('rowheader', { name: /Red Deer/ }).closest('tr');
+    expect(within(redDeer).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
+      '1 dataset from City of Red Deer Open Data in the catalogue', '1 dataset from City of Red Deer Open Data with a table',
+      '1 dataset from City of Red Deer Open Data with a map']);
   });
 
   test('each row links the official site, the place, the portal’s datasets in the catalogue and its licence', () => {
@@ -215,11 +241,19 @@ describe('the portal directory page', () => {
     document.getElementById('cq-initial')?.remove();
   });
 
-  test('a sort the page does not have falls back to the directory’s order', async () => {
-    renderAt('/portals?sort=licence&order=sideways&level=galactic');
-    await screen.findByText('No portal matches these filters.');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    expect(names()[0]).toBe('Government of Canada Open Data');
+  test('a sort or a filter value the page does not have is no sort and no filter', () => {
+    embed('/portals?sort=licence&order=sideways&level=galactic&platform=abacus&province=atlantis');
+    renderAt('/portals?sort=licence&order=sideways&level=galactic&platform=abacus&province=atlantis');
+    // The directory's own order, every portal, and controls that agree with the table: nothing to clear.
+    expect(names()).toEqual(PORTALS.map((portal) => portal.name.en));
+    expect(shown()).toHaveTextContent('6 portals');
+    expect(screen.queryByText('No portal matches these filters.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    for (const label of ['Level of government', 'Platform', 'Province or territory']) expect(screen.getByLabelText(label)).toHaveValue('');
+    // A value the lists do offer still filters, beside one they do not.
+    fireEvent.change(screen.getByLabelText('Platform'), { target: { value: 'ckan' } });
+    expect(names()).toHaveLength(4);
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
   });
 
   test('speaks French: names, counts, days and every label', async () => {
@@ -227,7 +261,7 @@ describe('the portal directory page', () => {
     embed();
     renderAt('/portals');
     expect(screen.getByRole('heading', { level: 1, name: 'Portails de données ouvertes du Canada' })).toBeInTheDocument();
-    expect(screen.getByText(/^CanQuery reproduit 6 portails canadiens de données ouvertes : 1 au palier fédéral, 1 au palier provincial ou territorial et 3 au palier municipal ou régional, soit 64\s485 jeux de données en tout\./)).toBeInTheDocument();
+    expect(screen.getByText(/^CanQuery reproduit 6 portails canadiens de données ouvertes, soit 64\s485 jeux de données en tout\./)).toBeInTheDocument();
     expect(names().slice(0, 2)).toEqual(['Données ouvertes du gouvernement du Canada', 'Données ouvertes de la Ville de Toronto']);
     const toronto = screen.getByRole('rowheader', { name: /Ville de Toronto/ }).closest('tr');
     expect(toronto).toHaveTextContent('15 nov. 2026');
@@ -239,6 +273,11 @@ describe('the portal directory page', () => {
     expect(shown()).toHaveTextContent('1 sur 6 portails');
     expect(within(screen.getByLabelText('Province ou territoire')).getAllByRole('option').map((option) => option.textContent))
       .toEqual(['Toutes les provinces et tous les territoires', 'Ontario', 'Québec', 'Territoires du Nord-Ouest']);
+    // The province group follows the same French order (the directory arrives in English order: Northwest Territories first).
+    const provinces = screen.getByRole('heading', { name: 'Portails par province ou territoire' }).parentElement;
+    expect(within(provinces).getAllByRole('listitem').map((item) => item.textContent.replace(/\s*\d.*$/, '')))
+      .toEqual(['Ontario', 'Québec', 'Territoires du Nord-Ouest']);
+    expect(within(provinces).getByText('Québec').parentElement).toHaveTextContent(/1 portail · 397 jeux de données/);
     expect(screen.getByRole('heading', { name: 'Ce que les chiffres signifient' })).toBeInTheDocument();
   });
 });
@@ -344,12 +383,24 @@ describe('a directory of one portal', () => {
 
 describe('when the directory cannot be drawn', () => {
   test('a site that mirrors no portal yet says so, with no table', async () => {
-    fetchPortalDirectory.mockRejectedValue(failure(503));
+    fetchPortalDirectory.mockRejectedValue(failure(503, { error: 'No open-data portal is mirrored here yet', code: 'PORTALS_UNAVAILABLE' }));
     renderAt('/portals');
     expect(await screen.findByText(/^No open data portal is mirrored here yet\./)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Canadian open data portals' })).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('a 503 that is not the server’s "nothing mirrored" is a failed read: it never claims the site mirrors no portal', async () => {
+    // A reverse proxy answers 503 during a restart, with no code, or with someone else's.
+    for (const body of [undefined, { error: 'Service Unavailable' }, { error: 'x', code: 'UPSTREAM_UNAVAILABLE' }]) {
+      fetchPortalDirectory.mockRejectedValueOnce(failure(503, body));
+      const view = renderAt('/portals');
+      expect(await screen.findByText('The list of portals could not be loaded.')).toBeInTheDocument();
+      expect(screen.queryByText(/^No open data portal is mirrored here yet\./)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+      view.unmount();
+    }
   });
 
   test('a failed read offers to try again, and the page then draws', async () => {

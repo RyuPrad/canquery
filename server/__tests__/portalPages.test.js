@@ -1,7 +1,12 @@
 jest.mock('../db/snapshotRead', () => ({ withSnapshot: async (_id, callback) => callback(), snapshotDb: () => require('../db/pool') }));
 jest.mock('../db/catalogReadQueries', () => ({ searchDatasets: jest.fn(), getDatasetByIdOrName: jest.fn(), listResourcesForDataset: jest.fn(),
     getResourceById: jest.fn(), listOrganizations: jest.fn(), getStats: jest.fn(), pingDb: jest.fn(), getLastSyncTime: jest.fn(),
-    listRecentlyIngested: jest.fn(), getCatalogLastModified: jest.fn(), listPortalDirectory: jest.fn() }));
+    listRecentlyIngested: jest.fn(), getCatalogLastModified: jest.fn(), listPortalDirectory: jest.fn(),
+    // What the sitemap index reads beside the pages file.
+    countSitemapDatasets: jest.fn(), countSitemapResources: jest.fn(), listDatasetSitemapChunkLastmods: jest.fn(),
+    listResourceSitemapChunkLastmods: jest.fn(), listPlaceSitemap: jest.fn(), listOrganizationSitemap: jest.fn(),
+    listNoindexResourceSitemap: jest.fn(), listShownNoindexDatasets: jest.fn(), listPolicyNoindexDatasets: jest.fn(),
+    listPolicyNoindexResources: jest.fn() }));
 jest.mock('../services/ckanClient', () => ({ packageList: jest.fn(), packageSearch: jest.fn(), packageShow: jest.fn(), organizationList: jest.fn(), datastoreSearch: jest.fn() }));
 jest.mock('../db/storeQueries', () => ({ queryStoreTable: jest.fn(), readStoreRows: jest.fn(), touchLastAccessed: jest.fn(() => Promise.resolve()), TABLE_NAME_RE: /^r_[0-9a-f_]+$/ }));
 jest.mock('../db/queryLogQueries', () => ({ logQueryHit: jest.fn(() => Promise.resolve()), listPopularResources: jest.fn(), countOlderThan: jest.fn(), pruneOlderThan: jest.fn() }));
@@ -25,7 +30,7 @@ const app = require('../app');
 const row = fields => ({ kind: 'arcgis-hub', name_fr: null, default_license_title_en: null, default_license_title_fr: null,
     default_license_url: null, table_count: 0, map_count: 0, last_synced_at: null, place_slug: null, place_kind: null,
     place_name_en: null, place_name_fr: null, province_slug: null, province_name_en: null, province_name_fr: null,
-    catalogue_datasets: 64485, ...fields });
+    distinct_datasets: 64485, ...fields });
 const ONTARIO = { province_slug: 'ontario', province_name_en: 'Ontario', province_name_fr: 'Ontario' };
 const ROWS = [
     row({ id: 'open-canada', kind: 'ckan', name_en: 'Government of Canada Open Data', name_fr: 'Données ouvertes du gouvernement du Canada',
@@ -135,6 +140,12 @@ describe('portalPages', () => {
         expect(portals.FEDERAL_SOURCE_ID).toBe('open-canada');
         const { sources } = require('../config/catalogSources');
         expect([...homes.keys()].sort()).toEqual(sources.map(source => source.id).sort());
+        // Every entry that names several different places, with the one it names first: a new one is a choice to make here.
+        expect(Object.fromEntries(sources.filter(source => !source.placeId && new Set(source.placeRules.map(rule => rule.placeId)).size > 1)
+            .map(source => [source.id, source.placeRules[0].placeId]))).toEqual({
+            'oshawa-hub': 'ca-on-oshawa', 'pickering-hub': 'sgc-csd-3518001', 'durham-hub': 'ca-on-durham',
+            'waterloo-region-hub': 'sgc-cd-3530', 'markham-hub': 'sgc-csd-3519036'
+        });
         // Entries a registry could hold without a place are left out, not passed on as empty.
         expect(portals.homePlaces([{ id: 'a', placeId: 'p1' }, { id: 'b', placeRules: [{ placeId: 'p2' }, { placeId: 'p3' }] },
             { id: 'c' }, { id: 'd', placeRules: [] }, { id: 'e', placeId: '' }, { placeId: 'p4' }])).toEqual([['a', 'p1'], ['b', 'p2']]);
@@ -199,9 +210,13 @@ describe('the /portals page', () => {
         expect(res.text).toContain('CanQuery mirrors 5 Canadian open data portals: 1 federal, 1 provincial or territorial and 3 municipal ' +
             'or regional, 64,485 datasets in all.');
         const description = /<meta name="description" content="([^"]*)"/.exec(res.text)[1];
-        expect(description).toBe('Compare 5 Canadian open data portals: federal, provincial, territorial and municipal catalogues by ' +
-            'datasets, live tables, maps, licence and last refresh.');
+        expect(description).toBe('Compare 5 Canadian open data portals: the datasets, live tables, maps, licence and last refresh of ' +
+            'each government catalogue CanQuery mirrors.');
         expect(description.length).toBeLessThanOrEqual(160);
+        // It promises no level of government: no province's own portal is mirrored today, and a snippet must not say one is.
+        for (const meta of [seoMeta.portalsMeta(await portals.directory()), seoMeta.portalsMeta(portals.shape([ROWS[0]])), seoMeta.portalsMeta(null)]) {
+            expect(meta.description).not.toMatch(/federal|provincial|territorial|municipal/i);
+        }
         // One row per portal: its official site, its place on CanQuery, what is mirrored, its licence and the day it was read.
         expect(res.text).toContain('<tr><th scope="row"><a href="https://open.toronto.ca/">City of Toronto Open Data</a></th>' +
             '<td><a href="/places/toronto-on">Toronto</a>, Ontario</td><td>CKAN</td><td>556</td><td>324</td>' +
@@ -247,14 +262,52 @@ describe('the /portals page', () => {
 
     test('names every portal as a data catalogue in its structured data', async () => {
         const meta = seoMeta.portalsMeta(await portals.directory());
-        expect(meta.jsonLd.map(item => item['@type'])).toEqual(['BreadcrumbList', 'ItemList']);
-        const list = meta.jsonLd[1];
-        expect(list).toMatchObject({ name: 'Canadian open data portals', url: 'https://canquery.com/portals', numberOfItems: 5 });
+        // A collection page whose main entity is the list, as the place and organization hubs are.
+        expect(meta.jsonLd.map(item => item['@type'])).toEqual(['BreadcrumbList', 'CollectionPage']);
+        expect(meta.jsonLd[1]).toMatchObject({ '@context': 'https://schema.org', name: 'Canadian open data portals',
+            url: 'https://canquery.com/portals', description: meta.description });
+        const list = meta.jsonLd[1].mainEntity;
+        expect(list).toMatchObject({ '@type': 'ItemList', numberOfItems: 5 });
+        expect(list.itemListElement).toHaveLength(5);
         expect(list.itemListElement[1]).toEqual({ '@type': 'ListItem', position: 2,
             item: { '@type': 'DataCatalog', name: 'City of Toronto Open Data', url: 'https://open.toronto.ca/' } });
         // No address is better than one that is not a web address.
         expect(list.itemListElement[4].item).toEqual({ '@type': 'DataCatalog', name: 'City of Red Deer <Open> & "Data"' });
         expect(meta.jsonLd[0].itemListElement.map(item => item.name)).toEqual(['CanQuery', 'Open data portals']);
+    });
+
+    test('the lead splits the portals by level only when the split adds up', async () => {
+        // Every portal has a level: the three numbers are the total.
+        const whole = await portals.directory();
+        expect(whole.levels.reduce((sum, row) => sum + row.portals, 0)).toBe(whole.totals.portals);
+        // A portal whose place is unknown (not in the places table, or switched off) belongs to no level.
+        const directory = portals.shape(ROWS.map(source => (source.id === 'ottawa-hub'
+            ? { ...source, place_slug: null, place_kind: null, province_slug: null } : source)));
+        expect(directory.totals.portals).toBe(5);
+        expect(directory.levels.reduce((sum, row) => sum + row.portals, 0)).toBe(4);
+        const body = seoSnapshot.portalsSnapshot(directory);
+        expect(body).toContain('CanQuery mirrors 5 Canadian open data portals, 64,485 datasets in all.');
+        expect(body).not.toMatch(/\d+ federal, \d+ provincial or territorial/);
+    });
+
+    test('a day is the day in Canada: a read in the evening is not dated tomorrow', async () => {
+        // 02:10 UTC on November 16 is 21:10 on November 15 in Eastern time.
+        catalogRead.listPortalDirectory.mockResolvedValue(ROWS.map(source => (source.id === 'open-canada'
+            ? { ...source, last_synced_at: new Date('2026-11-16T02:10:00Z') } : source)));
+        const res = await request(spa).get('/portals');
+        expect(res.text).toContain('<dt>Last read</dt><dd>2026-11-15</dd>');
+        // (The embedded data keeps the exact time; the page's own words never say the 16th.)
+        expect(res.text).not.toMatch(/<d[dt]>2026-11-16<|<td>2026-11-16</);
+        const { dayOf, PORTALS_TIME_ZONE } = require('../utils/portalDay');
+        expect(dayOf('2026-11-16T04:59:59Z')).toBe('2026-11-15');
+        expect(dayOf('2026-11-16T05:00:00Z')).toBe('2026-11-16');
+        // Daylight time: midnight is four hours behind UTC in July.
+        expect(dayOf(new Date('2026-07-01T03:59:59Z'))).toBe('2026-06-30');
+        expect(dayOf('2026-07-01T04:00:00Z')).toBe('2026-07-01');
+        expect([dayOf(null), dayOf(''), dayOf('not a date'), dayOf(undefined)]).toEqual(['', '', '', '']);
+        // The application formats with the same zone, so its page and the server's say the same day.
+        const client = fs.readFileSync(path.join(__dirname, '../../client/src/utils/portals.js'), 'utf8');
+        expect(client).toContain("export const PORTALS_TIME_ZONE = '" + PORTALS_TIME_ZONE + "';");
     });
 
     test('a title that names thousands of portals still fits', () => {
@@ -295,6 +348,9 @@ describe('the /portals page', () => {
         catalogRead.listPortalDirectory.mockResolvedValue([ROWS[0]]);
         portals.cache.clear();
         expect((await request(spa).get('/portals')).text).toContain('>' + fill(english('portals.intro_one'), { datasets: '64,485' }) + '<');
+        // A portal with no level: both sides leave the split out, in the same sentence.
+        const unlevelled = portals.shape(ROWS.map(source => (source.id === 'ottawa-hub' ? { ...source, place_slug: null, place_kind: null } : source)));
+        expect(seoSnapshot.portalsSnapshot(unlevelled)).toContain('>' + fill(english('portals.intro_plain'), { portals: 5, datasets: '64,485' }) + '<');
         catalogRead.listPortalDirectory.mockResolvedValue([]);
         portals.cache.clear();
         expect((await request(spa).get('/portals')).text).toContain('>' + english('portals.unavailable') + '<');
@@ -388,25 +444,56 @@ describe('the /portals page', () => {
 });
 
 describe('the portal directory in the sitemap and the section links', () => {
-    test('the pages sitemap lists it once a portal is mirrored, dated by the last successful read', async () => {
+    test('the pages sitemap lists it once a portal is mirrored, dated by the day of the last successful read', async () => {
         catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));
         const res = await request(app).get('/sitemap-pages.xml');
         expect(res.status).toBe(200);
-        expect(res.text).toMatch(/<url>\s*<loc>https:\/\/canquery\.com\/portals<\/loc>\s*<lastmod>2026-11-15T21:30:04\.000Z<\/lastmod>/);
+        // The day the page prints, not the time of each half-hourly read: the entry changes when the page does.
+        expect(res.text).toMatch(/<url>\s*<loc>https:\/\/canquery\.com\/portals<\/loc>\s*<lastmod>2026-11-15<\/lastmod>/);
         // After the places hub, before the dataset hubs.
         expect(res.text.indexOf('/places</loc>')).toBeLessThan(res.text.indexOf('/portals</loc>'));
         expect(res.text.indexOf('/portals</loc>')).toBeLessThan(res.text.indexOf('/docs</loc>'));
     });
 
-    test.each([['nothing is mirrored', async () => [ROWS[5]]], ['the catalogue cannot be read', async () => { throw new Error('down'); }]])(
-        'the pages sitemap leaves it out while %s', async (_name, read) => {
-            catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));
-            catalogRead.listPortalDirectory.mockImplementation(read);
-            const res = await request(app).get('/sitemap-pages.xml');
+    test('the pages sitemap leaves it out while nothing is mirrored: the page is then noindex', async () => {
+        catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));
+        catalogRead.listPortalDirectory.mockResolvedValue([ROWS[5]]);
+        const res = await request(app).get('/sitemap-pages.xml');
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('<loc>https://canquery.com/places</loc>');
+        expect(res.text).not.toContain('/portals');
+    });
+
+    test('one failed read does not drop the page from the sitemap: it is listed without a date', async () => {
+        catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));
+        catalogRead.listPortalDirectory.mockRejectedValue(new Error('down'));
+        const res = await request(app).get('/sitemap-pages.xml');
+        expect(res.status).toBe(200);
+        expect(res.text).toMatch(/<loc>https:\/\/canquery\.com\/portals<\/loc>\s*<changefreq>daily<\/changefreq>/);
+    });
+
+    test('the index dates the pages file by its newest entry, the directory\'s day included', async () => {
+        for (const read of ['countSitemapDatasets', 'countSitemapResources']) catalogRead[read].mockResolvedValue(0);
+        for (const read of ['listDatasetSitemapChunkLastmods', 'listResourceSitemapChunkLastmods', 'listPlaceSitemap', 'listOrganizationSitemap',
+            'listNoindexResourceSitemap', 'listShownNoindexDatasets', 'listPolicyNoindexDatasets', 'listPolicyNoindexResources']) {
+            catalogRead[read].mockResolvedValue([]);
+        }
+        // Years ahead of any guide's date, so the guides never decide the answer.
+        catalogRead.listPortalDirectory.mockResolvedValue(ROWS.map(source => (source.id === 'open-canada'
+            ? { ...source, last_synced_at: new Date('2031-03-04T15:00:00Z') } : source)));
+        const pagesDate = async () => {
+            resetSitemapCache();
+            const res = await request(app).get('/sitemap.xml');
             expect(res.status).toBe(200);
-            expect(res.text).toContain('<loc>https://canquery.com/places</loc>');
-            expect(res.text).not.toContain('/portals');
-        });
+            return /<loc>https:\/\/canquery\.com\/sitemap-pages\.xml<\/loc>\s*<lastmod>([^<]+)<\/lastmod>/.exec(res.text)[1];
+        };
+        // The catalogue's last change is older than the last read of a portal: the file's newest entry is the directory's.
+        catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));
+        expect(await pagesDate()).toBe('2031-03-04');
+        // A catalogue change later than that day is the newest entry again.
+        catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2031-03-04T22:00:00Z'));
+        expect(await pagesDate()).toBe('2031-03-04T22:00:00.000Z');
+    });
 
     test('a portal read at no known time is listed without a date', async () => {
         catalogRead.getCatalogLastModified.mockResolvedValue(new Date('2026-11-01T00:00:00Z'));

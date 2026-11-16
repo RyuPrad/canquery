@@ -799,7 +799,8 @@ const PORTALS_METHOD = [
         'page names the licence that applies. Last read is the last day CanQuery read the portal’s catalogue successfully.'
 ];
 const portalCount = value => catalogFacts.formatCount(value);
-const portalDay = value => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : '');
+// The day in the page's own time zone, which the application prints too.
+const portalDay = require('../utils/portalDay').dayOf;
 
 function portalPlace(portal) {
     if (portal.level === 'federal') return text('Canada');
@@ -841,6 +842,10 @@ function portalsSnapshot(directory) {
     }
     const { totals, levels, platforms, provinces } = directory;
     const level = id => (levels.find(row => row.id === id) || { portals: 0 }).portals;
+    // A portal whose place is unknown belongs to no level: the split is given only when it adds up.
+    const split = levels.reduce((sum, row) => sum + row.portals, 0) === totals.portals
+        ? `: ${portalCount(level('federal'))} federal, ${portalCount(level('provincial'))} provincial or territorial and ` +
+            `${portalCount(level('municipal'))} municipal or regional` : '';
     const groupTable = (title, header, rows, label) => lmiaTable(title, [header, 'Portals', 'Datasets'],
         rows.map(row => [label(row), portalCount(row.portals), portalCount(row.datasets)]));
     return shell({
@@ -849,8 +854,7 @@ function portalsSnapshot(directory) {
         lead: totals.portals === 1
             ? `CanQuery mirrors one Canadian open data portal, ${portalCount(totals.datasets)} datasets in all. This page gives the ` +
                 'datasets CanQuery holds from it, how many have a table or a map here, its licence and the last day it was read.'
-            : `CanQuery mirrors ${portalCount(totals.portals)} Canadian open data portals: ${portalCount(level('federal'))} federal, ` +
-                `${portalCount(level('provincial'))} provincial or territorial and ${portalCount(level('municipal'))} municipal or regional, ` +
+            : `CanQuery mirrors ${portalCount(totals.portals)} Canadian open data portals${split}, ` +
                 `${portalCount(totals.datasets)} datasets in all. For each portal this page gives the datasets CanQuery holds, how many ` +
                 'have a table or a map here, its licence and the last day it was read.',
         facts: [

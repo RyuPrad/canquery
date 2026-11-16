@@ -9,6 +9,9 @@ export const PLATFORM_NAMES = { ckan: 'CKAN', 'arcgis-hub': 'ArcGIS Hub', socrat
 export const LEVELS = ['federal', 'provincial', 'municipal'];
 export const SORT_KEYS = ['datasets', 'name', 'tables', 'maps', 'read'];
 
+/** The time zone of the days the page prints. The server's page prints the same days (server/utils/portalDay.js). */
+export const PORTALS_TIME_ZONE = 'America/Toronto';
+
 const locale = (lang) => (lang === 'fr' ? 'fr-CA' : 'en-CA');
 
 /** @param {number} value @param {string} lang */
@@ -17,12 +20,12 @@ export const formatCount = (value, lang) => Number(value).toLocaleString(locale(
 /** A name in the reader's language, with the other one as a fallback. @param {{ en?: string | null, fr?: string | null } | null | undefined} name @param {string} lang */
 export const localName = (name, lang) => (name ? (lang === 'fr' ? name.fr || name.en : name.en || name.fr) || '' : '');
 
-/** The day a portal was last read, as the reader's language writes it (the day in UTC). @param {string | null} iso @param {string} lang */
+/** The day a portal was last read, as the reader's language writes it: the day in Eastern time, never tomorrow's on a Canadian evening. @param {string | null} iso @param {string} lang */
 export function dayLabel(iso, lang) {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(locale(lang), { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return date.toLocaleDateString(locale(lang), { year: 'numeric', month: 'short', day: 'numeric', timeZone: PORTALS_TIME_ZONE });
 }
 
 /** Where a portal's datasets are listed in the catalogue, optionally only those with a table or a map. @param {string} id @param {'queryable' | 'mappable'} [only] */

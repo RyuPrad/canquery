@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { cataloguePath, dayLabel, filterPortals, formatCount, localName, sortPortals } from './portals.js';
+import { cataloguePath, dayLabel, filterPortals, formatCount, localName, sortPortals, PORTALS_TIME_ZONE } from './portals.js';
 
 const portal = (id, fields = {}) => ({
   id, platform: 'arcgis-hub', name: { en: id, fr: id }, homepage_url: 'https://example.test/' + id, level: 'municipal',
@@ -102,9 +102,14 @@ describe('what the portal directory prints', () => {
     expect(formatCount(48310, 'fr').replace(/\s/g, ' ')).toBe('48 310');
     expect(dayLabel('2026-11-15T21:30:04.000Z', 'en')).toBe('Nov 15, 2026');
     expect(dayLabel('2026-11-15T21:30:04.000Z', 'fr')).toBe('15 nov. 2026');
-    // The day is the day in UTC, whatever the reader's clock: late on the 15th in UTC stays the 15th.
-    expect(dayLabel('2026-11-15T23:59:59.000Z', 'en')).toBe('Nov 15, 2026');
-    expect(dayLabel('2026-11-16T00:00:00.000Z', 'en')).toBe('Nov 16, 2026');
+    // The day is the day in Eastern time, whatever the reader's clock: an evening read in Canada is not dated tomorrow.
+    expect(dayLabel('2026-11-16T02:10:00.000Z', 'en')).toBe('Nov 15, 2026');
+    expect(dayLabel('2026-11-16T04:59:59.000Z', 'fr')).toBe('15 nov. 2026');
+    expect(dayLabel('2026-11-16T05:00:00.000Z', 'en')).toBe('Nov 16, 2026');
+    // Daylight time: midnight is four hours behind UTC in July.
+    expect(dayLabel('2026-07-01T03:59:59.000Z', 'en')).toBe('Jun 30, 2026');
+    expect(dayLabel('2026-07-01T04:00:00.000Z', 'en')).toBe('Jul 1, 2026');
+    expect(PORTALS_TIME_ZONE).toBe('America/Toronto');
     expect(dayLabel(null, 'en')).toBe('');
     expect(dayLabel('not a date', 'en')).toBe('');
   });

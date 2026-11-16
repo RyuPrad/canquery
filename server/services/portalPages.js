@@ -95,8 +95,8 @@ function shape(rows) {
         portals,
         totals: {
             portals: portals.length,
-            // A dataset two portals list counts once in the catalogue.
-            datasets: Number(rows[0].catalogue_datasets) || 0,
+            // A dataset two portals list counts once here.
+            datasets: Number(rows[0].distinct_datasets) || 0,
             provinces: new Set(portals.map(portal => portal.province && portal.province.slug).filter(Boolean)).size
         },
         platforms: tally(portals, portal => ({ id: portal.platform })),

@@ -1229,10 +1229,8 @@ a.cq-card:hover,
 .cq-article th, .cq-article td { border: 1px solid var(--color-base-300); padding: .55rem .8rem; text-align: left; vertical-align: top; overflow-wrap: break-word; }
 .cq-article th { background: var(--color-base-200); font-weight: 600; }
 
-/* ------------------------------------------------- OAS benefit amounts */
+/* ---------------------------------------------------- Portal directory */
 
-/* The tables of amounts on the OAS pages: figures line up on the right in
-   tabular numerals, the income range stays on the left. */
 /* The portal directory: names and licences read left and may wrap, figures and
    dates read right in tabular numerals. */
 .cq-portal-table {
@@ -1310,6 +1308,10 @@ a.cq-card:hover,
   outline-offset: 2px;
 }
 
+/* ------------------------------------------------- OAS benefit amounts */
+
+/* The tables of amounts on the OAS pages: figures line up on the right in
+   tabular numerals, the income range stays on the left. */
 .cq-oas-table {
   border-collapse: collapse;
   font-size: 0.875rem;

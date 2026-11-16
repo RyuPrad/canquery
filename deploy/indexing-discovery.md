@@ -215,30 +215,41 @@ Two reasons pointed at the site:
 
 ## Portal directory (November 2026)
 
-`/portals` lists every enabled catalogue source as a portal: its place and
-province, its platform, the datasets held from it, how many of them have a
-table or a map here, its general licence and the last day it was read. The
-page is original reference content for a visitor who is choosing a portal and
-for a site that wants one page to link to; it is listed in
-`/sitemap-pages.xml` with the latest successful read as its date, linked from
-the navigation menu and the footer, and described by a `DataCatalog` item
-list.
+`/portals` lists every enabled catalogue source that holds at least one dataset
+here, as a portal: its place and province, its platform, the datasets held
+from it, how many of them have a table or a map here, its general licence and
+the last day it was read. The page is original reference content for a visitor
+who is choosing a portal and for a site that wants one page to link to; it is
+listed in `/sitemap-pages.xml`, linked from the navigation menu and the footer,
+and described as a `CollectionPage` whose list names each portal as a
+`DataCatalog`.
 
 - **One read.** `listPortalDirectory` counts each portal's records from
   `dataset_sources` and applies the catalogue's own "has a table" and "has a
   map" rules, so the counts are the ones `/datasets?source=…` shows with the
   same filters. A dataset two portals list counts for both and once in the
-  total. The service caches the result for ten minutes.
+  total, which is the number of different datasets the enabled sources hold
+  between them. The service caches the result for ten minutes.
 - **A portal's place** comes from the source registry
   (`server/config/catalogSources.js`): the place its entry names, or names
   first. Where its records are placed does not decide it, so a region's
   portal that mostly holds its cities' records is still the region's. The
-  federal portal is in no registry entry and has no place.
+  federal portal is in no registry entry and has no place. A portal whose
+  place is missing from `places` or switched off has no level of government;
+  the page's opening sentence then gives the total without the split by level.
+- **Days.** "Last read" is a day in Eastern time (`server/utils/portalDay.js`,
+  and the same zone in `client/src/utils/portals.js`): in UTC the page would
+  show tomorrow's date every evening in Canada. The sitemap dates the page by
+  that day, not by the time of each read, and the index dates
+  `/sitemap-pages.xml` by the newest entry the file holds.
 - **Website-only data.** The page embeds the directory in its first HTML and
   an in-app visit reads `/web-api/v1/portals`; the route is not part of
   `/api/v1`, is not metered and is not in the OpenAPI document.
-- **Nothing to list.** With no portal read yet the page answers 200 with a
-  `noindex` tag and stays out of the sitemap; a failed read answers 503.
+- **Nothing to list, or no answer.** With no portal read yet the page answers
+  200 with a `noindex` tag and stays out of the sitemap, and the JSON route
+  answers 503 with the code `PORTALS_UNAVAILABLE`. When the read itself fails
+  the page answers 503 with `Retry-After`, the JSON route answers 500 as the
+  other website routes do, and the sitemap keeps the page, without a date.
 
 Below 1024 pixels the application draws each portal as a card instead of a
 table row, so no figure is off screen; the server's HTML keeps the table.
