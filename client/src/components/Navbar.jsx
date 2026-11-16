@@ -114,6 +114,7 @@ export default function Navbar() {
           </div>
           <div className="cq-navbar-panel-links">
             <NavLink to="/organizations" className={navClass} onClick={close}>{t('nav.organizations')}</NavLink>
+            <NavLink to="/portals" className={navClass} onClick={close}>{t('nav.portals')}</NavLink>
             <NavLink to={lang === 'fr' ? '/fr/blog' : '/blog'} className={navClass} onClick={close}>{t('blog.title')}</NavLink>
             <NavLink to="/docs" className={navClass} onClick={close}>{t('nav.docs')}</NavLink>
             <NavLink to="/faq" className={navClass} onClick={close}>{t('nav.faq')}</NavLink>

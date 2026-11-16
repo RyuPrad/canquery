@@ -115,6 +115,8 @@ app.use('/web-api/v1/insights', require('./routes/webInsights'));
 app.use('/web-api/v1/lmia', require('./routes/lmia'));
 // The /oas pages' tables of OAS benefit amounts; website only.
 app.use('/web-api/v1/oas', require('./routes/oas'));
+// The /portals page's directory of mirrored open-data portals; website only.
+app.use('/web-api/v1/portals', require('./routes/portals'));
 for (const base of ['/api/v1','/web-api/v1']) {
     app.use(base+'/datasets', datasetsRouter);
     app.use(base+'/resources', resourcesRouter);

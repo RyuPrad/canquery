@@ -169,6 +169,11 @@ export default function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/portals" className="text-base-content/65 hover:text-base-content transition-colors">
+                {t('nav.portals')}
+              </Link>
+            </li>
+            <li>
               <Link to="/insights" className="text-base-content/65 hover:text-base-content transition-colors">
                 {t('nav.insights')}
               </Link>

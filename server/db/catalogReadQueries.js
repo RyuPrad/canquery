@@ -486,6 +486,61 @@ async function listSources({ place } = {}, db = pool) {
     `, [place || null], db);
 }
 
+// The portal directory (/portals): every enabled source with the datasets
+// CanQuery mirrors from it, how many of them have a table or a map here, its
+// last successful sync and the place it belongs to. `homes` pairs a source with
+// its own place, as the source registry names it (the first pair wins when a
+// source is named twice); a source without one (the federal portal, whose
+// records are placed by their own jurisdiction) has no place.
+// `distinct_datasets` repeats on every row the number of different datasets
+// the enabled sources list between them: a dataset two portals list counts
+// once there and once for each of them. A source record always has its
+// dataset (the foreign key), so the counts read dataset_sources alone.
+async function listPortalDirectory({ homes = [] } = {}, db = pool) {
+    const result = await db.query(`
+        WITH listed AS (
+            SELECT ds.source_id, ds.dataset_id AS id
+            FROM dataset_sources ds
+            GROUP BY ds.source_id, ds.dataset_id
+        ), counts AS (
+            SELECT d.source_id,
+                   count(*)::int AS dataset_count,
+                   count(*) FILTER (WHERE ${HAS_TABLE})::int AS table_count,
+                   count(*) FILTER (WHERE ${HAS_MAP})::int AS map_count
+            FROM listed d
+            GROUP BY d.source_id
+        ), home AS (
+            SELECT DISTINCT ON (source_id) source_id, place_id
+            FROM unnest($1::text[], $2::text[]) WITH ORDINALITY AS pair(source_id, place_id, position)
+            ORDER BY source_id, position
+        )
+        SELECT cs.id, cs.kind, cs.name_en, cs.name_fr, cs.homepage_url,
+               cs.default_license_title_en, cs.default_license_title_fr, cs.default_license_url,
+               coalesce(c.dataset_count, 0)::int AS dataset_count,
+               coalesce(c.table_count, 0)::int AS table_count,
+               coalesce(c.map_count, 0)::int AS map_count,
+               (SELECT max(sr.finished_at) FROM sync_runs sr WHERE sr.source_id = cs.id AND sr.ok) AS last_synced_at,
+               p.slug AS place_slug, p.kind AS place_kind, p.name_en AS place_name_en, p.name_fr AS place_name_fr,
+               province.slug AS province_slug, province.name_en AS province_name_en, province.name_fr AS province_name_fr,
+               (SELECT count(*) FROM (
+                    SELECT 1 FROM listed l JOIN catalog_sources shown ON shown.id = l.source_id AND shown.enabled GROUP BY l.id
+                ) once)::int AS distinct_datasets
+        FROM catalog_sources cs
+        LEFT JOIN counts c ON c.source_id = cs.id
+        LEFT JOIN home h ON h.source_id = cs.id
+        LEFT JOIN places p ON p.id = h.place_id AND p.enabled
+        LEFT JOIN places parent_place ON parent_place.id = p.parent_id
+        LEFT JOIN places grand_place ON grand_place.id = parent_place.parent_id
+        LEFT JOIN places province ON province.id = CASE
+            WHEN p.kind IN ('province', 'territory') THEN p.id
+            WHEN parent_place.kind IN ('province', 'territory') THEN parent_place.id
+            WHEN grand_place.kind IN ('province', 'territory') THEN grand_place.id END
+        WHERE cs.enabled
+        ORDER BY dataset_count DESC, cs.name_en, cs.id
+    `, [homes.map(([source]) => source), homes.map(([, place]) => place)]);
+    return result.rows;
+}
+
 // The directory lists every place with open data: a place with its own
 // dataset rows, or a featured place whose datasets come from a broader area.
 // `within` restricts the list to the descendants of one place (a province's
@@ -1014,6 +1069,7 @@ module.exports = {
     listOrganizations,
     getOrganizationByName,
     listSources,
+    listPortalDirectory,
     listPlaces,
     getPlaceByIdOrSlug,
     getStats,

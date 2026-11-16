@@ -517,6 +517,7 @@ function classifyRoute(pathname) {
     }
     if (/^\/datasets\/?$/.test(p)) return { type: 'datasets' };
     if (/^\/places\/?$/.test(p)) return { type: 'places' };
+    if (/^\/portals\/?$/.test(p)) return { type: 'portals' };
     if (/^\/insights\/?$/.test(p)) return { type: 'insights' };
     if (/^\/organizations\/?$/.test(p)) return { type: 'organizations' };
     if (/^\/docs\/?$/.test(p)) return { type: 'docs' };
@@ -1191,6 +1192,50 @@ function organizationMeta(organization, datasets = []) {
     };
 }
 
+// The directory of mirrored open-data portals. noindex while nothing is
+// mirrored, so an empty page never gets indexed. The description names no
+// level of government: which ones have a portal here depends on the sources
+// (today no province's own portal is mirrored, only a territory's).
+const PORTALS_PATH = '/portals';
+function portalsMeta(directory) {
+    const crumbs = buildBreadcrumbJsonLd([{ name: 'CanQuery', path: '/' }, { name: 'Open data portals', path: PORTALS_PATH }]);
+    const shared = { canonical: SITE_URL + PORTALS_PATH, ogType: 'website' };
+    if (!directory) {
+        return { ...shared, title: 'Canadian open data portals' + TITLE_SUFFIX,
+            description: 'The Canadian open data portals that CanQuery mirrors, with dataset counts, licences and the last refresh.',
+            noindex: true, jsonLd: [crumbs] };
+    }
+    const count = facts.formatCount(directory.totals.portals);
+    // One portal is not a comparison.
+    const several = directory.totals.portals > 1;
+    const title = fitTitle([...(several ? [`Canadian open data portals: ${count} catalogues compared`,
+        `Canadian open data portals: ${count} catalogues`] : []), 'Canadian open data portals']);
+    const description = truncate(several
+        ? `Compare ${count} Canadian open data portals: the datasets, live tables, maps, licence and last refresh of ` +
+            'each government catalogue CanQuery mirrors.'
+        : 'The Canadian open data portal that CanQuery mirrors, with its datasets, live tables, maps, licence and last refresh.',
+    DESCRIPTION_MAX);
+    // A collection page, as the place and organization hubs are. Each portal is a data catalogue in
+    // its own right; the list names it and its official address.
+    const collection = {
+        '@context': 'https://schema.org',
+        '@type': 'CollectionPage',
+        name: 'Canadian open data portals',
+        description,
+        url: SITE_URL + PORTALS_PATH,
+        mainEntity: {
+            '@type': 'ItemList',
+            numberOfItems: directory.portals.length,
+            itemListElement: directory.portals.map((portal, index) => ({
+                '@type': 'ListItem',
+                position: index + 1,
+                item: { '@type': 'DataCatalog', name: portal.name.en, ...(portal.homepage_url ? { url: portal.homepage_url } : {}) }
+            }))
+        }
+    };
+    return { ...shared, title: title + TITLE_SUFFIX, description, jsonLd: [crumbs, collection] };
+}
+
 // The /lmia hub: every loaded quarter of the positive LMIA employers list. It is
 // noindex until the first list is loaded, so an empty page never gets indexed.
 function lmiaMeta(summary) {
@@ -1352,6 +1397,7 @@ module.exports = {
     compactTitle,
     fitTitle,
     lmiaMeta,
+    portalsMeta,
     lmiaEmployerMeta,
     fitTitleTiers,
     pagedMeta,

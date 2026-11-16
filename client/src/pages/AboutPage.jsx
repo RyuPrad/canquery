@@ -32,6 +32,9 @@ export default function AboutPage() {
       <h2>{t('about.origin_title')}</h2>
       <p>{t('about.origin_body')}</p>
       <p>{t('about.refresh_body')}</p>
+      <div className="cq-info-links">
+        <Link className="link" to="/portals">{t('about.portals_link')}</Link>
+      </div>
     </section>
     <section className="cq-info-section" id="guides">
       <h2>{t('about.guides_title')}</h2>

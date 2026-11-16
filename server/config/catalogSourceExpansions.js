@@ -143,6 +143,14 @@ function exactPattern(value) {
     return new RegExp('^' + escaped + '$', 'i');
 }
 
+// "of" before a French name that carries its article: de + le contracts to du
+// and de + les to des ("Données ouvertes du District de Squamish").
+function frenchOf(name) {
+    if (/^les /i.test(name)) return 'des ' + name.slice(4);
+    if (/^le /i.test(name)) return 'du ' + name.slice(3);
+    return 'de ' + name;
+}
+
 function donneesQuebecSource({
     id, organization, cityEn, cityFr, publisherPattern, placeId,
     directGeoJsonMaps = true, directGeoJsonMapsDisabledReason = null
@@ -151,7 +159,7 @@ function donneesQuebecSource({
         id,
         kind: 'ckan',
         nameEn: cityEn + ' Open Data',
-        nameFr: 'Données ouvertes de ' + cityFr,
+        nameFr: 'Données ouvertes ' + frenchOf(cityFr),
         homepageUrl: 'https://www.donneesquebec.ca/recherche/organization/' + organization,
         datasetBaseUrl: DONNEES_QUEBEC_DATASET,
         catalogUrl: DONNEES_QUEBEC_ACTION,
@@ -199,7 +207,7 @@ function arcgisMunicipalSource({
         id,
         kind: 'arcgis-hub',
         nameEn: cityEn + ' Open Data',
-        nameFr: 'Données ouvertes de ' + cityFr,
+        nameFr: 'Données ouvertes ' + frenchOf(cityFr),
         homepageUrl: homepageUrl || 'https://' + host + '/',
         catalogUrl: 'https://' + host + '/api/feed/dcat-us/1.1.json',
         upstreamHost: host,

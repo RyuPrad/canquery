@@ -17,6 +17,7 @@ const FaqPage = lazyPage(() => import('./pages/FaqPage.jsx'));
 const AboutPage = lazyPage(() => import('./pages/AboutPage.jsx'));
 const PlacesPage = lazyPage(() => import('./pages/PlacesPage.jsx'));
 const PlacePage = lazyPage(() => import('./pages/PlacePage.jsx'));
+const PortalsPage = lazyPage(() => import('./pages/PortalsPage.jsx'));
 const PrivacyPage = lazyPage(() => import('./pages/PrivacyPage.jsx'));
 const BlogPage = lazyPage(() => import('./pages/BlogPage.jsx'));
 const InsightsPage = lazyPage(() => import('./pages/InsightsPage'));
@@ -41,6 +42,7 @@ export const PAGE_ROUTES = [
   { path: '/organizations/:name', page: OrganizationPage },
   { path: '/places', page: PlacesPage },
   { path: '/places/:slug', page: PlacePage },
+  { path: '/portals', page: PortalsPage },
   { path: '/lmia', page: LmiaPage },
   { path: '/lmia/employers/:slug', page: LmiaEmployerPage },
   // The OAS benefit amounts: a hub and one page per official table, at an English

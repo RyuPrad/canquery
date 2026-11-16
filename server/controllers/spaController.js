@@ -6,6 +6,8 @@ const lmiaPages = require('../services/lmiaPages');
 const oasPages = require('../services/oasPages');
 const oasPresentation = require('../services/oasPresentation');
 const { oasInitialData } = require('../services/oasInitialData');
+const portalPages = require('../services/portalPages');
+const { portalInitialData } = require('../services/portalInitialData');
 const { oasPath, oasTablePath } = require('../utils/oasLabels');
 const { resolveBlogPage } = require('../services/blogPresentation');
 const { injectRouteAssets } = require('../services/routeAssets');
@@ -295,6 +297,12 @@ async function resolvePage(requestTarget, deps = catalogRead) {
             body: oasPresentation.oasTableSnapshot(data, route.lang, { number: route.table }),
             oas: { lang: route.lang, table: route.table, summary, data } };
     }
+    if (route.type === 'portals') {
+        // Until a catalogue has been read the page says so and is not indexed.
+        const directory = await (deps.portals || portalPages).directory();
+        return { status: 200, canonicalPath: '/portals', meta: seoMeta.portalsMeta(directory),
+            body: seoSnapshot.portalsSnapshot(directory), portals: { directory } };
+    }
     if (route.type === 'other') {
         return {
             status: 404,
@@ -399,6 +407,12 @@ function serveSpa(distDir) {
             } catch (err) {
                 console.warn('Initial OAS amounts data skipped:', err.message);
             }
+        } else if (page.status === 200 && page.portals && wantsInitialData(req)) {
+            try {
+                initial = portalInitialData(page.portals.directory, { path: visited });
+            } catch (err) {
+                console.warn('Initial portal directory skipped:', err.message);
+            }
         }
         if (page.status === 200 && page.row && wantsInitialData(req)) {
             const sample = await snapshotSample(page.row, initial);
@@ -408,7 +422,10 @@ function serveSpa(distDir) {
         const adsClient = adsense.adsenseClient();
         // Account and sign-in pages, 404s and 503s never carry ads. Neither do the OAS amounts
         // pages: a visitor types an income there, and no third party's script runs beside it.
-        const adPage = Boolean(adsClient) && page.status === 200 && !privatePage && !page.oas && isDocumentRequest(req);
+        // Nor does the portal directory before a catalogue has been read: an ad goes beside
+        // content, and that page has none of its own yet.
+        const emptyDirectory = Boolean(page.portals) && !page.portals.directory;
+        const adPage = Boolean(adsClient) && page.status === 200 && !privatePage && !page.oas && !emptyDirectory && isDocumentRequest(req);
         // The nonce replaces the template's placeholder before any catalogue
         // text joins the page, so page content can never carry it.
         const nonce = adPage ? adsense.createNonce() : null;

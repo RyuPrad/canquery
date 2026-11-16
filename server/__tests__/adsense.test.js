@@ -14,6 +14,7 @@ jest.mock('../db/catalogReadQueries', () => ({
     getLastSyncTime: jest.fn(),
     listRecentlyIngested: jest.fn(),
     getJobHealth: jest.fn(),
+    listPortalDirectory: jest.fn(),
 }));
 // The OAS amounts pages read their quarter here: none loaded, unless a test holds one.
 jest.mock('../db/oasQueries', () => ({ getOasPeriod: jest.fn(async () => null), listOasPeriods: jest.fn(async () => []) }));
@@ -250,6 +251,34 @@ describe('ad pages', () => {
         // Every other public page still is one.
         const faq = await request(spa).get('/faq');
         expect(faq.text).toContain(LOADER + nonceOf(faq) + '"></script>');
+    });
+
+    it('keeps the portal directory free of ads until it has a portal to list', async () => {
+        process.env.ADSENSE_CLIENT = CLIENT;
+        const portalPages = require('../services/portalPages');
+        const visit = () => request(spa).get('/portals').set('Sec-Fetch-Dest', 'document').set('Sec-Fetch-Mode', 'navigate');
+        try {
+            // Nothing mirrored yet: a 200 that only says so. An ad goes beside content, not beside its absence.
+            catalogRead.listPortalDirectory.mockResolvedValue([]);
+            portalPages.cache.clear();
+            const empty = await visit();
+            expect(empty.status).toBe(200);
+            expect(empty.text).toContain('No open data portal is mirrored here yet.');
+            expect(empty.text).toContain('noindex');
+            expect(empty.text).not.toMatch(/adsbygoogle|pagead2|nonce=/);
+            expect(empty.headers['content-security-policy']).toBe(SITE_POLICY);
+            // With a portal to list it is a public page like the others.
+            catalogRead.listPortalDirectory.mockResolvedValue([{ id: 'open-canada', kind: 'ckan', name_en: 'Government of Canada Open Data',
+                name_fr: 'Données ouvertes du gouvernement du Canada', homepage_url: 'https://open.canada.ca/data/en/', dataset_count: 5,
+                table_count: 1, map_count: 0, distinct_datasets: 5, last_synced_at: new Date('2026-11-15T12:00:00Z') }]);
+            portalPages.cache.clear();
+            const listed = await visit();
+            expect(listed.status).toBe(200);
+            expect(listed.text).not.toContain('noindex');
+            expect(listed.text).toContain(LOADER + nonceOf(listed) + '"></script>');
+        } finally {
+            portalPages.cache.clear();
+        }
     });
 
     it('keeps 404s, 503s and RouteHead fetches free of ads', async () => {
