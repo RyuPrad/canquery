@@ -199,19 +199,22 @@ function fitTitleTiers(tiers, { soft = TITLE_SOFT, hard = TITLE_HARD } = {}) {
 
 // Later pages of a paginated page carry "(page N)" in their title and
 // description, so they never duplicate page one's snippet. They are lists a
-// reader pages through, not landing pages: noindex, with their links followed.
+// reader pages through, not landing pages: noindex for every search engine,
+// whoever page one's tag speaks to, with their links followed.
 function pagedMeta(meta, page) {
     if (!(page > 1)) return meta;
     const label = ' (page ' + page + ')';
     const title = meta.title || 'Open data' + TITLE_SUFFIX;
     const base = title.endsWith(TITLE_SUFFIX) ? title.slice(0, -TITLE_SUFFIX.length) : title;
     const body = base.length + label.length <= TITLE_HARD ? base : compactTitle(base, TITLE_HARD - label.length);
-    return {
+    const paged = {
         ...meta,
         title: body + label + TITLE_SUFFIX,
         description: truncate(meta.description || DEFAULT_DESC, DESCRIPTION_MAX - label.length) + label,
         noindex: true
     };
+    delete paged.noindexFor;
+    return paged;
 }
 
 // Publishers bound to a place or mirrored from the federal portal are
@@ -878,7 +881,7 @@ function datasetMeta(dataset, resources, { page = 1, pageItems = null } = {}) {
         description: datasetSnippet(title, info),
         canonical: datasetUrl,
         ogType: 'website',
-        ...(indexPolicy.isIndexableDataset(dataset, resources) ? {} : { noindex: true }),
+        ...indexPolicy.datasetRobots(dataset, resources),
         jsonLd: page > 1
             ? [buildDatasetPageJsonLd(dataset, resources, pageItems, page, datasetUrl), breadcrumb]
             : [buildDatasetJsonLd(dataset, resources), breadcrumb],
@@ -982,9 +985,11 @@ function buildResourceJsonLd(resource, description) {
     };
 }
 
-// A file's page repeats its dataset page, so it is indexed only when it carries
-// a table CanQuery can query now (services/indexPolicy.js). Every other file
-// page stays out of the index, with its links still followed.
+// A file's page repeats its dataset page, so it is indexable only when it
+// carries a table CanQuery can query now (services/indexPolicy.js). Every other
+// file page carries noindex, follow: a page that is only a download for every
+// engine, the others for every engine or for Google alone, as the policy's
+// setting says (policyEngines).
 function resourceMeta(resource) {
     const name = resourceTitleBase(resource);
     const ds = pick(resource.dataset_title_en, resource.dataset_title_fr);
@@ -995,7 +1000,7 @@ function resourceMeta(resource) {
         description,
         canonical: SITE_URL + '/resources/' + encodeURIComponent(resource.id),
         ogType: 'website',
-        ...(indexPolicy.isIndexableResource(resource) ? {} : { noindex: true }),
+        ...indexPolicy.resourceRobots(resource),
         jsonLd: [buildResourceJsonLd(resource, description), buildBreadcrumbJsonLd([
             { name: 'Datasets', path: '/datasets' },
             datasetSlug && ds ? {
@@ -1266,7 +1271,9 @@ function buildManagedTags(meta) {
     const image = escapeHtml(meta.image || DEFAULT_IMAGE);
     const ogType = escapeHtml(meta.ogType || 'website');
     const tags = [];
-    if (meta.noindex) tags.push('<meta name="robots" content="noindex, follow" />');
+    // A page the index policy keeps from Google alone names its crawler; every
+    // other noindex page tells all of them (services/indexPolicy.js).
+    if (meta.noindex) tags.push('<meta name="' + (meta.noindexFor === 'googlebot' ? 'googlebot' : 'robots') + '" content="noindex, follow" />');
     tags.push('<title>' + title + '</title>');
     tags.push('<meta name="description" content="' + description + '" />');
     tags.push('<link rel="canonical" href="' + url + '" />');

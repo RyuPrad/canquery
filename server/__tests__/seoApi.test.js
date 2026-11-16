@@ -51,6 +51,15 @@ const catalogReadCache = require('../services/catalogReadCache');
 const { listArticles } = require('../services/blogContent');
 const { alwaysIndexableDatasetIds, policySince } = require('../services/indexPolicy');
 
+// Who the policy's noindex tag names is a deployment's choice (INDEX_POLICY_ENGINES,
+// which app.js also takes from server/.env). These tests describe the default,
+// whatever the machine that runs them has set.
+const ENGINES_SETTING = process.env.INDEX_POLICY_ENGINES;
+beforeAll(() => { delete process.env.INDEX_POLICY_ENGINES; });
+afterAll(() => {
+    if (ENGINES_SETTING === undefined) delete process.env.INDEX_POLICY_ENGINES; else process.env.INDEX_POLICY_ENGINES = ENGINES_SETTING;
+});
+
 // The recrawl files of the index policy last 90 days from the policy's date
 // (the one the controller read at load, INDEX_POLICY_SINCE included). Every
 // sitemap test sets the clock instead of trusting today's date: after those 90

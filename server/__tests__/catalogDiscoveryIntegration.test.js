@@ -242,6 +242,92 @@ integrationDescribe('complete catalogue discovery PostgreSQL integration', () =>
         const ending = await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z');
         expect(mine(ending.datasets)).toHaveLength(3);
     });
+    test('reads every changed dataset page and data-bearing file page for the engines the policy does not speak to', async () => {
+        const window = (since, until, limit = 1000) => queries.listChangedCataloguePages({ since: new Date(since), until: new Date(until), limit }, db);
+        const changed = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z');
+        // When the policy speaks to Google alone, IndexNow's engines may index every dataset page...
+        expect(mine(changed.datasets)).toHaveLength(101);
+        // ...and every file page that carries data: the CSV CanQuery could prepare, the live tables, both prepared
+        // copies and the map. The PDFs (one of them pinned) and the orphan are never sent.
+        expect(mine(changed.resources)).toEqual([1, 2, 3, 4, 5, 7].map(n => id('resource' + n)));
+        // The tag each page carries says the same, file by file: sent exactly when no tag keeps other engines out.
+        for (let n = 0; n <= 7; n++) {
+            const row = await queries.getResourceById(id('resource' + n), db, { pinned: true });
+            const robots = indexPolicy.resourceRobots(row, 'google');
+            const othersMayIndex = !robots.noindex || robots.noindexFor === 'googlebot';
+            expect([n, othersMayIndex]).toEqual([n, mine(changed.resources).includes(row.id)]);
+        }
+        for (const n of ['000', '005', '006', '008', '050']) {
+            const files = await queries.listResourcesForDataset(id('dataset' + n), db);
+            const robots = indexPolicy.datasetRobots({ id: id('dataset' + n) }, files, 'google');
+            expect([n, !robots.noindex || robots.noindexFor === 'googlebot']).toEqual([n, true]);
+        }
+        // A page is dated by its record alone: a pin changes nothing for these engines.
+        const september = await window('2026-09-11T00:00:00Z', '2026-09-12T00:00:00Z');
+        expect(mine(september.datasets)).toEqual([]);
+        expect(mine(september.resources)).toEqual([]);
+        // The window's start is exclusive and its end inclusive, and the limit holds for each family.
+        expect(mine((await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z')).datasets)).toHaveLength(0);
+        expect(mine((await window('2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z')).resources)).toHaveLength(0);
+        expect(mine((await window('2026-07-31T00:00:00Z', '2026-08-01T00:00:00Z')).datasets)).toHaveLength(101);
+        const capped = await window('2026-07-31T00:00:00Z', '2026-08-02T00:00:00Z', 3);
+        expect(capped.datasets).toHaveLength(3);
+        expect(capped.resources).toHaveLength(3);
+    });
+    test('the list and the tag agree on the unusual files too, and no publisher value can fail the read', async () => {
+        const limits = require('../config/ingest').ingestLimits();
+        // [name, format, address, size, publisher record, has a map, other engines may index it]
+        const files = [
+            // A map without a table: data-bearing by its map alone.
+            ['maponly', 'GEOJSON', 'https://example.test/a.geojson', null, null, true, true],
+            // A CSV label on a ZIP archive is only a download, unless it has a map.
+            ['zipcsv', 'CSV', 'https://example.test/a.zip', null, null, false, false],
+            ['zipquery', 'CSV', 'https://example.test/a.ZIP?download=1', null, null, false, false],
+            ['zipmap', 'CSV', 'https://example.test/a.zip', null, null, true, true],
+            // Each format against its own size cap.
+            ['capcsv', 'CSV', 'https://example.test/a.csv', limits.maxFileBytes, null, false, true],
+            ['bigcsv', 'CSV', 'https://example.test/a.csv', limits.maxFileBytes + 1, null, false, false],
+            ['xlsx', 'XLSX', 'https://example.test/a.xlsx', limits.maxXlsxBytes, null, false, true],
+            ['bigxlsx', 'XLSX', 'https://example.test/a.xlsx', limits.maxXlsxBytes + 1, null, false, false],
+            ['xls', 'XLS', 'https://example.test/a.xls', null, null, false, true],
+            // The publisher's own counts, as a number or as text.
+            ['rows', 'CSV', 'https://example.test/a.csv', null, { record_count: limits.maxRows }, false, true],
+            ['manyrows', 'CSV', 'https://example.test/a.csv', null, { record_count: limits.maxRows + 1 }, false, false],
+            ['textrows', 'CSV', 'https://example.test/a.csv', null, { record_count: String(limits.maxRows + 1) }, false, false],
+            ['cols', 'XLSX', 'https://example.test/a.xlsx', null, { field_count: String(limits.maxCols) }, false, true],
+            ['manycols', 'XLSX', 'https://example.test/a.xlsx', null, { field_count: limits.maxCols + 1 }, false, false],
+            // Runs of digits no integer type holds are over any cap, and never an error.
+            ['hugerows', 'CSV', 'https://example.test/a.csv', null, { record_count: '99999999999999999999' }, false, false],
+            ['hugecols', 'CSV', 'https://example.test/a.csv', null, { field_count: '3000000000' }, false, false],
+            // Text that is not a count says nothing.
+            ['wordrows', 'CSV', 'https://example.test/a.csv', null, { record_count: 'many', field_count: '' }, false, true]
+        ];
+        await db.query('SAVEPOINT unusual_files');
+        try {
+            for (const [name, format, address, size, raw, map] of files) {
+                await db.query(`INSERT INTO resources (id, dataset_id, format, url, size_bytes, raw, datastore_active)
+                    VALUES ($1, $2, $3, $4, $5, $6, false)`, [id(name), id('dataset020'), format, address, size, raw ? JSON.stringify(raw) : null]);
+                if (map) {
+                    await db.query(`INSERT INTO resource_maps (resource_id, provider, service_url, geometry_type)
+                        VALUES ($1, 'arcgis', 'https://example.test/FeatureServer/1', 'point')`, [id(name)]);
+                }
+            }
+            const changed = await queries.listChangedCataloguePages({ since: new Date('2026-07-31T00:00:00Z'), until: new Date('2026-08-02T00:00:00Z'),
+                limit: 1000 }, db);
+            const sent = mine(changed.resources);
+            for (const [name, , , , , , expected] of files) {
+                const row = await queries.getResourceById(id(name), db, { pinned: true });
+                const robots = indexPolicy.resourceRobots(row, 'google');
+                expect([name, !robots.noindex || robots.noindexFor === 'googlebot', sent.includes(id(name))]).toEqual([name, expected, expected]);
+            }
+            // The recrawl list of the policy's pages reads the same rule, and holds too.
+            const recrawl = mine(await queries.listPolicyNoindexResources({ since: '2026-07-01T00:00:00Z', limit: 1000 }, db));
+            expect(files.filter(([name]) => recrawl.includes(id(name))).map(([name]) => name))
+                .toEqual(files.filter(file => file[6]).map(([name]) => name));
+        } finally {
+            await db.query('ROLLBACK TO SAVEPOINT unusual_files');
+        }
+    });
     test('sitemap chunk offsets partition resources without duplicate joins', async () => {
         const all = await queries.listResourceSitemap({ limit: 25000, offset: 0 }, db);
         const first = await queries.listResourceSitemap({ limit: 2, offset: 0 }, db);
