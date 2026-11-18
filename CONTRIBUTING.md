@@ -1,13 +1,13 @@
-# Contributing to canquery
+# Contributing to CanQuery
 
-Thanks for your interest! canquery is an independent open-source project that puts
-one consistent query API + UI over Canada's open data portal. Contributions -
+Thanks for your interest! CanQuery is an independent open-source project that puts
+one consistent query API and website over Canada's open data portals. Contributions -
 bug reports, fixes, features, docs - are welcome.
 
 ## Getting set up
 
-See **[README.md](README.md) → Local setup** for the full walkthrough. The short
-version (Node 22, PostgreSQL 16):
+See **[Run it locally](README.md#run-it-locally)** in the README for the full
+walkthrough. The short version (Node 22, PostgreSQL 16 with PostGIS):
 
 ```bash
 # server
@@ -75,8 +75,7 @@ deployment or establish compatibility with a newer database/configuration.
 
 ## SEO research reviews
 
-Run a review whenever a new Google Trends export is supplied. In chat, provide
-the CSV path and ask: "Run the CanQuery SEO review on this export." The result is
+Run this review whenever a new Google Trends export is available. The result is
 a research shortlist; content changes remain a separate implementation task.
 
 1. Read the export and record its region, period, query labels, relative interest
@@ -114,8 +113,8 @@ Use the GitHub issue templates. For anything security-related, please follow
 
 ## A note on the data
 
-canquery indexes multiple government source portals. Every adapter must preserve
+CanQuery indexes multiple government source portals. Every adapter must preserve
 the publisher, upstream landing page, and verified licence; never apply one
 publisher's default licence to another publisher. Problems with an **underlying
-dataset** belong with its source organization - canquery only makes supported
+dataset** belong with its source organization - CanQuery only makes supported
 resources easier to discover, map, and query.

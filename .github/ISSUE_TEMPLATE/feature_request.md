@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or improvement for canquery
+about: Suggest an idea or improvement for CanQuery
 title: ''
 labels: enhancement
 assignees: ''

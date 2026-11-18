@@ -1,345 +1,231 @@
-# canquery
+# CanQuery
 
-A fast, unified query API and web interface over Canada's federal and municipal open data catalogues.
+**Search, preview, chart and map Canada's open data in one place.**
 
-https://canquery.com
+CanQuery brings the federal catalogue at [open.canada.ca](https://open.canada.ca) and 82 municipal,
+regional and territorial open data portals together in one bilingual (English/French) website and
+API. You can find a dataset, look inside its files and query them as tables or maps without
+downloading anything first.
 
-## How it works
+[canquery.com](https://canquery.com) · [API docs](https://canquery.com/docs) ·
+[Data guides](https://canquery.com/blog) · [Portal directory](https://canquery.com/portals)
 
-Canada's open data catalogues are fragmented: some resources are loaded into
-upstream APIs (such as CKAN's DataStore or Socrata), while most are published as static CSV, Excel, or GeoJSON files.
-`canquery` unifies these into three access tiers:
+[![CI](https://github.com/RyuPrad/canquery/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RyuPrad/canquery/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-| Tier | When | What happens |
+![The CanQuery home page: one search over Canadian open data, with filters by level of government, format and access](docs/images/home.png)
+
+## Why
+
+Canadian open data is spread across one federal catalogue and dozens of city and regional portals
+that run different software (CKAN, ArcGIS Hub, Socrata, Opendatasoft). Most data is published as
+CSV or Excel downloads, and only some of it is loaded into an API you can query. Finding out what
+a file contains usually means downloading it and opening it in a spreadsheet.
+
+CanQuery mirrors the catalogue metadata from all of these portals, keeps each publisher's source
+page and licence attached, and turns supported files into tables you can search, filter, chart
+and export in the browser or through the API.
+
+## What it does
+
+- **One catalogue.** More than 64,000 datasets and 260,000 files from 83 portals, with
+  English and French full-text search and filters for level of government, publisher, portal,
+  format, keywords and whether a dataset has a queryable table or a map.
+- **Places.** Datasets are linked to places in the Statistics Canada geography (2021 SGC), so each
+  city, region, province and territory has a page with the data published for it.
+- **Tables from files.** A CSV or Excel file is loaded into PostgreSQL on demand when someone opens
+  it. A CSV that is not loaded yet shows its first rows straight away, and small tables are held
+  whole in the browser, so sorting, filtering and paging answer without another request.
+- **Charts with checks.** A rules-based engine reads a sample of each table, works out what each
+  column holds (a measure, a date, a category, a code, a total row) and keeps only the charts that
+  pass its checks. The numbers come from the whole table, each chart says what was left out, and a
+  table with no sensible chart says so.
+- **Maps.** ArcGIS layers are queried live for the visible area, GeoJSON is indexed in PostGIS,
+  and Socrata layers are built into vector tiles (PMTiles) and drawn with MapLibre.
+- **A free read API.** `/api/v1` serves datasets, files, rows, aggregates and map features in one
+  JSON response shape, described by an [OpenAPI 3.1 document](https://canquery.com/api/v1/openapi.json).
+- **Guides and topic pages.** 25 data guides in English and French (such as Toronto building
+  permits or ward maps), an employer search across every published list of positive LMIA employers,
+  the OAS and GIS benefit amounts by income, and a [directory](https://canquery.com/portals) of
+  every portal CanQuery reads.
+
+| A live table from the City of Toronto | Charts from the chart engine | Toronto's 25 wards on the map |
 |---|---|---|
-| 1 - proxy | upstream API active | transparently proxy `/query` to the upstream API (cached 5 min) |
-| 2 - load | tabular file <= 50 MB | streams into local PostgreSQL on demand; same `/query` response shape |
-| 3 - honest fallback | anything else | metadata + the download link, labeled `file-only` (422 on `/query`) |
+| ![A table of Toronto's active building permits with column filters](docs/images/table.png) | ![Bar and donut charts drawn from federal tables](docs/images/charts.png) | ![Toronto's ward boundaries drawn on a Natural Resources Canada base map](docs/images/map.jpg) |
 
-The catalogue combines the federal CKAN portal with a fail-closed registry of 85
-municipal, regional, provincial, and territorial source definitions. Eighty-two
-local sources are currently enabled, for 83 active catalogue sources including
-the federal mirror. Dataset provenance and licensing stay attached per source.
-A versioned Statistics Canada SGC hierarchy powers place-first discovery across
-116 configured featured browse destinations, and spatial resources can be
-explored through bounded maps before their CSV snapshot is loaded.
+## How files become tables
 
-Technology adapters preserve per-portal provenance and licensing:
-- **Shared & Municipal CKAN**: Toronto, Montréal, Regina, the Government of the Northwest
-  Territories, and the centralized Données Québec CKAN
-  engine serving Québec City, Laval, Gatineau, Trois-Rivières, Repentigny, Longueuil,
-  Saguenay, Rimouski, Shawinigan, Lévis, Sherbrooke, Sherbrooke geomatics, and
-  Saint-Hyacinthe with French-first metadata and record-explicit CC BY 4.0 terms.
-- **Opendatasoft**: City of Vancouver with English-first metadata, record-explicit Open
-  Government Licence – Vancouver terms, and validated GeoJSON exports in the local PostGIS index.
-- **Socrata**: Calgary, Edmonton, and Winnipeg with config-driven publisher/licence admission
-  and private Cloudflare R2 PMTiles vector-tile pipelines built by pinned Tippecanoe.
-- **ArcGIS Hub**: Ottawa, Halifax, Hamilton, Surrey, Victoria, London, Kelowna, Fredericton,
-  Greater Sudbury, Burnaby, Saskatoon, Moncton, Guelph, Saanich, Belleville, Yellowknife (NT),
-  Barrie, Thunder Bay, Chatham-Kent, Kawartha Lakes, Summerland, Norfolk County, Haldimand County,
-  Lethbridge, Medicine Hat, Airdrie, Canmore, Penticton, Langley City, Huron County, Cumberland County,
-  Saint John (NB), Windsor, Kingston, Kamloops, Nanaimo, Abbotsford, Coquitlam, Prince George,
-  New Westminster, Port Moody, Squamish, Maple Ridge, Port Coquitlam, and the Durham, Peel,
-  Halton, York, Niagara, and Waterloo regional clusters
-  with bounded live ArcGIS map viewports and strict publisher-scoped open licences.
-- **Municipal JSON catalogue**: Red Deer, normalized through its official dataset API and
-  portal-wide Open Government Licence.
-
-Each portal is gated to its recognized open licences, so generic website terms, blank licence
-records where no portal-wide grant applies, and non-commercial data stay excluded.
-The Whitehorse, St. John's, and Charlottetown source identities remain configured but disabled:
-their previously documented ArcGIS feeds are unavailable and no equivalent machine-readable
-catalogue with verified open-data terms is currently admissible.
-
-## Local resident guides
-
-The bilingual [data guides](https://canquery.com/blog) connect practical
-questions to verified maps and tables: Oshawa park boundaries, Toronto active
-building permits and business licences, Montréal parks and public spaces,
-Uxbridge ward boundaries, Calgary building permits, traffic volumes, flood zones
-and ward boundaries, Regina zoning, and national tables such as LMIA employer
-lists, the CRA list of charities, federal election results by riding,
-Corporations Canada's federal corporations and the Guaranteed Income Supplement
-amounts by income. French editions have
-separate URLs under `/fr/blog` and reciprocal language links. Articles include
-source attribution, coverage limits, and independently labelled publication,
-article-update, and link-verification dates.
-
-Guides are maintained in `content/blog/` with paired Markdown files and a JSON
-manifest; see its README for the authoring workflow. Full articles are served
-before JavaScript, and `/sitemap-blog.xml` is included in the sitemap index.
-The read-only API exposes `GET /api/v1/blog?lang=en&place=oshawa-on` and
-`GET /api/v1/blog/:lang/:slug` using the normal response envelope.
-
-Catalogue search supports reviewed English/French terms for parks, playgrounds,
-and building permits, with bounded spelling suggestions on empty first pages.
-Results include localized `description`, `preview_resources` map/table IDs,
-and `meta.search` query/suggestions while preserving the existing filters and
-pagination. Result links reflect current resource capabilities.
-
-## Layout
-
-```
-canquery/
-├── server/     # Node.js + Express API, harvest pipelines, workers, PostgreSQL
-└── client/     # React SPA (Vite + Tailwind CSS + DaisyUI)
-```
-
-## Quickstart
-
-Requirements: Node 22, PostgreSQL 16 with PostGIS 3.5.
-
-```bash
-# 1. Database
-createdb canquery
-psql canquery -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-psql canquery -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
-
-# 2. Server
-cd server
-npm ci
-cp .env.example .env              # set CANQUERY_DATABASE_URL for your local DB
-npm run migrate                   # apply all missing migrations, including 034
-npm run sync:places               # populate the 2021 SGC hierarchy
-
-# sync the federal catalogue (batched harvest, chunks of 50)
-node scripts/catalog-sync.js      # full harvest (~50k datasets)
-# or test against a small sample:
-node scripts/catalog-sync.js --limit=100
-
-# or harvest a standalone municipal/regional source (dry-run or real)
-npm run sync:source -- --source=toronto-open-data --dry-run
-npm run sync:source -- --source=montreal-open-data --dry-run
-npm run sync:source -- --source=quebec-city-open-data --dry-run
-npm run sync:source -- --source=laval-open-data --dry-run
-npm run sync:source -- --source=ottawa-hub --dry-run
-npm run sync:source -- --source=vancouver-open-data --dry-run
-npm run sync:source -- --source=calgary-open-data --dry-run
-npm run sync:source -- --source=halifax-hub --dry-run
-npm run sync:source -- --source=hamilton-hub --dry-run
-npm run sync:source -- --source=surrey-hub --dry-run
-npm run sync:source -- --source=durham-hub --dry-run
-npm run sync:source -- --source=peel-hub --dry-run
-npm run sync:municipal                    # sync every enabled local source
-npm run maps:drain                        # build all queued local map indexes
-npm run maps:retry-source -- --source=<source-id>  # inspect failed maps (read-only)
-npm run maps:retry-source -- --source=<source-id> --apply  # requeue after a verified probe
-npm run dev                   # API on :3100
-
-# 3. Client (separate terminal)
-cd client
-npm install
-npm run dev                   # Vite on :5173, proxies /api → :3100
-```
-
-## API (`/api/v1`, anonymous)
-
-Every response uses `{ data, pagination: { nextCursor }, meta }`. Catalogue,
-query, profile and map responses expose source-specific provenance and licensing;
-mixed collection responses never claim one publisher's licence for every item.
-
-```bash
-# search the mirrored catalogue (tsvector, EN+FR)
-curl 'http://localhost:3100/api/v1/datasets?q=housing&place=oshawa-on&format=CSV&limit=5'
-
-# repeated values match any; facets=1 adds meta.total and per-group counts
-curl 'http://localhost:3100/api/v1/datasets?format=CSV&format=XLSX&level=municipal&sort=title&facets=1&limit=5'
-
-# browse featured regions/cities (or search every SGC place with q)
-curl 'http://localhost:3100/api/v1/places?featured=true'
-curl 'http://localhost:3100/api/v1/places?q=Oshawa'
-curl 'http://localhost:3100/api/v1/places?q=Mississauga'
-curl 'http://localhost:3100/api/v1/places?q=Montr%C3%A9al'
-curl 'http://localhost:3100/api/v1/places?q=Qu%C3%A9bec'
-curl 'http://localhost:3100/api/v1/places?q=Laval'
-curl 'http://localhost:3100/api/v1/places?q=Vancouver'
-curl 'http://localhost:3100/api/v1/places?q=Calgary'
-curl 'http://localhost:3100/api/v1/places?q=Edmonton'
-curl 'http://localhost:3100/api/v1/places?q=Winnipeg'
-curl 'http://localhost:3100/api/v1/places?q=Halifax'
-curl 'http://localhost:3100/api/v1/places?q=Hamilton'
-curl 'http://localhost:3100/api/v1/places?q=Surrey'
-
-# place-filtered sources are authoritative; counts expose total + authoritative
-curl 'http://localhost:3100/api/v1/sources?place=clarington-on'
-curl 'http://localhost:3100/api/v1/sources?place=mississauga-on'
-curl 'http://localhost:3100/api/v1/sources?place=vancouver-bc'
-curl 'http://localhost:3100/api/v1/sources?place=calgary-ab'
-curl 'http://localhost:3100/api/v1/sources?place=edmonton-ab'
-curl 'http://localhost:3100/api/v1/sources?place=winnipeg-mb'
-curl 'http://localhost:3100/api/v1/sources?place=halifax-ns'
-curl 'http://localhost:3100/api/v1/sources?place=hamilton-on'
-curl 'http://localhost:3100/api/v1/sources?place=surrey-bc'
-curl 'http://localhost:3100/api/v1/sources?place=quebec-qc'
-curl 'http://localhost:3100/api/v1/sources?place=laval-qc'
-
-# dataset detail - resources tagged datastore | ingested | ingestable | file-only
-curl 'http://localhost:3100/api/v1/datasets/<idOrName>'
-
-# the unified query endpoint (same shape for proxied and ingested data)
-curl 'http://localhost:3100/api/v1/resources/<id>/query?limit=10'
-curl 'http://localhost:3100/api/v1/resources/<id>/query?filters={"year":{"op":"gte","value":2020}}&sort=year%20desc'
-
-# bounded GeoJSON compatibility view for ArcGIS, PostGIS, or PMTiles resources
-curl 'http://localhost:3100/api/v1/resources/<id>/map?bbox=-79,43.8,-78.7,44&zoom=11&limit=1000'
-
-# Prepare or refresh one file, then poll the shared job. Current copies return
-# 200 with already_loaded: true and no job id. New jobs: 20/hour/IP by default;
-# a full queue or a failure cooldown returns 429 with Retry-After.
-curl -X POST 'http://localhost:3100/api/v1/resources/<id>/prepare'
-curl 'http://localhost:3100/api/v1/jobs/<jobId>'
-
-# Legacy API remains idempotent (5/hour/IP); it never refreshes a ready copy.
-curl -X POST 'http://localhost:3100/api/v1/resources/<id>/ingest'
-
-curl 'http://localhost:3100/api/v1/organizations?limit=10'
-curl 'http://localhost:3100/api/v1/organizations/<name>'
-curl 'http://localhost:3100/api/v1/stats'
-
-# the live Top 100 Downloaded Datasets leaderboard (period + ranked items)
-curl 'http://localhost:3100/api/v1/insights/top-downloads'
-
-curl 'http://localhost:3100/healthz'
-```
-
-Filter grammar: `{ "column": value }` or
-`{ "column": { "op": "eq|lt|gt|lte|gte|contains", "value": ... } }`.
-Column names are validated against the stored column list; values only ever travel
-as SQL placeholders. Operator filters work on ingested resources; the upstream
-datastore proxy supports equality only (400 otherwise).
-Search text is capped at 200 characters and local query offsets at 10,000;
-expensive profile, aggregation, and export routes have dedicated rate limits.
-
-## Pipelines
-
-| Script | Purpose |
+| What the portal provides | What CanQuery does |
 |---|---|
-| `scripts/catalog-sync.js` | full harvest: `package_list` → batched `package_show` (chunks of 50, concurrency 2), resumable via `sync_progress`; `--limit N`, `--dry-run` |
-| `scripts/incremental-sync.js` | upserts through a persisted, overlapping `metadata_modified` watermark with deterministic `id` tie ordering; page-cap runs are marked incomplete without advancing it |
-| `scripts/sync-places.js` | imports the Windows-1252 EN/FR Statistics Canada SGC hierarchy with stable internal ids and alias-safe canonical slug repair |
-| `scripts/sync-source.js` | validates or syncs one configured source adapter; `--source`, `--limit`, `--dry-run` |
-| `scripts/sync-municipal-sources.js` | refreshes every enabled non-federal source independently so one failure cannot suppress the others |
-| `scripts/ingest-worker.js` | exclusively owns the queue with a PostgreSQL advisory lock, heartbeats active-job leases, streams files into `store.r_*` via `COPY`, and recovers crash orphans immediately; `--once` for a single drain |
-| `scripts/map-worker.js` | exclusively owns the versioned map queue; keeps CKAN/Opendatasoft maps in PostGIS and builds bounded Socrata GeoJSON into immutable private-R2 PMTiles; validates source identity, versions, geometry, object integrity and budgets; `--once`, `--drain`, or `--resource=<id>` |
-| `scripts/prune-map-objects.js` | removes private PMTiles objects that have been unreferenced for at least 24 hours; bounded daily cleanup, `--dry-run` |
-| `scripts/evict-store.js` | serializes with ingestion, rechecks pins/state under lock, and expires idle unpinned tables and drops least-recently-accessed tables until under `STORE_BUDGET_GB` |
-| `scripts/seed-top100.js` | rebuilds the **Top 100** leaderboard: ranks the latest analytics snapshot, ingests + pins one latest-period resource per top dataset, upserts `top_downloads`; daily cron, `--dry-run` |
+| A live API table (CKAN DataStore) | Queries the portal's own API, with a five-minute cache |
+| A CSV, XLSX or XLS file within the size, row and column limits | Loads it on demand into a PostgreSQL snapshot and queries that |
+| Anything else | Shows the metadata, the licence and a link to the original file |
 
-Every script writes a run-log row (`sync_runs` / `ingest_runs`) in a `finally` block
-and exits non-zero on failure.
+Loaded copies are shared by every visitor, expire after a day without use unless pinned, and
+stay within a fixed storage budget. A refreshed file is loaded into a new table that replaces the
+old one in a single step, so a reader never sees a half-loaded table.
 
-Safety rails (env-tunable): `MAX_FILE_MB=50`, `MAX_ROWS=1000000`, `MAX_COLS=120`,
-`STORE_BUDGET_GB=15`. Scheduled cleanup runs every 15 minutes and expires unpinned prepared tables after `STORE_IDLE_TTL_HOURS=24` hours without activity (`0` disables expiry). Successful local queries, profiles and exports renew the full window; visible Table/Chart views also renew every five minutes. Hidden views stop renewing. Pins, active snapshot readers and pending/running refresh jobs are protected; the storage budget remains an independent limit. Eligible evicted files prepare again on a later visit. Downloads accept only public HTTP(S) destinations, validate
-and DNS-pin every redirect hop, stream to disk, and abort mid-stream past the cap.
-Excel archives are preflighted for expansion bombs and converted in a
-memory/time-limited child process. Ingest reserves capacity, checks the exact
-PostgreSQL relation size before commit, enforces the budget after commit, and can
-fail closed on a real-filesystem free-space floor (`STORE_DATA_PATH` is required
-for the production worker).
-Type inference (1,000-row sample → INTEGER/NUMERIC/DATE/TIMESTAMPTZ/TEXT) falls back
-to TEXT per column when a later cast fails.
+## Architecture
 
-Local maps have separate defaults: 1,000,000 rows, 1,000,000 vertices per feature,
-and 10,000,000 vertices per resource, plus a 1 GB download cap, a 20 GB logical
-map-store budget, and a 30 GB
-filesystem free-space floor. Direct GeoJSON supports absent/WGS84, CRS84, and
-named PostGIS EPSG definitions; unsupported or malformed CRS declarations fail
-closed for that resource. Known upstream record counts above `MAX_ROWS` keep a
-CSV discoverable as `file-only` without enqueueing an ingest that cannot finish.
-`map_store.features` is a reproducible cache and may
-be excluded from backups; the queue reindexes missing feature data after restore.
-Admitted Calgary, Edmonton and Winnipeg Socrata geometry tables use a hybrid
-path instead: sequential
-portal-local GeoJSON pages are reduced to 20 scalar popup fields, passed to a
-pinned Tippecanoe build, and uploaded as immutable PMTiles to a private R2 bucket.
-The browser receives only a same-origin versioned vector-tile URL. R2 keys and
-credentials never appear in public metadata. Archives use z0-z16, a 500,000-byte
-compressed tile ceiling, a 2 GB per-archive cap, a 30-minute build timeout and a
-100 GB logical bucket budget. Existing Toronto, Montréal and Vancouver local maps
-remain in PostGIS.
-
-## Web UI
-
-The SPA (`client/`) starts with a search plus an optional remembered place
-(All Canada remains the default). Its grouped selector shows 116 configured canonical
-featured jurisdictions, including standalone cities (Calgary, Edmonton, Fredericton, Gatineau,
-Greater Sudbury, Guelph, Halifax, Hamilton, Kelowna, Laval, Lévis, London, Longueuil, Moncton,
-Montréal, Ottawa, Québec City, Repentigny, Rimouski, Saanich, Saguenay, Saint John, Saskatoon,
-Shawinigan, Sherbrooke, Surrey, Toronto, Trois-Rivières, Vancouver, Victoria, Winnipeg, Yellowknife,
-and more), regional clusters (Durham, Halton, Niagara, Peel, Waterloo Region, and York Region),
-and their lower-tier municipalities; search on `/places` reaches the complete Canadian SGC hierarchy. Place
-pages combine directly local datasets with records whose parent jurisdiction
-explicitly covers that place, and label regional-only coverage instead of
-implying a municipal feed exists. Source filters remain secondary, and every
-dataset/resource shows its publisher and licence. The resource explorer has a
-sortable/filterable table, CSV export, and
-a lazy Map tab for spatial resources; the map follows its own viewport and does
-not imply that table filters are spatial filters. Opening Table or Chart prepares
-only that eligible resource automatically, without a Load button. The server
-imports the selected file within the existing CSV/Excel, row, column, memory and
-disk caps; the browser requests 50 table rows at a time. Browsing dataset lists,
-opening Map, and fetching metadata or initial HTML do not start table jobs.
-Live CKAN tables keep their bounded upstream queries until a full-data chart or
-non-equality filter requires an eligible local copy. Prepared resources get an
-auto **Insights** dashboard that profiles the table and renders KPIs + charts
-(donuts, bars, time-series) with zero configuration. The **`/insights`** section
-is a live **Top 100 Downloaded Datasets** leaderboard: the most-downloaded
-datasets on open.canada.ca for the latest month, each ingested and visualized,
-shown as a top-3 chart podium over a ranked list with download-history
-sparklines. English/French throughout.
-
-Charts aggregate the complete prepared file with the active table search and
-filters; only the returned groups are bounded. Truncated group lists are labelled,
-and a truncated donut is shown as bars rather than incomplete percentages.
-Whole-file overview statistics are labelled separately. Repeated aggregates use
-a five-minute, 256-entry cache with a 256 KiB per-entry limit and snapshot keys.
-
-Scheduled catalogue syncs continue to discover publisher changes. A later visit
-refreshes a prepared resource when its recorded URL, format, size, timestamp,
-hash or provider revision changes. Titles and sync timestamps do not trigger a
-refresh. This detects catalogue-advertised revisions, not silent upstream file
-changes. Existing copies remain queryable through a refresh or failure. Each
-replacement is published atomically after another source-version check; exports
-already in progress finish on the old copy before its table is retired.
-Migration 032 leaves legacy snapshots usable and revalidates them on demand.
-
-One worker serves shared jobs. By default, automatic admissions stop when ten
-ingest jobs are pending/running, and each IP may admit twenty new jobs per hour;
-joining a job or reading a current copy does not consume that allowance. The IP
-allowance is in API-process memory and resets on restart; the queue bound is
-serialized in PostgreSQL. Hidden tabs pause admission and polling. Transient
-failures get at most three attempts with delayed retries, then a one-hour
-cooldown; invalid files wait 24 hours. A changed source version can retry sooner.
-`AUTO_PREPARE_ENABLED=false` pauses automatic admission. See
-`deploy/RELEASE_RUNBOOK_automatic_preparation.md` for rollout and rollback.
-
-## Tests & lint
-
-```bash
-npm --prefix server run verify
+```mermaid
+flowchart LR
+  user["Browser or API client"] --> api["Express API<br/>and React app"]
+  api --> db[("PostgreSQL 16<br/>with PostGIS")]
+  api -.->|live tables and map areas| portals["open.canada.ca and<br/>82 local portals"]
+  portals -->|catalogue metadata| sync["Catalogue sync jobs"]
+  sync --> db
+  portals -->|CSV and Excel files| ingest["Ingest worker"]
+  ingest -->|loaded tables| db
+  portals -->|map layers| maps["Map worker"]
+  maps --> db
+  maps --> r2[("Cloudflare R2<br/>PMTiles")]
+  api --> r2
 ```
 
-Coverage includes CKAN, ArcGIS Hub, Opendatasoft and Socrata source adapters, place hierarchy and APIs, streaming direct
-GeoJSON plus projected-CRS map conversion, private-R2 PMTiles generation/range reads, bounded map
-queries, publisher-specific provenance, the four `/query` modes, filter-grammar injection attempts,
-concurrent job-lease heartbeats, store/map-budget eviction, and client UI routing, tables, and charts.
+- **API** (`server/`): Express 5 on Node.js 22. Routes stay thin, logic lives in services and SQL
+  in `server/db/`. The same process serves the built React app with server-rendered page content,
+  so catalogue pages work without JavaScript.
+- **Catalogue sync**: scheduled jobs harvest open.canada.ca (a full harvest plus an incremental sync
+  every 30 minutes) and each local portal through its adapter: CKAN, ArcGIS Hub, Socrata,
+  Opendatasoft or a custom JSON feed. The source registry is in `server/config/catalogSources.js`.
+- **Ingest worker**: one worker owns the preparation queue through a PostgreSQL advisory lock,
+  claims jobs with `SKIP LOCKED`, renews its lease with heartbeats and recovers crashed jobs.
+  Files are streamed into PostgreSQL with `COPY`.
+- **Map worker**: indexes GeoJSON into PostGIS and builds PMTiles archives with a pinned Tippecanoe,
+  stored privately in Cloudflare R2 and served as vector tiles through the API.
+- **Client** (`client/`): React 19 with Vite, React Router, Tailwind CSS and daisyUI, Recharts,
+  Leaflet and MapLibre GL. The interface is in English and French.
+
+## Engineering notes
+
+- **Untrusted downloads.** Catalogue links are treated as untrusted: only public HTTP(S) addresses
+  are allowed, DNS is checked and pinned on every redirect, private networks are refused, and
+  size and stall limits apply. Excel files are checked for zip bombs and converted in a child
+  process with memory and time limits and no secrets in its environment.
+- **Typed columns.** CSV columns are typed from a sample, then every value is validated with
+  PostgreSQL's `pg_input_is_valid` before a column is converted. A column with a value that does not
+  fit stays text, and codes with leading zeros are kept as written.
+- **Consistent reads.** API clients can pin a snapshot token so that every page of a result comes
+  from the same copy of a table. Old tables are dropped only when no reader holds them.
+- **Bounded work.** Rate limits, a queue ceiling, statement timeouts and a storage budget keep load
+  predictable. When a client disconnects, its upstream requests and PostgreSQL queries are cancelled.
+- **Safe SQL.** Values are always parameterized, and the columns named in a filter or sort are
+  checked against the table's recorded schema.
+- **Least privilege.** The API, the ingest worker and the map worker connect with separate database
+  roles ([`deploy/database/runtime-roles.sql`](deploy/database/runtime-roles.sql)), and an
+  integration test checks what each role can and cannot read or write.
+- **Reproducible releases.** CI packages the exact tested commit and frontend build with a SHA-256
+  manifest of every file, and a release is installed read-only and switched in one step
+  ([`deploy/release.py`](deploy/release.py)). Backups are encrypted and checked after upload, and an
+  observer reports the health of each component.
+
+## Repository layout
+
+```
+server/              Express API, catalogue sync, workers and tests
+  config/            source registry and limits
+  routes/ controllers/ services/ db/
+  services/charts/   the chart engine
+  scripts/           sync jobs, ingest and map workers, migration runner
+  sql/migrations/    forward-only SQL migrations
+  __tests__/         Jest unit and API tests
+  integration/       suites that run against a real PostGIS database
+client/              React app: pages, components, hooks, utils, English and French strings
+content/blog/        the data guides (paired English and French Markdown, JSON manifest)
+deploy/              systemd units and release, backup, monitoring and mail tooling
+scripts/             source and release verification, release packaging
+```
+
+## Run it locally
+
+You need Node.js 22 and PostgreSQL 16 with PostGIS 3.5.
+
+```bash
+# Database
+createdb canquery_dev
+psql canquery_dev -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+psql canquery_dev -c 'CREATE EXTENSION IF NOT EXISTS unaccent;'
+
+# Install and configure
+npm ci --prefix server
+npm ci --prefix client
+cp server/.env.example server/.env        # set CANQUERY_DATABASE_URL
+
+# Schema and the Statistics Canada place hierarchy
+npm --prefix server run migrate
+npm --prefix server run sync:places
+
+# A small part of the catalogue: 100 federal datasets and one city portal
+(cd server && node scripts/catalog-sync.js --limit=100)
+npm --prefix server run sync:source -- --source=toronto-open-data --limit=10
+
+# Run each in its own terminal
+npm --prefix server run dev               # API on http://localhost:3100
+npm --prefix client run dev               # app on http://localhost:5173
+node server/scripts/ingest-worker.js      # optional: loads files into tables
+```
+
+Any source can be checked first with `--dry-run`. Maps from Socrata portals also need Tippecanoe
+and an R2 bucket; everything else runs without them.
+
+## Tests
+
+```bash
+npm --prefix server run verify               # lint, unit and component tests, guide checks, production build
+npm --prefix server run verify:integration   # database suites, on a disposable PostgreSQL/PostGIS database
+```
+
+The server uses Jest and Supertest, the client Vitest and Testing Library, and the database suites
+run against a real PostgreSQL 16/PostGIS 3.5 database. [CONTRIBUTING.md](CONTRIBUTING.md) explains
+the integration setup. CI runs six jobs on every pull request: server, client, database, the core on
+its own, a check that no hosted-service code is in this repository, and the release artifact.
+
+## API
+
+The read API is open: no key is needed, within per-address rate limits. JSON responses have the
+shape `{ data, pagination: { nextCursor }, meta }`.
+
+```bash
+# Search the catalogue
+curl 'https://canquery.com/api/v1/datasets?q=building%20permits&place=toronto-on&limit=5'
+
+# A dataset and its files; each file says whether it is a live table, loaded, loadable or download-only
+curl 'https://canquery.com/api/v1/datasets/toronto-open-data-building-permits-active-permits'
+
+# Rows from a file, filtered
+curl --get 'https://canquery.com/api/v1/resources/ckan-toronto-open-data-resource-6d0229af-bc54-46de-9c2b-26759b01dd05/query' \
+  --data-urlencode 'filters={"STREET_NAME":"KING"}' --data-urlencode 'limit=5'
+
+# Map features inside a bounding box (Toronto's wards)
+curl 'https://canquery.com/api/v1/resources/ckan-toronto-open-data-resource-7672dac5-b383-4d7c-90ec-291dc69d37bf/map?bbox=-79.64,43.58,-79.11,43.86&zoom=10'
+```
+
+Filters accept `eq`, `lt`, `gt`, `lte`, `gte` and `contains` on loaded tables; a portal's live
+table accepts equality only. Aggregates, CSV export, file preparation and vector tiles are covered
+in the [API docs](https://canquery.com/docs).
 
 ## Editions
 
-This repository is the open-source core of CanQuery, under the MIT licence: the catalogue
-website, the anonymous `/api/v1` and `/web-api/v1` APIs, table preparation, maps and the
-operations tooling. It runs on its own, and CI checks that it builds, passes its tests and
-starts against a fresh database without anything else installed.
+This repository is the open-source core of CanQuery: the catalogue website, the anonymous
+`/api/v1` and `/web-api/v1` APIs, table preparation, maps and the operations tooling. It runs on
+its own, and CI checks that it builds, passes its tests and starts against a fresh database without
+anything else installed.
 
-canquery.com also runs a hosted service on top of this core, with developer accounts, API
-keys, credits and paid plans. That layer is not part of this repository. It plugs in through
-the extension hooks in `server/extensions/index.js` and `client/src/extensions.js`; without
-it, every hook does nothing and the core serves no account pages, keyed limits or billing.
+canquery.com also runs a hosted layer on top of this core, with accounts, dataset alerts, API keys
+and paid plans. That layer is not part of this repository. It plugs in through the extension hooks
+in `server/extensions/index.js` and `client/src/extensions.js`; without it, every hook does nothing.
 
-## Deployment
+## Data and licences
 
-Dedicated VPS `canquery-prod-01` at Little Creek Hosting (IPv4 `38.45.71.90`).
-Production retains the legacy systemd names `opencanada-api`, `opencanada-worker`,
-and `opencanada-map-worker` behind a Caddy reverse proxy. The generic deployment
-templates use `canquery-*` names for new installations. See `deploy/DEPLOY.md` and
-`deploy/RELEASE_RUNBOOK_v35.md` for runbooks.
+The code is under the [MIT licence](LICENSE). The data belongs to its publishers and stays under
+each publisher's licence, such as the Open Government Licence – Canada; CanQuery shows the source
+and licence on every dataset and file, and only admits records that carry a recognized open
+licence. Problems with a dataset itself belong with its publisher.
+
+CanQuery is an independent project, built by [@RyuPrad](https://github.com/RyuPrad). It is not an
+official Government of Canada service and is not affiliated with the Government of Canada.
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, conventions and tests, and
+[SECURITY.md](SECURITY.md) to report a vulnerability privately.
