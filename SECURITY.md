@@ -29,8 +29,9 @@ happy to credit you unless you'd prefer to stay anonymous.
   validate and DNS-pin each redirect hop, and can be backed by the shipped egress
   firewall. Reports about bypasses in this path, the query/filter grammar, SQL
   handling, or resource-exhaustion limits are especially welcome.
-- The underlying open data is mirrored from open.canada.ca; issues with the
-  datasets themselves are out of scope here (raise those upstream).
+- The underlying open data is mirrored from open.canada.ca and the other source
+  portals; issues with the datasets themselves are out of scope here (raise those
+  with their publisher).
 
 ## Dependency audit follow-up
 

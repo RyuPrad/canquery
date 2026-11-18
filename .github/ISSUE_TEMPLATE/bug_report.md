@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in canquery isn't working as expected
+about: Something in CanQuery isn't working as expected
 title: ''
 labels: bug
 assignees: ''
@@ -26,4 +26,4 @@ What you expected instead.
 Screenshots, response bodies, or logs if relevant.
 
 > Not a bug in the data itself? Problems with the underlying datasets belong
-> upstream at open.canada.ca - this project only makes them queryable.
+> with their publisher - this project only makes them queryable.
